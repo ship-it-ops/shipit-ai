@@ -1,9 +1,7 @@
 'use client';
 
-import { Filter, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Button, Card, Checkbox, Tag } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useGraphStore, type GraphFilters } from '@/stores/graph-store';
 
 const nodeLabels = [
@@ -30,32 +28,20 @@ interface FilterGroupProps {
 
 function FilterGroup({ title, options, selected, onChange }: FilterGroupProps) {
   const toggle = (option: string) => {
-    if (selected.includes(option)) {
-      onChange(selected.filter((s) => s !== option));
-    } else {
-      onChange([...selected, option]);
-    }
+    if (selected.includes(option)) onChange(selected.filter((s) => s !== option));
+    else onChange([...selected, option]);
   };
-
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </div>
-      <div className="space-y-1">
+    <div className="flex flex-col gap-2">
+      <div className="text-text-dim font-mono text-[9px] tracking-[1.4px] uppercase">{title}</div>
+      <div className="flex flex-col gap-[6px]">
         {options.map((option) => (
-          <label
+          <Checkbox
             key={option}
-            className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-accent"
-          >
-            <input
-              type="checkbox"
-              checked={selected.includes(option)}
-              onChange={() => toggle(option)}
-              className="h-3.5 w-3.5 rounded border-gray-300"
-            />
-            <span>{option}</span>
-          </label>
+            checked={selected.includes(option)}
+            onCheckedChange={() => toggle(option)}
+            label={option}
+          />
         ))}
       </div>
     </div>
@@ -69,31 +55,51 @@ interface FilterPanelProps {
 
 export function FilterPanel({ open, onClose }: FilterPanelProps) {
   const { filters, setFilters, resetFilters } = useGraphStore();
-
   if (!open) return null;
 
-  const hasFilters =
-    filters.nodeLabels.length > 0 ||
-    filters.environments.length > 0 ||
-    filters.tiers.length > 0 ||
-    filters.owners.length > 0;
+  const activeChips: { key: keyof GraphFilters; value: string }[] = [
+    ...filters.nodeLabels.map((value) => ({ key: 'nodeLabels' as const, value })),
+    ...filters.environments.map((value) => ({ key: 'environments' as const, value })),
+    ...filters.tiers.map((value) => ({ key: 'tiers' as const, value: `T${value}` })),
+    ...filters.owners.map((value) => ({ key: 'owners' as const, value })),
+  ];
+
+  const removeChip = (key: keyof GraphFilters, value: string) => {
+    const cleaned = value.startsWith('T') ? value.slice(1) : value;
+    setFilters({ [key]: filters[key].filter((v) => v !== cleaned) } as Partial<GraphFilters>);
+  };
 
   return (
-    <Card className="w-64 shrink-0 overflow-y-auto border-r rounded-none border-t-0 border-b-0 border-l-0">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 pt-4">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Filter className="h-4 w-4" />
+    <aside className="border-border bg-panel w-72 shrink-0 overflow-y-auto border-r">
+      <div className="border-border flex items-center justify-between border-b p-4">
+        <span className="text-text inline-flex items-center gap-2 text-[13px] font-medium">
+          <IconGlyph name="schema" size={14} />
           Filters
-        </CardTitle>
-        <button onClick={onClose} className="rounded-sm p-1 hover:bg-accent">
-          <X className="h-4 w-4" />
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close filters"
+          className="text-text-dim hover:text-text rounded-sm p-1 leading-none"
+        >
+          ×
         </button>
-      </CardHeader>
-      <CardContent className="space-y-4 pb-6">
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={resetFilters} className="w-full text-xs">
-            Clear All Filters
-          </Button>
+      </div>
+
+      <div className="flex flex-col gap-5 p-4">
+        {activeChips.length > 0 && (
+          <Card variant="ghost" className="p-0">
+            <div className="flex flex-wrap gap-1">
+              {activeChips.map((c) => (
+                <Tag key={`${c.key}:${c.value}`} onRemove={() => removeChip(c.key, c.value)}>
+                  {c.value}
+                </Tag>
+              ))}
+            </div>
+            <Button variant="link" size="sm" onClick={resetFilters} className="mt-2 px-0">
+              Clear all
+            </Button>
+          </Card>
         )}
 
         <FilterGroup
@@ -102,34 +108,25 @@ export function FilterPanel({ open, onClose }: FilterPanelProps) {
           selected={filters.nodeLabels}
           onChange={(nodeLabels) => setFilters({ nodeLabels })}
         />
-
-        <Separator />
-
         <FilterGroup
           title="Environment"
           options={environments}
           selected={filters.environments}
           onChange={(environments) => setFilters({ environments })}
         />
-
-        <Separator />
-
         <FilterGroup
           title="Tier"
           options={tiers}
           selected={filters.tiers}
           onChange={(tiers) => setFilters({ tiers })}
         />
-
-        <Separator />
-
         <FilterGroup
           title="Owner"
           options={owners}
           selected={filters.owners}
           onChange={(owners) => setFilters({ owners })}
         />
-      </CardContent>
-    </Card>
+      </div>
+    </aside>
   );
 }

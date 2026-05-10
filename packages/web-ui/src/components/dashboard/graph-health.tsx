@@ -1,7 +1,7 @@
 'use client';
 
-import { Activity, Database, GitBranch, Clock } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, RadialProgress, type RadialTone } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useGraphStats } from '@/lib/hooks/use-graph-stats';
 
 function formatRelativeTime(isoString: string): string {
@@ -14,60 +14,45 @@ function formatRelativeTime(isoString: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function toneFor(score: number): RadialTone {
+  if (score >= 90) return 'ok';
+  if (score >= 70) return 'warn';
+  return 'err';
+}
+
 export function GraphHealth() {
   const { data: stats } = useGraphStats();
-
   const healthScore = stats?.healthScore ?? 0;
-  const healthColor =
-    healthScore >= 90
-      ? 'text-emerald-500'
-      : healthScore >= 70
-      ? 'text-amber-500'
-      : 'text-red-500';
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="h-4 w-4 text-blue-500" />
-          Graph Health
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center gap-6">
-          <div className="text-center">
-            <div className={`text-3xl font-bold ${healthColor}`}>{healthScore}%</div>
-            <div className="text-xs text-muted-foreground">Health Score</div>
-          </div>
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Database className="h-3.5 w-3.5" />
-                Nodes
-              </span>
-              <span className="font-medium">{(stats?.nodeCount ?? 0).toLocaleString()}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <GitBranch className="h-3.5 w-3.5" />
-                Edges
-              </span>
-              <span className="font-medium">{(stats?.edgeCount ?? 0).toLocaleString()}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                Staleness
-              </span>
-              <span className="font-medium">{stats?.staleness ?? 0}%</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Last Sync</span>
-              <span className="font-medium">{stats?.lastSync ? formatRelativeTime(stats.lastSync) : 'Never'}</span>
-            </div>
-          </div>
-        </div>
-      </CardContent>
+    <Card title="Graph Health">
+      <div className="flex items-center gap-6">
+        <RadialProgress value={healthScore} size={88} thickness={6} tone={toneFor(healthScore)}>
+          <span className="font-mono text-[18px] font-medium tabular-nums">{healthScore}%</span>
+        </RadialProgress>
+        <dl className="flex-1 space-y-2 text-[13px]">
+          <Row glyph="schema" label="Nodes" value={(stats?.nodeCount ?? 0).toLocaleString()} />
+          <Row glyph="graph" label="Edges" value={(stats?.edgeCount ?? 0).toLocaleString()} />
+          <Row glyph="refresh" label="Staleness" value={`${stats?.staleness ?? 0}%`} />
+          <Row
+            glyph="live"
+            label="Last Sync"
+            value={stats?.lastSync ? formatRelativeTime(stats.lastSync) : 'Never'}
+          />
+        </dl>
+      </div>
     </Card>
+  );
+}
+
+function Row({ glyph, label, value }: { glyph: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-text-muted inline-flex items-center gap-2">
+        <IconGlyph name={glyph} size={12} />
+        {label}
+      </dt>
+      <dd className="text-text font-mono tabular-nums">{value}</dd>
+    </div>
   );
 }

@@ -1,24 +1,23 @@
 'use client';
 
-import { Github, Container, BarChart3, BookOpen, Ticket, UserCircle } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, StatusDot, Badge, type StatusState } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import type { ConnectorInfo } from '@/lib/api';
 
-const connectorIcons: Record<string, React.ReactNode> = {
-  github: <Github className="h-6 w-6" />,
-  kubernetes: <Container className="h-6 w-6" />,
-  datadog: <BarChart3 className="h-6 w-6" />,
-  backstage: <BookOpen className="h-6 w-6" />,
-  jira: <Ticket className="h-6 w-6" />,
-  identity: <UserCircle className="h-6 w-6" />,
+const connectorGlyph: Record<string, string> = {
+  github: 'github',
+  kubernetes: 'kubernetes',
+  datadog: 'datadog',
+  backstage: 'backstage',
+  jira: 'tag',
+  identity: 'person',
 };
 
-const statusConfig: Record<string, { color: string; dot: string; label: string }> = {
-  healthy: { color: 'text-emerald-700', dot: 'bg-emerald-500', label: 'Healthy' },
-  degraded: { color: 'text-amber-700', dot: 'bg-amber-500', label: 'Degraded' },
-  failed: { color: 'text-red-700', dot: 'bg-red-500', label: 'Failed' },
-  not_connected: { color: 'text-gray-500', dot: 'bg-gray-400', label: 'Not Connected' },
+const statusMap: Record<ConnectorInfo['status'], { state: StatusState; label: string }> = {
+  healthy: { state: 'ok', label: 'Healthy' },
+  degraded: { state: 'warn', label: 'Degraded' },
+  failed: { state: 'err', label: 'Failed' },
+  not_connected: { state: 'off', label: 'Not connected' },
 };
 
 function formatRelativeTime(isoString: string | null): string {
@@ -38,34 +37,31 @@ interface ConnectorCardProps {
 }
 
 export function ConnectorCard({ connector, onClick }: ConnectorCardProps) {
-  const status = statusConfig[connector.status] || statusConfig.not_connected;
-  const icon = connectorIcons[connector.type] || <BookOpen className="h-6 w-6" />;
+  const status = statusMap[connector.status];
+  const glyph = connectorGlyph[connector.type] ?? 'document';
 
   return (
-    <Card
-      className="cursor-pointer transition-shadow hover:shadow-md"
-      onClick={onClick}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-            {icon}
+    <Card interactive onClick={onClick}>
+      <div className="flex items-start gap-3">
+        <span
+          aria-hidden
+          className="bg-panel-2 text-text-muted grid h-10 w-10 shrink-0 place-items-center rounded-md text-[20px]"
+        >
+          <IconGlyph name={glyph} size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-text truncate text-[14px] font-medium">{connector.name}</h3>
+            <StatusDot state={status.state} label={status.label} />
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{connector.name}</h3>
-              <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${status.dot}`} />
-                <span className={`text-xs font-medium ${status.color}`}>{status.label}</span>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-              <span>Last sync: {formatRelativeTime(connector.lastSync)}</span>
-              <span>{connector.entityCount} entities</span>
-            </div>
+          <div className="text-text-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+            <span>Last sync: {formatRelativeTime(connector.lastSync)}</span>
+            <Badge variant="neutral" size="sm">
+              {connector.entityCount.toLocaleString()} entities
+            </Badge>
           </div>
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }

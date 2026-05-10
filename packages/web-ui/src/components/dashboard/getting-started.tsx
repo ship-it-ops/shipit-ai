@@ -1,19 +1,21 @@
 'use client';
 
-import Link from 'next/link';
-import { CheckCircle2, Circle, Plug, Network, Search } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useRouter } from 'next/navigation';
+import { Card } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
+import { cn } from '@/lib/utils';
 import { useConnectors } from '@/lib/hooks/use-connectors';
 
 interface ChecklistItem {
   label: string;
   description: string;
   href: string;
-  icon: React.ReactNode;
+  glyph: string;
   completed: boolean;
 }
 
 export function GettingStarted() {
+  const router = useRouter();
   const { data: connectors = [] } = useConnectors();
   const connectedCount = connectors.filter((c) => c.status !== 'not_connected').length;
 
@@ -24,53 +26,61 @@ export function GettingStarted() {
       label: 'Connect your first data source',
       description: 'Add a connector like GitHub to start populating the graph',
       href: '/connectors',
-      icon: <Plug className="h-4 w-4" />,
+      glyph: 'bolt',
       completed: connectedCount >= 1,
     },
     {
       label: 'Explore the knowledge graph',
       description: 'Navigate your software ecosystem visually',
       href: '/explore',
-      icon: <Network className="h-4 w-4" />,
+      glyph: 'graph',
       completed: false,
     },
     {
       label: 'Add a second connector',
       description: 'Cross-reference data from multiple sources',
       href: '/connectors',
-      icon: <Search className="h-4 w-4" />,
+      glyph: 'add',
       completed: connectedCount >= 2,
     },
   ];
 
   return (
-    <Card className="border-blue-200 bg-blue-50/50">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Getting Started</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {items.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex items-start gap-3 rounded-md p-2 transition-colors hover:bg-blue-100/50"
+    <Card title="Getting Started">
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {items.map((item) => (
+          <li key={item.label}>
+            <button
+              type="button"
+              onClick={() => router.push(item.href)}
+              className="hover:bg-panel-2 focus-visible:ring-accent-dim rounded-xs flex w-full items-start gap-3 p-2 text-left outline-none focus-visible:ring-[3px]"
             >
-              {item.completed ? (
-                <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500 shrink-0" />
-              ) : (
-                <Circle className="mt-0.5 h-5 w-5 text-muted-foreground shrink-0" />
-              )}
-              <div>
-                <p className={`text-sm font-medium ${item.completed ? 'line-through text-muted-foreground' : ''}`}>
+              <span
+                aria-hidden
+                className={cn(
+                  'mt-[2px] grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px]',
+                  item.completed
+                    ? 'bg-ok text-on-accent'
+                    : 'bg-panel-2 border-border text-text-dim border',
+                )}
+              >
+                {item.completed ? '✓' : <IconGlyph name={item.glyph} size={11} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'block text-[13px] font-medium',
+                    item.completed && 'text-text-muted line-through',
+                  )}
+                >
                   {item.label}
-                </p>
-                <p className="text-xs text-muted-foreground">{item.description}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </CardContent>
+                </span>
+                <span className="text-text-dim block text-[12px]">{item.description}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

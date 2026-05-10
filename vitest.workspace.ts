@@ -9,4 +9,5 @@ export default defineWorkspace([
   'packages/connectors/kubernetes',
   'packages/api-server',
   'packages/mcp-server',
+  'packages/web-ui',
 ]);

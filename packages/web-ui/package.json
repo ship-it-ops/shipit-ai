@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "next": "^14.2.0",
@@ -17,9 +19,10 @@
     "zustand": "^5.0.0",
     "cytoscape": "^3.30.0",
     "lucide-react": "^0.460.0",
-    "clsx": "^2.1.0",
-    "tailwind-merge": "^2.6.0",
-    "class-variance-authority": "^0.7.0"
+    "@ship-it-ui/ui": "^0.0.3",
+    "@ship-it-ui/shipit": "^0.0.3",
+    "@ship-it-ui/tokens": "^0.0.3",
+    "@ship-it-ui/icons": "^0.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -27,10 +30,18 @@
     "@types/react-dom": "^18.3.0",
     "@types/cytoscape": "^3.21.0",
     "typescript": "^5.7.0",
-    "tailwindcss": "^3.4.0",
+    "tailwindcss": "4.0.0-beta.3",
+    "@tailwindcss/postcss": "4.0.0-beta.3",
     "postcss": "^8.4.0",
-    "autoprefixer": "^10.4.0",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.0"
+    "eslint-config-next": "^14.2.0",
+    "vitest": "^3.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/user-event": "^14.5.2",
+    "vitest-axe": "^0.1.0",
+    "axe-core": "^4.10.2",
+    "jsdom": "^25.0.0"
   }
 }

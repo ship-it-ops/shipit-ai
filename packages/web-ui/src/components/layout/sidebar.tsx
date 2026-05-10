@@ -1,139 +1,159 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import Link from 'next/link';
-import {
-  Home,
-  Network,
-  Plug,
-  Siren,
-  ChevronDown,
-  ChevronRight,
-  PanelLeftClose,
-  PanelLeft,
-} from 'lucide-react';
-import { useState } from 'react';
-import { cn } from '@/lib/utils';
+import { useRouter, usePathname } from 'next/navigation';
+import { type MouseEvent } from 'react';
+import { Sidebar as DSSidebar, NavItem, NavSection } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
 
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
-
-interface NavItem {
+interface NavLink {
   label: string;
   href: string;
-  icon: React.ReactNode;
+  glyph: string;
+}
+
+interface NavGroup {
+  label?: string;
+  items: NavLink[];
 }
 
 const navGroups: NavGroup[] = [
   {
-    label: '',
-    items: [
-      { label: 'Home', href: '/', icon: <Home className="h-4 w-4" /> },
-    ],
+    items: [{ label: 'Home', href: '/', glyph: 'home' }],
   },
   {
     label: 'Explore',
     items: [
-      { label: 'Graph Explorer', href: '/explore', icon: <Network className="h-4 w-4" /> },
+      { label: 'Graph Explorer', href: '/explore', glyph: 'graph' },
+      { label: 'Ask', href: '/ask', glyph: 'ask' },
     ],
   },
   {
     label: 'Configure',
-    items: [
-      { label: 'Connector Hub', href: '/connectors', icon: <Plug className="h-4 w-4" /> },
-    ],
+    items: [{ label: 'Connector Hub', href: '/connectors', glyph: 'bolt' }],
   },
   {
     label: 'Operations',
-    items: [
-      { label: 'Incident Mode', href: '/incidents', icon: <Siren className="h-4 w-4" /> },
-    ],
+    items: [{ label: 'Incident Mode', href: '/incidents', glyph: 'incident' }],
   },
 ];
 
-function NavGroupSection({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
+function SidebarNavItem({
+  href,
+  label,
+  glyph,
+  collapsed,
+}: {
+  href: string;
+  label: string;
+  glyph: string;
+  collapsed: boolean;
+}) {
+  const router = useRouter();
   const pathname = usePathname();
-  const [expanded, setExpanded] = useState(true);
-  const hasGroupLabel = group.label.length > 0;
+  const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+
+  const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    router.push(href);
+  };
 
   return (
-    <div className="mb-1">
-      {hasGroupLabel && !collapsed && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="flex w-full items-center gap-1 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-[hsl(var(--sidebar-muted))] hover:text-[hsl(var(--sidebar-foreground))]"
-        >
-          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          {group.label}
-        </button>
-      )}
-      {(expanded || collapsed || !hasGroupLabel) && (
-        <div className="space-y-0.5">
-          {group.items.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-[hsl(var(--sidebar-accent))] text-[hsl(var(--sidebar-foreground))]'
-                    : 'text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-foreground))]',
-                  collapsed && 'justify-center px-2'
-                )}
-                title={collapsed ? item.label : undefined}
-              >
-                {item.icon}
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <NavItem
+      href={href}
+      icon={<IconGlyph name={glyph} size={14} />}
+      label={collapsed ? '' : label}
+      active={active}
+      onClick={handleClick}
+      title={collapsed ? label : undefined}
+      aria-label={label}
+    />
   );
 }
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const width = sidebarCollapsed ? 64 : 240;
 
   return (
-    <aside
-      className={cn(
-        'flex flex-col border-r bg-[hsl(var(--sidebar))] transition-all duration-200',
-        sidebarCollapsed ? 'w-16' : 'w-56'
-      )}
-    >
-      <div className={cn('flex items-center gap-2 border-b border-[hsl(var(--sidebar-accent))] p-4', sidebarCollapsed && 'justify-center px-2')}>
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm">
-          S
-        </div>
-        {!sidebarCollapsed && (
-          <span className="text-lg font-bold text-[hsl(var(--sidebar-foreground))]">
-            ShipIt-AI
-          </span>
-        )}
-      </div>
-
-      <nav className="flex-1 overflow-y-auto p-2">
+    <DSSidebar width={width} className="gap-3">
+      <BrandHeader collapsed={sidebarCollapsed} />
+      <nav className="flex flex-1 flex-col gap-3 overflow-y-auto">
         {navGroups.map((group, i) => (
-          <NavGroupSection key={i} group={group} collapsed={sidebarCollapsed} />
+          <GroupBlock key={i} group={group} collapsed={sidebarCollapsed} />
         ))}
       </nav>
+      <CollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+    </DSSidebar>
+  );
+}
 
-      <div className="border-t border-[hsl(var(--sidebar-accent))] p-2">
-        <button
-          onClick={toggleSidebar}
-          className="flex w-full items-center justify-center rounded-md p-2 text-[hsl(var(--sidebar-muted))] hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-foreground))]"
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {sidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-        </button>
+function BrandHeader({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="border-border flex items-center gap-2 border-b pb-3">
+      <span className="bg-accent text-on-accent grid h-8 w-8 shrink-0 place-items-center rounded-md text-[14px] font-semibold">
+        S
+      </span>
+      {!collapsed && (
+        <span className="text-text text-[14px] font-semibold tracking-tight">ShipIt-AI</span>
+      )}
+    </div>
+  );
+}
+
+function GroupBlock({ group, collapsed }: { group: NavGroup; collapsed: boolean }) {
+  if (collapsed || !group.label) {
+    return (
+      <div className="flex flex-col gap-[2px]">
+        {group.items.map((item) => (
+          <SidebarNavItem
+            key={item.href}
+            href={item.href}
+            label={item.label}
+            glyph={item.glyph}
+            collapsed={collapsed}
+          />
+        ))}
       </div>
-    </aside>
+    );
+  }
+  return (
+    <NavSection label={group.label}>
+      {group.items.map((item) => (
+        <SidebarNavItem
+          key={item.href}
+          href={item.href}
+          label={item.label}
+          glyph={item.glyph}
+          collapsed={collapsed}
+        />
+      ))}
+    </NavSection>
+  );
+}
+
+function CollapseButton({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="border-border border-t pt-2">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        className="text-text-muted hover:text-text hover:bg-panel-2 focus-visible:ring-accent-dim rounded-xs flex w-full items-center justify-center gap-2 px-2 py-[6px] text-[12px] outline-none focus-visible:ring-[3px]"
+      >
+        <span aria-hidden className="font-mono text-[11px]">
+          {collapsed ? '›' : '‹'}
+        </span>
+        {!collapsed && <span>Collapse</span>}
+      </button>
+    </div>
   );
 }

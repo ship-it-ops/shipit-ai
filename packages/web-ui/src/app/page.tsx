@@ -8,13 +8,11 @@ import { GettingStarted } from '@/components/dashboard/getting-started';
 
 export default function HomePage() {
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Overview</h1>
-        <p className="text-sm text-muted-foreground">
-          Your software ecosystem at a glance
-        </p>
-      </div>
+    <div className="space-y-6 p-6">
+      <header>
+        <h1 className="text-text text-[22px] font-semibold tracking-tight">Overview</h1>
+        <p className="text-text-muted text-[13px]">Your software ecosystem at a glance</p>
+      </header>
 
       <StatsCards />
 

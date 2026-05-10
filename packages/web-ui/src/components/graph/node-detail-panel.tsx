@@ -1,20 +1,24 @@
 'use client';
 
-import { X, ExternalLink, Search, Target } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { Button } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
+import {
+  GraphInspector,
+  type EntityType,
+  type InspectorProperty,
+  type InspectorRelation,
+} from '@ship-it-ui/shipit';
 import type { GraphData } from '@/lib/api';
 
-const labelColors: Record<string, string> = {
-  LogicalService: 'bg-blue-100 text-blue-800',
-  Repository: 'bg-green-100 text-green-800',
-  Deployment: 'bg-orange-100 text-orange-800',
-  RuntimeService: 'bg-purple-100 text-purple-800',
-  Team: 'bg-teal-100 text-teal-800',
-  Person: 'bg-gray-100 text-gray-800',
-  Pipeline: 'bg-yellow-100 text-yellow-800',
-  Monitor: 'bg-red-100 text-red-800',
+const APP_TYPE_TO_ENTITY: Record<string, EntityType> = {
+  LogicalService: 'service',
+  RuntimeService: 'service',
+  Repository: 'document',
+  Deployment: 'deployment',
+  Pipeline: 'service',
+  Monitor: 'incident',
+  Team: 'person',
+  Person: 'person',
 };
 
 interface NodeDetailPanelProps {
@@ -27,73 +31,86 @@ export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelP
   const node = graphData.nodes.find((n) => n.data.id === nodeId);
   if (!node) return null;
 
-  const { name, type, tier, owner, environment, ...rest } = node.data;
+  const { name, type, tier, owner, environment } = node.data as {
+    name: string;
+    type: string;
+    tier?: number;
+    owner?: string;
+    environment?: string;
+  };
 
+  const entityType = APP_TYPE_TO_ENTITY[type] ?? 'service';
   const connectedEdges = graphData.edges.filter(
-    (e) => e.data.source === nodeId || e.data.target === nodeId
+    (e) => e.data.source === nodeId || e.data.target === nodeId,
   );
 
+  const properties: InspectorProperty[] = [
+    { key: 'type', value: type },
+    ...(tier !== undefined ? [{ key: 'tier', value: `T${tier}` }] : []),
+    ...(environment ? [{ key: 'env', value: environment }] : []),
+    ...(owner ? [{ key: 'owner', value: owner }] : []),
+  ];
+
+  const relations: InspectorRelation[] = connectedEdges.slice(0, 12).map((edge) => {
+    const targetId = edge.data.source === nodeId ? edge.data.target : edge.data.source;
+    const direction = edge.data.source === nodeId ? '→' : '←';
+    const targetNode = graphData.nodes.find((n) => n.data.id === targetId);
+    return {
+      relation: `${direction} ${edge.data.type}`,
+      entity: targetNode?.data.name ?? targetId,
+    };
+  });
+
   return (
-    <div className="w-80 shrink-0 overflow-y-auto border-l bg-background">
-      <div className="flex items-center justify-between border-b p-4">
-        <h3 className="font-semibold truncate">{name}</h3>
-        <button onClick={onClose} className="rounded-sm p-1 hover:bg-accent">
-          <X className="h-4 w-4" />
+    <div className="border-border bg-panel flex w-[360px] shrink-0 flex-col gap-3 overflow-y-auto border-l p-4">
+      <div className="flex items-center justify-between">
+        <span className="text-text-dim font-mono text-[10px]">node · {nodeId.slice(0, 12)}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close detail panel"
+          className="text-text-dim hover:text-text rounded-sm p-1 leading-none"
+        >
+          ×
         </button>
       </div>
 
-      <div className="space-y-4 p-4">
-        <div className="flex flex-wrap gap-2">
-          <Badge className={labelColors[type] || 'bg-gray-100 text-gray-800'}>{type}</Badge>
-          {tier && <Badge variant="outline">Tier {tier}</Badge>}
-          {environment && <Badge variant="secondary">{environment}</Badge>}
-        </div>
+      <GraphInspector
+        type={entityType}
+        title={name}
+        entityId={nodeId}
+        description={owner ? `Owned by ${owner}` : undefined}
+        properties={properties}
+        relations={relations}
+        relationCount={connectedEdges.length}
+        className="w-auto"
+      />
 
-        {owner && (
-          <div>
-            <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">Owner</div>
-            <div className="text-sm">{owner}</div>
-          </div>
-        )}
-
-        <Separator />
-
-        <div>
-          <div className="text-xs font-semibold uppercase text-muted-foreground mb-2">
-            Connections ({connectedEdges.length})
-          </div>
-          <div className="space-y-1">
-            {connectedEdges.slice(0, 10).map((edge) => {
-              const targetId = edge.data.source === nodeId ? edge.data.target : edge.data.source;
-              const targetNode = graphData.nodes.find((n) => n.data.id === targetId);
-              const direction = edge.data.source === nodeId ? '->' : '<-';
-              return (
-                <div key={edge.data.id} className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">{direction}</span>
-                  <span className="font-mono text-muted-foreground">{edge.data.type}</span>
-                  <span className="truncate">{targetNode?.data.name ?? targetId}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-2">
-          <Button variant="outline" size="sm" className="w-full gap-2">
-            <ExternalLink className="h-3.5 w-3.5" />
-            View Details
-          </Button>
-          <Button variant="outline" size="sm" className="w-full gap-2">
-            <Search className="h-3.5 w-3.5" />
-            Inspect Claims
-          </Button>
-          <Button variant="outline" size="sm" className="w-full gap-2">
-            <Target className="h-3.5 w-3.5" />
-            Show Blast Radius
-          </Button>
-        </div>
+      <div className="flex flex-col gap-2 pt-2">
+        <Button
+          fullWidth
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="external" size={11} />}
+        >
+          View details
+        </Button>
+        <Button
+          fullWidth
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="search" size={11} />}
+        >
+          Inspect claims
+        </Button>
+        <Button
+          fullWidth
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="target" size={11} />}
+        >
+          Show blast radius
+        </Button>
       </div>
     </div>
   );
