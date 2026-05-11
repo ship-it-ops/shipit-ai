@@ -12,10 +12,7 @@ export function buildIdempotencyKey(envelope: EventEnvelope): string {
  * Build an idempotency key for a specific node within a connector event.
  * Format: {connector_id}:{node_id}:{event_version}
  */
-export function buildNodeIdempotencyKey(
-  connectorId: string,
-  node: CanonicalNode,
-): string {
+export function buildNodeIdempotencyKey(connectorId: string, node: CanonicalNode): string {
   return `${connectorId}:${node.id}:${node._event_version}`;
 }
 

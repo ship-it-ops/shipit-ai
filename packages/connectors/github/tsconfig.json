@@ -5,8 +5,5 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*"],
-  "references": [
-    { "path": "../../shared" },
-    { "path": "../../connector-sdk" }
-  ]
+  "references": [{ "path": "../../shared" }, { "path": "../../connector-sdk" }]
 }

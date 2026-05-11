@@ -15,9 +15,7 @@ describe('AskShell', () => {
     expect(screen.getByText('All services')).toBeInTheDocument();
     expect(screen.getByText('This team')).toBeInTheDocument();
     expect(screen.getByText('Last 24h')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /who owns checkout-svc/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /who owns checkout-svc/i })).toBeInTheDocument();
   });
 
   it('renders the mock assistant message body with all AI surfaces', () => {

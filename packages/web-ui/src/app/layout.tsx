@@ -14,19 +14,11 @@ export const metadata: Metadata = {
   description: 'AI-Ready Knowledge Graph Builder for Software Ecosystems',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = cookies().get(THEME_COOKIE_NAME)?.value === 'light' ? 'light' : 'dark';
 
   return (
-    <html
-      lang="en"
-      data-theme={theme === 'light' ? 'light' : undefined}
-      suppressHydrationWarning
-    >
+    <html lang="en" data-theme={theme === 'light' ? 'light' : undefined} suppressHydrationWarning>
       <body className="bg-bg text-text">
         <Providers>
           <div className="flex h-screen overflow-hidden">

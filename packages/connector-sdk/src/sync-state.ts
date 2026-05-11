@@ -46,9 +46,7 @@ export class SyncStateMachine {
   transition(to: SyncState): void {
     const key = `${this._state}->${to}`;
     if (!VALID_TRANSITIONS.has(key)) {
-      throw new Error(
-        `Invalid sync state transition: ${this._state} -> ${to}`,
-      );
+      throw new Error(`Invalid sync state transition: ${this._state} -> ${to}`);
     }
     this._lastTransition = new Date().toISOString();
     this._state = to;

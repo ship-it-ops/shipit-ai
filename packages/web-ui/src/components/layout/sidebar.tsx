@@ -133,13 +133,7 @@ function GroupBlock({ group, collapsed }: { group: NavGroup; collapsed: boolean 
   );
 }
 
-function CollapseButton({
-  collapsed,
-  onToggle,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
+function CollapseButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   return (
     <div className="border-border border-t pt-2">
       <button
@@ -147,7 +141,7 @@ function CollapseButton({
         onClick={onToggle}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="text-text-muted hover:text-text hover:bg-panel-2 focus-visible:ring-accent-dim rounded-xs flex w-full items-center justify-center gap-2 px-2 py-[6px] text-[12px] outline-none focus-visible:ring-[3px]"
+        className="text-text-muted hover:text-text hover:bg-panel-2 focus-visible:ring-accent-dim flex w-full items-center justify-center gap-2 rounded-xs px-2 py-[6px] text-[12px] outline-none focus-visible:ring-[3px]"
       >
         <span aria-hidden className="font-mono text-[11px]">
           {collapsed ? '›' : '‹'}

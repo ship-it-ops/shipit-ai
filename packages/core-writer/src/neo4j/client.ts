@@ -5,10 +5,7 @@ export class Neo4jClient {
   private driver: Driver | null = null;
 
   async connect(config: CoreWriterConfig['neo4j']): Promise<void> {
-    this.driver = neo4j.driver(
-      config.uri,
-      neo4j.auth.basic(config.username, config.password),
-    );
+    this.driver = neo4j.driver(config.uri, neo4j.auth.basic(config.username, config.password));
     // Verify connectivity
     await this.driver.verifyConnectivity();
   }
@@ -20,10 +17,7 @@ export class Neo4jClient {
     return this.driver.session({ database: database ?? 'neo4j' });
   }
 
-  async executeWrite<T>(
-    fn: (tx: ManagedTransaction) => Promise<T>,
-    database?: string,
-  ): Promise<T> {
+  async executeWrite<T>(fn: (tx: ManagedTransaction) => Promise<T>, database?: string): Promise<T> {
     const session = this.getSession(database);
     try {
       return await session.executeWrite(fn);
@@ -32,10 +26,7 @@ export class Neo4jClient {
     }
   }
 
-  async executeRead<T>(
-    fn: (tx: ManagedTransaction) => Promise<T>,
-    database?: string,
-  ): Promise<T> {
+  async executeRead<T>(fn: (tx: ManagedTransaction) => Promise<T>, database?: string): Promise<T> {
     const session = this.getSession(database);
     try {
       return await session.executeRead(fn);

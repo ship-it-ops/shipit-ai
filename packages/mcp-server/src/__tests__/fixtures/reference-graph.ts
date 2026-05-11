@@ -22,27 +22,52 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     {
       id: 'shipit://logical-service/default/payments-api',
       label: 'LogicalService',
-      properties: { name: 'payments-api', tier_effective: 1, owner_effective: 'payments-team', lifecycle_effective: 'production' },
+      properties: {
+        name: 'payments-api',
+        tier_effective: 1,
+        owner_effective: 'payments-team',
+        lifecycle_effective: 'production',
+      },
     },
     {
       id: 'shipit://logical-service/default/config-service',
       label: 'LogicalService',
-      properties: { name: 'config-service', tier_effective: 2, owner_effective: 'platform-team', lifecycle_effective: 'production' },
+      properties: {
+        name: 'config-service',
+        tier_effective: 2,
+        owner_effective: 'platform-team',
+        lifecycle_effective: 'production',
+      },
     },
     {
       id: 'shipit://logical-service/default/ledger-service',
       label: 'LogicalService',
-      properties: { name: 'ledger-service', tier_effective: 1, owner_effective: 'payments-team', lifecycle_effective: 'production' },
+      properties: {
+        name: 'ledger-service',
+        tier_effective: 1,
+        owner_effective: 'payments-team',
+        lifecycle_effective: 'production',
+      },
     },
     {
       id: 'shipit://logical-service/default/card-issuance',
       label: 'LogicalService',
-      properties: { name: 'card-issuance', tier_effective: 2, owner_effective: 'cards-team', lifecycle_effective: 'production' },
+      properties: {
+        name: 'card-issuance',
+        tier_effective: 2,
+        owner_effective: 'cards-team',
+        lifecycle_effective: 'production',
+      },
     },
     {
       id: 'shipit://logical-service/default/auth-service',
       label: 'LogicalService',
-      properties: { name: 'auth-service', tier_effective: 2, owner_effective: 'platform-team', lifecycle_effective: 'production' },
+      properties: {
+        name: 'auth-service',
+        tier_effective: 2,
+        owner_effective: 'platform-team',
+        lifecycle_effective: 'production',
+      },
     },
 
     // Repositories (5)
@@ -242,74 +267,270 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
   edges: [
     // IMPLEMENTED_BY: LogicalService -> Repository
-    { type: 'IMPLEMENTED_BY', from: 'shipit://logical-service/default/payments-api', to: 'shipit://repository/default/payments-api' },
-    { type: 'IMPLEMENTED_BY', from: 'shipit://logical-service/default/config-service', to: 'shipit://repository/default/config-service' },
-    { type: 'IMPLEMENTED_BY', from: 'shipit://logical-service/default/ledger-service', to: 'shipit://repository/default/ledger-service' },
-    { type: 'IMPLEMENTED_BY', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://repository/default/card-issuance' },
-    { type: 'IMPLEMENTED_BY', from: 'shipit://logical-service/default/auth-service', to: 'shipit://repository/default/auth-service' },
+    {
+      type: 'IMPLEMENTED_BY',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://repository/default/payments-api',
+    },
+    {
+      type: 'IMPLEMENTED_BY',
+      from: 'shipit://logical-service/default/config-service',
+      to: 'shipit://repository/default/config-service',
+    },
+    {
+      type: 'IMPLEMENTED_BY',
+      from: 'shipit://logical-service/default/ledger-service',
+      to: 'shipit://repository/default/ledger-service',
+    },
+    {
+      type: 'IMPLEMENTED_BY',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://repository/default/card-issuance',
+    },
+    {
+      type: 'IMPLEMENTED_BY',
+      from: 'shipit://logical-service/default/auth-service',
+      to: 'shipit://repository/default/auth-service',
+    },
 
     // DEPLOYED_AS: LogicalService -> Deployment
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/payments-api', to: 'shipit://deployment/default/payments-api-prod' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/payments-api', to: 'shipit://deployment/default/payments-api-staging' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/config-service', to: 'shipit://deployment/default/config-service-prod' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/config-service', to: 'shipit://deployment/default/config-service-staging' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/ledger-service', to: 'shipit://deployment/default/ledger-service-prod' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/ledger-service', to: 'shipit://deployment/default/ledger-service-staging' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://deployment/default/card-issuance-prod' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://deployment/default/card-issuance-staging' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/auth-service', to: 'shipit://deployment/default/auth-service-prod' },
-    { type: 'DEPLOYED_AS', from: 'shipit://logical-service/default/auth-service', to: 'shipit://deployment/default/auth-service-staging' },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://deployment/default/payments-api-prod',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://deployment/default/payments-api-staging',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/config-service',
+      to: 'shipit://deployment/default/config-service-prod',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/config-service',
+      to: 'shipit://deployment/default/config-service-staging',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/ledger-service',
+      to: 'shipit://deployment/default/ledger-service-prod',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/ledger-service',
+      to: 'shipit://deployment/default/ledger-service-staging',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://deployment/default/card-issuance-prod',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://deployment/default/card-issuance-staging',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/auth-service',
+      to: 'shipit://deployment/default/auth-service-prod',
+    },
+    {
+      type: 'DEPLOYED_AS',
+      from: 'shipit://logical-service/default/auth-service',
+      to: 'shipit://deployment/default/auth-service-staging',
+    },
 
     // EMITS_TELEMETRY_AS: LogicalService -> RuntimeService
-    { type: 'EMITS_TELEMETRY_AS', from: 'shipit://logical-service/default/payments-api', to: 'shipit://runtime-service/default/payments-api-runtime' },
-    { type: 'EMITS_TELEMETRY_AS', from: 'shipit://logical-service/default/config-service', to: 'shipit://runtime-service/default/config-service-runtime' },
-    { type: 'EMITS_TELEMETRY_AS', from: 'shipit://logical-service/default/ledger-service', to: 'shipit://runtime-service/default/ledger-service-runtime' },
-    { type: 'EMITS_TELEMETRY_AS', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://runtime-service/default/card-issuance-runtime' },
-    { type: 'EMITS_TELEMETRY_AS', from: 'shipit://logical-service/default/auth-service', to: 'shipit://runtime-service/default/auth-service-runtime' },
+    {
+      type: 'EMITS_TELEMETRY_AS',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://runtime-service/default/payments-api-runtime',
+    },
+    {
+      type: 'EMITS_TELEMETRY_AS',
+      from: 'shipit://logical-service/default/config-service',
+      to: 'shipit://runtime-service/default/config-service-runtime',
+    },
+    {
+      type: 'EMITS_TELEMETRY_AS',
+      from: 'shipit://logical-service/default/ledger-service',
+      to: 'shipit://runtime-service/default/ledger-service-runtime',
+    },
+    {
+      type: 'EMITS_TELEMETRY_AS',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://runtime-service/default/card-issuance-runtime',
+    },
+    {
+      type: 'EMITS_TELEMETRY_AS',
+      from: 'shipit://logical-service/default/auth-service',
+      to: 'shipit://runtime-service/default/auth-service-runtime',
+    },
 
     // DEPENDS_ON: LogicalService -> LogicalService
-    { type: 'DEPENDS_ON', from: 'shipit://logical-service/default/payments-api', to: 'shipit://logical-service/default/config-service' },
-    { type: 'DEPENDS_ON', from: 'shipit://logical-service/default/payments-api', to: 'shipit://logical-service/default/auth-service' },
-    { type: 'DEPENDS_ON', from: 'shipit://logical-service/default/ledger-service', to: 'shipit://logical-service/default/config-service' },
-    { type: 'DEPENDS_ON', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://logical-service/default/payments-api' },
-    { type: 'DEPENDS_ON', from: 'shipit://logical-service/default/card-issuance', to: 'shipit://logical-service/default/auth-service' },
+    {
+      type: 'DEPENDS_ON',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://logical-service/default/config-service',
+    },
+    {
+      type: 'DEPENDS_ON',
+      from: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://logical-service/default/auth-service',
+    },
+    {
+      type: 'DEPENDS_ON',
+      from: 'shipit://logical-service/default/ledger-service',
+      to: 'shipit://logical-service/default/config-service',
+    },
+    {
+      type: 'DEPENDS_ON',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://logical-service/default/payments-api',
+    },
+    {
+      type: 'DEPENDS_ON',
+      from: 'shipit://logical-service/default/card-issuance',
+      to: 'shipit://logical-service/default/auth-service',
+    },
 
     // CALLS: RuntimeService -> RuntimeService
-    { type: 'CALLS', from: 'shipit://runtime-service/default/payments-api-runtime', to: 'shipit://runtime-service/default/config-service-runtime' },
-    { type: 'CALLS', from: 'shipit://runtime-service/default/card-issuance-runtime', to: 'shipit://runtime-service/default/payments-api-runtime' },
+    {
+      type: 'CALLS',
+      from: 'shipit://runtime-service/default/payments-api-runtime',
+      to: 'shipit://runtime-service/default/config-service-runtime',
+    },
+    {
+      type: 'CALLS',
+      from: 'shipit://runtime-service/default/card-issuance-runtime',
+      to: 'shipit://runtime-service/default/payments-api-runtime',
+    },
 
     // OWNS: Team -> LogicalService
-    { type: 'OWNS', from: 'shipit://team/default/payments-team', to: 'shipit://logical-service/default/payments-api' },
-    { type: 'OWNS', from: 'shipit://team/default/payments-team', to: 'shipit://logical-service/default/ledger-service' },
-    { type: 'OWNS', from: 'shipit://team/default/platform-team', to: 'shipit://logical-service/default/config-service' },
-    { type: 'OWNS', from: 'shipit://team/default/platform-team', to: 'shipit://logical-service/default/auth-service' },
-    { type: 'OWNS', from: 'shipit://team/default/cards-team', to: 'shipit://logical-service/default/card-issuance' },
+    {
+      type: 'OWNS',
+      from: 'shipit://team/default/payments-team',
+      to: 'shipit://logical-service/default/payments-api',
+    },
+    {
+      type: 'OWNS',
+      from: 'shipit://team/default/payments-team',
+      to: 'shipit://logical-service/default/ledger-service',
+    },
+    {
+      type: 'OWNS',
+      from: 'shipit://team/default/platform-team',
+      to: 'shipit://logical-service/default/config-service',
+    },
+    {
+      type: 'OWNS',
+      from: 'shipit://team/default/platform-team',
+      to: 'shipit://logical-service/default/auth-service',
+    },
+    {
+      type: 'OWNS',
+      from: 'shipit://team/default/cards-team',
+      to: 'shipit://logical-service/default/card-issuance',
+    },
 
     // MEMBER_OF: Person -> Team
-    { type: 'MEMBER_OF', from: 'shipit://person/default/alice', to: 'shipit://team/default/payments-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/bob', to: 'shipit://team/default/payments-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/charlie', to: 'shipit://team/default/platform-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/diana', to: 'shipit://team/default/platform-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/eve', to: 'shipit://team/default/platform-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/frank', to: 'shipit://team/default/cards-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/grace', to: 'shipit://team/default/cards-team' },
-    { type: 'MEMBER_OF', from: 'shipit://person/default/hank', to: 'shipit://team/default/payments-team' },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/alice',
+      to: 'shipit://team/default/payments-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/bob',
+      to: 'shipit://team/default/payments-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/charlie',
+      to: 'shipit://team/default/platform-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/diana',
+      to: 'shipit://team/default/platform-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/eve',
+      to: 'shipit://team/default/platform-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/frank',
+      to: 'shipit://team/default/cards-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/grace',
+      to: 'shipit://team/default/cards-team',
+    },
+    {
+      type: 'MEMBER_OF',
+      from: 'shipit://person/default/hank',
+      to: 'shipit://team/default/payments-team',
+    },
 
     // BUILT_BY: Repository -> Pipeline
-    { type: 'BUILT_BY', from: 'shipit://repository/default/payments-api', to: 'shipit://pipeline/default/payments-ci' },
-    { type: 'BUILT_BY', from: 'shipit://repository/default/config-service', to: 'shipit://pipeline/default/config-ci' },
-    { type: 'BUILT_BY', from: 'shipit://repository/default/card-issuance', to: 'shipit://pipeline/default/cards-ci' },
+    {
+      type: 'BUILT_BY',
+      from: 'shipit://repository/default/payments-api',
+      to: 'shipit://pipeline/default/payments-ci',
+    },
+    {
+      type: 'BUILT_BY',
+      from: 'shipit://repository/default/config-service',
+      to: 'shipit://pipeline/default/config-ci',
+    },
+    {
+      type: 'BUILT_BY',
+      from: 'shipit://repository/default/card-issuance',
+      to: 'shipit://pipeline/default/cards-ci',
+    },
 
     // MONITORS: Monitor -> LogicalService
-    { type: 'MONITORS', from: 'shipit://monitor/default/payments-latency', to: 'shipit://logical-service/default/payments-api' },
-    { type: 'MONITORS', from: 'shipit://monitor/default/payments-error-rate', to: 'shipit://logical-service/default/payments-api' },
+    {
+      type: 'MONITORS',
+      from: 'shipit://monitor/default/payments-latency',
+      to: 'shipit://logical-service/default/payments-api',
+    },
+    {
+      type: 'MONITORS',
+      from: 'shipit://monitor/default/payments-error-rate',
+      to: 'shipit://logical-service/default/payments-api',
+    },
 
     // CODEOWNER_OF: Person -> Repository
-    { type: 'CODEOWNER_OF', from: 'shipit://person/default/alice', to: 'shipit://repository/default/payments-api' },
-    { type: 'CODEOWNER_OF', from: 'shipit://person/default/charlie', to: 'shipit://repository/default/config-service' },
+    {
+      type: 'CODEOWNER_OF',
+      from: 'shipit://person/default/alice',
+      to: 'shipit://repository/default/payments-api',
+    },
+    {
+      type: 'CODEOWNER_OF',
+      from: 'shipit://person/default/charlie',
+      to: 'shipit://repository/default/config-service',
+    },
 
     // ON_CALL_FOR: Person -> LogicalService
-    { type: 'ON_CALL_FOR', from: 'shipit://person/default/alice', to: 'shipit://logical-service/default/payments-api' },
-    { type: 'ON_CALL_FOR', from: 'shipit://person/default/charlie', to: 'shipit://logical-service/default/config-service' },
+    {
+      type: 'ON_CALL_FOR',
+      from: 'shipit://person/default/alice',
+      to: 'shipit://logical-service/default/payments-api',
+    },
+    {
+      type: 'ON_CALL_FOR',
+      from: 'shipit://person/default/charlie',
+      to: 'shipit://logical-service/default/config-service',
+    },
   ],
 };

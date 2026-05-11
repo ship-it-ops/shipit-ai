@@ -73,8 +73,7 @@ function AssistantMessageBody({ message }: { message: MockAssistantMessage }) {
   return (
     <CopilotMessage role="assistant">
       <p className="m-0">
-        {message.preface}{' '}
-        <Citation inline index={1} source={message.citations[0]?.source} />
+        {message.preface} <Citation inline index={1} source={message.citations[0]?.source} />
       </p>
 
       <div className="mt-3">
@@ -96,8 +95,7 @@ function AssistantMessageBody({ message }: { message: MockAssistantMessage }) {
       </div>
 
       <p className="mt-3 mb-0">
-        {message.closing}{' '}
-        <Citation inline index={2} source={message.citations[1]?.source} />
+        {message.closing} <Citation inline index={2} source={message.citations[1]?.source} />
       </p>
 
       <ul className="mt-3 mb-0 flex list-none flex-col gap-1 p-0">

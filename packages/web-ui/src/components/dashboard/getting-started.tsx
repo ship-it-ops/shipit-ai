@@ -53,7 +53,7 @@ export function GettingStarted() {
             <button
               type="button"
               onClick={() => router.push(item.href)}
-              className="hover:bg-panel-2 focus-visible:ring-accent-dim rounded-xs flex w-full items-start gap-3 p-2 text-left outline-none focus-visible:ring-[3px]"
+              className="hover:bg-panel-2 focus-visible:ring-accent-dim flex w-full items-start gap-3 rounded-xs p-2 text-left outline-none focus-visible:ring-[3px]"
             >
               <span
                 aria-hidden

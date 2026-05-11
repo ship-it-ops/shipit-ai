@@ -36,41 +36,61 @@ describe('Envelope', () => {
     });
 
     it('should include warnings when provided', () => {
-      const result = wrapResponse('test_tool', {}, {
-        warnings: ['Some warning'],
-      }) as McpResponse<object>;
+      const result = wrapResponse(
+        'test_tool',
+        {},
+        {
+          warnings: ['Some warning'],
+        },
+      ) as McpResponse<object>;
 
       expect(result._meta.warnings).toEqual(['Some warning']);
     });
 
     it('should not include empty warnings', () => {
-      const result = wrapResponse('test_tool', {}, {
-        warnings: [],
-      }) as McpResponse<object>;
+      const result = wrapResponse(
+        'test_tool',
+        {},
+        {
+          warnings: [],
+        },
+      ) as McpResponse<object>;
 
       expect(result._meta.warnings).toBeUndefined();
     });
 
     it('should include suggested_follow_up when provided', () => {
-      const result = wrapResponse('test_tool', {}, {
-        suggestedFollowUp: ['Try entity_detail for more info'],
-      }) as McpResponse<object>;
+      const result = wrapResponse(
+        'test_tool',
+        {},
+        {
+          suggestedFollowUp: ['Try entity_detail for more info'],
+        },
+      ) as McpResponse<object>;
 
       expect(result._meta.suggested_follow_up).toEqual(['Try entity_detail for more info']);
     });
 
     it('should include next_cursor when provided', () => {
-      const result = wrapResponse('test_tool', {}, {
-        nextCursor: 'abc123',
-      }) as McpResponse<object>;
+      const result = wrapResponse(
+        'test_tool',
+        {},
+        {
+          nextCursor: 'abc123',
+        },
+      ) as McpResponse<object>;
 
       expect(result._meta.next_cursor).toBe('abc123');
     });
 
     it('should set truncated flag', () => {
-      const result = wrapResponse('test_tool', {}, {
-        truncated: true,
-      }) as McpResponse<object>;
+      const result = wrapResponse(
+        'test_tool',
+        {},
+        {
+          truncated: true,
+        },
+      ) as McpResponse<object>;
 
       expect(result._meta.truncated).toBe(true);
     });

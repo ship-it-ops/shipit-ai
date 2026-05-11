@@ -18,11 +18,10 @@ async function reset() {
 
     const session = driver.session();
     try {
-      const result = await session.run(
-        'MATCH (n) DETACH DELETE n RETURN count(n) AS deleted',
-      );
+      const result = await session.run('MATCH (n) DETACH DELETE n RETURN count(n) AS deleted');
       const deleted = result.records[0]?.get('deleted');
-      const count = typeof deleted === 'object' && deleted?.toNumber ? deleted.toNumber() : Number(deleted);
+      const count =
+        typeof deleted === 'object' && deleted?.toNumber ? deleted.toNumber() : Number(deleted);
       console.log(`Deleted ${count} nodes (and all relationships)`);
     } finally {
       await session.close();

@@ -2,11 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  CommandPalette,
-  type CommandPaletteGroup,
-  type CommandPaletteItem,
-} from '@ship-it-ui/ui';
+import { CommandPalette, type CommandPaletteGroup, type CommandPaletteItem } from '@ship-it-ui/ui';
 import { ENTITY_GLYPH, ENTITY_LABEL, type EntityType } from '@ship-it-ui/shipit';
 import { useUIStore } from '@/stores/ui-store';
 import { useSearch } from '@/lib/hooks/use-search';

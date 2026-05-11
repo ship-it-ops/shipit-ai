@@ -33,6 +33,7 @@ The v0.2 design document included a vector database (Weaviate or Qdrant), an Emb
 ### When vector search becomes valuable
 
 Vector search becomes genuinely useful when:
+
 - **Backstage connector** (Phase 2) brings in catalog descriptions, API specs, and documentation links -- rich, natural-language text per entity.
 - **Datadog connector** (Phase 2) brings in service descriptions, dashboard names, and monitor descriptions.
 - **PagerDuty connector** (Phase 2) brings in service descriptions and escalation policy names.
@@ -49,12 +50,14 @@ We will defer the following components to Phase 2:
 3. **`semantic_search` MCP tool** -- not implemented in Phase 1.
 
 Phase 1 search capabilities are limited to **structural queries only**:
+
 - Lookup by `canonical_id` (exact match).
 - Lookup by `linking_key` (exact match).
 - Lookup by `name` (substring or exact match).
 - Filtered listing by entity type and tags via `list_entities`.
 
 When Weaviate ships in Phase 2, it will be integrated as follows:
+
 - Weaviate runs as an additional Docker Compose service.
 - The Embedding Generator is a worker process that subscribes to entity events and generates embeddings on entity create/update.
 - Embeddings are stored in Weaviate with a reference to the Neo4j canonical ID.

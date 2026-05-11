@@ -74,8 +74,7 @@ export const MOCK_MESSAGES: ReadonlyArray<MockMessage> = [
         args: 'service: checkout-svc\nenv: production\nsince: 2026-05-02',
       },
     ],
-    closing:
-      'Both changes were rolled out in the 2026-05-08 release; success rate held at 99.97%.',
+    closing: 'Both changes were rolled out in the 2026-05-08 release; success rate held at 99.97%.',
     citations: [
       { index: 1, source: 'github · ship-it/checkout-svc@a7f3c1', meta: 'merged 2d ago' },
       { index: 2, source: 'argo · checkout-svc-prod-7421', meta: 'deployed 1d ago' },

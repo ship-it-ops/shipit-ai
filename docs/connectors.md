@@ -26,10 +26,10 @@ interface ShipItConnector {
 
 ```typescript
 interface ConnectorManifest {
-  name: string;                     // e.g., "github"
-  version: string;                  // e.g., "1.0.0"
-  schema_version: string;           // Compatible schema version
-  min_sdk_version: string;          // Minimum SDK version
+  name: string; // e.g., "github"
+  version: string; // e.g., "1.0.0"
+  schema_version: string; // Compatible schema version
+  min_sdk_version: string; // Minimum SDK version
   supported_entity_types: string[]; // e.g., ["Repository", "Team", "Person"]
 }
 ```
@@ -49,6 +49,7 @@ authenticate() → discover() → fetch(type, cursor?) → normalize(raw) → sy
 ### ConnectorHarness
 
 The `ConnectorHarness` wraps a connector and handles:
+
 - Publishing normalized entities to the event bus in batches (default: 100)
 - Sync state management via `SyncStateMachine`
 - Error handling and state transitions
@@ -76,12 +77,12 @@ The `@shipit-ai/connector-github` package pulls repositories, teams, people, pip
 
 ### Supported Entity Types
 
-| Entity | Node Types Created | Relationships Created |
-|--------|-------------------|----------------------|
-| Repository | `Repository` | — |
-| Team | `Team`, `Person` | `MEMBER_OF` |
-| Pipeline | `Pipeline` | `BUILT_BY` |
-| Codeowners | — | `CODEOWNER_OF` |
+| Entity     | Node Types Created | Relationships Created |
+| ---------- | ------------------ | --------------------- |
+| Repository | `Repository`       | —                     |
+| Team       | `Team`, `Person`   | `MEMBER_OF`           |
+| Pipeline   | `Pipeline`         | `BUILT_BY`            |
+| Codeowners | —                  | `CODEOWNER_OF`        |
 
 ### Authentication
 
@@ -95,6 +96,7 @@ GITHUB_ORG=your-org
 ```
 
 Required App permissions:
+
 - Repository: Read
 - Organization members: Read
 - Actions: Read
@@ -120,6 +122,7 @@ The GitHub connector normalizes data with the following confidence levels:
 ### CODEOWNERS Discovery
 
 The connector searches for CODEOWNERS files in three locations:
+
 1. `CODEOWNERS`
 2. `.github/CODEOWNERS`
 3. `docs/CODEOWNERS`
@@ -157,6 +160,7 @@ curl -X POST http://localhost:3001/api/connectors/github-main/sync \
 ## Kubernetes Connector (Planned)
 
 The Kubernetes connector will support:
+
 - Watch API for real-time updates
 - Hourly reconciliation for drift detection
 - Entity types: Deployment, Namespace, Cluster
@@ -231,7 +235,7 @@ export class MySourceConnector implements ShipItConnector {
 
   normalize(raw: unknown[]): CanonicalEntity {
     // Transform raw data into canonical nodes and edges
-    const nodes: CanonicalNode[] = raw.map(item => ({
+    const nodes: CanonicalNode[] = raw.map((item) => ({
       id: buildCanonicalId('logicalservice', 'default', item.name),
       label: 'LogicalService',
       properties: { name: item.name, owner: item.owner },
@@ -268,14 +272,14 @@ export class MySourceConnector implements ShipItConnector {
 
 Register a linking key prefix for your source. Supported prefixes:
 
-| Connector | Prefix |
-|-----------|--------|
-| GitHub | `github://` |
-| Kubernetes | `k8s://` |
-| Datadog | `dd://` |
-| Backstage | `backstage://` |
-| Jira | `jira://` |
-| Identity | `idp://` |
+| Connector  | Prefix         |
+| ---------- | -------------- |
+| GitHub     | `github://`    |
+| Kubernetes | `k8s://`       |
+| Datadog    | `dd://`        |
+| Backstage  | `backstage://` |
+| Jira       | `jira://`      |
+| Identity   | `idp://`       |
 
 ### 4. Test with dry-run
 

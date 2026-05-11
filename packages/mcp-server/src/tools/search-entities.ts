@@ -11,8 +11,17 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
     'Search and filter entities in the knowledge graph by label and property values.',
     {
       label: z.string().optional().describe('Filter by node label (e.g., "LogicalService")'),
-      property_filters: z.record(z.unknown()).optional().describe('Filter by property values (e.g., {"tier_effective": 1})'),
-      limit: z.number().int().min(1).max(100).default(25).describe('Max results (1-100, default 25)'),
+      property_filters: z
+        .record(z.unknown())
+        .optional()
+        .describe('Filter by property values (e.g., {"tier_effective": 1})'),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(100)
+        .default(25)
+        .describe('Max results (1-100, default 25)'),
       sort_by: z.string().default('name').describe('Property to sort by'),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
@@ -84,6 +93,7 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
 
 function toNumber(val: unknown): number {
   if (typeof val === 'number') return val;
-  if (val && typeof val === 'object' && 'toNumber' in val) return (val as { toNumber: () => number }).toNumber();
+  if (val && typeof val === 'object' && 'toNumber' in val)
+    return (val as { toNumber: () => number }).toNumber();
   return Number(val) || 0;
 }

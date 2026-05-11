@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { CanonicalEntity, EventBusClient } from '@shipit-ai/shared';
-import type {
-  ShipItConnector,
-  ConnectorConfig,
-  ConnectorManifest,
-} from '../interface.js';
+import type { ShipItConnector, ConnectorConfig, ConnectorManifest } from '../interface.js';
 import { ConnectorHarness } from '../harness.js';
 import { SyncState } from '../sync-state.js';
 import { dryRun } from '../dry-run.js';
@@ -49,9 +45,7 @@ function createMockEntity(name: string): CanonicalEntity {
   };
 }
 
-function createMockConnector(
-  overrides: Partial<ShipItConnector> = {},
-): ShipItConnector {
+function createMockConnector(overrides: Partial<ShipItConnector> = {}): ShipItConnector {
   const manifest: ConnectorManifest = {
     name: 'mock',
     version: '1.0.0',

@@ -19,12 +19,15 @@
     "seed": "tsx scripts/seed-demo.ts",
     "seed:reset": "tsx scripts/seed-reset.ts",
     "stop": "docker compose -f docker/docker-compose.yml down",
-    "stop:clean": "docker compose -f docker/docker-compose.yml down -v"
+    "stop:clean": "docker compose -f docker/docker-compose.yml down -v",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "neo4j-driver": "^5.28.3",
     "prettier": "^3.5.0",
+    "prettier-plugin-tailwindcss": "^0.8.0",
     "tsx": "^4.21.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0",

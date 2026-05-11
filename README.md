@@ -108,36 +108,36 @@ ShipIt-AI/
 
 ShipIt-AI exposes the knowledge graph to AI agents via the [Model Context Protocol](https://modelcontextprotocol.io/).
 
-| Tool | Description |
-|------|-------------|
-| `blast_radius` | Analyze downstream/upstream impact of a node |
-| `entity_detail` | Get properties, claims, and neighbors for an entity |
-| `find_owners` | Find owners, code owners, and on-call for an entity |
-| `dependency_chain` | Find shortest dependency path between two entities |
-| `search_entities` | Search and filter entities by label and properties |
-| `graph_stats` | Aggregate statistics — node/edge counts, freshness |
-| `schema_info` | Return the current graph schema definition |
-| `graph_query` | Execute read-only Cypher with guardrails |
+| Tool               | Description                                         |
+| ------------------ | --------------------------------------------------- |
+| `blast_radius`     | Analyze downstream/upstream impact of a node        |
+| `entity_detail`    | Get properties, claims, and neighbors for an entity |
+| `find_owners`      | Find owners, code owners, and on-call for an entity |
+| `dependency_chain` | Find shortest dependency path between two entities  |
+| `search_entities`  | Search and filter entities by label and properties  |
+| `graph_stats`      | Aggregate statistics — node/edge counts, freshness  |
+| `schema_info`      | Return the current graph schema definition          |
+| `graph_query`      | Execute read-only Cypher with guardrails            |
 
 See [docs/mcp-tools.md](docs/mcp-tools.md) for full parameter reference and usage examples.
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/connectors` | List connectors |
-| `POST` | `/api/connectors` | Register a connector |
-| `GET` | `/api/connectors/:id` | Get connector details |
-| `POST` | `/api/connectors/:id/sync` | Trigger sync |
-| `GET` | `/api/connectors/:id/status` | Get sync status |
-| `DELETE` | `/api/connectors/:id` | Remove a connector |
-| `GET` | `/api/schema` | Get current schema |
-| `PUT` | `/api/schema` | Update schema (YAML) |
-| `POST` | `/api/schema/validate` | Validate schema |
-| `GET` | `/api/graph/stats` | Graph statistics |
-| `GET` | `/api/graph/neighborhood/:id` | Get neighborhood subgraph |
-| `GET` | `/api/graph/search` | Search entities |
+| Method   | Path                          | Description               |
+| -------- | ----------------------------- | ------------------------- |
+| `GET`    | `/api/health`                 | Health check              |
+| `GET`    | `/api/connectors`             | List connectors           |
+| `POST`   | `/api/connectors`             | Register a connector      |
+| `GET`    | `/api/connectors/:id`         | Get connector details     |
+| `POST`   | `/api/connectors/:id/sync`    | Trigger sync              |
+| `GET`    | `/api/connectors/:id/status`  | Get sync status           |
+| `DELETE` | `/api/connectors/:id`         | Remove a connector        |
+| `GET`    | `/api/schema`                 | Get current schema        |
+| `PUT`    | `/api/schema`                 | Update schema (YAML)      |
+| `POST`   | `/api/schema/validate`        | Validate schema           |
+| `GET`    | `/api/graph/stats`            | Graph statistics          |
+| `GET`    | `/api/graph/neighborhood/:id` | Get neighborhood subgraph |
+| `GET`    | `/api/graph/search`           | Search entities           |
 
 See [docs/api-reference.md](docs/api-reference.md) for request/response examples.
 
@@ -166,24 +166,24 @@ See [docs/schema-guide.md](docs/schema-guide.md) for the full schema reference.
 
 ## Connectors
 
-| Connector | Status | Entities |
-|-----------|--------|----------|
-| GitHub | Available | Repository, Team, Person, Pipeline, CODEOWNERS |
-| Kubernetes | Planned (Phase 1b) | Deployment, Namespace, Cluster |
+| Connector  | Status             | Entities                                       |
+| ---------- | ------------------ | ---------------------------------------------- |
+| GitHub     | Available          | Repository, Team, Person, Pipeline, CODEOWNERS |
+| Kubernetes | Planned (Phase 1b) | Deployment, Namespace, Cluster                 |
 
 See [docs/connectors.md](docs/connectors.md) for setup guides and the custom connector SDK.
 
 ## Development
 
-| Command | Description |
-|---------|-------------|
-| `pnpm turbo build` | Build all packages |
-| `pnpm turbo test` | Run all tests (221 tests) |
-| `pnpm turbo test --force` | Run tests bypassing cache |
-| `pnpm turbo dev` | Watch mode for all packages |
-| `pnpm turbo lint` | Lint all packages |
-| `pnpm turbo typecheck` | Type-check all packages |
-| `pnpm turbo clean` | Clean all build artifacts |
+| Command                   | Description                 |
+| ------------------------- | --------------------------- |
+| `pnpm turbo build`        | Build all packages          |
+| `pnpm turbo test`         | Run all tests (221 tests)   |
+| `pnpm turbo test --force` | Run tests bypassing cache   |
+| `pnpm turbo dev`          | Watch mode for all packages |
+| `pnpm turbo lint`         | Lint all packages           |
+| `pnpm turbo typecheck`    | Type-check all packages     |
+| `pnpm turbo clean`        | Clean all build artifacts   |
 
 ## Docker Deployment
 
@@ -199,20 +199,20 @@ See [docs/deployment.md](docs/deployment.md) for environment variables, resource
 
 ## Architecture Decision Records
 
-| ADR | Title |
-|-----|-------|
-| [ADR-001](designDocs/ADRs/ADR-001-api-server-language.md) | All-TypeScript Stack |
-| [ADR-002](designDocs/ADRs/ADR-002-propertyclaim-storage.md) | PropertyClaim Storage as JSON on Nodes |
-| [ADR-003](designDocs/ADRs/ADR-003-phase1-mvp-scope.md) | Phase 1 MVP Scope |
-| [ADR-004](designDocs/ADRs/ADR-004-event-bus-strategy.md) | Tiered Event Bus (BullMQ → Kafka) |
-| [ADR-005](designDocs/ADRs/ADR-005-defer-vector-db.md) | Defer Vector DB to Phase 2 |
-| [ADR-006](designDocs/ADRs/ADR-006-schema-configuration.md) | YAML Schema Configuration |
-| [ADR-007](designDocs/ADRs/ADR-007-neo4j-ha-strategy.md) | Neo4j High Availability Strategy |
-| [ADR-008](designDocs/ADRs/ADR-008-mcp-response-envelope.md) | MCP Response Envelope Standard |
-| [ADR-009](designDocs/ADRs/ADR-009-schema-storage.md) | Schema Storage in Neo4j |
-| [ADR-010](designDocs/ADRs/ADR-010-identity-resolution-phasing.md) | Identity Resolution Phasing |
-| [ADR-011](designDocs/ADRs/ADR-011-service-model-simple-mode.md) | Service Model Simple Mode |
-| [ADR-012](designDocs/ADRs/ADR-012-accessibility-standards.md) | Accessibility Standards |
+| ADR                                                               | Title                                  |
+| ----------------------------------------------------------------- | -------------------------------------- |
+| [ADR-001](designDocs/ADRs/ADR-001-api-server-language.md)         | All-TypeScript Stack                   |
+| [ADR-002](designDocs/ADRs/ADR-002-propertyclaim-storage.md)       | PropertyClaim Storage as JSON on Nodes |
+| [ADR-003](designDocs/ADRs/ADR-003-phase1-mvp-scope.md)            | Phase 1 MVP Scope                      |
+| [ADR-004](designDocs/ADRs/ADR-004-event-bus-strategy.md)          | Tiered Event Bus (BullMQ → Kafka)      |
+| [ADR-005](designDocs/ADRs/ADR-005-defer-vector-db.md)             | Defer Vector DB to Phase 2             |
+| [ADR-006](designDocs/ADRs/ADR-006-schema-configuration.md)        | YAML Schema Configuration              |
+| [ADR-007](designDocs/ADRs/ADR-007-neo4j-ha-strategy.md)           | Neo4j High Availability Strategy       |
+| [ADR-008](designDocs/ADRs/ADR-008-mcp-response-envelope.md)       | MCP Response Envelope Standard         |
+| [ADR-009](designDocs/ADRs/ADR-009-schema-storage.md)              | Schema Storage in Neo4j                |
+| [ADR-010](designDocs/ADRs/ADR-010-identity-resolution-phasing.md) | Identity Resolution Phasing            |
+| [ADR-011](designDocs/ADRs/ADR-011-service-model-simple-mode.md)   | Service Model Simple Mode              |
+| [ADR-012](designDocs/ADRs/ADR-012-accessibility-standards.md)     | Accessibility Standards                |
 
 ## Roadmap
 

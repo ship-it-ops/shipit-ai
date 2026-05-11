@@ -40,6 +40,7 @@ The following forces informed this decision:
 A separate Python microservice is permitted **only** if a future feature (specifically: embedding generation, ML-based entity resolution, or fuzzy matching scoring) requires Python-only libraries with no viable TypeScript equivalent. This microservice would be a narrowly scoped worker process, not a second API server.
 
 The runtime target is **Node.js 20 LTS** (or later LTS releases). The TypeScript configuration will use strict mode with the following key settings:
+
 - `strict: true`
 - `noUncheckedIndexedAccess: true`
 - `exactOptionalPropertyTypes: true`

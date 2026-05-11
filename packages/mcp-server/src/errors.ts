@@ -20,11 +20,7 @@ export interface McpError {
   };
 }
 
-export function createError(
-  code: McpErrorCode,
-  message: string,
-  suggestions?: string[],
-): McpError {
+export function createError(code: McpErrorCode, message: string, suggestions?: string[]): McpError {
   return {
     error: {
       code,
@@ -45,11 +41,7 @@ export function levenshteinDistance(a: string, b: string): number {
   for (let i = 1; i <= la; i++) {
     for (let j = 1; j <= lb; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost,
-      );
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
     }
   }
 
@@ -63,7 +55,10 @@ export function findSuggestions(
   maxSuggestions: number = 3,
 ): string[] {
   return candidates
-    .map((c) => ({ candidate: c, distance: levenshteinDistance(input.toLowerCase(), c.toLowerCase()) }))
+    .map((c) => ({
+      candidate: c,
+      distance: levenshteinDistance(input.toLowerCase(), c.toLowerCase()),
+    }))
     .filter((r) => r.distance <= maxDistance && r.distance > 0)
     .sort((a, b) => a.distance - b.distance)
     .slice(0, maxSuggestions)

@@ -35,16 +35,11 @@ export async function mergeNode(
     sourceOrg: node._source_org,
     sourceId: node._source_id,
     eventVersion:
-      typeof node._event_version === 'number'
-        ? node._event_version
-        : node._event_version,
+      typeof node._event_version === 'number' ? node._event_version : node._event_version,
   });
 }
 
-export async function mergeEdge(
-  tx: ManagedTransaction,
-  edge: CanonicalEdge,
-): Promise<void> {
+export async function mergeEdge(tx: ManagedTransaction, edge: CanonicalEdge): Promise<void> {
   const query = `
     MATCH (from {id: $fromId})
     MATCH (to {id: $toId})
@@ -65,14 +60,8 @@ export async function mergeEdge(
   });
 }
 
-export async function checkIdempotencyKey(
-  tx: ManagedTransaction,
-  key: string,
-): Promise<boolean> {
-  const result = await tx.run(
-    `MATCH (i:_IdempotencyLog {key: $key}) RETURN i.key AS key`,
-    { key },
-  );
+export async function checkIdempotencyKey(tx: ManagedTransaction, key: string): Promise<boolean> {
+  const result = await tx.run(`MATCH (i:_IdempotencyLog {key: $key}) RETURN i.key AS key`, { key });
   return result.records.length > 0;
 }
 
@@ -81,9 +70,7 @@ export async function writeIdempotencyKey(
   key: string,
   ttlDays: number,
 ): Promise<void> {
-  const expiresAt = new Date(
-    Date.now() + ttlDays * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString();
   await tx.run(
     `MERGE (i:_IdempotencyLog {key: $key})
      SET i.created_at = $createdAt, i.expires_at = $expiresAt`,
@@ -121,9 +108,7 @@ export async function lookupLinkingKey(
   return null;
 }
 
-export async function cleanupExpiredIdempotencyKeys(
-  tx: ManagedTransaction,
-): Promise<number> {
+export async function cleanupExpiredIdempotencyKeys(tx: ManagedTransaction): Promise<number> {
   const result = await tx.run(
     `MATCH (i:_IdempotencyLog)
      WHERE i.expires_at < $now
@@ -141,10 +126,7 @@ export async function getExistingClaims(
   tx: ManagedTransaction,
   nodeId: string,
 ): Promise<PropertyClaim[]> {
-  const result = await tx.run(
-    `MATCH (n {id: $id}) RETURN n._claims AS claims`,
-    { id: nodeId },
-  );
+  const result = await tx.run(`MATCH (n {id: $id}) RETURN n._claims AS claims`, { id: nodeId });
   if (result.records.length === 0) return [];
   const claimsJson = result.records[0].get('claims');
   if (!claimsJson) return [];
@@ -166,9 +148,7 @@ function sanitizeLabel(label: string): string {
 /**
  * Sanitize properties for Neo4j (convert non-primitive values to JSON strings).
  */
-function sanitizeProperties(
-  props: Record<string, unknown>,
-): Record<string, unknown> {
+function sanitizeProperties(props: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     if (key.startsWith('_')) continue; // Skip internal properties

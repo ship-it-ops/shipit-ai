@@ -2,9 +2,7 @@ import type { CanonicalEdge } from '@shipit-ai/shared';
 import { buildCanonicalId } from '@shipit-ai/shared';
 import type { CodeownersEntry } from '../fetchers/codeowners.js';
 
-export function normalizeCodeowner(
-  entry: CodeownersEntry,
-): { nodes: []; edges: CanonicalEdge[] } {
+export function normalizeCodeowner(entry: CodeownersEntry): { nodes: []; edges: CanonicalEdge[] } {
   const now = new Date().toISOString();
   const repoId = buildCanonicalId('Repository', 'default', entry.repo_name);
 

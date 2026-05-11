@@ -18,12 +18,8 @@ function makeClaim(overrides: Partial<PropertyClaim> = {}): PropertyClaim {
 describe('ClaimResolver', () => {
   it('merges incoming claims with existing claims', () => {
     const resolver = new ClaimResolver();
-    const existing = [
-      makeClaim({ property_key: 'name', value: 'old-name', source: 'backstage' }),
-    ];
-    const incoming = [
-      makeClaim({ property_key: 'name', value: 'new-name', source: 'github' }),
-    ];
+    const existing = [makeClaim({ property_key: 'name', value: 'old-name', source: 'backstage' })];
+    const incoming = [makeClaim({ property_key: 'name', value: 'new-name', source: 'github' })];
 
     const { mergedClaims } = resolver.resolve(existing, incoming);
     expect(mergedClaims).toHaveLength(2);
@@ -32,10 +28,20 @@ describe('ClaimResolver', () => {
   it('replaces claim from same source+source_id+property_key', () => {
     const resolver = new ClaimResolver();
     const existing = [
-      makeClaim({ property_key: 'name', value: 'old-value', source: 'github', source_id: 'github://org/repo' }),
+      makeClaim({
+        property_key: 'name',
+        value: 'old-value',
+        source: 'github',
+        source_id: 'github://org/repo',
+      }),
     ];
     const incoming = [
-      makeClaim({ property_key: 'name', value: 'new-value', source: 'github', source_id: 'github://org/repo' }),
+      makeClaim({
+        property_key: 'name',
+        value: 'new-value',
+        source: 'github',
+        source_id: 'github://org/repo',
+      }),
     ];
 
     const { mergedClaims } = resolver.resolve(existing, incoming);

@@ -1,9 +1,9 @@
-version: "1.0"
+version: '1.0'
 mode: full
 
 node_types:
   LogicalService:
-    description: "A named, team-owned service concept"
+    description: 'A named, team-owned service concept'
     properties:
       name:
         type: string
@@ -28,7 +28,7 @@ node_types:
         type: string
         resolution_strategy: HIGHEST_CONFIDENCE
       tags:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
       description:
         type: string
@@ -37,7 +37,7 @@ node_types:
       unique_key: name
 
   Repository:
-    description: "A source code repository"
+    description: 'A source code repository'
     properties:
       name:
         type: string
@@ -57,13 +57,13 @@ node_types:
         type: string
         resolution_strategy: HIGHEST_CONFIDENCE
       topics:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
     constraints:
       unique_key: name
 
   Deployment:
-    description: "A running instance in a specific environment/cluster"
+    description: 'A running instance in a specific environment/cluster'
     properties:
       name:
         type: string
@@ -91,7 +91,7 @@ node_types:
       unique_key: name
 
   RuntimeService:
-    description: "The identity seen by observability tools"
+    description: 'The identity seen by observability tools'
     properties:
       name:
         type: string
@@ -110,7 +110,7 @@ node_types:
       unique_key: name
 
   BuildArtifact:
-    description: "A built container image or binary"
+    description: 'A built container image or binary'
     properties:
       name:
         type: string
@@ -129,7 +129,7 @@ node_types:
       unique_key: name
 
   Environment:
-    description: "A deployment target environment"
+    description: 'A deployment target environment'
     properties:
       name:
         type: string
@@ -149,7 +149,7 @@ node_types:
       unique_key: name
 
   Team:
-    description: "An engineering team or squad"
+    description: 'An engineering team or squad'
     properties:
       name:
         type: string
@@ -165,7 +165,7 @@ node_types:
       unique_key: name
 
   Person:
-    description: "An individual (engineer, PM, etc.)"
+    description: 'An individual (engineer, PM, etc.)'
     properties:
       name:
         type: string
@@ -184,7 +184,7 @@ node_types:
       unique_key: email
 
   Pipeline:
-    description: "A CI/CD workflow"
+    description: 'A CI/CD workflow'
     properties:
       name:
         type: string
@@ -203,7 +203,7 @@ node_types:
       unique_key: name
 
   Monitor:
-    description: "An observability check (alert, SLO)"
+    description: 'An observability check (alert, SLO)'
     properties:
       name:
         type: string
@@ -225,7 +225,7 @@ node_types:
       unique_key: name
 
   Namespace:
-    description: "A Kubernetes namespace"
+    description: 'A Kubernetes namespace'
     properties:
       name:
         type: string
@@ -235,13 +235,13 @@ node_types:
         type: string
         resolution_strategy: LATEST_TIMESTAMP
       labels:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
     constraints:
       unique_key: name
 
   Cluster:
-    description: "A Kubernetes cluster"
+    description: 'A Kubernetes cluster'
     properties:
       name:
         type: string
@@ -263,95 +263,95 @@ relationship_types:
   IMPLEMENTED_BY:
     from: LogicalService
     to: Repository
-    cardinality: "1:N"
-    description: "LogicalService is implemented by this repo"
+    cardinality: '1:N'
+    description: 'LogicalService is implemented by this repo'
 
   DEPLOYED_AS:
     from: LogicalService
     to: Deployment
-    cardinality: "1:N"
-    description: "LogicalService has this running deployment"
+    cardinality: '1:N'
+    description: 'LogicalService has this running deployment'
 
   EMITS_TELEMETRY_AS:
     from: Deployment
     to: RuntimeService
-    cardinality: "N:M"
-    description: "Deployment is observed as this RuntimeService"
+    cardinality: 'N:M'
+    description: 'Deployment is observed as this RuntimeService'
 
   BUILT_FROM:
     from: BuildArtifact
     to: Repository
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   RUNS_IMAGE:
     from: Deployment
     to: BuildArtifact
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   RUNS_IN_ENV:
     from: Deployment
     to: Environment
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   DEPENDS_ON:
     from: LogicalService
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CALLS:
     from: RuntimeService
     to: RuntimeService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   OWNS:
     from: Team
     to: LogicalService
-    cardinality: "1:N"
+    cardinality: '1:N'
 
   MEMBER_OF:
     from: Person
     to: Team
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CONTRIBUTES_TO:
     from: Person
     to: Repository
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   RUNS_IN:
     from: Deployment
     to: Namespace
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   PART_OF:
     from: Namespace
     to: Cluster
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   BUILT_BY:
     from: LogicalService
     to: Pipeline
-    cardinality: "1:N"
+    cardinality: '1:N'
 
   TRIGGERS:
     from: Pipeline
     to: Pipeline
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   MONITORS:
     from: Monitor
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CODEOWNER_OF:
     from: Person
     to: Repository
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   ON_CALL_FOR:
     from: Person
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
 resolution_defaults:
   owner: HIGHEST_CONFIDENCE

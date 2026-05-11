@@ -32,19 +32,34 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
     'blast_radius',
     'Analyze downstream/upstream impact of a node in the knowledge graph. Returns affected nodes, paths, and summary statistics.',
     {
-      node: z.string().describe('Starting node canonical ID (e.g., shipit://repository/default/config-service)'),
-      depth: z.number().int().min(1).max(6).default(3).describe('Max traversal hops (1-6, default 3)'),
-      direction: z.enum(['DOWNSTREAM', 'UPSTREAM', 'BOTH']).default('DOWNSTREAM').describe('Traversal direction'),
-      include_environments: z.array(z.string()).optional().describe('Filter deployments by environment'),
-      production_only: z.boolean().default(false).describe('Convenience flag: equivalent to include_environments: [\'production\']'),
+      node: z
+        .string()
+        .describe('Starting node canonical ID (e.g., shipit://repository/default/config-service)'),
+      depth: z
+        .number()
+        .int()
+        .min(1)
+        .max(6)
+        .default(3)
+        .describe('Max traversal hops (1-6, default 3)'),
+      direction: z
+        .enum(['DOWNSTREAM', 'UPSTREAM', 'BOTH'])
+        .default('DOWNSTREAM')
+        .describe('Traversal direction'),
+      include_environments: z
+        .array(z.string())
+        .optional()
+        .describe('Filter deployments by environment'),
+      production_only: z
+        .boolean()
+        .default(false)
+        .describe("Convenience flag: equivalent to include_environments: ['production']"),
       compact: z.boolean().default(false).describe('Strip _meta envelope for compact responses'),
     },
     async (params) => {
       const { node, depth, direction, include_environments, production_only, compact } = params;
 
-      const environments = production_only
-        ? ['production']
-        : include_environments;
+      const environments = production_only ? ['production'] : include_environments;
 
       const startTime = Date.now();
 
@@ -54,10 +69,9 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
 
         if (result.records.length === 0) {
           // Check if the starting node exists
-          const existCheck = await neo4j.runCypher(
-            'MATCH (n {id: $nodeId}) RETURN n.id AS id',
-            { nodeId: node },
-          );
+          const existCheck = await neo4j.runCypher('MATCH (n {id: $nodeId}) RETURN n.id AS id', {
+            nodeId: node,
+          });
 
           if (existCheck.records.length === 0) {
             const allNodes = await neo4j.runCypher(
@@ -95,7 +109,9 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
             id: props.id as string,
             label: labels[0] ?? 'Unknown',
             name: (props.name as string) ?? '',
-            ...(props.tier_effective !== undefined ? { tier_effective: props.tier_effective as number } : {}),
+            ...(props.tier_effective !== undefined
+              ? { tier_effective: props.tier_effective as number }
+              : {}),
             ...(props.environment ? { environment: props.environment as string } : {}),
             ...(props.owner_effective ? { owner_effective: props.owner_effective as string } : {}),
           };
@@ -108,7 +124,9 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
             from: node,
             to: nodeData.properties.id as string,
             relationship: relTypes[relTypes.length - 1] ?? 'UNKNOWN',
-            depth: (r.get('depth') as { toNumber?: () => number })?.toNumber?.() ?? (r.get('depth') as number),
+            depth:
+              (r.get('depth') as { toNumber?: () => number })?.toNumber?.() ??
+              (r.get('depth') as number),
           };
         });
 

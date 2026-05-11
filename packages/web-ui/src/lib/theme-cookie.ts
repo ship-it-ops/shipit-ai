@@ -9,9 +9,7 @@ export function setThemeCookie(value: StoredTheme): void {
 
 export function readThemeFromCookieHeader(cookieHeader: string | undefined): StoredTheme {
   if (!cookieHeader) return 'dark';
-  const match = cookieHeader
-    .split(/;\s*/)
-    .find((part) => part.startsWith(`${THEME_COOKIE_NAME}=`));
+  const match = cookieHeader.split(/;\s*/).find((part) => part.startsWith(`${THEME_COOKIE_NAME}=`));
   if (!match) return 'dark';
   const value = match.slice(THEME_COOKIE_NAME.length + 1);
   return value === 'light' ? 'light' : 'dark';

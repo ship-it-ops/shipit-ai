@@ -2,11 +2,7 @@ import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/sha
 import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 import type { GitHubTeam } from '../fetchers/teams.js';
 
-function makeClaim(
-  key: string,
-  value: unknown,
-  sourceId: string,
-): PropertyClaim {
+function makeClaim(key: string, value: unknown, sourceId: string): PropertyClaim {
   return {
     property_key: key,
     value,

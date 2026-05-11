@@ -85,14 +85,16 @@ function buildStyle(): StylesheetStyle[] {
     },
   };
 
-  const typeStyles: StylesheetStyle[] = (Object.keys(NODE_COLOR_VAR) as AppNodeType[]).map((type) => ({
-    selector: `node[type="${type}"]`,
-    style: {
-      'background-color': resolveColor(NODE_COLOR_VAR[type], textMuted),
-      'border-color': resolveColor(NODE_COLOR_VAR[type], borderStrong),
-      shape: NODE_SHAPE[type] as cytoscape.Css.NodeShape,
-    },
-  }));
+  const typeStyles: StylesheetStyle[] = (Object.keys(NODE_COLOR_VAR) as AppNodeType[]).map(
+    (type) => ({
+      selector: `node[type="${type}"]`,
+      style: {
+        'background-color': resolveColor(NODE_COLOR_VAR[type], textMuted),
+        'border-color': resolveColor(NODE_COLOR_VAR[type], borderStrong),
+        shape: NODE_SHAPE[type] as cytoscape.Css.NodeShape,
+      },
+    }),
+  );
 
   return [
     baseNode,

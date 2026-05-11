@@ -1,8 +1,4 @@
-import type {
-  PropertyClaim,
-  ResolutionStrategy,
-  ClaimResolutionResult,
-} from '@shipit-ai/shared';
+import type { PropertyClaim, ResolutionStrategy, ClaimResolutionResult } from '@shipit-ai/shared';
 import { resolveClaims } from './strategies.js';
 
 export interface ResolverOptions {
@@ -46,15 +42,8 @@ export class ClaimResolver {
     // Resolve each property
     const effectiveProperties: Record<string, unknown> = {};
     for (const [propertyKey, claims] of claimsByProperty) {
-      const strategy =
-        this.options.strategyOverrides[propertyKey] ??
-        this.options.defaultStrategy;
-      const result = resolveClaims(
-        claims,
-        strategy,
-        this.options.decayRate,
-        now,
-      );
+      const strategy = this.options.strategyOverrides[propertyKey] ?? this.options.defaultStrategy;
+      const result = resolveClaims(claims, strategy, this.options.decayRate, now);
       if (result) {
         effectiveProperties[propertyKey] = result.effective_value;
       }
@@ -68,16 +57,11 @@ export class ClaimResolver {
     claims: PropertyClaim[],
     now?: Date,
   ): ClaimResolutionResult | null {
-    const strategy =
-      this.options.strategyOverrides[propertyKey] ??
-      this.options.defaultStrategy;
+    const strategy = this.options.strategyOverrides[propertyKey] ?? this.options.defaultStrategy;
     return resolveClaims(claims, strategy, this.options.decayRate, now);
   }
 
-  private mergeClaims(
-    existing: PropertyClaim[],
-    incoming: PropertyClaim[],
-  ): PropertyClaim[] {
+  private mergeClaims(existing: PropertyClaim[], incoming: PropertyClaim[]): PropertyClaim[] {
     const merged = [...existing];
 
     for (const claim of incoming) {

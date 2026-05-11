@@ -1,4 +1,9 @@
-import type { CanonicalNode, CanonicalEdge, EventEnvelope, EventBusClient } from '@shipit-ai/shared';
+import type {
+  CanonicalNode,
+  CanonicalEdge,
+  EventEnvelope,
+  EventBusClient,
+} from '@shipit-ai/shared';
 import { ClaimResolver } from './claims/resolver.js';
 import { IdentityReconciler } from './identity/reconciler.js';
 import type { LinkingKeyIndex } from './identity/linking-key-index.js';
@@ -45,7 +50,9 @@ export class CoreWriter {
     this.idempotency = idempotency;
     this.config = config;
     this.batchProcessor = new BatchProcessor(
-      async (batch) => { await this.processBatch(batch); },
+      async (batch) => {
+        await this.processBatch(batch);
+      },
       { batchSize: config.batchSize },
     );
   }
@@ -77,10 +84,7 @@ export class CoreWriter {
       // Process nodes
       for (const node of payload.nodes) {
         try {
-          const idempotencyKey = buildNodeIdempotencyKey(
-            event.connector_id,
-            node,
-          );
+          const idempotencyKey = buildNodeIdempotencyKey(event.connector_id, node);
 
           // Check idempotency
           if (await this.idempotency.isDuplicate(idempotencyKey)) {
@@ -107,11 +111,7 @@ export class CoreWriter {
             ...node,
             id: reconciliation.canonicalId,
           };
-          await this.nodeWriter.writeNode(
-            nodeToWrite,
-            mergedClaims,
-            effectiveProperties,
-          );
+          await this.nodeWriter.writeNode(nodeToWrite, mergedClaims, effectiveProperties);
 
           // Record idempotency
           await this.idempotency.record(idempotencyKey);

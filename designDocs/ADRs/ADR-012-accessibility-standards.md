@@ -62,11 +62,11 @@ This tabular view is not a lesser experience -- it provides information density 
 
 ShipIt-AI's UI is designed for the following viewport priorities:
 
-| Priority | Viewport | Min Width | Notes |
-|----------|----------|-----------|-------|
-| Primary | Desktop | 1280px | Full-featured experience. Graph Explorer, side panels, multi-column layouts. |
-| Secondary | Tablet | 1024px | Usable but with layout adjustments. Graph Explorer may use a simplified layout. Side panels become collapsible. |
-| Tertiary | Mobile | 320px | Read-only access. Entity details, search results, and status views are available. Graph Explorer and schema editing are not available on mobile. |
+| Priority  | Viewport | Min Width | Notes                                                                                                                                            |
+| --------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Primary   | Desktop  | 1280px    | Full-featured experience. Graph Explorer, side panels, multi-column layouts.                                                                     |
+| Secondary | Tablet   | 1024px    | Usable but with layout adjustments. Graph Explorer may use a simplified layout. Side panels become collapsible.                                  |
+| Tertiary  | Mobile   | 320px     | Read-only access. Entity details, search results, and status views are available. Graph Explorer and schema editing are not available on mobile. |
 
 - All touch targets on tablet and mobile must be at least 44x44px (WCAG 2.5.5).
 - No horizontal scrolling on any supported viewport.

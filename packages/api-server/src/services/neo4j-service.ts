@@ -52,7 +52,7 @@ export class Neo4jService {
     let nodeCount = 0;
     for (const record of nodeCountsResult) {
       const label = record.get('label') as string;
-      const count = (record.get('count') as { toNumber?: () => number });
+      const count = record.get('count') as { toNumber?: () => number };
       const num = typeof count === 'object' && count?.toNumber ? count.toNumber() : Number(count);
       nodesByLabel[label] = num;
       nodeCount += num;
@@ -62,13 +62,21 @@ export class Neo4jService {
     let edgeCount = 0;
     for (const record of edgeCountsResult) {
       const relType = record.get('relationshipType') as string;
-      const count = (record.get('count') as { toNumber?: () => number });
+      const count = record.get('count') as { toNumber?: () => number };
       const num = typeof count === 'object' && count?.toNumber ? count.toNumber() : Number(count);
       edgeCountsByType[relType] = num;
       edgeCount += num;
     }
 
-    return { nodeCount, edgeCount, nodesByLabel, edgeCountsByType, staleness: 0, lastSync: new Date().toISOString(), healthScore: 100 };
+    return {
+      nodeCount,
+      edgeCount,
+      nodesByLabel,
+      edgeCountsByType,
+      staleness: 0,
+      lastSync: new Date().toISOString(),
+      healthScore: 100,
+    };
   }
 
   async getNeighborhood(nodeId: string, depth: number = 2): Promise<NeighborhoodResult> {
@@ -84,7 +92,10 @@ export class Neo4jService {
     const edges: CytoscapeEdge[] = [];
 
     for (const record of records) {
-      const nodes = record.get('nodes') as Array<{ properties: Record<string, unknown>; labels: string[] }>;
+      const nodes = record.get('nodes') as Array<{
+        properties: Record<string, unknown>;
+        labels: string[];
+      }>;
       const rels = record.get('relationships') as Array<{
         properties: Record<string, unknown>;
         type: string;
@@ -101,7 +112,9 @@ export class Neo4jService {
               id,
               label: nodeLabel,
               type: nodeLabel,
-              name: String(node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id),
+              name: String(
+                node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
+              ),
               ...node.properties,
             },
           });
@@ -145,7 +158,9 @@ export class Neo4jService {
             id,
             label: nodeLabel,
             type: nodeLabel,
-            name: String(node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id),
+            name: String(
+              node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
+            ),
             ...node.properties,
           },
         });

@@ -30,9 +30,7 @@ export class IdentityReconciler {
 
     // Step 2: Linking Key Match
     if (node._source_id) {
-      const existingId = await this.linkingKeyIndex.lookupByLinkingKey(
-        node._source_id,
-      );
+      const existingId = await this.linkingKeyIndex.lookupByLinkingKey(node._source_id);
       if (existingId) {
         return {
           action: 'merge',

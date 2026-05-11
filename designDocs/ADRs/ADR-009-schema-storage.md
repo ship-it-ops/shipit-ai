@@ -35,6 +35,7 @@ We will store the ontology schema in Neo4j as meta-nodes and meta-relationships,
 ### Schema Meta-Node Structure
 
 **`:SchemaNodeType`** -- One node per domain node label:
+
 ```
 (:SchemaNodeType {
   name: "LogicalService",
@@ -47,6 +48,7 @@ We will store the ontology schema in Neo4j as meta-nodes and meta-relationships,
 ```
 
 **`:SchemaProperty`** -- One node per property definition:
+
 ```
 (:SchemaProperty {
   name: "tier_effective",
@@ -60,6 +62,7 @@ We will store the ontology schema in Neo4j as meta-nodes and meta-relationships,
 ```
 
 **`:SchemaRelationship`** -- One node per relationship type:
+
 ```
 (:SchemaRelationship {
   type: "IMPLEMENTED_BY",
@@ -87,6 +90,7 @@ When the schema is modified (e.g., adding a new property, changing a resolution 
 5. The entire operation executes in a single Neo4j transaction to ensure atomicity.
 
 This enables:
+
 - **Rollback:** Reactivate the previous version and deactivate the current one.
 - **Audit trail:** Full history of schema changes is preserved in the graph.
 - **Concurrent reads:** The `schema_info` MCP tool always reads `is_active: true` nodes, so schema updates do not cause inconsistent reads.

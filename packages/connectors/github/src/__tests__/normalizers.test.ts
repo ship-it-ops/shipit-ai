@@ -32,16 +32,12 @@ describe('normalizeRepository', () => {
 
   it('sets correct canonical ID', () => {
     const result = normalizeRepository(mockRepo, ORG);
-    expect(result.nodes[0].id).toBe(
-      buildCanonicalId('Repository', 'default', 'payments-api'),
-    );
+    expect(result.nodes[0].id).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
   });
 
   it('sets correct _source_id as linking key', () => {
     const result = normalizeRepository(mockRepo, ORG);
-    expect(result.nodes[0]._source_id).toBe(
-      buildLinkingKey('github', ORG, 'payments-api'),
-    );
+    expect(result.nodes[0]._source_id).toBe(buildLinkingKey('github', ORG, 'payments-api'));
   });
 
   it('creates claims for name, url, default_branch, visibility, language, topics', () => {
@@ -109,12 +105,8 @@ describe('normalizeTeam', () => {
 
   it('sets correct canonical IDs', () => {
     const result = normalizeTeam(mockTeam, ORG);
-    expect(result.nodes[0].id).toBe(
-      buildCanonicalId('Team', 'default', 'platform'),
-    );
-    expect(result.nodes[1].id).toBe(
-      buildCanonicalId('Person', 'default', 'alice'),
-    );
+    expect(result.nodes[0].id).toBe(buildCanonicalId('Team', 'default', 'platform'));
+    expect(result.nodes[1].id).toBe(buildCanonicalId('Person', 'default', 'alice'));
   });
 
   it('produces MEMBER_OF edges from Person to Team', () => {
@@ -167,9 +159,7 @@ describe('normalizePipeline', () => {
     const result = normalizePipeline(mockWorkflow, ORG);
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0].type).toBe('BUILT_BY');
-    expect(result.edges[0].from).toBe(
-      buildCanonicalId('Repository', 'default', 'payments-api'),
-    );
+    expect(result.edges[0].from).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
     expect(result.edges[0].to).toBe(result.nodes[0].id);
   });
 
@@ -197,25 +187,17 @@ describe('normalizeCodeowner', () => {
 
   it('resolves team owners to Team canonical IDs', () => {
     const result = normalizeCodeowner(mockEntry);
-    const teamEdge = result.edges.find((e) =>
-      e.from.includes('team'),
-    );
+    const teamEdge = result.edges.find((e) => e.from.includes('team'));
     expect(teamEdge).toBeDefined();
-    expect(teamEdge!.from).toBe(
-      buildCanonicalId('Team', 'default', 'platform'),
-    );
+    expect(teamEdge!.from).toBe(buildCanonicalId('Team', 'default', 'platform'));
     expect(teamEdge!.type).toBe('CODEOWNER_OF');
   });
 
   it('resolves user owners to Person canonical IDs', () => {
     const result = normalizeCodeowner(mockEntry);
-    const personEdge = result.edges.find((e) =>
-      e.from.includes('person'),
-    );
+    const personEdge = result.edges.find((e) => e.from.includes('person'));
     expect(personEdge).toBeDefined();
-    expect(personEdge!.from).toBe(
-      buildCanonicalId('Person', 'default', 'alice'),
-    );
+    expect(personEdge!.from).toBe(buildCanonicalId('Person', 'default', 'alice'));
   });
 
   it('includes pattern in edge properties', () => {

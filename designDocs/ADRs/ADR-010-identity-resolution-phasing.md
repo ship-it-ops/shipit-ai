@@ -41,12 +41,14 @@ Identity resolution will be implemented in two phases, with a clear boundary bet
 The Core Writer applies two resolution steps in order:
 
 **Step 1: Primary Key Match**
+
 - When a connector emits an entity event, the Core Writer checks if a node with the same `canonical_id` already exists in Neo4j.
 - `canonical_id` format: `{source}:{entity_type}:{source_specific_id}` (e.g., `github:Repository:acme-org/payment-service`).
 - If a match is found, the existing node is updated (properties merged, claims updated per ADR-002).
 - If no match is found, proceed to Step 2.
 
 **Step 2: Linking Key Match**
+
 - The Core Writer checks the entity's properties against the `linking_keys` defined in the schema (ADR-006) for all existing nodes of compatible types.
 - Example: A Kubernetes Deployment with annotation `shipit.ai/github-repo: acme-org/payment-service` matches the GitHub Repository with `github_slug: acme-org/payment-service`.
 - Linking key matches result in a merge: the two nodes are combined into a single entity node with claims from both sources.
@@ -62,12 +64,12 @@ The Core Writer applies two resolution steps in order:
 
 When deterministic matching (Steps 1-2) fails, the Core Writer computes a similarity score using weighted features:
 
-| Feature | Weight | Method |
-|---------|--------|--------|
-| Name | 0.5 | Normalized Levenshtein distance + token overlap |
-| Namespace/Org | 0.2 | Exact or prefix match |
-| Tags/Labels | 0.2 | Jaccard similarity of tag sets |
-| Labels (Neo4j) | 0.1 | Same node label bonus |
+| Feature        | Weight | Method                                          |
+| -------------- | ------ | ----------------------------------------------- |
+| Name           | 0.5    | Normalized Levenshtein distance + token overlap |
+| Namespace/Org  | 0.2    | Exact or prefix match                           |
+| Tags/Labels    | 0.2    | Jaccard similarity of tag sets                  |
+| Labels (Neo4j) | 0.1    | Same node label bonus                           |
 
 The composite score is computed as: `score = sum(weight_i * similarity_i)`.
 
@@ -78,6 +80,7 @@ The composite score is computed as: `score = sum(weight_i * similarity_i)`.
 **Step 4: Vector Embedding Similarity (Phase 2, requires ADR-005 vector DB)**
 
 When the vector database is available (Phase 2+), the Core Writer also computes embedding similarity:
+
 - Generate an embedding for the entity's combined text (name + description + tags).
 - Query Weaviate for the nearest neighbors among existing entities.
 - Embedding similarity is added as an additional feature with weight 0.3 (other weights are proportionally reduced).
@@ -87,6 +90,7 @@ This improves matching for semantically similar but lexically different entities
 **Reconciliation UI (Phase 2)**
 
 A web interface where operators can:
+
 - Review candidate matches (score 0.70-0.84) and approve or reject them.
 - View the evidence (which features matched, which diverged).
 - Force-merge or force-split entities that were incorrectly resolved.

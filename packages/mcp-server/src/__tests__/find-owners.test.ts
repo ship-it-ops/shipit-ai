@@ -14,13 +14,31 @@ describe('find_owners tool', () => {
             },
           },
           owners: [
-            { properties: { name: 'payments-team', email: 'payments@acme.com', id: 'shipit://team/default/payments-team' } },
+            {
+              properties: {
+                name: 'payments-team',
+                email: 'payments@acme.com',
+                id: 'shipit://team/default/payments-team',
+              },
+            },
           ],
           codeowners: [
-            { properties: { name: 'Alice Smith', email: 'alice@acme.com', id: 'shipit://person/default/alice' } },
+            {
+              properties: {
+                name: 'Alice Smith',
+                email: 'alice@acme.com',
+                id: 'shipit://person/default/alice',
+              },
+            },
           ],
           on_call: [
-            { properties: { name: 'Alice Smith', email: 'alice@acme.com', id: 'shipit://person/default/alice' } },
+            {
+              properties: {
+                name: 'Alice Smith',
+                email: 'alice@acme.com',
+                id: 'shipit://person/default/alice',
+              },
+            },
           ],
         }),
       ],
@@ -28,7 +46,9 @@ describe('find_owners tool', () => {
     });
 
     const neo4j = createMockNeo4jClient(responses);
-    const result = await neo4j.runCypher('MATCH (entity {id: $entityId}) OPTIONAL', { entityId: 'test' });
+    const result = await neo4j.runCypher('MATCH (entity {id: $entityId}) OPTIONAL', {
+      entityId: 'test',
+    });
 
     const record = result.records[0];
     const owners = record.get('owners') as Array<{ properties: { name: string } }>;
@@ -48,9 +68,7 @@ describe('find_owners tool', () => {
       records: [
         createMockRecord({
           entity: { properties: { id: 'test-id' } },
-          owners: [
-            { properties: { name: 'payments-team', email: null, id: 'team-id' } },
-          ],
+          owners: [{ properties: { name: 'payments-team', email: null, id: 'team-id' } }],
           codeowners: [],
           on_call: [],
           members: [

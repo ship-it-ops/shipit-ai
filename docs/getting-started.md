@@ -4,12 +4,12 @@ This guide walks you through setting up ShipIt-AI for local development.
 
 ## Prerequisites
 
-| Tool | Version | Install |
-|------|---------|---------|
-| Node.js | 22+ | [nodejs.org](https://nodejs.org/) |
-| pnpm | 10+ | `npm install -g pnpm` or `brew install pnpm` |
-| Docker | 20+ | [docker.com](https://www.docker.com/) |
-| Docker Compose | v2+ | Included with Docker Desktop |
+| Tool           | Version | Install                                      |
+| -------------- | ------- | -------------------------------------------- |
+| Node.js        | 22+     | [nodejs.org](https://nodejs.org/)            |
+| pnpm           | 10+     | `npm install -g pnpm` or `brew install pnpm` |
+| Docker         | 20+     | [docker.com](https://www.docker.com/)        |
+| Docker Compose | v2+     | Included with Docker Desktop                 |
 
 ## 1. Clone and Configure
 

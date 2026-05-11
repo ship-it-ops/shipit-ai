@@ -17,15 +17,37 @@ function createMockNeo4jService(): Neo4jService {
     }),
     getNeighborhood: vi.fn().mockResolvedValue({
       nodes: [
-        { data: { id: 'shipit://LogicalService/acme/payments', label: 'LogicalService', name: 'payments' } },
-        { data: { id: 'shipit://Repository/acme/payments-api', label: 'Repository', name: 'payments-api' } },
+        {
+          data: {
+            id: 'shipit://LogicalService/acme/payments',
+            label: 'LogicalService',
+            name: 'payments',
+          },
+        },
+        {
+          data: {
+            id: 'shipit://Repository/acme/payments-api',
+            label: 'Repository',
+            name: 'payments-api',
+          },
+        },
       ],
       edges: [
-        { data: { source: 'shipit://LogicalService/acme/payments', target: 'shipit://Repository/acme/payments-api', type: 'IMPLEMENTED_BY' } },
+        {
+          data: {
+            source: 'shipit://LogicalService/acme/payments',
+            target: 'shipit://Repository/acme/payments-api',
+            type: 'IMPLEMENTED_BY',
+          },
+        },
       ],
     }),
     searchEntities: vi.fn().mockResolvedValue([
-      { get: () => ({ properties: { id: 'shipit://LogicalService/acme/payments', name: 'payments', tier: 1 } }) },
+      {
+        get: () => ({
+          properties: { id: 'shipit://LogicalService/acme/payments', name: 'payments', tier: 1 },
+        }),
+      },
     ]),
     close: vi.fn().mockResolvedValue(undefined),
   } as unknown as Neo4jService;

@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  McpErrorCode,
-  createError,
-  levenshteinDistance,
-  findSuggestions,
-} from '../errors.js';
+import { McpErrorCode, createError, levenshteinDistance, findSuggestions } from '../errors.js';
 
 describe('Errors', () => {
   describe('createError', () => {
@@ -16,11 +11,9 @@ describe('Errors', () => {
     });
 
     it('should include suggestions when provided', () => {
-      const error = createError(
-        McpErrorCode.NODE_NOT_FOUND,
-        'Not found',
-        ["Did you mean 'payments-api'?"],
-      );
+      const error = createError(McpErrorCode.NODE_NOT_FOUND, 'Not found', [
+        "Did you mean 'payments-api'?",
+      ]);
       expect(error.error.suggestions).toEqual(["Did you mean 'payments-api'?"]);
     });
 
@@ -79,7 +72,12 @@ describe('Errors', () => {
     });
 
     it('should limit suggestions to maxSuggestions', () => {
-      const suggestions = findSuggestions('shipit://logical-service/default/x-service', candidates, 20, 2);
+      const suggestions = findSuggestions(
+        'shipit://logical-service/default/x-service',
+        candidates,
+        20,
+        2,
+      );
       expect(suggestions.length).toBeLessThanOrEqual(2);
     });
 

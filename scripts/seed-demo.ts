@@ -49,8 +49,20 @@ const nodes: SeedNode[] = [
         language: name === 'frontend-app' ? 'TypeScript' : 'Go',
       },
       claims: [
-        { property_key: 'name', value: name, source: 'github', source_id: `github://acme-corp/${name}`, confidence: 0.9 },
-        { property_key: 'language', value: name === 'frontend-app' ? 'TypeScript' : 'Go', source: 'github', source_id: `github://acme-corp/${name}`, confidence: 0.9 },
+        {
+          property_key: 'name',
+          value: name,
+          source: 'github',
+          source_id: `github://acme-corp/${name}`,
+          confidence: 0.9,
+        },
+        {
+          property_key: 'language',
+          value: name === 'frontend-app' ? 'TypeScript' : 'Go',
+          source: 'github',
+          source_id: `github://acme-corp/${name}`,
+          confidence: 0.9,
+        },
       ],
     }),
   ),
@@ -60,7 +72,13 @@ const nodes: SeedNode[] = [
     id: `shipit://team/default/${name}`,
     properties: { name: `${name.charAt(0).toUpperCase()}${name.slice(1)} Team`, slug: name },
     claims: [
-      { property_key: 'name', value: `${name.charAt(0).toUpperCase()}${name.slice(1)} Team`, source: 'github', source_id: `github://acme-corp/team/${name}`, confidence: 0.9 },
+      {
+        property_key: 'name',
+        value: `${name.charAt(0).toUpperCase()}${name.slice(1)} Team`,
+        source: 'github',
+        source_id: `github://acme-corp/team/${name}`,
+        confidence: 0.9,
+      },
     ],
   })),
   // Persons
@@ -69,7 +87,13 @@ const nodes: SeedNode[] = [
     id: `shipit://person/default/${name}`,
     properties: { login: name, url: `https://github.com/${name}` },
     claims: [
-      { property_key: 'login', value: name, source: 'github', source_id: `github://acme-corp/user/${name}`, confidence: 0.9 },
+      {
+        property_key: 'login',
+        value: name,
+        source: 'github',
+        source_id: `github://acme-corp/user/${name}`,
+        confidence: 0.9,
+      },
     ],
   })),
   // Pipelines
@@ -78,31 +102,127 @@ const nodes: SeedNode[] = [
     id: `shipit://pipeline/default/${name}`,
     properties: { name, state: 'active' },
     claims: [
-      { property_key: 'name', value: name, source: 'github', source_id: `github://acme-corp/${name}`, confidence: 0.9 },
+      {
+        property_key: 'name',
+        value: name,
+        source: 'github',
+        source_id: `github://acme-corp/${name}`,
+        confidence: 0.9,
+      },
     ],
   })),
 ];
 
 const edges: SeedEdge[] = [
   // Team membership
-  { type: 'MEMBER_OF', fromId: 'shipit://person/default/alice', toId: 'shipit://team/default/platform', source: 'github', confidence: 0.9 },
-  { type: 'MEMBER_OF', fromId: 'shipit://person/default/bob', toId: 'shipit://team/default/payments', source: 'github', confidence: 0.9 },
-  { type: 'MEMBER_OF', fromId: 'shipit://person/default/charlie', toId: 'shipit://team/default/payments', source: 'github', confidence: 0.9 },
-  { type: 'MEMBER_OF', fromId: 'shipit://person/default/diana', toId: 'shipit://team/default/frontend', source: 'github', confidence: 0.9 },
+  {
+    type: 'MEMBER_OF',
+    fromId: 'shipit://person/default/alice',
+    toId: 'shipit://team/default/platform',
+    source: 'github',
+    confidence: 0.9,
+  },
+  {
+    type: 'MEMBER_OF',
+    fromId: 'shipit://person/default/bob',
+    toId: 'shipit://team/default/payments',
+    source: 'github',
+    confidence: 0.9,
+  },
+  {
+    type: 'MEMBER_OF',
+    fromId: 'shipit://person/default/charlie',
+    toId: 'shipit://team/default/payments',
+    source: 'github',
+    confidence: 0.9,
+  },
+  {
+    type: 'MEMBER_OF',
+    fromId: 'shipit://person/default/diana',
+    toId: 'shipit://team/default/frontend',
+    source: 'github',
+    confidence: 0.9,
+  },
   // Codeowners
-  { type: 'CODEOWNER_OF', fromId: 'shipit://team/default/payments', toId: 'shipit://repository/default/payments-api', source: 'github', confidence: 0.95 },
-  { type: 'CODEOWNER_OF', fromId: 'shipit://team/default/payments', toId: 'shipit://repository/default/checkout-service', source: 'github', confidence: 0.95 },
-  { type: 'CODEOWNER_OF', fromId: 'shipit://team/default/frontend', toId: 'shipit://repository/default/frontend-app', source: 'github', confidence: 0.95 },
-  { type: 'CODEOWNER_OF', fromId: 'shipit://team/default/platform', toId: 'shipit://repository/default/shared-lib', source: 'github', confidence: 0.95 },
+  {
+    type: 'CODEOWNER_OF',
+    fromId: 'shipit://team/default/payments',
+    toId: 'shipit://repository/default/payments-api',
+    source: 'github',
+    confidence: 0.95,
+  },
+  {
+    type: 'CODEOWNER_OF',
+    fromId: 'shipit://team/default/payments',
+    toId: 'shipit://repository/default/checkout-service',
+    source: 'github',
+    confidence: 0.95,
+  },
+  {
+    type: 'CODEOWNER_OF',
+    fromId: 'shipit://team/default/frontend',
+    toId: 'shipit://repository/default/frontend-app',
+    source: 'github',
+    confidence: 0.95,
+  },
+  {
+    type: 'CODEOWNER_OF',
+    fromId: 'shipit://team/default/platform',
+    toId: 'shipit://repository/default/shared-lib',
+    source: 'github',
+    confidence: 0.95,
+  },
   // Pipelines
-  { type: 'BUILT_BY', fromId: 'shipit://repository/default/payments-api', toId: 'shipit://pipeline/default/payments-api-ci', source: 'github', confidence: 0.9 },
-  { type: 'BUILT_BY', fromId: 'shipit://repository/default/checkout-service', toId: 'shipit://pipeline/default/checkout-service-ci', source: 'github', confidence: 0.9 },
-  { type: 'BUILT_BY', fromId: 'shipit://repository/default/frontend-app', toId: 'shipit://pipeline/default/frontend-app-ci', source: 'github', confidence: 0.9 },
+  {
+    type: 'BUILT_BY',
+    fromId: 'shipit://repository/default/payments-api',
+    toId: 'shipit://pipeline/default/payments-api-ci',
+    source: 'github',
+    confidence: 0.9,
+  },
+  {
+    type: 'BUILT_BY',
+    fromId: 'shipit://repository/default/checkout-service',
+    toId: 'shipit://pipeline/default/checkout-service-ci',
+    source: 'github',
+    confidence: 0.9,
+  },
+  {
+    type: 'BUILT_BY',
+    fromId: 'shipit://repository/default/frontend-app',
+    toId: 'shipit://pipeline/default/frontend-app-ci',
+    source: 'github',
+    confidence: 0.9,
+  },
   // Dependencies
-  { type: 'DEPENDS_ON', fromId: 'shipit://repository/default/checkout-service', toId: 'shipit://repository/default/payments-api', source: 'github', confidence: 0.85 },
-  { type: 'DEPENDS_ON', fromId: 'shipit://repository/default/frontend-app', toId: 'shipit://repository/default/checkout-service', source: 'github', confidence: 0.85 },
-  { type: 'DEPENDS_ON', fromId: 'shipit://repository/default/payments-api', toId: 'shipit://repository/default/shared-lib', source: 'github', confidence: 0.85 },
-  { type: 'DEPENDS_ON', fromId: 'shipit://repository/default/checkout-service', toId: 'shipit://repository/default/shared-lib', source: 'github', confidence: 0.85 },
+  {
+    type: 'DEPENDS_ON',
+    fromId: 'shipit://repository/default/checkout-service',
+    toId: 'shipit://repository/default/payments-api',
+    source: 'github',
+    confidence: 0.85,
+  },
+  {
+    type: 'DEPENDS_ON',
+    fromId: 'shipit://repository/default/frontend-app',
+    toId: 'shipit://repository/default/checkout-service',
+    source: 'github',
+    confidence: 0.85,
+  },
+  {
+    type: 'DEPENDS_ON',
+    fromId: 'shipit://repository/default/payments-api',
+    toId: 'shipit://repository/default/shared-lib',
+    source: 'github',
+    confidence: 0.85,
+  },
+  {
+    type: 'DEPENDS_ON',
+    fromId: 'shipit://repository/default/checkout-service',
+    toId: 'shipit://repository/default/shared-lib',
+    source: 'github',
+    confidence: 0.85,
+  },
 ];
 
 async function seed() {

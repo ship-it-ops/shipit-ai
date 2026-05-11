@@ -1,14 +1,8 @@
 const CANONICAL_ID_REGEX = /^shipit:\/\/([a-z-]+)\/([a-z0-9-]+)\/(.+)$/;
 
-export function buildCanonicalId(
-  label: string,
-  namespace: string,
-  name: string,
-): string {
-  const normalizedLabel = label.replace(
-    /([A-Z])/g,
-    (match, char, index) =>
-      index > 0 ? `-${(char as string).toLowerCase()}` : (char as string).toLowerCase(),
+export function buildCanonicalId(label: string, namespace: string, name: string): string {
+  const normalizedLabel = label.replace(/([A-Z])/g, (match, char, index) =>
+    index > 0 ? `-${(char as string).toLowerCase()}` : (char as string).toLowerCase(),
   );
   return `shipit://${normalizedLabel}/${namespace}/${name}`;
 }

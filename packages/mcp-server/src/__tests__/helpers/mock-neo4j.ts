@@ -42,10 +42,7 @@ export function createMockNeo4jClient(
   };
 }
 
-export function createNodeRecord(
-  nodeProps: Record<string, unknown>,
-  labels: string[],
-): MockRecord {
+export function createNodeRecord(nodeProps: Record<string, unknown>, labels: string[]): MockRecord {
   return createMockRecord({
     node: { properties: nodeProps },
     labels,

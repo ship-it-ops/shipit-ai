@@ -95,20 +95,10 @@ export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelP
         >
           View details
         </Button>
-        <Button
-          fullWidth
-          variant="outline"
-          size="sm"
-          icon={<IconGlyph name="search" size={11} />}
-        >
+        <Button fullWidth variant="outline" size="sm" icon={<IconGlyph name="search" size={11} />}>
           Inspect claims
         </Button>
-        <Button
-          fullWidth
-          variant="outline"
-          size="sm"
-          icon={<IconGlyph name="target" size={11} />}
-        >
+        <Button fullWidth variant="outline" size="sm" icon={<IconGlyph name="target" size={11} />}>
           Show blast radius
         </Button>
       </div>

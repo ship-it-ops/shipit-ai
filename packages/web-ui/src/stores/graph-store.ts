@@ -34,8 +34,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   layout: 'dagre',
   viewport: { zoom: 1, pan: { x: 0, y: 0 } },
   setSelectedNode: (nodeId) => set({ selectedNode: nodeId }),
-  setFilters: (filters) =>
-    set((state) => ({ filters: { ...state.filters, ...filters } })),
+  setFilters: (filters) => set((state) => ({ filters: { ...state.filters, ...filters } })),
   resetFilters: () => set({ filters: defaultFilters }),
   setLayout: (layout) => set({ layout }),
   setViewport: (viewport) => set({ viewport }),

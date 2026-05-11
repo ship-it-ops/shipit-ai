@@ -1,14 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import {
-  Dialog,
-  Button,
-  Field,
-  Input,
-  Select,
-  Stepper,
-} from '@ship-it-ui/ui';
+import { Dialog, Button, Field, Input, Select, Stepper } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { cn } from '@/lib/utils';
 

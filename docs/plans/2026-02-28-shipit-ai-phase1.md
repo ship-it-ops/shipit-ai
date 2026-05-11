@@ -124,6 +124,7 @@ ShipIt-AI/
 **Goal:** Set up the Turborepo monorepo with all 8 packages, shared TypeScript config, Docker Compose for Neo4j + Redis, and CI-ready test infrastructure.
 
 **Files:**
+
 - Create: `package.json` (root workspace)
 - Create: `turbo.json`
 - Create: `tsconfig.base.json`
@@ -164,10 +165,7 @@ ShipIt-AI/
   "name": "shipit-ai",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "packages/connectors/*"
-  ],
+  "workspaces": ["packages/*", "packages/connectors/*"],
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -317,16 +315,16 @@ Each package follows this pattern (example for `packages/shared`):
 
 Package-specific dependencies:
 
-| Package | Extra Dependencies |
-|---------|-------------------|
-| `@shipit-ai/shared` | `yaml`, `zod` |
-| `@shipit-ai/event-bus` | `bullmq`, `ioredis`, `@shipit-ai/shared` |
-| `@shipit-ai/core-writer` | `neo4j-driver`, `@shipit-ai/shared`, `@shipit-ai/event-bus` |
-| `@shipit-ai/connector-sdk` | `@shipit-ai/shared`, `@shipit-ai/event-bus` |
-| `@shipit-ai/connector-github` | `@octokit/rest`, `@octokit/auth-app`, `@shipit-ai/connector-sdk`, `@shipit-ai/shared` |
-| `@shipit-ai/api-server` | `fastify`, `@fastify/cors`, `@fastify/swagger`, `neo4j-driver`, `@shipit-ai/shared`, `@shipit-ai/event-bus` |
-| `@shipit-ai/mcp-server` | `@modelcontextprotocol/sdk`, `neo4j-driver`, `@shipit-ai/shared` |
-| `@shipit-ai/web-ui` | `next`, `react`, `react-dom`, `tailwindcss`, `cytoscape`, `@tanstack/react-query`, `zustand` |
+| Package                       | Extra Dependencies                                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `@shipit-ai/shared`           | `yaml`, `zod`                                                                                               |
+| `@shipit-ai/event-bus`        | `bullmq`, `ioredis`, `@shipit-ai/shared`                                                                    |
+| `@shipit-ai/core-writer`      | `neo4j-driver`, `@shipit-ai/shared`, `@shipit-ai/event-bus`                                                 |
+| `@shipit-ai/connector-sdk`    | `@shipit-ai/shared`, `@shipit-ai/event-bus`                                                                 |
+| `@shipit-ai/connector-github` | `@octokit/rest`, `@octokit/auth-app`, `@shipit-ai/connector-sdk`, `@shipit-ai/shared`                       |
+| `@shipit-ai/api-server`       | `fastify`, `@fastify/cors`, `@fastify/swagger`, `neo4j-driver`, `@shipit-ai/shared`, `@shipit-ai/event-bus` |
+| `@shipit-ai/mcp-server`       | `@modelcontextprotocol/sdk`, `neo4j-driver`, `@shipit-ai/shared`                                            |
+| `@shipit-ai/web-ui`           | `next`, `react`, `react-dom`, `tailwindcss`, `cytoscape`, `@tanstack/react-query`, `zustand`                |
 
 **Step 6: Create Docker Compose**
 
@@ -336,8 +334,8 @@ services:
   neo4j:
     image: neo4j:5-community
     ports:
-      - "7474:7474"   # Browser
-      - "7687:7687"   # Bolt
+      - '7474:7474' # Browser
+      - '7687:7687' # Bolt
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-shipit-dev}
       NEO4J_PLUGINS: '["apoc"]'
@@ -348,7 +346,7 @@ services:
       - neo4j_logs:/logs
       - ./neo4j/init.cypher:/var/lib/neo4j/import/init.cypher
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      test: ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -356,11 +354,11 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - '6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -370,7 +368,7 @@ services:
       context: ..
       dockerfile: packages/api-server/Dockerfile
     ports:
-      - "3001:3001"
+      - '3001:3001'
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
@@ -403,7 +401,7 @@ services:
       context: ..
       dockerfile: packages/web-ui/Dockerfile
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       API_SERVER_URL: http://api-server:3001
     depends_on:
@@ -520,6 +518,7 @@ git commit -m "feat: scaffold monorepo with Turborepo, Docker Compose, Neo4j, Re
 **Goal:** Implement all shared TypeScript interfaces (CanonicalNode, CanonicalEdge, PropertyClaim, etc.), the YAML schema parser, schema validation, canonical ID utilities, and resolution strategy types. This is the type foundation for every other package.
 
 **Files:**
+
 - Create: `packages/shared/src/types/canonical.ts`
 - Create: `packages/shared/src/types/claims.ts`
 - Create: `packages/shared/src/types/schema.ts`
@@ -546,25 +545,25 @@ git commit -m "feat: scaffold monorepo with Turborepo, Docker Compose, Neo4j, Re
 import type { PropertyClaim } from './claims.js';
 
 export interface CanonicalNode {
-  id: string;                       // shipit://{label}/{namespace}/{name}
-  label: string;                    // Node label (e.g., 'LogicalService')
+  id: string; // shipit://{label}/{namespace}/{name}
+  label: string; // Node label (e.g., 'LogicalService')
   properties: Record<string, unknown>;
   _claims: PropertyClaim[];
-  _source_system: string;           // e.g., 'github', 'kubernetes'
-  _source_org: string;              // e.g., 'github/acme-corp'
-  _source_id: string;               // Linking key from source system
-  _last_synced: string;             // ISO 8601
-  _event_version: number | string;  // Monotonic integer or ISO 8601 only
+  _source_system: string; // e.g., 'github', 'kubernetes'
+  _source_org: string; // e.g., 'github/acme-corp'
+  _source_id: string; // Linking key from source system
+  _last_synced: string; // ISO 8601
+  _event_version: number | string; // Monotonic integer or ISO 8601 only
 }
 
 export interface CanonicalEdge {
-  type: string;                     // e.g., 'DEPENDS_ON'
-  from: string;                     // Source node canonical ID
-  to: string;                       // Target node canonical ID
+  type: string; // e.g., 'DEPENDS_ON'
+  from: string; // Source node canonical ID
+  to: string; // Target node canonical ID
   properties?: Record<string, unknown>;
   _source: string;
-  _confidence: number;              // 0.0-1.0
-  _ingested_at: string;             // ISO 8601
+  _confidence: number; // 0.0-1.0
+  _ingested_at: string; // ISO 8601
 }
 
 export interface CanonicalEntity {
@@ -582,8 +581,8 @@ export interface PropertyClaim {
   value: unknown;
   source: string;
   source_id: string;
-  ingested_at: string;              // ISO 8601
-  confidence: number;               // 0.0-1.0
+  ingested_at: string; // ISO 8601
+  confidence: number; // 0.0-1.0
   evidence: string | null;
 }
 
@@ -619,7 +618,7 @@ import type { ResolutionStrategy } from './claims.js';
 export type SchemaMode = 'full' | 'simple';
 
 export interface SchemaPropertyDef {
-  type: string;                     // 'string', 'integer', 'boolean', 'string[]'
+  type: string; // 'string', 'integer', 'boolean', 'string[]'
   required?: boolean;
   resolution_strategy: ResolutionStrategy;
   enum?: string[];
@@ -658,10 +657,10 @@ export interface ShipItSchema {
 import type { CanonicalEntity } from './canonical.js';
 
 export interface EventEnvelope {
-  id: string;                       // UUID
-  timestamp: string;                // ISO 8601
+  id: string; // UUID
+  timestamp: string; // ISO 8601
   connector_id: string;
-  idempotency_key: string;         // {connector_id}:{entity_primary_key}:{event_version}
+  idempotency_key: string; // {connector_id}:{entity_primary_key}:{event_version}
   payload: CanonicalEntity;
 }
 
@@ -709,12 +708,14 @@ const CANONICAL_ID_REGEX = /^shipit:\/\/([a-z-]+)\/([a-z0-9-]+)\/(.+)$/;
 
 export function buildCanonicalId(label: string, namespace: string, name: string): string {
   const normalizedLabel = label.replace(/([A-Z])/g, (match, char, index) =>
-    index > 0 ? `-${char.toLowerCase()}` : char.toLowerCase()
+    index > 0 ? `-${char.toLowerCase()}` : char.toLowerCase(),
   );
   return `shipit://${normalizedLabel}/${namespace}/${name}`;
 }
 
-export function parseCanonicalId(id: string): { label: string; namespace: string; name: string } | null {
+export function parseCanonicalId(
+  id: string,
+): { label: string; namespace: string; name: string } | null {
   const match = id.match(CANONICAL_ID_REGEX);
   if (!match) return null;
   return {
@@ -743,12 +744,18 @@ export function buildLinkingKey(connector: ConnectorType, ...parts: string[]): s
 
 function getLinkingKeyPrefix(connector: ConnectorType): string {
   switch (connector) {
-    case 'github': return 'github';
-    case 'kubernetes': return 'k8s';
-    case 'datadog': return 'dd';
-    case 'backstage': return 'backstage';
-    case 'jira': return 'jira';
-    case 'identity': return 'idp';
+    case 'github':
+      return 'github';
+    case 'kubernetes':
+      return 'k8s';
+    case 'datadog':
+      return 'dd';
+    case 'backstage':
+      return 'backstage';
+    case 'jira':
+      return 'jira';
+    case 'identity':
+      return 'idp';
   }
 }
 
@@ -774,11 +781,11 @@ export function computeEffectiveConfidence(
   baseConfidence: number,
   ingestedAt: string,
   now: Date = new Date(),
-  decayRate: number = DEFAULT_DECAY_RATE
+  decayRate: number = DEFAULT_DECAY_RATE,
 ): number {
   const ingestedDate = new Date(ingestedAt);
   const weeksSinceIngested = (now.getTime() - ingestedDate.getTime()) / MS_PER_WEEK;
-  const decayed = baseConfidence - (decayRate * weeksSinceIngested);
+  const decayed = baseConfidence - decayRate * weeksSinceIngested;
   return Math.max(0, Math.min(1, decayed));
 }
 ```
@@ -824,9 +831,11 @@ const propertyDefSchema = z.object({
 const nodeTypeDefSchema = z.object({
   description: z.string(),
   properties: z.record(z.string(), propertyDefSchema),
-  constraints: z.object({
-    unique_key: z.string().optional(),
-  }).optional(),
+  constraints: z
+    .object({
+      unique_key: z.string().optional(),
+    })
+    .optional(),
 });
 
 const relTypeDefSchema = z.object({
@@ -870,12 +879,12 @@ export function validateSchemaRelationships(schema: ShipItSchema): string[] {
 
 ```yaml
 # config/shipit-schema.yaml
-version: "1.0"
+version: '1.0'
 mode: full
 
 node_types:
   LogicalService:
-    description: "A named, team-owned service concept"
+    description: 'A named, team-owned service concept'
     properties:
       name:
         type: string
@@ -900,7 +909,7 @@ node_types:
         type: string
         resolution_strategy: HIGHEST_CONFIDENCE
       tags:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
       description:
         type: string
@@ -909,7 +918,7 @@ node_types:
       unique_key: name
 
   Repository:
-    description: "A source code repository"
+    description: 'A source code repository'
     properties:
       name:
         type: string
@@ -929,13 +938,13 @@ node_types:
         type: string
         resolution_strategy: HIGHEST_CONFIDENCE
       topics:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
     constraints:
       unique_key: name
 
   Deployment:
-    description: "A running instance in a specific environment/cluster"
+    description: 'A running instance in a specific environment/cluster'
     properties:
       name:
         type: string
@@ -963,7 +972,7 @@ node_types:
       unique_key: name
 
   RuntimeService:
-    description: "The identity seen by observability tools"
+    description: 'The identity seen by observability tools'
     properties:
       name:
         type: string
@@ -982,7 +991,7 @@ node_types:
       unique_key: name
 
   Team:
-    description: "An engineering team or squad"
+    description: 'An engineering team or squad'
     properties:
       name:
         type: string
@@ -998,7 +1007,7 @@ node_types:
       unique_key: name
 
   Person:
-    description: "An individual (engineer, PM, etc.)"
+    description: 'An individual (engineer, PM, etc.)'
     properties:
       name:
         type: string
@@ -1017,7 +1026,7 @@ node_types:
       unique_key: email
 
   Pipeline:
-    description: "A CI/CD workflow"
+    description: 'A CI/CD workflow'
     properties:
       name:
         type: string
@@ -1036,7 +1045,7 @@ node_types:
       unique_key: name
 
   Monitor:
-    description: "An observability check (alert, SLO)"
+    description: 'An observability check (alert, SLO)'
     properties:
       name:
         type: string
@@ -1058,7 +1067,7 @@ node_types:
       unique_key: name
 
   Namespace:
-    description: "A Kubernetes namespace"
+    description: 'A Kubernetes namespace'
     properties:
       name:
         type: string
@@ -1068,13 +1077,13 @@ node_types:
         type: string
         resolution_strategy: LATEST_TIMESTAMP
       labels:
-        type: "string[]"
+        type: 'string[]'
         resolution_strategy: MERGE_SET
     constraints:
       unique_key: name
 
   Cluster:
-    description: "A Kubernetes cluster"
+    description: 'A Kubernetes cluster'
     properties:
       name:
         type: string
@@ -1093,7 +1102,7 @@ node_types:
       unique_key: name
 
   BuildArtifact:
-    description: "A built container image or binary"
+    description: 'A built container image or binary'
     properties:
       name:
         type: string
@@ -1112,7 +1121,7 @@ node_types:
       unique_key: name
 
   Environment:
-    description: "A deployment target environment"
+    description: 'A deployment target environment'
     properties:
       name:
         type: string
@@ -1135,95 +1144,95 @@ relationship_types:
   IMPLEMENTED_BY:
     from: LogicalService
     to: Repository
-    cardinality: "1:N"
-    description: "LogicalService is implemented by this repo"
+    cardinality: '1:N'
+    description: 'LogicalService is implemented by this repo'
 
   DEPLOYED_AS:
     from: LogicalService
     to: Deployment
-    cardinality: "1:N"
-    description: "LogicalService has this running deployment"
+    cardinality: '1:N'
+    description: 'LogicalService has this running deployment'
 
   EMITS_TELEMETRY_AS:
     from: Deployment
     to: RuntimeService
-    cardinality: "N:M"
-    description: "Deployment is observed as this RuntimeService"
+    cardinality: 'N:M'
+    description: 'Deployment is observed as this RuntimeService'
 
   BUILT_FROM:
     from: BuildArtifact
     to: Repository
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   RUNS_IMAGE:
     from: Deployment
     to: BuildArtifact
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   RUNS_IN_ENV:
     from: Deployment
     to: Environment
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   DEPENDS_ON:
     from: LogicalService
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CALLS:
     from: RuntimeService
     to: RuntimeService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   OWNS:
     from: Team
     to: LogicalService
-    cardinality: "1:N"
+    cardinality: '1:N'
 
   MEMBER_OF:
     from: Person
     to: Team
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CONTRIBUTES_TO:
     from: Person
     to: Repository
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   RUNS_IN:
     from: Deployment
     to: Namespace
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   PART_OF:
     from: Namespace
     to: Cluster
-    cardinality: "N:1"
+    cardinality: 'N:1'
 
   BUILT_BY:
     from: LogicalService
     to: Pipeline
-    cardinality: "1:N"
+    cardinality: '1:N'
 
   TRIGGERS:
     from: Pipeline
     to: Pipeline
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   MONITORS:
     from: Monitor
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   CODEOWNER_OF:
     from: Person
     to: Repository
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   ON_CALL_FOR:
     from: Person
     to: LogicalService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
 resolution_defaults:
   owner: HIGHEST_CONFIDENCE
@@ -1238,24 +1247,34 @@ resolution_defaults:
 ```typescript
 // packages/shared/src/__tests__/canonical-id.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildCanonicalId, parseCanonicalId, isValidCanonicalId } from '../identity/canonical-id.js';
+import {
+  buildCanonicalId,
+  parseCanonicalId,
+  isValidCanonicalId,
+} from '../identity/canonical-id.js';
 
 describe('buildCanonicalId', () => {
   it('builds from PascalCase label', () => {
-    expect(buildCanonicalId('LogicalService', 'default', 'payments-api'))
-      .toBe('shipit://logical-service/default/payments-api');
+    expect(buildCanonicalId('LogicalService', 'default', 'payments-api')).toBe(
+      'shipit://logical-service/default/payments-api',
+    );
   });
 
   it('builds from simple label', () => {
-    expect(buildCanonicalId('Repository', 'default', 'config-service'))
-      .toBe('shipit://repository/default/config-service');
+    expect(buildCanonicalId('Repository', 'default', 'config-service')).toBe(
+      'shipit://repository/default/config-service',
+    );
   });
 });
 
 describe('parseCanonicalId', () => {
   it('parses valid canonical ID', () => {
     const result = parseCanonicalId('shipit://logical-service/default/payments-api');
-    expect(result).toEqual({ label: 'logical-service', namespace: 'default', name: 'payments-api' });
+    expect(result).toEqual({
+      label: 'logical-service',
+      namespace: 'default',
+      name: 'payments-api',
+    });
   });
 
   it('returns null for invalid ID', () => {
@@ -1324,7 +1343,9 @@ describe('parseSchemaFile', () => {
     expect(schema.version).toBe('1.0');
     expect(schema.mode).toBe('full');
     expect(schema.node_types.LogicalService).toBeDefined();
-    expect(schema.node_types.LogicalService.properties.name.resolution_strategy).toBe('HIGHEST_CONFIDENCE');
+    expect(schema.node_types.LogicalService.properties.name.resolution_strategy).toBe(
+      'HIGHEST_CONFIDENCE',
+    );
   });
 
   it('validates relationship from/to labels exist', () => {
@@ -1396,6 +1417,7 @@ git commit -m "feat: add shared types, schema parser, canonical ID utilities, co
 **Goal:** Implement the Event Bus SDK abstraction with a BullMQ/Redis implementation for Lite Mode. This provides the publish/subscribe/replay interface used by the Connector SDK and Core Writer.
 
 **Files:**
+
 - Create: `packages/event-bus/src/interface.ts`
 - Create: `packages/event-bus/src/bullmq/client.ts`
 - Create: `packages/event-bus/src/bullmq/producer.ts`
@@ -1410,6 +1432,7 @@ git commit -m "feat: add shared types, schema parser, canonical ID utilities, co
 The BullMQ client wraps BullMQ queues with the EventBusClient interface from `@shipit-ai/shared`. Events are keyed by canonical entity ID for ordering guarantees per entity.
 
 Key implementation details:
+
 - Queue name: `shipit-events`
 - Jobs keyed by entity canonical ID (ensures ordering per entity)
 - At-least-once delivery via BullMQ's built-in retry with exponential backoff
@@ -1419,6 +1442,7 @@ Key implementation details:
 **Step 2: Write integration tests using a real Redis instance (Docker)**
 
 Tests should verify:
+
 - Publish events and consume them
 - Events for the same entity are processed in order
 - Failed events go to DLQ after max retries
@@ -1438,6 +1462,7 @@ git commit -m "feat: implement Event Bus SDK with BullMQ/Redis for Lite Mode"
 **Goal:** Implement the Core Writer -- the sole component that writes to Neo4j. It consumes events from the Event Bus, resolves identity (primary key + linking key), applies claim resolution, materializes effective properties, and maintains the idempotency log.
 
 **Files:**
+
 - Create: `packages/core-writer/src/writer.ts`
 - Create: `packages/core-writer/src/claims/resolver.ts`
 - Create: `packages/core-writer/src/claims/strategies.ts`
@@ -1465,7 +1490,7 @@ export function resolveClaims(
   claims: PropertyClaim[],
   strategy: ResolutionStrategy,
   decayRate?: number,
-  now?: Date
+  now?: Date,
 ): ClaimResolutionResult | null {
   if (claims.length === 0) return null;
 
@@ -1483,16 +1508,29 @@ export function resolveClaims(
   }
 }
 
-function resolveManualOverrideFirst(claims: PropertyClaim[], decayRate?: number, now?: Date): ClaimResolutionResult {
-  const manualClaim = claims.find(c => c.source.startsWith('manual:'));
+function resolveManualOverrideFirst(
+  claims: PropertyClaim[],
+  decayRate?: number,
+  now?: Date,
+): ClaimResolutionResult {
+  const manualClaim = claims.find((c) => c.source.startsWith('manual:'));
   if (manualClaim) {
-    return { effective_value: manualClaim.value, winning_claim: manualClaim, strategy: 'MANUAL_OVERRIDE_FIRST', all_claims: claims };
+    return {
+      effective_value: manualClaim.value,
+      winning_claim: manualClaim,
+      strategy: 'MANUAL_OVERRIDE_FIRST',
+      all_claims: claims,
+    };
   }
   return resolveHighestConfidence(claims, decayRate, now);
 }
 
-function resolveHighestConfidence(claims: PropertyClaim[], decayRate?: number, now?: Date): ClaimResolutionResult {
-  const scored = claims.map(c => ({
+function resolveHighestConfidence(
+  claims: PropertyClaim[],
+  decayRate?: number,
+  now?: Date,
+): ClaimResolutionResult {
+  const scored = claims.map((c) => ({
     claim: c,
     effective: computeEffectiveConfidence(c.confidence, c.ingested_at, now, decayRate),
   }));
@@ -1501,52 +1539,74 @@ function resolveHighestConfidence(claims: PropertyClaim[], decayRate?: number, n
     return new Date(b.claim.ingested_at).getTime() - new Date(a.claim.ingested_at).getTime();
   });
   const winner = scored[0].claim;
-  return { effective_value: winner.value, winning_claim: winner, strategy: 'HIGHEST_CONFIDENCE', all_claims: claims };
+  return {
+    effective_value: winner.value,
+    winning_claim: winner,
+    strategy: 'HIGHEST_CONFIDENCE',
+    all_claims: claims,
+  };
 }
 
 function resolveAuthoritativeOrder(claims: PropertyClaim[]): ClaimResolutionResult {
   // Default source priority: manual > backstage > github > kubernetes > datadog > jira > identity
   const priority = ['manual', 'backstage', 'github', 'kubernetes', 'datadog', 'jira', 'identity'];
   const sorted = [...claims].sort((a, b) => {
-    const aIdx = priority.findIndex(p => a.source.startsWith(p));
-    const bIdx = priority.findIndex(p => b.source.startsWith(p));
+    const aIdx = priority.findIndex((p) => a.source.startsWith(p));
+    const bIdx = priority.findIndex((p) => b.source.startsWith(p));
     return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
   });
   const winner = sorted[0];
-  return { effective_value: winner.value, winning_claim: winner, strategy: 'AUTHORITATIVE_ORDER', all_claims: claims };
+  return {
+    effective_value: winner.value,
+    winning_claim: winner,
+    strategy: 'AUTHORITATIVE_ORDER',
+    all_claims: claims,
+  };
 }
 
 function resolveLatestTimestamp(claims: PropertyClaim[]): ClaimResolutionResult {
-  const sorted = [...claims].sort((a, b) =>
-    new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime()
+  const sorted = [...claims].sort(
+    (a, b) => new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime(),
   );
   const winner = sorted[0];
-  return { effective_value: winner.value, winning_claim: winner, strategy: 'LATEST_TIMESTAMP', all_claims: claims };
+  return {
+    effective_value: winner.value,
+    winning_claim: winner,
+    strategy: 'LATEST_TIMESTAMP',
+    all_claims: claims,
+  };
 }
 
 function resolveMergeSet(claims: PropertyClaim[]): ClaimResolutionResult {
   const allValues = new Set<string>();
   for (const claim of claims) {
     if (Array.isArray(claim.value)) {
-      claim.value.forEach(v => allValues.add(String(v)));
+      claim.value.forEach((v) => allValues.add(String(v)));
     } else {
       allValues.add(String(claim.value));
     }
   }
   const mergedValue = Array.from(allValues);
-  return { effective_value: mergedValue, winning_claim: claims[0], strategy: 'MERGE_SET', all_claims: claims };
+  return {
+    effective_value: mergedValue,
+    winning_claim: claims[0],
+    strategy: 'MERGE_SET',
+    all_claims: claims,
+  };
 }
 ```
 
 **Step 2: Implement Identity Reconciler (Primary Key + Linking Key)**
 
 The reconciler checks:
+
 1. Primary key match: if the node has a canonical `shipit://` ID, use it directly
 2. Linking key match: look up `_source_id` in the linking key index; if found, merge onto existing node
 
 **Step 3: Implement the Core Writer main loop**
 
 The writer:
+
 - Subscribes to the Event Bus
 - Consumes events in micro-batches (default: 500)
 - For each batch: check idempotency, resolve identity, apply claims, materialize effective properties
@@ -1554,6 +1614,7 @@ The writer:
 - Acknowledges events after successful commit
 
 Key Cypher patterns:
+
 ```cypher
 // MERGE entity with claims
 MERGE (n:{label} {id: $id})
@@ -1592,6 +1653,7 @@ git commit -m "feat: implement Core Writer with claim resolution, identity recon
 **Goal:** Implement the Connector SDK framework -- the interface that all connectors implement, plus the SDK harness that auto-publishes `normalize()` output to the Event Bus.
 
 **Files:**
+
 - Create: `packages/connector-sdk/src/interface.ts`
 - Create: `packages/connector-sdk/src/harness.ts`
 - Create: `packages/connector-sdk/src/types.ts`
@@ -1607,11 +1669,11 @@ git commit -m "feat: implement Core Writer with claim resolution, identity recon
 import type { CanonicalEntity } from '@shipit-ai/shared';
 
 export interface ConnectorConfig {
-  id: string;                       // Unique connector instance ID
-  type: string;                     // e.g., 'github', 'kubernetes'
+  id: string; // Unique connector instance ID
+  type: string; // e.g., 'github', 'kubernetes'
   credentials: Record<string, string>;
-  scope: Record<string, unknown>;   // Connector-specific scope config
-  schedule?: string;                // Cron expression
+  scope: Record<string, unknown>; // Connector-specific scope config
+  schedule?: string; // Cron expression
 }
 
 export interface AuthResult {
@@ -1626,8 +1688,8 @@ export interface DiscoveryResult {
 }
 
 export interface FetchResult {
-  entities: unknown[];               // Raw entities from source
-  cursor?: string;                   // For pagination
+  entities: unknown[]; // Raw entities from source
+  cursor?: string; // For pagination
   has_more: boolean;
 }
 
@@ -1666,6 +1728,7 @@ export interface ShipItConnector {
 **Step 2: Implement the SDK Harness (auto-publish)**
 
 The harness wraps a connector and handles:
+
 - Calling `discover()` -> `fetch()` -> `normalize()` in sequence
 - Auto-publishing `normalize()` output to the Event Bus
 - Dry-run mode (preview without publishing)
@@ -1687,6 +1750,7 @@ git commit -m "feat: implement Connector SDK with auto-publish harness and dry-r
 **Goal:** Implement the GitHub connector that ingests repositories, teams, persons, pipelines (Actions workflows), and CODEOWNERS into the knowledge graph.
 
 **Files:**
+
 - Create: `packages/connectors/github/src/connector.ts`
 - Create: `packages/connectors/github/src/auth.ts`
 - Create: `packages/connectors/github/src/fetchers/repositories.ts`
@@ -1714,13 +1778,13 @@ Each fetcher handles pagination, rate limiting (respect `x-ratelimit-remaining` 
 
 Transform GitHub API responses into `CanonicalEntity` objects with proper claims:
 
-| GitHub Entity | Graph Mapping |
-|--------------|---------------|
-| Repository | `Repository` node, `IMPLEMENTED_BY` edges (if service mapping exists) |
-| Team | `Team` node |
-| Team members | `Person` nodes + `MEMBER_OF` edges |
-| Actions workflow | `Pipeline` node + `BUILT_BY` edges |
-| CODEOWNERS | `CODEOWNER_OF` edges to `Repository` |
+| GitHub Entity    | Graph Mapping                                                         |
+| ---------------- | --------------------------------------------------------------------- |
+| Repository       | `Repository` node, `IMPLEMENTED_BY` edges (if service mapping exists) |
+| Team             | `Team` node                                                           |
+| Team members     | `Person` nodes + `MEMBER_OF` edges                                    |
+| Actions workflow | `Pipeline` node + `BUILT_BY` edges                                    |
+| CODEOWNERS       | `CODEOWNER_OF` edges to `Repository`                                  |
 
 Linking keys follow the format: `github://{org}/{repo-name}` for repos, `github://{org}/team/{team-slug}` for teams.
 
@@ -1740,6 +1804,7 @@ git commit -m "feat: implement GitHub connector with repos, teams, workflows, CO
 **Goal:** Implement the Fastify API server that orchestrates connectors, manages schema, serves as the central API for the Web UI and MCP Server, and handles configuration.
 
 **Files:**
+
 - Create: `packages/api-server/src/server.ts`
 - Create: `packages/api-server/src/config.ts`
 - Create: `packages/api-server/src/routes/connectors.ts`
@@ -1785,30 +1850,30 @@ export async function createServer() {
 
 **Step 2: Implement connector management routes**
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/connectors` | List configured connectors |
-| POST | `/api/connectors` | Add a new connector |
-| GET | `/api/connectors/:id` | Get connector details |
-| POST | `/api/connectors/:id/sync` | Trigger sync |
-| GET | `/api/connectors/:id/status` | Get sync status |
-| DELETE | `/api/connectors/:id` | Remove connector |
+| Method | Path                         | Description                |
+| ------ | ---------------------------- | -------------------------- |
+| GET    | `/api/connectors`            | List configured connectors |
+| POST   | `/api/connectors`            | Add a new connector        |
+| GET    | `/api/connectors/:id`        | Get connector details      |
+| POST   | `/api/connectors/:id/sync`   | Trigger sync               |
+| GET    | `/api/connectors/:id/status` | Get sync status            |
+| DELETE | `/api/connectors/:id`        | Remove connector           |
 
 **Step 3: Implement schema management routes**
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/schema` | Get current schema |
-| PUT | `/api/schema` | Update schema (YAML body) |
-| POST | `/api/schema/validate` | Validate schema without applying |
+| Method | Path                   | Description                      |
+| ------ | ---------------------- | -------------------------------- |
+| GET    | `/api/schema`          | Get current schema               |
+| PUT    | `/api/schema`          | Update schema (YAML body)        |
+| POST   | `/api/schema/validate` | Validate schema without applying |
 
 **Step 4: Implement graph query routes (BFF for Web UI)**
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/graph/stats` | Graph statistics |
-| GET | `/api/graph/neighborhood/:id` | Bounded neighborhood for Graph Explorer |
-| GET | `/api/graph/search` | Entity search |
+| Method | Path                          | Description                             |
+| ------ | ----------------------------- | --------------------------------------- |
+| GET    | `/api/graph/stats`            | Graph statistics                        |
+| GET    | `/api/graph/neighborhood/:id` | Bounded neighborhood for Graph Explorer |
+| GET    | `/api/graph/search`           | Entity search                           |
 
 **Step 5: Write the Dockerfile**
 
@@ -1852,6 +1917,7 @@ git commit -m "feat: implement API Server with connector, schema, and graph rout
 **Goal:** Implement the MCP Server that exposes the knowledge graph as structured tool calls for AI agents. Phase 1a tools: `blast_radius`, `entity_detail`, `schema_info`. Phase 1b tools: `find_owners`, `dependency_chain`, `graph_stats`, `search_entities`.
 
 **Files:**
+
 - Create: `packages/mcp-server/src/server.ts`
 - Create: `packages/mcp-server/src/tools/blast-radius.ts`
 - Create: `packages/mcp-server/src/tools/entity-detail.ts`
@@ -1925,7 +1991,11 @@ export interface McpResponse<T> {
   data: T;
 }
 
-export function wrapResponse<T>(tool: string, data: T, opts: Partial<McpResponseMeta>): McpResponse<T> {
+export function wrapResponse<T>(
+  tool: string,
+  data: T,
+  opts: Partial<McpResponseMeta>,
+): McpResponse<T> {
   return {
     _meta: {
       tool,
@@ -1968,7 +2038,11 @@ export interface McpError {
   };
 }
 
-export function createError(code: ErrorCode, message: string, suggestions: string[] = []): McpError {
+export function createError(
+  code: ErrorCode,
+  message: string,
+  suggestions: string[] = [],
+): McpError {
   return { error: { code, message, suggestions } };
 }
 ```
@@ -1978,6 +2052,7 @@ export function createError(code: ErrorCode, message: string, suggestions: strin
 Parameters: `node` (canonical ID), `depth` (1-6, default 3), `direction` (DOWNSTREAM/UPSTREAM/BOTH), `production_only` (boolean).
 
 Cypher pattern for downstream blast radius:
+
 ```cypher
 MATCH path = (start {id: $node})-[*1..$depth]->(affected)
 WHERE ALL(r IN relationships(path) WHERE type(r) IN $edge_types)
@@ -2046,6 +2121,7 @@ git commit -m "feat: implement MCP Server with blast_radius, entity_detail, find
 **Goal:** Set up the Next.js 14 application with App Router, Tailwind CSS, shadcn/ui, navigation structure, and the Home/Overview view.
 
 **Files:**
+
 - Create: `packages/web-ui/` (Next.js app via `create-next-app`)
 - Create: `packages/web-ui/src/app/layout.tsx`
 - Create: `packages/web-ui/src/app/page.tsx`
@@ -2078,6 +2154,7 @@ npx shadcn@latest add button card badge input dialog command sheet tabs separato
 **Step 3: Implement sidebar navigation**
 
 Navigation structure per design doc Section 10.10:
+
 - Home (overview)
 - Explore > Graph Explorer
 - Configure > Connector Hub
@@ -2086,6 +2163,7 @@ Navigation structure per design doc Section 10.10:
 **Step 4: Implement Home/Overview page**
 
 Components:
+
 - Graph Health Summary (node/edge counts, staleness %, last sync)
 - Quick Actions (Add connector, Explore graph)
 - Stats Cards (services, repos, deployments, teams)
@@ -2123,6 +2201,7 @@ git commit -m "feat: implement Web UI foundation with Home view, sidebar, global
 **Goal:** Implement the Graph Explorer view with Cytoscape.js visualization, server-side aggregation, filter panel, and node interactions.
 
 **Files:**
+
 - Create: `packages/web-ui/src/app/explore/page.tsx`
 - Create: `packages/web-ui/src/components/graph/graph-canvas.tsx`
 - Create: `packages/web-ui/src/components/graph/graph-controls.tsx`
@@ -2144,6 +2223,7 @@ npm install cytoscape cytoscape-dagre cytoscape-cose-bilkent @types/cytoscape
 **Step 2: Implement graph canvas with layout switching**
 
 Support 3 layouts:
+
 - Dagre (hierarchical) -- default
 - Force-directed (CoSE) -- general exploration
 - Concentric -- blast radius visualization
@@ -2176,6 +2256,7 @@ git commit -m "feat: implement Graph Explorer with Cytoscape.js, filters, node i
 **Goal:** Implement the Connector Hub view for managing integrations.
 
 **Files:**
+
 - Create: `packages/web-ui/src/app/connectors/page.tsx`
 - Create: `packages/web-ui/src/components/connectors/connector-card.tsx`
 - Create: `packages/web-ui/src/components/connectors/connector-detail.tsx`
@@ -2209,6 +2290,7 @@ git commit -m "feat: implement Connector Hub with connector grid, detail panel, 
 **Goal:** Wire everything together. Ensure `docker-compose up` starts all services and the Walking Skeleton milestone works: connect GitHub -> answer a blast radius question in < 15 minutes.
 
 **Files:**
+
 - Modify: `docker/docker-compose.yml` (finalize all service definitions)
 - Create: `packages/core-writer/Dockerfile`
 - Create: `scripts/seed-demo.ts` (optional demo data seeder)
@@ -2277,9 +2359,9 @@ Task 2 (Data Model) ───┤                          ├──> Task 8 (MCP
 
 > `docker-compose up` -> connect GitHub -> answer a blast radius question in < 15 minutes from cold start.
 
-| Criterion | Target |
-|-----------|--------|
-| Time-to-first-insight | < 15 minutes |
-| Memory footprint | < 4 GB |
-| Blast radius accuracy | > 70% on reference queries |
-| MCP tool response time | < 3s P95 |
+| Criterion              | Target                     |
+| ---------------------- | -------------------------- |
+| Time-to-first-insight  | < 15 minutes               |
+| Memory footprint       | < 4 GB                     |
+| Blast radius accuracy  | > 70% on reference queries |
+| MCP tool response time | < 3s P95                   |

@@ -56,9 +56,7 @@ export function ConnectorDetail({ connector, onClose, onSync }: ConnectorDetailP
               <Row label="Type" value={<span className="capitalize">{connector.type}</span>} />
               <Row
                 label="Last sync"
-                value={
-                  connector.lastSync ? new Date(connector.lastSync).toLocaleString() : 'Never'
-                }
+                value={connector.lastSync ? new Date(connector.lastSync).toLocaleString() : 'Never'}
               />
               {connector.nextSync && (
                 <Row label="Next sync" value={new Date(connector.nextSync).toLocaleString()} />

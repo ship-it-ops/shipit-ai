@@ -1,9 +1,5 @@
 // Types
-export type {
-  CanonicalNode,
-  CanonicalEdge,
-  CanonicalEntity,
-} from './types/canonical.js';
+export type { CanonicalNode, CanonicalEdge, CanonicalEntity } from './types/canonical.js';
 
 export type {
   PropertyClaim,
@@ -20,29 +16,14 @@ export type {
   ShipItSchema,
 } from './types/schema.js';
 
-export type {
-  EventEnvelope,
-  EventHandler,
-  EventBusClient,
-} from './types/events.js';
+export type { EventEnvelope, EventHandler, EventBusClient } from './types/events.js';
 
-export type {
-  RenameSignal,
-  MergeEvent,
-  IdentityMatchStep,
-} from './types/identity.js';
+export type { RenameSignal, MergeEvent, IdentityMatchStep } from './types/identity.js';
 
 // Identity utilities
-export {
-  buildCanonicalId,
-  parseCanonicalId,
-  isValidCanonicalId,
-} from './identity/canonical-id.js';
+export { buildCanonicalId, parseCanonicalId, isValidCanonicalId } from './identity/canonical-id.js';
 
-export {
-  buildLinkingKey,
-  parseLinkingKey,
-} from './identity/linking-key.js';
+export { buildLinkingKey, parseLinkingKey } from './identity/linking-key.js';
 
 export type { ConnectorType } from './identity/linking-key.js';
 
