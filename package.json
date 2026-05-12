@@ -42,6 +42,11 @@
       "esbuild",
       "msgpackr-extract",
       "unrs-resolver"
-    ]
+    ],
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "@ship-it-ui/next>next": "16"
+      }
+    }
   }
 }

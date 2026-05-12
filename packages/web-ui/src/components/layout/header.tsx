@@ -5,7 +5,7 @@ import { type MouseEvent } from 'react';
 import { Kbd } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
-import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { UserMenu } from '@/components/layout/user-menu';
 
 interface Crumb {
   label: string;
@@ -20,9 +20,22 @@ interface Trail {
 const TRAILS: Record<string, Trail> = {
   '/': { page: 'Home' },
   '/explore': { section: { label: 'Explore' }, page: 'Graph Explorer' },
+  '/explore/query': { section: { label: 'Explore' }, page: 'Query Playground' },
   '/ask': { section: { label: 'Explore' }, page: 'Ask' },
+  '/catalog/teams': { section: { label: 'Catalog' }, page: 'Team Dashboard' },
   '/connectors': { section: { label: 'Configure' }, page: 'Connector Hub' },
+  '/configure/schema': { section: { label: 'Configure' }, page: 'Schema Editor' },
   '/incidents': { section: { label: 'Operations' }, page: 'Incident Mode' },
+  '/operations/claims': { section: { label: 'Operations' }, page: 'Claim Explorer' },
+  '/operations/reconciliation': {
+    section: { label: 'Operations' },
+    page: 'Reconciliation',
+  },
+  '/admin/audit': { section: { label: 'Admin' }, page: 'Audit Log' },
+  '/admin/access': { section: { label: 'Admin' }, page: 'Access Control' },
+  '/admin/agent-activity': { section: { label: 'Admin' }, page: 'Agent Activity' },
+  '/profile': { page: 'Profile' },
+  '/settings': { page: 'Settings' },
 };
 
 function trailFor(pathname: string): Trail {
@@ -46,7 +59,7 @@ export function Header() {
       <SearchTrigger onClick={() => setSearchOpen(true)} />
 
       <div className="flex justify-end">
-        <ThemeToggle />
+        <UserMenu />
       </div>
     </header>
   );

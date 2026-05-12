@@ -16,19 +16,62 @@ const layouts = [
   { id: 'concentric' as const, label: 'Concentric' },
 ];
 
+const ZOOM_STEP = 1.25;
+
 export function GraphControls() {
-  const { layout, setLayout } = useGraphStore();
+  const { layout, setLayout, cyInstance: cy } = useGraphStore();
   const current = layouts.find((l) => l.id === layout)?.label ?? 'Layout';
+
+  const ready = cy !== null;
+
+  const zoomBy = (factor: number) => {
+    if (!cy) return;
+    const container = cy.container();
+    if (!container) return;
+    const { width, height } = container.getBoundingClientRect();
+    cy.animate(
+      {
+        zoom: {
+          level: cy.zoom() * factor,
+          renderedPosition: { x: width / 2, y: height / 2 },
+        },
+      },
+      { duration: 140 },
+    );
+  };
+
+  const handleFit = () => {
+    if (!cy) return;
+    cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 200 });
+  };
 
   return (
     <div className="border-border bg-panel flex items-center gap-1 rounded-md border p-[3px]">
-      <Button variant="ghost" size="sm" aria-label="Zoom in">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Zoom in"
+        disabled={!ready}
+        onClick={() => zoomBy(ZOOM_STEP)}
+      >
         <IconGlyph name="add" size={12} />
       </Button>
-      <Button variant="ghost" size="sm" aria-label="Zoom out">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Zoom out"
+        disabled={!ready}
+        onClick={() => zoomBy(1 / ZOOM_STEP)}
+      >
         <IconGlyph name="remove" size={12} />
       </Button>
-      <Button variant="ghost" size="sm" aria-label="Fit to screen">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Fit to screen"
+        disabled={!ready}
+        onClick={handleFit}
+      >
         <IconGlyph name="fitView" size={12} />
       </Button>
 
