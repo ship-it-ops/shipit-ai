@@ -3,24 +3,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { CommandPalette, type CommandPaletteGroup, type CommandPaletteItem } from '@ship-it-ui/ui';
-import { ENTITY_GLYPH, ENTITY_LABEL, type EntityType } from '@ship-it-ui/shipit';
+import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useUIStore } from '@/stores/ui-store';
 import { useSearch } from '@/lib/hooks/use-search';
-
-const APP_TYPE_TO_ENTITY: Record<string, EntityType> = {
-  LogicalService: 'service',
-  RuntimeService: 'service',
-  Repository: 'document',
-  Deployment: 'deployment',
-  Pipeline: 'service',
-  Monitor: 'incident',
-  Team: 'person',
-  Person: 'person',
-};
-
-function toEntityType(label: string): EntityType {
-  return APP_TYPE_TO_ENTITY[label] ?? 'service';
-}
 
 export function GlobalCommandPalette() {
   const router = useRouter();
@@ -46,12 +31,12 @@ export function GlobalCommandPalette() {
   const groups: CommandPaletteGroup[] = useMemo(() => {
     if (query.trim().length < 2 || results.length === 0) return [];
     const byLabel = results.reduce<Record<string, CommandPaletteItem[]>>((acc, r) => {
-      const type = toEntityType(r.label);
+      const meta = getEntityTypeMeta(r.label);
       const item: CommandPaletteItem = {
         id: r.id,
         label: r.name,
-        description: r.owner ? `${ENTITY_LABEL[type]} · ${r.owner}` : ENTITY_LABEL[type],
-        glyph: <span className="text-accent">{ENTITY_GLYPH[type]}</span>,
+        description: r.owner ? `${meta.label} · ${r.owner}` : meta.label,
+        glyph: <span className={meta.toneClass}>{meta.glyph}</span>,
         trailing: r.label,
       };
       (acc[r.label] ??= []).push(item);

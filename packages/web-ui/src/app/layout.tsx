@@ -3,11 +3,11 @@ import { cookies } from 'next/headers';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import './globals.css';
+import { ThemeBootstrap, getThemeFromCookies } from '@ship-it-ui/next';
 import { Providers } from '@/components/providers';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { GlobalCommandPalette } from '@/components/layout/global-command-palette';
-import { THEME_COOKIE_NAME } from '@/lib/theme-cookie';
 
 export const metadata: Metadata = {
   title: 'ShipIt-AI',
@@ -15,10 +15,13 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const theme = cookies().get(THEME_COOKIE_NAME)?.value === 'light' ? 'light' : 'dark';
+  const theme = getThemeFromCookies(cookies());
 
   return (
     <html lang="en" data-theme={theme === 'light' ? 'light' : undefined} suppressHydrationWarning>
+      <head>
+        <ThemeBootstrap />
+      </head>
       <body className="bg-bg text-text">
         <Providers>
           <div className="flex h-screen overflow-hidden">

@@ -1,24 +1,28 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Card, Timeline, type TimelineEvent, type TimelineEventTone } from '@ship-it-ui/ui';
+import {
+  ActivityTimeline,
+  Card,
+  ScrollArea,
+  type ActivityEvent as TimelineActivityEvent,
+  type TimelineEventTone,
+} from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { fetchActivity, type ActivityEvent } from '@/lib/api';
-
-function formatRelativeTime(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 const eventTone: Record<ActivityEvent['type'], TimelineEventTone> = {
   sync: 'accent',
   merge: 'muted',
   schema_change: 'warn',
   connector_added: 'ok',
+};
+
+const eventGlyph: Record<ActivityEvent['type'], string> = {
+  sync: 'refresh',
+  merge: 'graph',
+  schema_change: 'schema',
+  connector_added: 'add',
 };
 
 export function ActivityFeed() {
@@ -37,17 +41,20 @@ export function ActivityFeed() {
     );
   }
 
-  const timelineEvents: TimelineEvent[] = events.map((e) => ({
+  const timelineEvents: TimelineActivityEvent[] = events.map((e) => ({
+    id: e.id,
     title: e.message,
-    time: formatRelativeTime(e.timestamp),
+    at: e.timestamp,
     tone: eventTone[e.type],
+    icon: <IconGlyph name={eventGlyph[e.type]} size={12} />,
+    actor: e.connector ? { name: e.connector } : undefined,
   }));
 
   return (
     <Card title="Recent Activity">
-      <div className="max-h-[280px] overflow-y-auto pr-2">
-        <Timeline events={timelineEvents} />
-      </div>
+      <ScrollArea className="h-[280px] pr-2">
+        <ActivityTimeline events={timelineEvents} />
+      </ScrollArea>
     </Card>
   );
 }

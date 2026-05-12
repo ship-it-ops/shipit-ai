@@ -19,10 +19,12 @@
     "zustand": "^5.0.0",
     "cytoscape": "^3.30.0",
     "lucide-react": "^0.460.0",
-    "@ship-it-ui/ui": "^0.0.3",
-    "@ship-it-ui/shipit": "^0.0.3",
-    "@ship-it-ui/tokens": "^0.0.3",
-    "@ship-it-ui/icons": "^0.0.3"
+    "@ship-it-ui/ui": "^0.0.4",
+    "@ship-it-ui/shipit": "^0.0.4",
+    "@ship-it-ui/tokens": "^0.0.4",
+    "@ship-it-ui/icons": "^0.0.4",
+    "@ship-it-ui/cytoscape": "^0.0.2",
+    "@ship-it-ui/next": "^0.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,7 +1,7 @@
 'use client';
 
 import { Switch, useTheme } from '@ship-it-ui/ui';
-import { setThemeCookie } from '@/lib/theme-cookie';
+import { writeThemeCookie } from '@ship-it-ui/next';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -10,7 +10,7 @@ export function ThemeToggle() {
   const handleChange = (next: boolean) => {
     const value = next ? 'light' : 'dark';
     setTheme(value);
-    setThemeCookie(value);
+    writeThemeCookie(value);
   };
 
   return (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Dialog, Button, Field, Input, Select, Stepper } from '@ship-it-ui/ui';
+import { Field, Input, Select, WizardDialog, type WizardStep } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { cn } from '@/lib/utils';
 
@@ -51,15 +51,12 @@ const connectorTypes: ConnectorType[] = [
   },
 ];
 
-const steps = ['Select type', 'Configure', 'Set scope', 'Review'] as const;
-
 interface AddConnectorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 export function AddConnectorDialog({ open, onOpenChange }: AddConnectorDialogProps) {
-  const [step, setStep] = useState(0);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [config, setConfig] = useState({ apiKey: '', baseUrl: '' });
   const [scope, setScope] = useState('');
@@ -68,7 +65,6 @@ export function AddConnectorDialog({ open, onOpenChange }: AddConnectorDialogPro
   const selected = connectorTypes.find((c) => c.id === selectedType);
 
   const reset = () => {
-    setStep(0);
     setSelectedType(null);
     setConfig({ apiKey: '', baseUrl: '' });
     setScope('');
@@ -80,94 +76,18 @@ export function AddConnectorDialog({ open, onOpenChange }: AddConnectorDialogPro
     onOpenChange(next);
   };
 
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={handleOpenChange}
-      width={560}
-      title="Add connector"
-      description="Connect a data source to populate your knowledge graph."
-      footer={
-        <>
-          {step > 0 && (
-            <Button
-              variant="outline"
-              icon={<IconGlyph name="prev" />}
-              onClick={() => setStep(step - 1)}
-            >
-              Back
-            </Button>
-          )}
-          {step < steps.length - 1 ? (
-            <Button
-              trailing={<IconGlyph name="next" />}
-              disabled={step === 0 && !selectedType}
-              onClick={() => setStep(step + 1)}
-            >
-              Next
-            </Button>
-          ) : (
-            <Button icon={<IconGlyph name="check" />} onClick={() => handleOpenChange(false)}>
-              Connect
-            </Button>
-          )}
-        </>
-      }
-    >
-      <div className="mb-4">
-        <Stepper steps={steps as unknown as string[]} current={step} />
-      </div>
-
-      <StepBody
-        step={step}
-        selectedType={selectedType}
-        onSelectType={setSelectedType}
-        selected={selected}
-        config={config}
-        onConfigChange={setConfig}
-        scope={scope}
-        onScopeChange={setScope}
-        schedule={schedule}
-        onScheduleChange={setSchedule}
-      />
-    </Dialog>
-  );
-}
-
-interface StepBodyProps {
-  step: number;
-  selectedType: string | null;
-  onSelectType: (id: string) => void;
-  selected: ConnectorType | undefined;
-  config: { apiKey: string; baseUrl: string };
-  onConfigChange: (next: { apiKey: string; baseUrl: string }) => void;
-  scope: string;
-  onScopeChange: (value: string) => void;
-  schedule: string;
-  onScheduleChange: (value: string) => void;
-}
-
-function StepBody({
-  step,
-  selectedType,
-  onSelectType,
-  selected,
-  config,
-  onConfigChange,
-  scope,
-  onScopeChange,
-  schedule,
-  onScheduleChange,
-}: StepBodyProps) {
-  return (
-    <div className="min-h-[220px]">
-      {step === 0 && (
+  const steps: WizardStep[] = [
+    {
+      id: 'select',
+      label: 'Select type',
+      canAdvance: () => Boolean(selectedType),
+      content: (
         <div className="grid grid-cols-2 gap-3">
           {connectorTypes.map((ct) => (
             <button
               key={ct.id}
               type="button"
-              onClick={() => onSelectType(ct.id)}
+              onClick={() => setSelectedType(ct.id)}
               className={cn(
                 'border-border bg-panel hover:border-border-strong flex items-start gap-3 rounded-md border p-3 text-left outline-none',
                 'focus-visible:ring-accent-dim focus-visible:ring-[3px]',
@@ -184,9 +104,12 @@ function StepBody({
             </button>
           ))}
         </div>
-      )}
-
-      {step === 1 && selected && (
+      ),
+    },
+    {
+      id: 'configure',
+      label: 'Configure',
+      content: selected ? (
         <div className="flex flex-col gap-4">
           <Field label="API key / token" required hint="Stored encrypted at rest">
             {(p) => (
@@ -195,7 +118,7 @@ function StepBody({
                 type="password"
                 placeholder="Enter your API key…"
                 value={config.apiKey}
-                onChange={(e) => onConfigChange({ ...config, apiKey: e.target.value })}
+                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
               />
             )}
           </Field>
@@ -206,14 +129,17 @@ function StepBody({
                 type="url"
                 placeholder="https://api.example.com"
                 value={config.baseUrl}
-                onChange={(e) => onConfigChange({ ...config, baseUrl: e.target.value })}
+                onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
               />
             )}
           </Field>
         </div>
-      )}
-
-      {step === 2 && (
+      ) : null,
+    },
+    {
+      id: 'scope',
+      label: 'Set scope',
+      content: (
         <div className="flex flex-col gap-4">
           <Field label="Scope" hint="Glob patterns. Comma-separated.">
             {(p) => (
@@ -221,7 +147,7 @@ function StepBody({
                 {...p}
                 placeholder="org/*, team:payments-*"
                 value={scope}
-                onChange={(e) => onScopeChange(e.target.value)}
+                onChange={(e) => setScope(e.target.value)}
               />
             )}
           </Field>
@@ -229,7 +155,7 @@ function StepBody({
             {() => (
               <Select
                 value={schedule}
-                onValueChange={onScheduleChange}
+                onValueChange={setSchedule}
                 options={[
                   { value: '15', label: 'Every 15 minutes' },
                   { value: '60', label: 'Every 60 minutes' },
@@ -240,9 +166,12 @@ function StepBody({
             )}
           </Field>
         </div>
-      )}
-
-      {step === 3 && selected && (
+      ),
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      content: selected ? (
         <ReviewSummary
           glyph={selected.glyph}
           name={selected.name}
@@ -254,8 +183,23 @@ function StepBody({
             { label: 'Schedule', value: scheduleLabel(schedule) },
           ]}
         />
-      )}
-    </div>
+      ) : null,
+    },
+  ];
+
+  return (
+    <WizardDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      steps={steps}
+      title="Add connector"
+      description="Connect a data source to populate your knowledge graph."
+      width={560}
+      completeLabel="Connect"
+      cancelLabel="Cancel"
+      onCancel={() => handleOpenChange(false)}
+      onComplete={() => handleOpenChange(false)}
+    />
   );
 }
 

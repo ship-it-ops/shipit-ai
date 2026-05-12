@@ -19,13 +19,13 @@ describe('ThemeToggle', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBeNull();
   });
 
-  it('writes the shipit-theme cookie on toggle', async () => {
+  it('writes the ship-it-theme cookie on toggle', async () => {
     const user = userEvent.setup();
     render(<ThemeToggle />);
 
     const switchEl = screen.getByRole('switch', { name: /toggle light theme/i });
     await user.click(switchEl);
-    expect(document.cookie).toMatch(/shipit-theme=light/);
+    expect(document.cookie).toMatch(/ship-it-theme=light/);
   });
 
   it('has no axe violations', async () => {
