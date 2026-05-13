@@ -11,8 +11,14 @@ export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): voi
     'Get detailed information about a single entity in the knowledge graph, including properties, claims, and neighbors.',
     {
       entity: z.string().describe('Entity canonical ID'),
-      include_claims: z.boolean().default(false).describe('Return all PropertyClaims for each property'),
-      include_neighbors: z.boolean().default(true).describe('Return 1-hop neighbors grouped by relationship type'),
+      include_claims: z
+        .boolean()
+        .default(false)
+        .describe('Return all PropertyClaims for each property'),
+      include_neighbors: z
+        .boolean()
+        .default(true)
+        .describe('Return 1-hop neighbors grouped by relationship type'),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
@@ -52,18 +58,17 @@ export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): voi
         const node = {
           id: props.id as string,
           label: labels[0] ?? 'Unknown',
-          properties: Object.fromEntries(
-            Object.entries(props).filter(([k]) => !k.startsWith('_')),
-          ),
+          properties: Object.fromEntries(Object.entries(props).filter(([k]) => !k.startsWith('_'))),
           effective_properties: effectiveProperties,
         };
 
         let claims: unknown[] | undefined;
         if (include_claims && props._claims) {
           try {
-            claims = typeof props._claims === 'string'
-              ? JSON.parse(props._claims as string)
-              : props._claims as unknown[];
+            claims =
+              typeof props._claims === 'string'
+                ? JSON.parse(props._claims as string)
+                : (props._claims as unknown[]);
           } catch {
             claims = [];
           }

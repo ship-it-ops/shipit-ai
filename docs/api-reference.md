@@ -188,7 +188,7 @@ Update the graph schema. Accepts YAML as the request body.
 **Request Body:**
 
 ```yaml
-version: "1.0"
+version: '1.0'
 mode: full
 node_types:
   LogicalService:
@@ -268,15 +268,15 @@ Get the neighborhood subgraph around an entity.
 
 **Path Parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `id` | string | Entity canonical ID (URL-encoded) |
+| Parameter | Type   | Description                       |
+| --------- | ------ | --------------------------------- |
+| `id`      | string | Entity canonical ID (URL-encoded) |
 
 **Query Parameters:**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `depth` | integer | 1 | Traversal depth (max 5) |
+| Parameter | Type    | Default | Description             |
+| --------- | ------- | ------- | ----------------------- |
+| `depth`   | integer | 1       | Traversal depth (max 5) |
 
 **Response:**
 
@@ -296,13 +296,13 @@ Search entities in the graph.
 
 **Query Parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `label` | string | Filter by node label |
-| `q` | string | Text search query |
-| `tier` | integer | Filter by tier |
-| `owner` | string | Filter by owner |
-| `limit` | integer | Max results (default 25) |
+| Parameter | Type    | Description              |
+| --------- | ------- | ------------------------ |
+| `label`   | string  | Filter by node label     |
+| `q`       | string  | Text search query        |
+| `tier`    | integer | Filter by tier           |
+| `owner`   | string  | Filter by owner          |
+| `limit`   | integer | Max results (default 25) |
 
 **Response:**
 
@@ -322,11 +322,11 @@ Search entities in the graph.
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `API_SERVER_PORT` / `PORT` | `3001` | Server port |
-| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection URI |
-| `NEO4J_USER` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | — | Neo4j password |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |
-| `SCHEMA_PATH` | `./shipit-schema.yaml` | Path to default schema file |
+| Environment Variable       | Default                  | Description                 |
+| -------------------------- | ------------------------ | --------------------------- |
+| `API_SERVER_PORT` / `PORT` | `3001`                   | Server port                 |
+| `NEO4J_URI`                | `bolt://localhost:7687`  | Neo4j connection URI        |
+| `NEO4J_USER`               | `neo4j`                  | Neo4j username              |
+| `NEO4J_PASSWORD`           | —                        | Neo4j password              |
+| `REDIS_URL`                | `redis://localhost:6379` | Redis connection URL        |
+| `SCHEMA_PATH`              | `./shipit-schema.yaml`   | Path to default schema file |

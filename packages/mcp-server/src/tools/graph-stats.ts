@@ -76,6 +76,7 @@ export function registerGraphStats(server: McpServer, neo4j: Neo4jClient): void 
 
 function toNumber(val: unknown): number {
   if (typeof val === 'number') return val;
-  if (val && typeof val === 'object' && 'toNumber' in val) return (val as { toNumber: () => number }).toNumber();
+  if (val && typeof val === 'object' && 'toNumber' in val)
+    return (val as { toNumber: () => number }).toNumber();
   return Number(val) || 0;
 }

@@ -41,10 +41,7 @@ function makeEdge(from: string, to: string): CanonicalEdge {
   };
 }
 
-function makeEnvelope(
-  nodes: CanonicalNode[],
-  edges: CanonicalEdge[],
-): EventEnvelope {
+function makeEnvelope(nodes: CanonicalNode[], edges: CanonicalEdge[]): EventEnvelope {
   return {
     id: randomUUID(),
     timestamp: new Date().toISOString(),
@@ -72,19 +69,11 @@ describe('CoreWriter', () => {
     nodeWriter = createMockNodeWriter();
     linkingKeyIndex = new InMemoryLinkingKeyIndex();
     idempotency = new InMemoryIdempotencyChecker();
-    writer = new CoreWriter(
-      nodeWriter,
-      linkingKeyIndex,
-      idempotency,
-      DEFAULT_CONFIG,
-    );
+    writer = new CoreWriter(nodeWriter, linkingKeyIndex, idempotency, DEFAULT_CONFIG);
   });
 
   it('writes nodes and edges from an event', async () => {
-    const event = makeEnvelope(
-      [makeNode('repo-a')],
-      [makeEdge('repo-a', 'repo-b')],
-    );
+    const event = makeEnvelope([makeNode('repo-a')], [makeEdge('repo-a', 'repo-b')]);
 
     const result = await writer.processEvent(event);
 
@@ -146,10 +135,7 @@ describe('CoreWriter', () => {
   });
 
   it('handles multiple nodes in a single event', async () => {
-    const event = makeEnvelope(
-      [makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')],
-      [],
-    );
+    const event = makeEnvelope([makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')], []);
 
     const result = await writer.processEvent(event);
     expect(result.nodesWritten).toBe(3);
@@ -174,10 +160,7 @@ describe('CoreWriter', () => {
       .mockRejectedValueOnce(new Error('Write failed')) // second fails
       .mockResolvedValueOnce(undefined); // third succeeds
 
-    const event = makeEnvelope(
-      [makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')],
-      [],
-    );
+    const event = makeEnvelope([makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')], []);
 
     const result = await writer.processEvent(event);
     expect(result.nodesWritten).toBe(2);

@@ -23,13 +23,13 @@ Kafka (or its lighter alternative, Redpanda) is a powerful distributed streaming
 
 The total Docker Compose RAM for ShipIt-AI with Kafka would be:
 
-| Service | RAM |
-|---------|-----|
-| Neo4j | 1 GB |
-| Kafka/Redpanda | 1.5 GB |
-| Redis | 256 MB |
-| App Server | 512 MB |
-| **Total** | **~3.5 GB** |
+| Service        | RAM         |
+| -------------- | ----------- |
+| Neo4j          | 1 GB        |
+| Kafka/Redpanda | 1.5 GB      |
+| Redis          | 256 MB      |
+| App Server     | 512 MB      |
+| **Total**      | **~3.5 GB** |
 
 This excludes the frontend, any connectors running as separate processes, and the developer's own tools. On a 16 GB laptop, this is noticeable. On an 8 GB CI runner, it may fail.
 
@@ -60,13 +60,13 @@ interface EventBus {
 }
 
 interface EntityEvent {
-  id: string;                    // Unique event ID (ULID)
+  id: string; // Unique event ID (ULID)
   type: 'entity.discovered' | 'entity.updated' | 'entity.deleted' | 'relationship.discovered';
-  entityType: string;            // e.g., 'Service', 'Repository', 'Team'
-  canonicalId: string;           // Entity canonical ID
-  source: string;                // Connector source identifier
-  connectorId: string;           // Connector instance ID
-  timestamp: string;             // ISO 8601
+  entityType: string; // e.g., 'Service', 'Repository', 'Team'
+  canonicalId: string; // Entity canonical ID
+  source: string; // Connector source identifier
+  connectorId: string; // Connector instance ID
+  timestamp: string; // ISO 8601
   payload: Record<string, unknown>; // Entity data
 }
 
@@ -104,12 +104,12 @@ For development and testing, an in-memory queue implementation is also available
 
 ### Phasing
 
-| Phase | Event Bus Backend | Notes |
-|-------|------------------|-------|
-| Phase 1a | In-memory queue | Simplest possible; no Redis dependency for the queue itself |
-| Phase 1b | BullMQ on Redis | Redis already in Docker Compose for caching; BullMQ adds durability |
-| Phase 2 | Kafka/Redpanda (optional) | Available as an opt-in for large deployments |
-| Phase 3 | Cloud queues (optional) | SQS, Pub/Sub, Service Bus |
+| Phase    | Event Bus Backend         | Notes                                                               |
+| -------- | ------------------------- | ------------------------------------------------------------------- |
+| Phase 1a | In-memory queue           | Simplest possible; no Redis dependency for the queue itself         |
+| Phase 1b | BullMQ on Redis           | Redis already in Docker Compose for caching; BullMQ adds durability |
+| Phase 2  | Kafka/Redpanda (optional) | Available as an opt-in for large deployments                        |
+| Phase 3  | Cloud queues (optional)   | SQS, Pub/Sub, Service Bus                                           |
 
 ### Implementation notes
 

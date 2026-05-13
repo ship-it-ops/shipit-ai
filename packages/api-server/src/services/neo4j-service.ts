@@ -52,7 +52,7 @@ export class Neo4jService {
     let nodeCount = 0;
     for (const record of nodeCountsResult) {
       const label = record.get('label') as string;
-      const count = (record.get('count') as { toNumber?: () => number });
+      const count = record.get('count') as { toNumber?: () => number };
       const num = typeof count === 'object' && count?.toNumber ? count.toNumber() : Number(count);
       nodesByLabel[label] = num;
       nodeCount += num;
@@ -62,21 +62,38 @@ export class Neo4jService {
     let edgeCount = 0;
     for (const record of edgeCountsResult) {
       const relType = record.get('relationshipType') as string;
-      const count = (record.get('count') as { toNumber?: () => number });
+      const count = record.get('count') as { toNumber?: () => number };
       const num = typeof count === 'object' && count?.toNumber ? count.toNumber() : Number(count);
       edgeCountsByType[relType] = num;
       edgeCount += num;
     }
 
-    return { nodeCount, edgeCount, nodesByLabel, edgeCountsByType, staleness: 0, lastSync: new Date().toISOString(), healthScore: 100 };
+    return {
+      nodeCount,
+      edgeCount,
+      nodesByLabel,
+      edgeCountsByType,
+      staleness: 0,
+      lastSync: new Date().toISOString(),
+      healthScore: 100,
+    };
   }
 
   async getNeighborhood(nodeId: string, depth: number = 2): Promise<NeighborhoodResult> {
+    // Project edge endpoints by the canonical `id` property — `rel.start` /
+    // `rel.end` would be Neo4j's internal numeric node ids, which the UI can't
+    // line up with the `shipit://…` ids on the node payload.
     const records = await this.runQuery(
       `MATCH (start {id: $nodeId})
        CALL apoc.path.subgraphAll(start, {maxLevel: $depth})
        YIELD nodes, relationships
-       RETURN nodes, relationships`,
+       RETURN nodes,
+              [rel IN relationships | {
+                source: startNode(rel).id,
+                target: endNode(rel).id,
+                type: type(rel),
+                props: properties(rel)
+              }] AS rels`,
       { nodeId, depth: neo4j.int(depth) },
     );
 
@@ -84,12 +101,15 @@ export class Neo4jService {
     const edges: CytoscapeEdge[] = [];
 
     for (const record of records) {
-      const nodes = record.get('nodes') as Array<{ properties: Record<string, unknown>; labels: string[] }>;
-      const rels = record.get('relationships') as Array<{
+      const nodes = record.get('nodes') as Array<{
         properties: Record<string, unknown>;
+        labels: string[];
+      }>;
+      const rels = record.get('rels') as Array<{
+        source: string;
+        target: string;
         type: string;
-        start: { toString(): string };
-        end: { toString(): string };
+        props: Record<string, unknown>;
       }>;
 
       for (const node of nodes) {
@@ -98,11 +118,13 @@ export class Neo4jService {
         if (!nodesMap.has(id)) {
           nodesMap.set(id, {
             data: {
+              ...node.properties,
               id,
               label: nodeLabel,
               type: nodeLabel,
-              name: String(node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id),
-              ...node.properties,
+              name: String(
+                node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
+              ),
             },
           });
         }
@@ -111,10 +133,10 @@ export class Neo4jService {
       for (const rel of rels) {
         edges.push({
           data: {
-            source: String(rel.start),
-            target: String(rel.end),
+            ...rel.props,
+            source: String(rel.source),
+            target: String(rel.target),
             type: rel.type,
-            ...rel.properties,
           },
         });
       }
@@ -128,10 +150,6 @@ export class Neo4jService {
       'MATCH (n) RETURN n, labels(n) AS labels LIMIT $limit',
       { limit: neo4j.int(limit) },
     );
-    const edgeRecords = await this.runQuery(
-      'MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS props LIMIT $limit',
-      { limit: neo4j.int(limit * 2) },
-    );
 
     const nodesMap = new Map<string, CytoscapeNode>();
     for (const record of nodeRecords) {
@@ -142,22 +160,39 @@ export class Neo4jService {
       if (!nodesMap.has(id)) {
         nodesMap.set(id, {
           data: {
+            ...node.properties,
             id,
             label: nodeLabel,
             type: nodeLabel,
-            name: String(node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id),
-            ...node.properties,
+            name: String(
+              node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
+            ),
           },
         });
       }
     }
 
+    const nodeIds = Array.from(nodesMap.keys());
+
+    // Only fetch edges where *both* endpoints landed in the limited node set —
+    // Cytoscape throws if an edge references a missing node. Without the id
+    // filter, two independent `LIMIT`s would slice nodes and edges out of sync.
+    const edgeRecords =
+      nodeIds.length === 0
+        ? []
+        : await this.runQuery(
+            `MATCH (a)-[r]->(b)
+             WHERE a.id IN $ids AND b.id IN $ids
+             RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS props`,
+            { ids: nodeIds },
+          );
+
     const edges: CytoscapeEdge[] = edgeRecords.map((record) => ({
       data: {
+        ...(record.get('props') as Record<string, unknown>),
         source: String(record.get('source')),
         target: String(record.get('target')),
         type: String(record.get('type')),
-        ...(record.get('props') as Record<string, unknown>),
       },
     }));
 

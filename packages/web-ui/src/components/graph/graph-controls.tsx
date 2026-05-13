@@ -1,8 +1,13 @@
 'use client';
 
-import { ZoomIn, ZoomOut, Maximize, LayoutDashboard } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  MenuItem,
+} from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useGraphStore } from '@/stores/graph-store';
 
 const layouts = [
@@ -11,39 +16,82 @@ const layouts = [
   { id: 'concentric' as const, label: 'Concentric' },
 ];
 
+const ZOOM_STEP = 1.25;
+
 export function GraphControls() {
-  const { layout, setLayout } = useGraphStore();
+  const { layout, setLayout, cyInstance: cy } = useGraphStore();
+  const current = layouts.find((l) => l.id === layout)?.label ?? 'Layout';
+
+  const ready = cy !== null;
+
+  const zoomBy = (factor: number) => {
+    if (!cy) return;
+    const container = cy.container();
+    if (!container) return;
+    const { width, height } = container.getBoundingClientRect();
+    cy.animate(
+      {
+        zoom: {
+          level: cy.zoom() * factor,
+          renderedPosition: { x: width / 2, y: height / 2 },
+        },
+      },
+      { duration: 140 },
+    );
+  };
+
+  const handleFit = () => {
+    if (!cy) return;
+    cy.animate({ fit: { eles: cy.elements(), padding: 40 } }, { duration: 200 });
+  };
 
   return (
-    <div className="flex items-center gap-1 rounded-lg border bg-background p-1 shadow-sm">
-      <Button variant="ghost" size="icon" className="h-8 w-8" title="Zoom In">
-        <ZoomIn className="h-4 w-4" />
+    <div className="border-border bg-panel flex items-center gap-1 rounded-md border p-[3px]">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Zoom in"
+        disabled={!ready}
+        onClick={() => zoomBy(ZOOM_STEP)}
+      >
+        <IconGlyph name="add" size={12} />
       </Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8" title="Zoom Out">
-        <ZoomOut className="h-4 w-4" />
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Zoom out"
+        disabled={!ready}
+        onClick={() => zoomBy(1 / ZOOM_STEP)}
+      >
+        <IconGlyph name="remove" size={12} />
       </Button>
-      <Button variant="ghost" size="icon" className="h-8 w-8" title="Fit to Screen">
-        <Maximize className="h-4 w-4" />
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="Fit to screen"
+        disabled={!ready}
+        onClick={handleFit}
+      >
+        <IconGlyph name="fitView" size={12} />
       </Button>
 
-      <div className="mx-1 h-6 w-px bg-border" />
+      <span aria-hidden className="bg-border mx-1 h-5 w-px" />
 
       <DropdownMenu>
-        <DropdownMenuTrigger>
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-            <LayoutDashboard className="h-3.5 w-3.5" />
-            {layouts.find((l) => l.id === layout)?.label ?? 'Layout'}
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="sm" trailing={<IconGlyph name="collapse" size={10} />}>
+            {current}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {layouts.map((l) => (
-            <DropdownMenuItem
+            <MenuItem
               key={l.id}
-              onClick={() => setLayout(l.id)}
-              className={layout === l.id ? 'bg-accent' : ''}
+              onSelect={() => setLayout(l.id)}
+              trailing={l.id === layout ? <IconGlyph name="check" size={11} /> : undefined}
             >
               {l.label}
-            </DropdownMenuItem>
+            </MenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>

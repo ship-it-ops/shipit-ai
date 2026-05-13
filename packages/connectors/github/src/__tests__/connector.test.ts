@@ -79,9 +79,7 @@ describe('GitHubConnector', () => {
 
   it('fetch throws if not authenticated', async () => {
     const connector = new GitHubConnector();
-    await expect(connector.fetch('Repository')).rejects.toThrow(
-      'Not authenticated',
-    );
+    await expect(connector.fetch('Repository')).rejects.toThrow('Not authenticated');
   });
 });
 

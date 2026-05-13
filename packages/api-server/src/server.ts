@@ -23,21 +23,15 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   });
 
   // Accept plain text bodies for YAML schema endpoints
-  server.addContentTypeParser(
-    'text/plain',
-    { parseAs: 'string' },
-    (_req, body, done) => { done(null, body); },
-  );
-  server.addContentTypeParser(
-    'text/yaml',
-    { parseAs: 'string' },
-    (_req, body, done) => { done(null, body); },
-  );
-  server.addContentTypeParser(
-    'application/x-yaml',
-    { parseAs: 'string' },
-    (_req, body, done) => { done(null, body); },
-  );
+  server.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+  server.addContentTypeParser('text/yaml', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+  server.addContentTypeParser('application/x-yaml', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
 
   await server.register(cors, { origin: true });
   await server.register(swagger, {

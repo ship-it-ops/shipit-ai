@@ -30,10 +30,6 @@ export class BullMQEventBusClient implements EventBusClient {
   }
 
   async close(): Promise<void> {
-    await Promise.all([
-      this.producer.close(),
-      this.consumer.close(),
-      this.replay_.close(),
-    ]);
+    await Promise.all([this.producer.close(), this.consumer.close(), this.replay_.close()]);
   }
 }

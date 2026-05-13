@@ -262,10 +262,13 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     await writer.processEvent(backstageEvent);
 
     // Verify the merged claims include both sources
-    const repoWriteCall = vi.mocked(nodeWriter.writeNode).mock.calls.find(
-      (call) => call[0].id === buildCanonicalId('Repository', 'default', 'payments-api') &&
-        call[0]._source_system === 'backstage'
-    );
+    const repoWriteCall = vi
+      .mocked(nodeWriter.writeNode)
+      .mock.calls.find(
+        (call) =>
+          call[0].id === buildCanonicalId('Repository', 'default', 'payments-api') &&
+          call[0]._source_system === 'backstage',
+      );
     expect(repoWriteCall).toBeDefined();
     const mergedClaims = repoWriteCall![1];
     const sources = new Set(mergedClaims.map((c) => c.source));

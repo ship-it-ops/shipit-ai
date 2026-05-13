@@ -11,44 +11,44 @@
 
 ## Document Control
 
-| Field              | Value                                                        |
-|--------------------|--------------------------------------------------------------|
-| Document Title     | ShipIt-AI -- AI-Ready Knowledge Graph Builder                |
-| Version            | 0.3                                                          |
-| Author             | Mohamed El-Malah                                             |
-| Status             | Draft -- Under Review                                        |
-| Last Updated       | 2026-02-28                                                   |
-| Licensing Model    | Open-Core (Free base + Paid team/enterprise features)        |
-| Deployment Model   | Self-hosted (Docker/K8s) and Managed SaaS                    |
+| Field            | Value                                                 |
+| ---------------- | ----------------------------------------------------- |
+| Document Title   | ShipIt-AI -- AI-Ready Knowledge Graph Builder         |
+| Version          | 0.3                                                   |
+| Author           | Mohamed El-Malah                                      |
+| Status           | Draft -- Under Review                                 |
+| Last Updated     | 2026-02-28                                            |
+| Licensing Model  | Open-Core (Free base + Paid team/enterprise features) |
+| Deployment Model | Self-hosted (Docker/K8s) and Managed SaaS             |
 
 ---
 
 ## Change Log
 
-| Version | Date       | Summary of Changes                                                                                                                                                |
-|---------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 0.1     | 2026-02-15 | Initial draft -- core concept, ontology sketch, connector list                                                                                                    |
-| 0.2     | 2026-02-27 | Full design document -- claim-based provenance, Event Bus architecture, MCP tool contracts, identity strategy, Schema Editor, deployment architecture, roadmap     |
+| Version | Date       | Summary of Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1     | 2026-02-15 | Initial draft -- core concept, ontology sketch, connector list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 0.2     | 2026-02-27 | Full design document -- claim-based provenance, Event Bus architecture, MCP tool contracts, identity strategy, Schema Editor, deployment architecture, roadmap                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 0.3     | 2026-02-28 | **Major revision.** PropertyClaims stored as JSON on nodes (ADR-002). Phase 1 scope reduced -- no Vector DB, no Kafka requirement, no Schema Editor UI. Tiered Event Bus: BullMQ/Redis for Lite Mode, Kafka/Redpanda for Production (ADR-004). YAML-first schema configuration (ADR-006). Three-tier licensing (Community/Team/Enterprise). Phased identity resolution -- fuzzy match deferred to Phase 2 (ADR-010). "AI-Native" renamed to "AI-Ready." Connector SDK removes `publish()` -- SDK harness auto-publishes. Core Writer changed to partition-affine stateful. Confidence decay model added. New MCP tools: `graph_stats`, `search_entities`, `recent_changes`, `health_check`, `list_violations`. Raw Cypher available in all tiers with limits. BuildArtifact and Environment entity types added. Simple Mode for small orgs (ADR-011). |
 
 ---
 
 ## Referenced ADRs
 
-| ADR     | Title                                                             | Status   |
-|---------|-------------------------------------------------------------------|----------|
-| ADR-001 | Commit to TypeScript for API Server                               | Accepted |
-| ADR-002 | Store PropertyClaims as JSON on Entity Nodes                      | Accepted |
-| ADR-003 | Phase 1 MVP Scope Definition                                     | Accepted |
-| ADR-004 | Tiered Event Bus: In-Process Queue for Small, Kafka for Production| Accepted |
-| ADR-005 | Defer Vector Database and Semantic Search to Phase 2              | Accepted |
-| ADR-006 | Schema Configuration Phasing -- YAML First, Visual Editor Later   | Accepted |
-| ADR-007 | Neo4j High Availability Strategy                                  | Accepted |
-| ADR-008 | MCP Response Envelope Standard                                    | Accepted |
-| ADR-009 | Store Schema in Neo4j as Meta-Nodes                               | Accepted |
-| ADR-010 | Identity Resolution Phasing                                       | Accepted |
-| ADR-011 | Service Model Simple Mode                                         | Accepted |
-| ADR-012 | Accessibility Standards                                           | Accepted |
+| ADR     | Title                                                              | Status   |
+| ------- | ------------------------------------------------------------------ | -------- |
+| ADR-001 | Commit to TypeScript for API Server                                | Accepted |
+| ADR-002 | Store PropertyClaims as JSON on Entity Nodes                       | Accepted |
+| ADR-003 | Phase 1 MVP Scope Definition                                       | Accepted |
+| ADR-004 | Tiered Event Bus: In-Process Queue for Small, Kafka for Production | Accepted |
+| ADR-005 | Defer Vector Database and Semantic Search to Phase 2               | Accepted |
+| ADR-006 | Schema Configuration Phasing -- YAML First, Visual Editor Later    | Accepted |
+| ADR-007 | Neo4j High Availability Strategy                                   | Accepted |
+| ADR-008 | MCP Response Envelope Standard                                     | Accepted |
+| ADR-009 | Store Schema in Neo4j as Meta-Nodes                                | Accepted |
+| ADR-010 | Identity Resolution Phasing                                        | Accepted |
+| ADR-011 | Service Model Simple Mode                                          | Accepted |
+| ADR-012 | Accessibility Standards                                            | Accepted |
 
 ---
 
@@ -98,26 +98,26 @@ Current approaches fail in predictable ways:
 
 This version commits to several hard architectural decisions, each backed by a formal ADR:
 
-| Decision | Detail | ADR |
-|----------|--------|-----|
-| **TypeScript committed** | API Server, Core Writer, Connector SDK, MCP Server -- all TypeScript. Single-language stack with the Next.js frontend. | ADR-001 |
-| **Claims as JSON on nodes** | PropertyClaims stored as a `_claims` JSON property on entity nodes, not as separate graph nodes. Reduces write amplification from ~45 ops to ~2 ops per entity update. | ADR-002 |
-| **Phase 1 scope reduction** | No Vector DB, no Kafka requirement, no visual Schema Editor, no fuzzy identity matching in Phase 1. | ADR-003 |
-| **Lite Mode event queue** | BullMQ on Redis for Lite Mode; Kafka/Redpanda for Production. SDK abstracts the difference. | ADR-004 |
-| **No Vector DB Phase 1** | Structural search only in Phase 1. Vector embeddings and semantic search deferred to Phase 2. | ADR-005 |
-| **YAML schema config** | Phase 1 schema configuration via YAML/JSON files. Form-based UI in Phase 2, full visual editor in Phase 3. | ADR-006 |
-| **Phased identity resolution** | Primary Key + Linking Key in Phase 1. Fuzzy matching with vector similarity in Phase 2. | ADR-010 |
+| Decision                       | Detail                                                                                                                                                                 | ADR     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **TypeScript committed**       | API Server, Core Writer, Connector SDK, MCP Server -- all TypeScript. Single-language stack with the Next.js frontend.                                                 | ADR-001 |
+| **Claims as JSON on nodes**    | PropertyClaims stored as a `_claims` JSON property on entity nodes, not as separate graph nodes. Reduces write amplification from ~45 ops to ~2 ops per entity update. | ADR-002 |
+| **Phase 1 scope reduction**    | No Vector DB, no Kafka requirement, no visual Schema Editor, no fuzzy identity matching in Phase 1.                                                                    | ADR-003 |
+| **Lite Mode event queue**      | BullMQ on Redis for Lite Mode; Kafka/Redpanda for Production. SDK abstracts the difference.                                                                            | ADR-004 |
+| **No Vector DB Phase 1**       | Structural search only in Phase 1. Vector embeddings and semantic search deferred to Phase 2.                                                                          | ADR-005 |
+| **YAML schema config**         | Phase 1 schema configuration via YAML/JSON files. Form-based UI in Phase 2, full visual editor in Phase 3.                                                             | ADR-006 |
+| **Phased identity resolution** | Primary Key + Linking Key in Phase 1. Fuzzy matching with vector similarity in Phase 2.                                                                                | ADR-010 |
 
 ### 1.4 Value Proposition
 
-| Capability              | Without ShipIt-AI                         | With ShipIt-AI                                          |
-|-------------------------|-------------------------------------------|---------------------------------------------------------|
-| Blast radius analysis   | Manual repo-by-repo tracing               | AI agent traverses graph in seconds                     |
-| Ownership discovery     | Grep CODEOWNERS + Slack someone           | Query: "who owns this LogicalService?"                  |
-| Dependency mapping      | Out-of-date wiki diagrams                 | Live, auto-updated graph with provenance                |
-| Incident response       | War room context-building                 | Agent pre-loads full context from graph                  |
-| Compliance auditing     | Spreadsheet hell                          | Graph query: unmonitored services, missing on-call      |
-| Onboarding              | 3-week ramp-up                            | "Explain the payment processing domain"                 |
+| Capability            | Without ShipIt-AI               | With ShipIt-AI                                     |
+| --------------------- | ------------------------------- | -------------------------------------------------- |
+| Blast radius analysis | Manual repo-by-repo tracing     | AI agent traverses graph in seconds                |
+| Ownership discovery   | Grep CODEOWNERS + Slack someone | Query: "who owns this LogicalService?"             |
+| Dependency mapping    | Out-of-date wiki diagrams       | Live, auto-updated graph with provenance           |
+| Incident response     | War room context-building       | Agent pre-loads full context from graph            |
+| Compliance auditing   | Spreadsheet hell                | Graph query: unmonitored services, missing on-call |
+| Onboarding            | 3-week ramp-up                  | "Explain the payment processing domain"            |
 
 ---
 
@@ -125,48 +125,48 @@ This version commits to several hard architectural decisions, each backed by a f
 
 ### 2.1 Design Principles
 
-| Principle                 | Description                                                                                                                                                                              |
-|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **AI-Ready with roadmap to AI-Native** | The graph is designed to be consumed by AI agents, not just humans. Schema, traversal patterns, and tool contracts are optimized for LLM tool use. Phase 1 delivers structural queries; Phase 2 adds vector embeddings and semantic search for full AI-Native capability. |
-| **Discover > Declare**    | Automate data ingestion from source-of-truth systems. Manual declaration is a fallback, not the primary input mechanism.                                                                  |
-| **Schema Flexibility**    | Provide a comprehensive starter template, but let users add/remove/edit node types and relationships before and after graph population.                                                   |
-| **Living Graph**          | Continuous sync, not one-time import. Event-driven updates via Event Bus keep the graph fresh.                                                                                           |
-| **Provenance Everywhere** | Every property has a source, confidence, and evidence trail. No magic values without attribution.                                                                                         |
-| **Open-Core**             | Free self-hosted base with community integrations. Team and Enterprise tiers add SSO, RBAC, premium connectors, and managed hosting.                                                     |
-| **Backstage Coexistence** | ShipIt-AI is designed to work alongside Backstage, not replace it. Backstage is a first-class data source. Organizations with existing Backstage investments gain immediate value by connecting their catalog data to runtime, observability, and identity data in a unified graph. |
+| Principle                              | Description                                                                                                                                                                                                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AI-Ready with roadmap to AI-Native** | The graph is designed to be consumed by AI agents, not just humans. Schema, traversal patterns, and tool contracts are optimized for LLM tool use. Phase 1 delivers structural queries; Phase 2 adds vector embeddings and semantic search for full AI-Native capability.           |
+| **Discover > Declare**                 | Automate data ingestion from source-of-truth systems. Manual declaration is a fallback, not the primary input mechanism.                                                                                                                                                            |
+| **Schema Flexibility**                 | Provide a comprehensive starter template, but let users add/remove/edit node types and relationships before and after graph population.                                                                                                                                             |
+| **Living Graph**                       | Continuous sync, not one-time import. Event-driven updates via Event Bus keep the graph fresh.                                                                                                                                                                                      |
+| **Provenance Everywhere**              | Every property has a source, confidence, and evidence trail. No magic values without attribution.                                                                                                                                                                                   |
+| **Open-Core**                          | Free self-hosted base with community integrations. Team and Enterprise tiers add SSO, RBAC, premium connectors, and managed hosting.                                                                                                                                                |
+| **Backstage Coexistence**              | ShipIt-AI is designed to work alongside Backstage, not replace it. Backstage is a first-class data source. Organizations with existing Backstage investments gain immediate value by connecting their catalog data to runtime, observability, and identity data in a unified graph. |
 
 ### 2.2 User Personas
 
-| Persona                   | Role                              | Primary Use Case                                                                     |
-|---------------------------|-----------------------------------|--------------------------------------------------------------------------------------|
-| Platform Engineer         | Builds & operates the IDP         | Deploy ShipIt-AI, configure integrations, define schema, manage connectors           |
-| Staff/Principal Engineer  | Architecture & system design      | Blast radius analysis, dependency reviews, migration planning                        |
-| SRE / On-Call             | Incident response & reliability   | "What depends on this failing service?" during incidents                             |
-| Engineering Manager       | Team ownership & planning         | Ownership gaps, team topology, tech debt visibility                                  |
-| AI Agent (Claude/GPT/Copilot) | Automated reasoning           | MCP tool calls to traverse graph and answer topology questions. Agents operate within tool contracts -- they call `blast_radius`, `find_owners`, `entity_detail`, etc. with structured parameters and receive structured JSON responses. Agents never write raw Cypher by default. In multi-agent workflows, agents can compose tool calls (e.g., `blast_radius` followed by `find_owners` for each affected service) to build comprehensive incident context autonomously. |
+| Persona                       | Role                            | Primary Use Case                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform Engineer             | Builds & operates the IDP       | Deploy ShipIt-AI, configure integrations, define schema, manage connectors                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Staff/Principal Engineer      | Architecture & system design    | Blast radius analysis, dependency reviews, migration planning                                                                                                                                                                                                                                                                                                                                                                                                               |
+| SRE / On-Call                 | Incident response & reliability | "What depends on this failing service?" during incidents                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Engineering Manager           | Team ownership & planning       | Ownership gaps, team topology, tech debt visibility                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| AI Agent (Claude/GPT/Copilot) | Automated reasoning             | MCP tool calls to traverse graph and answer topology questions. Agents operate within tool contracts -- they call `blast_radius`, `find_owners`, `entity_detail`, etc. with structured parameters and receive structured JSON responses. Agents never write raw Cypher by default. In multi-agent workflows, agents can compose tool calls (e.g., `blast_radius` followed by `find_owners` for each affected service) to build comprehensive incident context autonomously. |
 
 ### 2.3 Licensing & Tier Structure
 
-| Feature                                     | Community (Free)                                   | Team ($)                                  | Enterprise ($$)                                           |
-|---------------------------------------------|-----------------------------------------------------|-------------------------------------------|-----------------------------------------------------------|
-| Core graph engine (Neo4j)                   | Yes                                                 | Yes                                       | Yes                                                       |
-| MCP Server (structured tools)               | Yes                                                 | Yes                                       | Yes                                                       |
-| All V1 connectors (GitHub, K8s, Datadog, Backstage, Jira, Identity) | Yes                      | Yes                                       | Yes                                                       |
-| YAML schema configuration                   | Yes                                                 | Yes                                       | Yes                                                       |
-| Basic audit logging (stdout/file)           | Yes                                                 | Yes                                       | Yes                                                       |
-| Read-only team-scoped views                 | Yes                                                 | Yes                                       | Yes                                                       |
-| Raw Cypher (`graph_query`)                  | 100 queries/day, read-only, 10s timeout, 1000 rows | 500 queries/day, saved queries            | Unlimited + full audit trail                              |
-| Basic Claim Explorer (effective values + source attribution) | Yes                             | Yes                                       | Yes                                                       |
-| SSO / SAML                                  | --                                                  | Yes                                       | Yes                                                       |
-| Basic RBAC                                  | --                                                  | Yes                                       | Yes                                                       |
-| Premium connectors (up to 3)                | --                                                  | Yes (3 included)                          | All premium connectors                                    |
-| Enhanced Claim Explorer                     | --                                                  | Yes                                       | Yes                                                       |
-| Query Playground with saved queries         | --                                                  | Yes                                       | Yes                                                       |
-| Full RBAC with graph-level ACLs             | --                                                  | --                                        | Yes                                                       |
-| Full Claim Explorer with override           | --                                                  | --                                        | Yes                                                       |
-| Multi-tenant isolation                      | --                                                  | --                                        | Yes                                                       |
-| Managed SaaS hosting                        | --                                                  | --                                        | Yes                                                       |
-| SLA-backed support                          | --                                                  | --                                        | Yes                                                       |
+| Feature                                                             | Community (Free)                                   | Team ($)                       | Enterprise ($$)              |
+| ------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------ | ---------------------------- |
+| Core graph engine (Neo4j)                                           | Yes                                                | Yes                            | Yes                          |
+| MCP Server (structured tools)                                       | Yes                                                | Yes                            | Yes                          |
+| All V1 connectors (GitHub, K8s, Datadog, Backstage, Jira, Identity) | Yes                                                | Yes                            | Yes                          |
+| YAML schema configuration                                           | Yes                                                | Yes                            | Yes                          |
+| Basic audit logging (stdout/file)                                   | Yes                                                | Yes                            | Yes                          |
+| Read-only team-scoped views                                         | Yes                                                | Yes                            | Yes                          |
+| Raw Cypher (`graph_query`)                                          | 100 queries/day, read-only, 10s timeout, 1000 rows | 500 queries/day, saved queries | Unlimited + full audit trail |
+| Basic Claim Explorer (effective values + source attribution)        | Yes                                                | Yes                            | Yes                          |
+| SSO / SAML                                                          | --                                                 | Yes                            | Yes                          |
+| Basic RBAC                                                          | --                                                 | Yes                            | Yes                          |
+| Premium connectors (up to 3)                                        | --                                                 | Yes (3 included)               | All premium connectors       |
+| Enhanced Claim Explorer                                             | --                                                 | Yes                            | Yes                          |
+| Query Playground with saved queries                                 | --                                                 | Yes                            | Yes                          |
+| Full RBAC with graph-level ACLs                                     | --                                                 | --                             | Yes                          |
+| Full Claim Explorer with override                                   | --                                                 | --                             | Yes                          |
+| Multi-tenant isolation                                              | --                                                 | --                             | Yes                          |
+| Managed SaaS hosting                                                | --                                                 | --                             | Yes                          |
+| SLA-backed support                                                  | --                                                 | --                             | Yes                          |
 
 ---
 
@@ -219,14 +219,14 @@ ShipIt-AI is built entirely in **TypeScript** (ADR-001). The architecture consis
 
 > **Phase 1 note:** No Vector DB. Semantic search is deferred to Phase 2 (ADR-005). The diagram above reflects the Phase 1 architecture. Phase 2 adds a Vector Store (Weaviate/Qdrant) downstream of the Core Writer with an Embedding Generator consumer.
 
-| Subsystem          | Responsibility                                                                                                 | Technology                                |
-|--------------------|----------------------------------------------------------------------------------------------------------------|-------------------------------------------|
-| Web UI (Dashboard) | Schema config viewer, graph visualization, connector config, onboarding wizard, claim explorer                 | Next.js + React, Tailwind, Cytoscape.js   |
-| API Server         | REST + GraphQL API, orchestrates connectors, manages schema, serves MCP tools                                  | Node.js (TypeScript)                      |
+| Subsystem          | Responsibility                                                                                                 | Technology                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Web UI (Dashboard) | Schema config viewer, graph visualization, connector config, onboarding wizard, claim explorer                 | Next.js + React, Tailwind, Cytoscape.js            |
+| API Server         | REST + GraphQL API, orchestrates connectors, manages schema, serves MCP tools                                  | Node.js (TypeScript)                               |
 | Event Bus          | Decouples connectors from graph writes; at-least-once delivery, replay support                                 | BullMQ/Redis (Lite) or Kafka/Redpanda (Production) |
-| Core Writer        | Sole component that writes to Neo4j. Consumes from Event Bus, applies claims, resolves conflicts, materializes | Partition-affine stateful consumer (TS)   |
-| Graph Engine       | Stores and queries the knowledge graph (nodes, edges, claims as JSON)                                          | Neo4j, Cypher query language              |
-| Connector Runtime  | Executes data ingestion pipelines per integration, publishes to Event Bus via SDK                              | Plugin-based, containerized workers       |
+| Core Writer        | Sole component that writes to Neo4j. Consumes from Event Bus, applies claims, resolves conflicts, materializes | Partition-affine stateful consumer (TS)            |
+| Graph Engine       | Stores and queries the knowledge graph (nodes, edges, claims as JSON)                                          | Neo4j, Cypher query language                       |
+| Connector Runtime  | Executes data ingestion pipelines per integration, publishes to Event Bus via SDK                              | Plugin-based, containerized workers                |
 
 ### 3.2 Data Flow (Ingestion Pipeline)
 
@@ -287,30 +287,30 @@ No Kafka. No Vector DB. No Weaviate. Just the API Server, Neo4j, Redis (for Bull
 
 #### Production Deployment
 
-| Component         | Self-Hosted                          | Managed SaaS                                 |
-|-------------------|--------------------------------------|----------------------------------------------|
-| Web UI            | Docker container / K8s Deployment    | CDN + managed Next.js                        |
-| API Server        | Docker container on K8s              | Auto-scaled container fleet                  |
-| Event Bus         | Kafka/Redpanda (Docker or Helm)      | Managed Kafka or cloud-native queue          |
-| Core Writer       | K8s Deployment (1+ replicas)         | Auto-scaled consumer fleet                   |
-| Neo4j             | Self-hosted Docker or Neo4j Aura     | Neo4j Aura (managed)                         |
-| Vector Store      | Weaviate/Qdrant container (Phase 2+) | Managed Weaviate Cloud (Phase 2+)            |
-| Connector Workers | K8s Jobs or CronJobs                 | Managed job scheduler                        |
+| Component         | Self-Hosted                          | Managed SaaS                        |
+| ----------------- | ------------------------------------ | ----------------------------------- |
+| Web UI            | Docker container / K8s Deployment    | CDN + managed Next.js               |
+| API Server        | Docker container on K8s              | Auto-scaled container fleet         |
+| Event Bus         | Kafka/Redpanda (Docker or Helm)      | Managed Kafka or cloud-native queue |
+| Core Writer       | K8s Deployment (1+ replicas)         | Auto-scaled consumer fleet          |
+| Neo4j             | Self-hosted Docker or Neo4j Aura     | Neo4j Aura (managed)                |
+| Vector Store      | Weaviate/Qdrant container (Phase 2+) | Managed Weaviate Cloud (Phase 2+)   |
+| Connector Workers | K8s Jobs or CronJobs                 | Managed job scheduler               |
 
 #### Hardware Requirements
 
-| Size    | Services  | RAM      | CPU       | Disk    | Notes                                              |
-|---------|-----------|----------|-----------|---------|-----------------------------------------------------|
-| Small   | <100      | 4 GB     | 2 cores   | 20 GB   | Lite Mode. Single Docker Compose host.               |
-| Medium  | 100-1,000 | 8-16 GB  | 4 cores   | 100 GB  | Lite or Production mode. Neo4j needs dedicated RAM.  |
-| Large   | 1,000+    | 32 GB+   | 8+ cores  | 500 GB+ | Production mode with Kafka. K8s recommended.         |
+| Size   | Services  | RAM     | CPU      | Disk    | Notes                                               |
+| ------ | --------- | ------- | -------- | ------- | --------------------------------------------------- |
+| Small  | <100      | 4 GB    | 2 cores  | 20 GB   | Lite Mode. Single Docker Compose host.              |
+| Medium | 100-1,000 | 8-16 GB | 4 cores  | 100 GB  | Lite or Production mode. Neo4j needs dedicated RAM. |
+| Large  | 1,000+    | 32 GB+  | 8+ cores | 500 GB+ | Production mode with Kafka. K8s recommended.        |
 
 ### 3.4 Neo4j High Availability (ADR-007)
 
-| Tier        | Strategy                                                                                                           |
-|-------------|---------------------------------------------------------------------------------------------------------------------|
-| Community   | Single Neo4j instance + daily backups + Event Bus replay for disaster recovery. RPO = 24 hours (backup) or near-zero (event replay). RTO = minutes (restore backup) to hours (full replay). |
-| Enterprise  | Neo4j causal clustering. Write leader for Core Writer. Read replicas for MCP Server queries. Automatic leader election on failure. RPO = near-zero. RTO = seconds. |
+| Tier       | Strategy                                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Community  | Single Neo4j instance + daily backups + Event Bus replay for disaster recovery. RPO = 24 hours (backup) or near-zero (event replay). RTO = minutes (restore backup) to hours (full replay). |
+| Enterprise | Neo4j causal clustering. Write leader for Core Writer. Read replicas for MCP Server queries. Automatic leader election on failure. RPO = near-zero. RTO = seconds.                          |
 
 ---
 
@@ -361,95 +361,95 @@ This four-node model eliminates the "Service means different things to different
 
 ### 4.2 Core Entity Types (Starter Template)
 
-| Node Label       | Description                                          | Primary Source(s)           | Key Properties                                          |
-|------------------|------------------------------------------------------|-----------------------------|---------------------------------------------------------|
-| LogicalService   | A named, team-owned service concept                  | Backstage, manual           | name, tier, lifecycle, domain, language                 |
-| Repository       | A source code repository                             | GitHub                      | name, url, default_branch, visibility, language         |
-| Deployment       | A running instance in a specific env/cluster         | K8s, ArgoCD                 | namespace, cluster, environment, image, replicas, status|
-| RuntimeService   | The identity seen by observability tools             | Datadog, APM tools          | name, dd_service, apm_name, environment                 |
-| BuildArtifact    | A built container image or binary                    | CI/CD, Registry             | name, image_tag, sha, build_time, registry              |
-| Environment      | A deployment target environment                      | K8s, Cloud provider, manual | name, type, region, cluster, classification             |
-| Team             | An engineering team or squad                         | Identity Provider, Backstage| name, slug, cost_center, manager                        |
-| Person           | An individual (engineer, PM, etc.)                   | Identity Provider, GitHub   | name, email, role, github_handle                        |
-| ServiceAccount   | A non-human identity (bot, CI, AI agent)             | GitHub, K8s, Cloud IAM      | name, type, owner_team, permissions                     |
-| Pipeline         | A CI/CD workflow                                     | GitHub Actions, ArgoCD      | name, trigger, repo, status, last_run                   |
-| Monitor          | An observability check (alert, SLO)                  | Datadog                     | name, type, query, threshold, status                    |
-| Namespace        | A Kubernetes namespace                               | K8s                         | name, cluster, labels                                   |
-| Cluster          | A Kubernetes cluster                                 | K8s, Cloud provider         | name, provider, region, version                         |
-| Domain           | A business domain grouping                           | Backstage, Manual           | name, description, owner_team                           |
-| API              | A published API (REST, gRPC, event)                  | Backstage, OpenAPI specs    | name, type, version, spec_url                           |
-| Library          | A shared internal package/dependency                 | GitHub, Package registries  | name, version, language                                 |
-| Infrastructure   | A cloud resource (RDS, S3, SQS, etc.)                | Terraform state, Cloud APIs | type, arn, region, tags                                 |
-| Document         | A runbook, ADR, or wiki page                         | Confluence, GitHub, Notion  | title, url, last_updated, author                        |
-| WorkItem         | A Jira issue (story, task, bug)                      | Jira                        | key, summary, status, priority, type                    |
-| Epic             | A Jira epic grouping work items                      | Jira                        | key, summary, status, owner, target_date                |
+| Node Label     | Description                                  | Primary Source(s)            | Key Properties                                           |
+| -------------- | -------------------------------------------- | ---------------------------- | -------------------------------------------------------- |
+| LogicalService | A named, team-owned service concept          | Backstage, manual            | name, tier, lifecycle, domain, language                  |
+| Repository     | A source code repository                     | GitHub                       | name, url, default_branch, visibility, language          |
+| Deployment     | A running instance in a specific env/cluster | K8s, ArgoCD                  | namespace, cluster, environment, image, replicas, status |
+| RuntimeService | The identity seen by observability tools     | Datadog, APM tools           | name, dd_service, apm_name, environment                  |
+| BuildArtifact  | A built container image or binary            | CI/CD, Registry              | name, image_tag, sha, build_time, registry               |
+| Environment    | A deployment target environment              | K8s, Cloud provider, manual  | name, type, region, cluster, classification              |
+| Team           | An engineering team or squad                 | Identity Provider, Backstage | name, slug, cost_center, manager                         |
+| Person         | An individual (engineer, PM, etc.)           | Identity Provider, GitHub    | name, email, role, github_handle                         |
+| ServiceAccount | A non-human identity (bot, CI, AI agent)     | GitHub, K8s, Cloud IAM       | name, type, owner_team, permissions                      |
+| Pipeline       | A CI/CD workflow                             | GitHub Actions, ArgoCD       | name, trigger, repo, status, last_run                    |
+| Monitor        | An observability check (alert, SLO)          | Datadog                      | name, type, query, threshold, status                     |
+| Namespace      | A Kubernetes namespace                       | K8s                          | name, cluster, labels                                    |
+| Cluster        | A Kubernetes cluster                         | K8s, Cloud provider          | name, provider, region, version                          |
+| Domain         | A business domain grouping                   | Backstage, Manual            | name, description, owner_team                            |
+| API            | A published API (REST, gRPC, event)          | Backstage, OpenAPI specs     | name, type, version, spec_url                            |
+| Library        | A shared internal package/dependency         | GitHub, Package registries   | name, version, language                                  |
+| Infrastructure | A cloud resource (RDS, S3, SQS, etc.)        | Terraform state, Cloud APIs  | type, arn, region, tags                                  |
+| Document       | A runbook, ADR, or wiki page                 | Confluence, GitHub, Notion   | title, url, last_updated, author                         |
+| WorkItem       | A Jira issue (story, task, bug)              | Jira                         | key, summary, status, priority, type                     |
+| Epic           | A Jira epic grouping work items              | Jira                         | key, summary, status, owner, target_date                 |
 
 #### Jira Extended (Optional)
 
 These node types are only created when the Jira connector is enabled and the `jira_extended` schema option is set to `true`:
 
-| Node Label | Description                        | Primary Source | Key Properties                              |
-|------------|------------------------------------|----------------|---------------------------------------------|
-| Sprint     | A Jira sprint                      | Jira           | name, board, start_date, end_date, velocity |
-| Release    | A Jira fix version / release       | Jira           | name, release_date, status                  |
+| Node Label | Description                  | Primary Source | Key Properties                              |
+| ---------- | ---------------------------- | -------------- | ------------------------------------------- |
+| Sprint     | A Jira sprint                | Jira           | name, board, start_date, end_date, velocity |
+| Release    | A Jira fix version / release | Jira           | name, release_date, status                  |
 
 ### 4.3 Core Relationship Types (Starter Template)
 
-| Relationship           | From -> To                                       | Description                                                        |
-|------------------------|--------------------------------------------------|--------------------------------------------------------------------|
-| IMPLEMENTED_BY         | LogicalService -> Repository                     | LogicalService is implemented by this repo                         |
-| DEPLOYED_AS            | LogicalService -> Deployment                     | LogicalService has this running deployment                         |
-| EMITS_TELEMETRY_AS     | Deployment -> RuntimeService                     | Deployment is observed as this RuntimeService by APM/monitoring. **N:M** -- one Deployment can emit as multiple RuntimeServices (sidecar pattern), and one RuntimeService name can be emitted by multiple Deployments (multi-region). |
-| BUILT_FROM             | BuildArtifact -> Repository                      | Build artifact was built from this repository                      |
-| RUNS_IMAGE             | Deployment -> BuildArtifact                      | Deployment runs this container image / build artifact              |
-| RUNS_IN_ENV            | Deployment -> Environment                        | Deployment runs in this environment                                |
-| HOSTED_ON              | Environment -> Cluster                           | Environment is hosted on this cluster                              |
-| DEPENDS_ON             | LogicalService -> LogicalService                 | Logical dependency between services (design-time)                  |
-| CALLS                  | RuntimeService -> RuntimeService                 | Observed runtime call between services (from tracing/service map)  |
-| OWNS                   | Team -> LogicalService/Repository                | Team is the owner                                                  |
-| MEMBER_OF              | Person -> Team                                   | Person belongs to a team                                           |
-| CONTRIBUTES_TO         | Person -> Repository                             | Person has committed to this repo                                  |
-| RUNS_IN                | Deployment -> Namespace                          | Deployment runs in this K8s namespace                              |
-| PART_OF                | Namespace -> Cluster                             | Namespace belongs to a cluster                                     |
-| BUILT_BY               | LogicalService -> Pipeline                       | LogicalService is built/deployed by this pipeline                  |
-| TRIGGERS               | Pipeline -> Pipeline                             | Pipeline triggers another pipeline                                 |
-| MONITORS               | Monitor -> LogicalService/Deployment/RuntimeService | Monitor watches this entity                                     |
-| EXPOSES                | LogicalService -> API                            | LogicalService exposes this API                                    |
-| CONSUMES               | LogicalService -> API                            | LogicalService consumes this API                                   |
-| USES                   | LogicalService -> Infrastructure                 | LogicalService depends on this infra resource                      |
-| MANAGED_BY             | ServiceAccount -> Team                           | Service account is managed by this team                            |
-| HAS_ACCESS_TO          | ServiceAccount -> LogicalService/Infrastructure  | Service account can access this resource                           |
-| IMPLEMENTS             | LogicalService -> Domain                         | LogicalService belongs to this business domain                     |
-| DOCUMENTED_BY          | LogicalService -> Document                       | LogicalService is documented by this resource                      |
-| IMPORTS                | Repository -> Library                            | Repo imports/depends on this library                               |
-| CODEOWNER_OF           | Person/Team -> Repository                        | CODEOWNERS entry for this repo path                                |
-| ON_CALL_FOR            | Person -> LogicalService                         | Person is in the on-call rotation                                  |
-| ASSIGNED_TO            | WorkItem -> Person                               | Issue is assigned to this person                                   |
-| CONTAINS               | Sprint/Epic -> WorkItem                          | Sprint or epic contains this work item                             |
-| BLOCKS                 | WorkItem -> WorkItem                             | Issue blocks another issue                                         |
-| TRACKS_WORK_ON         | WorkItem -> LogicalService/Repository            | Issue tracks work on this entity                                   |
-| INCLUDES               | Release -> WorkItem                              | Release includes this work item                                    |
+| Relationship       | From -> To                                          | Description                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IMPLEMENTED_BY     | LogicalService -> Repository                        | LogicalService is implemented by this repo                                                                                                                                                                                            |
+| DEPLOYED_AS        | LogicalService -> Deployment                        | LogicalService has this running deployment                                                                                                                                                                                            |
+| EMITS_TELEMETRY_AS | Deployment -> RuntimeService                        | Deployment is observed as this RuntimeService by APM/monitoring. **N:M** -- one Deployment can emit as multiple RuntimeServices (sidecar pattern), and one RuntimeService name can be emitted by multiple Deployments (multi-region). |
+| BUILT_FROM         | BuildArtifact -> Repository                         | Build artifact was built from this repository                                                                                                                                                                                         |
+| RUNS_IMAGE         | Deployment -> BuildArtifact                         | Deployment runs this container image / build artifact                                                                                                                                                                                 |
+| RUNS_IN_ENV        | Deployment -> Environment                           | Deployment runs in this environment                                                                                                                                                                                                   |
+| HOSTED_ON          | Environment -> Cluster                              | Environment is hosted on this cluster                                                                                                                                                                                                 |
+| DEPENDS_ON         | LogicalService -> LogicalService                    | Logical dependency between services (design-time)                                                                                                                                                                                     |
+| CALLS              | RuntimeService -> RuntimeService                    | Observed runtime call between services (from tracing/service map)                                                                                                                                                                     |
+| OWNS               | Team -> LogicalService/Repository                   | Team is the owner                                                                                                                                                                                                                     |
+| MEMBER_OF          | Person -> Team                                      | Person belongs to a team                                                                                                                                                                                                              |
+| CONTRIBUTES_TO     | Person -> Repository                                | Person has committed to this repo                                                                                                                                                                                                     |
+| RUNS_IN            | Deployment -> Namespace                             | Deployment runs in this K8s namespace                                                                                                                                                                                                 |
+| PART_OF            | Namespace -> Cluster                                | Namespace belongs to a cluster                                                                                                                                                                                                        |
+| BUILT_BY           | LogicalService -> Pipeline                          | LogicalService is built/deployed by this pipeline                                                                                                                                                                                     |
+| TRIGGERS           | Pipeline -> Pipeline                                | Pipeline triggers another pipeline                                                                                                                                                                                                    |
+| MONITORS           | Monitor -> LogicalService/Deployment/RuntimeService | Monitor watches this entity                                                                                                                                                                                                           |
+| EXPOSES            | LogicalService -> API                               | LogicalService exposes this API                                                                                                                                                                                                       |
+| CONSUMES           | LogicalService -> API                               | LogicalService consumes this API                                                                                                                                                                                                      |
+| USES               | LogicalService -> Infrastructure                    | LogicalService depends on this infra resource                                                                                                                                                                                         |
+| MANAGED_BY         | ServiceAccount -> Team                              | Service account is managed by this team                                                                                                                                                                                               |
+| HAS_ACCESS_TO      | ServiceAccount -> LogicalService/Infrastructure     | Service account can access this resource                                                                                                                                                                                              |
+| IMPLEMENTS         | LogicalService -> Domain                            | LogicalService belongs to this business domain                                                                                                                                                                                        |
+| DOCUMENTED_BY      | LogicalService -> Document                          | LogicalService is documented by this resource                                                                                                                                                                                         |
+| IMPORTS            | Repository -> Library                               | Repo imports/depends on this library                                                                                                                                                                                                  |
+| CODEOWNER_OF       | Person/Team -> Repository                           | CODEOWNERS entry for this repo path                                                                                                                                                                                                   |
+| ON_CALL_FOR        | Person -> LogicalService                            | Person is in the on-call rotation                                                                                                                                                                                                     |
+| ASSIGNED_TO        | WorkItem -> Person                                  | Issue is assigned to this person                                                                                                                                                                                                      |
+| CONTAINS           | Sprint/Epic -> WorkItem                             | Sprint or epic contains this work item                                                                                                                                                                                                |
+| BLOCKS             | WorkItem -> WorkItem                                | Issue blocks another issue                                                                                                                                                                                                            |
+| TRACKS_WORK_ON     | WorkItem -> LogicalService/Repository               | Issue tracks work on this entity                                                                                                                                                                                                      |
+| INCLUDES           | Release -> WorkItem                                 | Release includes this work item                                                                                                                                                                                                       |
 
 ### 4.4 Schema Configuration (ADR-006)
 
 Schema configuration follows a phased approach:
 
-| Phase   | Capability                                                                                   |
-|---------|----------------------------------------------------------------------------------------------|
+| Phase   | Capability                                                                                                                                                                             |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phase 1 | **YAML/JSON config file** (`shipit-schema.yaml`). Define node types, properties, resolution strategies, relationship types, cardinality constraints. Validated on startup and via CLI. |
-| Phase 2 | **Form-based UI** with read-only visual preview. Edit schema through structured forms. See a graph visualization of the schema (non-interactive). |
-| Phase 3 | **Full interactive visual editor.** Drag-and-drop node/relationship creation, live property panels, version history with migration diffs. |
+| Phase 2 | **Form-based UI** with read-only visual preview. Edit schema through structured forms. See a graph visualization of the schema (non-interactive).                                      |
+| Phase 3 | **Full interactive visual editor.** Drag-and-drop node/relationship creation, live property panels, version history with migration diffs.                                              |
 
 #### YAML Schema Format (Phase 1)
 
 ```yaml
 # shipit-schema.yaml
-version: "1.0"
-mode: full  # or "simple" for <100 services (ADR-011)
+version: '1.0'
+mode: full # or "simple" for <100 services (ADR-011)
 
 node_types:
   LogicalService:
-    description: "A named, team-owned service concept"
+    description: 'A named, team-owned service concept'
     properties:
       name:
         type: string
@@ -479,16 +479,16 @@ relationship_types:
   IMPLEMENTED_BY:
     from: LogicalService
     to: Repository
-    cardinality: "1:N"
+    cardinality: '1:N'
     properties:
       path_prefix:
         type: string
-        description: "Subdirectory in monorepo, if applicable"
+        description: 'Subdirectory in monorepo, if applicable'
 
   EMITS_TELEMETRY_AS:
     from: Deployment
     to: RuntimeService
-    cardinality: "N:M"
+    cardinality: 'N:M'
 
   # ... additional relationship types ...
 
@@ -517,25 +517,26 @@ A single logical entity (e.g., the "payments-api" LogicalService) will appear ac
 
 Every entity in the graph has a layered identity. **Phase 1 implements Primary Key and Linking Key only.** Alias Keys and fuzzy matching are deferred to Phase 2 (ADR-010).
 
-| Identity Layer  | Definition                                                                                      | Example                                                                   | Phase |
-|-----------------|------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|-------|
-| Primary Key     | Globally unique canonical ID. Format: `shipit://{label}/{namespace}/{name}`                    | `shipit://logical-service/default/payments-api`                           | 1     |
-| Linking Keys    | Source-system IDs that deterministically map to a canonical ID. Defined per connector.          | `github://org/repo-name`, `k8s://cluster/ns/deploy-name`                 | 1     |
-| Alias Keys      | Alternative names or IDs that may refer to the same entity. Used for fuzzy matching.           | `dd-service:payments-api-prod`, `backstage:payments-api`                  | 2     |
-| Merge History   | Audit trail of all identity merge/split events with actor, timestamp, and reason.              | Merged `github://org/payments-api` into `shipit://repository/default/payments-api` | 1     |
+| Identity Layer | Definition                                                                             | Example                                                                            | Phase |
+| -------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----- |
+| Primary Key    | Globally unique canonical ID. Format: `shipit://{label}/{namespace}/{name}`            | `shipit://logical-service/default/payments-api`                                    | 1     |
+| Linking Keys   | Source-system IDs that deterministically map to a canonical ID. Defined per connector. | `github://org/repo-name`, `k8s://cluster/ns/deploy-name`                           | 1     |
+| Alias Keys     | Alternative names or IDs that may refer to the same entity. Used for fuzzy matching.   | `dd-service:payments-api-prod`, `backstage:payments-api`                           | 2     |
+| Merge History  | Audit trail of all identity merge/split events with actor, timestamp, and reason.      | Merged `github://org/payments-api` into `shipit://repository/default/payments-api` | 1     |
 
 ### 5.3 Reconciliation Ladder
 
 When a connector produces an entity, the Core Writer resolves identity using this ladder (evaluated in order, first match wins):
 
-| Step | Name                            | Phase | Behavior                                                                                                                                                                |
-|------|--------------------------------|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1    | **Primary Key Match**          | 1     | If the connector provides a canonical `shipit://` ID, use it directly. Exact match.                                                                                     |
-| 2    | **Linking Key Match**          | 1     | Look up the source-system ID in the linking key index. If found, merge onto the existing node.                                                                          |
-| 3    | **Fuzzy Match with Evidence**  | 2     | Compare name, labels, tags, and namespace against existing nodes using vector embedding similarity + weighted features. Require configurable confidence threshold before auto-merging. Below threshold, create a candidate match for manual review. |
-| 4    | **Manual Review**              | 2     | Unresolved candidates appear in the Reconciliation UI. User confirms or rejects proposed merges.                                                                        |
+| Step | Name                          | Phase | Behavior                                                                                                                                                                                                                                            |
+| ---- | ----------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **Primary Key Match**         | 1     | If the connector provides a canonical `shipit://` ID, use it directly. Exact match.                                                                                                                                                                 |
+| 2    | **Linking Key Match**         | 1     | Look up the source-system ID in the linking key index. If found, merge onto the existing node.                                                                                                                                                      |
+| 3    | **Fuzzy Match with Evidence** | 2     | Compare name, labels, tags, and namespace against existing nodes using vector embedding similarity + weighted features. Require configurable confidence threshold before auto-merging. Below threshold, create a candidate match for manual review. |
+| 4    | **Manual Review**             | 2     | Unresolved candidates appear in the Reconciliation UI. User confirms or rejects proposed merges.                                                                                                                                                    |
 
 **Phase 2 fuzzy match specification (Step 3):**
+
 - **Method:** Vector embedding similarity + weighted feature comparison
 - **Feature weights:** name=0.5, namespace=0.2, tags=0.2, labels=0.1
 - **Threshold:** 0.85 (configurable). Above threshold: auto-merge. Below threshold: candidate for manual review.
@@ -550,8 +551,8 @@ When an entity is renamed in a source system (e.g., a GitHub repository is renam
 
 ```typescript
 interface RenameSignal {
-  old_linking_key: string;  // e.g., "github://org/old-repo-name"
-  new_linking_key: string;  // e.g., "github://org/new-repo-name"
+  old_linking_key: string; // e.g., "github://org/old-repo-name"
+  new_linking_key: string; // e.g., "github://org/new-repo-name"
   source: string;
   timestamp: string;
 }
@@ -563,14 +564,14 @@ The Core Writer updates the linking key index to point the new key at the existi
 
 Each connector declares which linking keys it produces. The Core Writer maintains a global index:
 
-| Connector         | Linking Key Format                                  | Maps To Label     |
-|-------------------|-----------------------------------------------------|-------------------|
-| GitHub            | `github://{org}/{repo-name}`                        | Repository        |
-| Kubernetes        | `k8s://{cluster}/{namespace}/{kind}/{name}`          | Deployment, Namespace |
-| Datadog           | `dd://{org}/{service-name}`                          | RuntimeService    |
-| Backstage         | `backstage://{namespace}/{kind}/{name}`              | LogicalService, API, Domain |
-| Jira              | `jira://{instance}/{project-key}/{issue-key}`        | WorkItem, Epic    |
-| Identity Provider | `idp://{tenant}/{user-id}` or `idp://{tenant}/{group-id}` | Person, Team |
+| Connector         | Linking Key Format                                        | Maps To Label               |
+| ----------------- | --------------------------------------------------------- | --------------------------- |
+| GitHub            | `github://{org}/{repo-name}`                              | Repository                  |
+| Kubernetes        | `k8s://{cluster}/{namespace}/{kind}/{name}`               | Deployment, Namespace       |
+| Datadog           | `dd://{org}/{service-name}`                               | RuntimeService              |
+| Backstage         | `backstage://{namespace}/{kind}/{name}`                   | LogicalService, API, Domain |
+| Jira              | `jira://{instance}/{project-key}/{issue-key}`             | WorkItem, Epic              |
+| Identity Provider | `idp://{tenant}/{user-id}` or `idp://{tenant}/{group-id}` | Person, Team                |
 
 ### 5.5 Merge Auditability & Reversibility
 
@@ -590,10 +591,10 @@ All connectors publish normalized events to an Event Bus rather than writing dir
 
 **Tiered approach:**
 
-| Mode        | Implementation   | When to Use                          | Features                                                             |
-|-------------|------------------|--------------------------------------|----------------------------------------------------------------------|
-| Lite Mode   | BullMQ on Redis  | <1,000 services, self-hosted, Phase 1 default | At-least-once delivery, job ordering per entity, retry with backoff, basic DLQ, replay via event log |
-| Production  | Kafka / Redpanda | 1,000+ services, high throughput required       | Full partitioning, consumer groups, native replay, configurable retention, horizontal scaling |
+| Mode       | Implementation   | When to Use                                   | Features                                                                                             |
+| ---------- | ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Lite Mode  | BullMQ on Redis  | <1,000 services, self-hosted, Phase 1 default | At-least-once delivery, job ordering per entity, retry with backoff, basic DLQ, replay via event log |
+| Production | Kafka / Redpanda | 1,000+ services, high throughput required     | Full partitioning, consumer groups, native replay, configurable retention, horizontal scaling        |
 
 Both modes implement the same TypeScript SDK interface:
 
@@ -608,6 +609,7 @@ type EventHandler = (event: CanonicalEntity) => Promise<void>;
 ```
 
 **Event Bus contract (both modes):**
+
 - **Delivery guarantee:** At-least-once. Consumers must be idempotent.
 - **Partitioning:** Events are partitioned by canonical entity ID (or linking key hash). This guarantees ordering per entity.
 - **Retention:** Configurable retention window. Initial default: 7 days. Enables replay for recovery and re-processing.
@@ -616,13 +618,13 @@ type EventHandler = (event: CanonicalEntity) => Promise<void>;
 
 **Supported implementations (phased):**
 
-| Implementation       | Phase | Notes                                                                                    |
-|----------------------|-------|------------------------------------------------------------------------------------------|
-| BullMQ on Redis      | 1     | Default for Lite Mode. Jobs keyed by entity ID for ordering. Redis Streams for replay.   |
-| Kafka / Redpanda     | 2     | Full feature set: partitioning, ordering, retention, replay, consumer groups.            |
-| AWS SQS + Event Log  | 3     | SQS for delivery + DynamoDB/S3 Event Log for replay (SQS has no native replay).         |
-| GCP Pub/Sub          | 3     | Native ordering via ordering keys, seek-to-timestamp for replay.                         |
-| Azure Service Bus    | 3     | Sessions for ordering, dead-letter sub-queue built-in.                                   |
+| Implementation      | Phase | Notes                                                                                  |
+| ------------------- | ----- | -------------------------------------------------------------------------------------- |
+| BullMQ on Redis     | 1     | Default for Lite Mode. Jobs keyed by entity ID for ordering. Redis Streams for replay. |
+| Kafka / Redpanda    | 2     | Full feature set: partitioning, ordering, retention, replay, consumer groups.          |
+| AWS SQS + Event Log | 3     | SQS for delivery + DynamoDB/S3 Event Log for replay (SQS has no native replay).        |
+| GCP Pub/Sub         | 3     | Native ordering via ordering keys, seek-to-timestamp for replay.                       |
+| Azure Service Bus   | 3     | Sessions for ordering, dead-letter sub-queue built-in.                                 |
 
 ### 6.2 Core Writer
 
@@ -640,13 +642,13 @@ The Core Writer provides:
 
 **Write amplification analysis (ADR-002):** With JSON claims stored on nodes, a single entity update requires:
 
-| Operation                              | v0.2 (Separate Claim Nodes) | v0.3 (JSON on Node)       |
-|----------------------------------------|-----------------------------|---------------------------|
-| Entity MERGE                           | 1 op                        | 1 op                      |
-| Property claims (5 properties)         | 15 ops (MERGE claim + SET + relationship per property) | 1 op (SET `_claims` JSON) |
-| Effective property materialization     | 5 ops (SET per property)    | Combined with entity MERGE|
-| Idempotency log check + write          | 2 ops (separate store)      | 0 additional ops (same transaction) |
-| **Total per entity**                   | **~23 ops**                 | **~2 ops**                |
+| Operation                          | v0.2 (Separate Claim Nodes)                            | v0.3 (JSON on Node)                 |
+| ---------------------------------- | ------------------------------------------------------ | ----------------------------------- |
+| Entity MERGE                       | 1 op                                                   | 1 op                                |
+| Property claims (5 properties)     | 15 ops (MERGE claim + SET + relationship per property) | 1 op (SET `_claims` JSON)           |
+| Effective property materialization | 5 ops (SET per property)                               | Combined with entity MERGE          |
+| Idempotency log check + write      | 2 ops (separate store)                                 | 0 additional ops (same transaction) |
+| **Total per entity**               | **~23 ops**                                            | **~2 ops**                          |
 
 For a batch of 500 entities, this reduces from ~11,500 Neo4j operations to ~1,000 operations per transaction.
 
@@ -699,7 +701,7 @@ Claims are stored as the `_claims` property on each entity node:
       "source": "manual:admin@company.com",
       "source_id": "manual://admin@company.com",
       "ingested_at": "2026-02-27T15:30:00Z",
-      "confidence": 0.80,
+      "confidence": 0.8,
       "evidence": "manual override via Claim Explorer"
     },
     {
@@ -708,22 +710,22 @@ Claims are stored as the `_claims` property on each entity node:
       "source": "github",
       "source_id": "github://acme/payments-api",
       "ingested_at": "2026-02-28T09:00:00Z",
-      "confidence": 0.90,
+      "confidence": 0.9,
       "evidence": "parsed from CODEOWNERS file"
     }
   ]
 }
 ```
 
-| Field          | Type             | Description                                                                            |
-|----------------|------------------|----------------------------------------------------------------------------------------|
-| property_key   | string           | The property name (e.g., "tier", "owner", "lifecycle")                                 |
-| value          | any              | The claimed value                                                                       |
-| source         | string           | Connector or actor that made the claim (e.g., "backstage", "github", "manual:user@co") |
-| source_id      | string           | Linking key of the source entity that produced this claim                               |
-| ingested_at    | ISO 8601         | When the claim was ingested into ShipIt-AI                                              |
-| confidence     | float (0.0-1.0)  | Confidence level of the claim. Connectors set this based on data quality signals.       |
-| evidence       | string or null   | Human-readable justification (e.g., "parsed from backstage catalog-info.yaml")          |
+| Field        | Type            | Description                                                                            |
+| ------------ | --------------- | -------------------------------------------------------------------------------------- |
+| property_key | string          | The property name (e.g., "tier", "owner", "lifecycle")                                 |
+| value        | any             | The claimed value                                                                      |
+| source       | string          | Connector or actor that made the claim (e.g., "backstage", "github", "manual:user@co") |
+| source_id    | string          | Linking key of the source entity that produced this claim                              |
+| ingested_at  | ISO 8601        | When the claim was ingested into ShipIt-AI                                             |
+| confidence   | float (0.0-1.0) | Confidence level of the claim. Connectors set this based on data quality signals.      |
+| evidence     | string or null  | Human-readable justification (e.g., "parsed from backstage catalog-info.yaml")         |
 
 #### 7.2.1 Confidence Decay
 
@@ -739,22 +741,22 @@ Claim confidence **decreases over time** if the source does not refresh it. This
 
 Each property key in the schema has a configurable resolution strategy. The Core Writer applies the strategy when multiple claims exist for the same property on the same node:
 
-| Strategy                | Behavior                                                                                                        | Best For                                    |
-|-------------------------|---------------------------------------------------------------------------------------------------------------|---------------------------------------------|
-| MANUAL_OVERRIDE_FIRST   | If a manual claim exists, it always wins. Otherwise fall through to next strategy.                             | tier, lifecycle, domain -- human judgment    |
-| HIGHEST_CONFIDENCE      | Claim with the highest **effective confidence** (after decay) wins. Ties broken by most recent `ingested_at`. | owner, name, description                    |
-| AUTHORITATIVE_ORDER     | Claims ranked by user-defined source priority list. Highest-priority source wins.                              | language -- clear source of truth            |
-| LATEST_TIMESTAMP        | Most recently ingested claim wins.                                                                             | status, replicas -- fast-changing properties |
-| MERGE_SET               | All unique values merged into an array/set. No single winner.                                                 | tags, labels, topics -- additive properties  |
+| Strategy              | Behavior                                                                                                      | Best For                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| MANUAL_OVERRIDE_FIRST | If a manual claim exists, it always wins. Otherwise fall through to next strategy.                            | tier, lifecycle, domain -- human judgment    |
+| HIGHEST_CONFIDENCE    | Claim with the highest **effective confidence** (after decay) wins. Ties broken by most recent `ingested_at`. | owner, name, description                     |
+| AUTHORITATIVE_ORDER   | Claims ranked by user-defined source priority list. Highest-priority source wins.                             | language -- clear source of truth            |
+| LATEST_TIMESTAMP      | Most recently ingested claim wins.                                                                            | status, replicas -- fast-changing properties |
+| MERGE_SET             | All unique values merged into an array/set. No single winner.                                                 | tags, labels, topics -- additive properties  |
 
 **Default resolution strategies (v0.3):**
 
-| Property  | v0.2 Default        | v0.3 Default        | Rationale                                      |
-|-----------|---------------------|---------------------|-------------------------------------------------|
-| owner     | AUTHORITATIVE_ORDER | HIGHEST_CONFIDENCE  | With decay, stale ownership claims lose priority |
-| tier      | MANUAL_OVERRIDE_FIRST | MANUAL_OVERRIDE_FIRST | No change -- human judgment is authoritative    |
-| status    | LATEST_TIMESTAMP    | LATEST_TIMESTAMP    | No change -- operational data is time-sensitive  |
-| tags      | MERGE_SET           | MERGE_SET           | No change -- additive by nature                  |
+| Property | v0.2 Default          | v0.3 Default          | Rationale                                        |
+| -------- | --------------------- | --------------------- | ------------------------------------------------ |
+| owner    | AUTHORITATIVE_ORDER   | HIGHEST_CONFIDENCE    | With decay, stale ownership claims lose priority |
+| tier     | MANUAL_OVERRIDE_FIRST | MANUAL_OVERRIDE_FIRST | No change -- human judgment is authoritative     |
+| status   | LATEST_TIMESTAMP      | LATEST_TIMESTAMP      | No change -- operational data is time-sensitive  |
+| tags     | MERGE_SET             | MERGE_SET             | No change -- additive by nature                  |
 
 #### 7.3.1 Re-Resolution
 
@@ -779,6 +781,7 @@ For query performance, the Core Writer materializes the resolved "effective" val
 Relationships also carry provenance. Each edge has `_source`, `_confidence`, and `_ingested_at` properties indicating which connector asserted the relationship and with what confidence.
 
 **Resolution for edges:**
+
 - If multiple connectors assert the **same edge** (same type, same from/to), the edge exists once with the **highest confidence** from any source. All source attributions are recorded in an `_edge_claims` JSON property on the edge.
 - If connectors **disagree** (one asserts an edge, another does not), the edge exists if any active claim supports it.
 - **Confidence boost:** If two independent sources agree on an edge, the effective confidence is boosted: `min(1.0, max(c1, c2) + 0.1)`.
@@ -789,15 +792,16 @@ Relationships also carry provenance. Each edge has `_source`, `_confidence`, and
 
 ShipIt-AI computes and exposes data quality signals to help users and AI agents assess trustworthiness:
 
-| Signal                         | Description                                                                                  | Detection Method                            |
-|--------------------------------|----------------------------------------------------------------------------------------------|---------------------------------------------|
-| Cross-source disagreement rate | Percentage of properties on an entity where multiple sources claim different values           | Count claims per property with distinct values |
-| Cardinality anomaly            | Entity has unusually many or few relationships compared to peers of the same label            | Statistical outlier detection (>2 std dev)  |
-| Temporal anomaly               | Data has not changed in an unexpectedly long time (e.g., CODEOWNERS unchanged in 12+ months on an active repo) | Compare `_last_synced` with activity signals |
-| Single-source warning          | Entity has claims from only one source, reducing provenance confidence                        | Count distinct sources per entity            |
-| Stale claim warning            | A claim's effective confidence has decayed below 0.5                                          | Decay calculation at query time              |
+| Signal                         | Description                                                                                                    | Detection Method                               |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Cross-source disagreement rate | Percentage of properties on an entity where multiple sources claim different values                            | Count claims per property with distinct values |
+| Cardinality anomaly            | Entity has unusually many or few relationships compared to peers of the same label                             | Statistical outlier detection (>2 std dev)     |
+| Temporal anomaly               | Data has not changed in an unexpectedly long time (e.g., CODEOWNERS unchanged in 12+ months on an active repo) | Compare `_last_synced` with activity signals   |
+| Single-source warning          | Entity has claims from only one source, reducing provenance confidence                                         | Count distinct sources per entity              |
+| Stale claim warning            | A claim's effective confidence has decayed below 0.5                                                           | Decay calculation at query time                |
 
 These signals are:
+
 - Returned in MCP responses via the `_meta.data_quality` field in the response envelope (ADR-008).
 - Surfaced in the Claim Explorer UI.
 - Available as properties on entity nodes (`_quality_score`, `_source_count`).
@@ -807,6 +811,7 @@ These signals are:
 The Claim Conflict Dashboard is a dedicated view (separate from the Claim Explorer) that **proactively surfaces only properties with active disagreements**. It is not buried inside individual entity detail pages.
 
 **Features:**
+
 - Filterable by node label, property key, team, and severity (number of conflicting sources).
 - Sorted by impact: Tier-1 service conflicts appear first.
 - One-click navigation to the entity's Claim Explorer for resolution.
@@ -836,13 +841,13 @@ interface ShipItConnector {
 }
 ```
 
-| Method           | Responsibility                                                                              |
-|------------------|---------------------------------------------------------------------------------------------|
-| `authenticate()` | Validate credentials and establish connection to the source system                          |
-| `discover()`     | List all available entities from the source system (repos, deployments, monitors, etc.)     |
-| `fetch()`        | Pull full data for a given entity type, with cursor-based pagination                        |
-| `normalize()`    | Transform source data into `CanonicalEntity[]` with claims. **SDK auto-publishes output.**  |
-| `sync()`         | Execute full or incremental sync (orchestrates discover -> fetch -> normalize)               |
+| Method             | Responsibility                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `authenticate()`   | Validate credentials and establish connection to the source system                             |
+| `discover()`       | List all available entities from the source system (repos, deployments, monitors, etc.)        |
+| `fetch()`          | Pull full data for a given entity type, with cursor-based pagination                           |
+| `normalize()`      | Transform source data into `CanonicalEntity[]` with claims. **SDK auto-publishes output.**     |
+| `sync()`           | Execute full or incremental sync (orchestrates discover -> fetch -> normalize)                 |
 | `handleWebhook?()` | Handle real-time events from the source system (optional, for connectors with webhook support) |
 
 #### 8.1.1 Connector Dry-Run Mode
@@ -873,9 +878,9 @@ Connectors declare a **canonical schema version** that indicates which version o
 ```typescript
 interface ConnectorManifest {
   name: string;
-  version: string;              // Connector version (e.g., "1.2.0")
-  schema_version: string;       // Canonical schema version (e.g., "1.0")
-  min_sdk_version: string;      // Minimum SDK version required
+  version: string; // Connector version (e.g., "1.2.0")
+  schema_version: string; // Canonical schema version (e.g., "1.0")
+  min_sdk_version: string; // Minimum SDK version required
   supported_entity_types: string[];
 }
 ```
@@ -890,6 +895,7 @@ interface ConnectorManifest {
 **Authentication:** GitHub App (recommended).
 
 The GitHub connector authenticates via a dedicated GitHub App installation:
+
 - Fine-grained permissions -- request only the scopes needed
 - Org-level installation -- single install covers all repos; no per-user token management
 - Higher rate limits -- 5,000 requests/hour per installation vs 5,000/hour per PAT
@@ -897,6 +903,7 @@ The GitHub connector authenticates via a dedicated GitHub App installation:
 - Webhook delivery -- GitHub App receives webhook events natively
 
 **Setup (documented in onboarding wizard):**
+
 1. Create a GitHub App in your org (Settings -> Developer settings -> GitHub Apps)
 2. Permissions: Repository (contents:read, metadata:read, actions:read, pull_requests:read, dependabot_alerts:read), Organization (members:read, team:read)
 3. Webhook events: push, pull_request, workflow_run, repository, team, membership
@@ -910,51 +917,51 @@ The GitHub connector authenticates via a dedicated GitHub App installation:
 
 **Entities pulled:**
 
-| Entity             | Data Pulled                                          | Graph Mapping                                  |
-|--------------------|------------------------------------------------------|------------------------------------------------|
-| Repositories       | Name, URL, language, visibility, branch protection, topics | Repository node + IMPLEMENTED_BY from LogicalService |
-| CODEOWNERS         | Parsed ownership rules per path                      | CODEOWNER_OF relationships                     |
-| Teams              | Org teams, membership                                | Team nodes + MEMBER_OF edges                   |
-| Actions Workflows  | Workflow YAML, run history, status                   | Pipeline nodes + BUILT_BY edges                |
-| Pull Requests      | Open PRs, reviewers, approval status (last N)        | CONTRIBUTES_TO edges, metadata                 |
-| Dependencies       | Package manifests, security alerts                   | IMPORTS edges to Library nodes                 |
+| Entity            | Data Pulled                                                | Graph Mapping                                        |
+| ----------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
+| Repositories      | Name, URL, language, visibility, branch protection, topics | Repository node + IMPLEMENTED_BY from LogicalService |
+| CODEOWNERS        | Parsed ownership rules per path                            | CODEOWNER_OF relationships                           |
+| Teams             | Org teams, membership                                      | Team nodes + MEMBER_OF edges                         |
+| Actions Workflows | Workflow YAML, run history, status                         | Pipeline nodes + BUILT_BY edges                      |
+| Pull Requests     | Open PRs, reviewers, approval status (last N)              | CONTRIBUTES_TO edges, metadata                       |
+| Dependencies      | Package manifests, security alerts                         | IMPORTS edges to Library nodes                       |
 
 #### 8.2.2 Kubernetes / ArgoCD Connector
 
 **Sync:** Watch API (streaming) + periodic reconciliation (hourly).
 
-| Entity                | Data Pulled                                     | Graph Mapping                                  |
-|-----------------------|-------------------------------------------------|------------------------------------------------|
-| Namespaces            | Name, labels, annotations, resource quotas      | Namespace nodes                                |
-| Deployments/StatefulSets | Replicas, image, env vars, resource limits   | Deployment nodes + DEPLOYED_AS from LogicalService |
-| Services/Ingress      | Endpoints, ports, DNS entries                   | API nodes + EXPOSES edges                      |
-| ConfigMaps/Secrets    | Names and references (not values)               | Metadata on Deployment nodes                   |
-| ArgoCD Applications   | Sync status, source repo, target cluster/ns     | Pipeline nodes + TRIGGERS edges                |
-| CronJobs              | Schedule, last run, associated service          | Pipeline nodes                                 |
+| Entity                   | Data Pulled                                 | Graph Mapping                                      |
+| ------------------------ | ------------------------------------------- | -------------------------------------------------- |
+| Namespaces               | Name, labels, annotations, resource quotas  | Namespace nodes                                    |
+| Deployments/StatefulSets | Replicas, image, env vars, resource limits  | Deployment nodes + DEPLOYED_AS from LogicalService |
+| Services/Ingress         | Endpoints, ports, DNS entries               | API nodes + EXPOSES edges                          |
+| ConfigMaps/Secrets       | Names and references (not values)           | Metadata on Deployment nodes                       |
+| ArgoCD Applications      | Sync status, source repo, target cluster/ns | Pipeline nodes + TRIGGERS edges                    |
+| CronJobs                 | Schedule, last run, associated service      | Pipeline nodes                                     |
 
 #### 8.2.3 Datadog Connector
 
 **Sync:** Polling (Datadog API) + webhook (monitor state changes).
 
-| Entity         | Data Pulled                                       | Graph Mapping                                  |
-|----------------|---------------------------------------------------|------------------------------------------------|
-| Monitors       | Name, query, status, tags, notification channels  | Monitor nodes + MONITORS edges                 |
-| SLOs           | Target, status, error budget remaining            | Properties on LogicalService/RuntimeService    |
-| Service Map    | Datadog-detected service dependencies             | CALLS edges between RuntimeService nodes       |
-| Dashboards     | Dashboard IDs, titles, linked services            | Metadata / Document nodes                      |
-| Synthetic Tests| Endpoints tested, status, locations               | Monitor nodes (type=synthetic)                 |
+| Entity          | Data Pulled                                      | Graph Mapping                               |
+| --------------- | ------------------------------------------------ | ------------------------------------------- |
+| Monitors        | Name, query, status, tags, notification channels | Monitor nodes + MONITORS edges              |
+| SLOs            | Target, status, error budget remaining           | Properties on LogicalService/RuntimeService |
+| Service Map     | Datadog-detected service dependencies            | CALLS edges between RuntimeService nodes    |
+| Dashboards      | Dashboard IDs, titles, linked services           | Metadata / Document nodes                   |
+| Synthetic Tests | Endpoints tested, status, locations              | Monitor nodes (type=synthetic)              |
 
 #### 8.2.4 Backstage Catalog Connector
 
 **Sync:** Backstage catalog API polling + entity refresh events.
 
-| Entity       | Data Pulled                                   | Graph Mapping                                  |
-|--------------|-----------------------------------------------|------------------------------------------------|
-| Components   | Name, type, lifecycle, owner, system          | LogicalService nodes (reconciled via identity ladder) |
-| Systems      | System groupings                              | Domain nodes or grouping relationships         |
-| APIs          | API specs, consumers, providers              | API nodes + EXPOSES/CONSUMES edges             |
-| Groups/Users | Team structure, membership                    | Team/Person nodes (reconciled with IdP)        |
-| Resources    | Databases, queues, buckets                    | Infrastructure nodes + USES edges              |
+| Entity       | Data Pulled                          | Graph Mapping                                         |
+| ------------ | ------------------------------------ | ----------------------------------------------------- |
+| Components   | Name, type, lifecycle, owner, system | LogicalService nodes (reconciled via identity ladder) |
+| Systems      | System groupings                     | Domain nodes or grouping relationships                |
+| APIs         | API specs, consumers, providers      | API nodes + EXPOSES/CONSUMES edges                    |
+| Groups/Users | Team structure, membership           | Team/Person nodes (reconciled with IdP)               |
+| Resources    | Databases, queues, buckets           | Infrastructure nodes + USES edges                     |
 
 #### 8.2.5 Jira Connector
 
@@ -962,15 +969,15 @@ The GitHub connector authenticates via a dedicated GitHub App installation:
 
 **Sync:** Jira webhooks (issue_created, issue_updated, sprint events) + scheduled reconciliation (daily).
 
-| Entity          | Data Pulled                                         | Graph Mapping                                  |
-|-----------------|-----------------------------------------------------|------------------------------------------------|
-| Projects        | Key, name, lead, category                           | Metadata on Domain/Team nodes                  |
-| Epics           | Summary, status, owner, linked issues, labels       | Epic node + IMPLEMENTS edges to Domain         |
-| Stories / Tasks | Summary, status, assignee, sprint, priority         | WorkItem node + ASSIGNED_TO Person edges       |
-| Sprints         | Name, start/end date, velocity, board               | Sprint node + CONTAINS edges to WorkItem (if jira_extended enabled) |
-| Components      | Name, lead, associated issues                       | PART_OF edges to LogicalService nodes (reconciled) |
-| Issue Links     | Blocks, is-blocked-by, relates-to                   | BLOCKS / RELATES_TO edges between WorkItem nodes |
-| Versions / Releases | Name, release date, status                      | Release node + INCLUDES edges to WorkItem (if jira_extended enabled) |
+| Entity              | Data Pulled                                   | Graph Mapping                                                        |
+| ------------------- | --------------------------------------------- | -------------------------------------------------------------------- |
+| Projects            | Key, name, lead, category                     | Metadata on Domain/Team nodes                                        |
+| Epics               | Summary, status, owner, linked issues, labels | Epic node + IMPLEMENTS edges to Domain                               |
+| Stories / Tasks     | Summary, status, assignee, sprint, priority   | WorkItem node + ASSIGNED_TO Person edges                             |
+| Sprints             | Name, start/end date, velocity, board         | Sprint node + CONTAINS edges to WorkItem (if jira_extended enabled)  |
+| Components          | Name, lead, associated issues                 | PART_OF edges to LogicalService nodes (reconciled)                   |
+| Issue Links         | Blocks, is-blocked-by, relates-to             | BLOCKS / RELATES_TO edges between WorkItem nodes                     |
+| Versions / Releases | Name, release date, status                    | Release node + INCLUDES edges to WorkItem (if jira_extended enabled) |
 
 #### 8.2.6 Identity Connector (People & Service Accounts)
 
@@ -978,24 +985,24 @@ The GitHub connector authenticates via a dedicated GitHub App installation:
 
 **Sync:** SCIM push (Enterprise) + polling (Community).
 
-| Entity            | Data Pulled                                     | Graph Mapping                                  |
-|-------------------|-------------------------------------------------|------------------------------------------------|
-| Users             | Name, email, role, department, manager          | Person nodes                                   |
-| Groups / Teams    | Group name, members, nested groups              | Team nodes + MEMBER_OF edges                   |
-| Service Accounts  | Name, type (bot/CI/AI), owner, scopes           | ServiceAccount nodes + MANAGED_BY edges        |
-| AI Agents         | Agent name, model, permissions, owner team      | ServiceAccount nodes (type=ai_agent)           |
-| Roles / Permissions | Role assignments, access scope                | HAS_ACCESS_TO edges                            |
+| Entity              | Data Pulled                                | Graph Mapping                           |
+| ------------------- | ------------------------------------------ | --------------------------------------- |
+| Users               | Name, email, role, department, manager     | Person nodes                            |
+| Groups / Teams      | Group name, members, nested groups         | Team nodes + MEMBER_OF edges            |
+| Service Accounts    | Name, type (bot/CI/AI), owner, scopes      | ServiceAccount nodes + MANAGED_BY edges |
+| AI Agents           | Agent name, model, permissions, owner team | ServiceAccount nodes (type=ai_agent)    |
+| Roles / Permissions | Role assignments, access scope             | HAS_ACCESS_TO edges                     |
 
 #### Time-to-Value Estimates
 
-| Connector   | Initial Sync Time           | Time to First Value |
-|-------------|-----------------------------|---------------------|
-| GitHub      | 5-15 min (1K repos)         | ~10 min             |
-| Kubernetes  | 2-5 min (500 deployments)   | ~5 min              |
-| Datadog     | 10-20 min                   | ~15 min             |
-| Backstage   | 5-10 min                    | ~8 min              |
-| Jira        | 15-30 min (10K issues)      | ~20 min             |
-| Identity    | 5-10 min                    | ~8 min              |
+| Connector  | Initial Sync Time         | Time to First Value |
+| ---------- | ------------------------- | ------------------- |
+| GitHub     | 5-15 min (1K repos)       | ~10 min             |
+| Kubernetes | 2-5 min (500 deployments) | ~5 min              |
+| Datadog    | 10-20 min                 | ~15 min             |
+| Backstage  | 5-10 min                  | ~8 min              |
+| Jira       | 15-30 min (10K issues)    | ~20 min             |
+| Identity   | 5-10 min                  | ~8 min              |
 
 > **Note:** "Time to First Value" is measured from connector configuration to the first successful MCP query that returns data from that connector.
 
@@ -1012,25 +1019,25 @@ All connectors monitor credential health and proactively warn before expiration:
 
 #### First Run Setup (7 steps)
 
-| Step | Action                      | Description                                                                                |
-|------|-----------------------------|--------------------------------------------------------------------------------------------|
-| 1    | Select Integrations         | Check which systems to connect (GitHub, K8s, Datadog, etc.)                                |
-| 2    | Authenticate                | OAuth flows or API key / GitHub App setup per integration                                  |
-| 3    | Scope                       | Select orgs, clusters, namespaces, Jira projects, Datadog accounts                        |
-| 4    | Schema Review               | Show which node/relationship types will be populated; customize. **Skippable via Quick Start.** |
-| 5    | Initial Sync (Dry Run)      | Run full discovery + normalization, show sample data for review                            |
-| 6    | Verify                      | Interactive graph explorer to validate data, flag issues                                   |
-| 7    | Schedule                    | Configure sync frequency and webhook registrations                                        |
+| Step | Action                 | Description                                                                                     |
+| ---- | ---------------------- | ----------------------------------------------------------------------------------------------- |
+| 1    | Select Integrations    | Check which systems to connect (GitHub, K8s, Datadog, etc.)                                     |
+| 2    | Authenticate           | OAuth flows or API key / GitHub App setup per integration                                       |
+| 3    | Scope                  | Select orgs, clusters, namespaces, Jira projects, Datadog accounts                              |
+| 4    | Schema Review          | Show which node/relationship types will be populated; customize. **Skippable via Quick Start.** |
+| 5    | Initial Sync (Dry Run) | Run full discovery + normalization, show sample data for review                                 |
+| 6    | Verify                 | Interactive graph explorer to validate data, flag issues                                        |
+| 7    | Schedule               | Configure sync frequency and webhook registrations                                              |
 
 **Quick Start option:** Steps 4 (Schema Review) can be skipped. The default schema template is applied. Users can customize later by editing `shipit-schema.yaml`.
 
 #### Add Connector (3 steps)
 
-| Step | Action       | Description                                              |
-|------|-------------|----------------------------------------------------------|
-| 1    | Select      | Choose connector type from available connectors          |
-| 2    | Authenticate | Complete auth flow for the selected connector           |
-| 3    | Sync        | Run initial sync (dry-run first if configured)          |
+| Step | Action       | Description                                     |
+| ---- | ------------ | ----------------------------------------------- |
+| 1    | Select       | Choose connector type from available connectors |
+| 2    | Authenticate | Complete auth flow for the selected connector   |
+| 3    | Sync         | Run initial sync (dry-run first if configured)  |
 
 ---
 
@@ -1068,25 +1075,31 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter              | Type                  | Default          | Description                                                      |
-|------------------------|-----------------------|------------------|------------------------------------------------------------------|
-| node                   | string (canonical ID) | Required         | Starting node (e.g., `shipit://repository/default/config-service`) |
-| depth                  | integer               | 3 (max: 6)      | Max traversal hops                                               |
-| direction              | enum                  | DOWNSTREAM       | DOWNSTREAM, UPSTREAM, or BOTH                                    |
-| include_environments   | string[]              | all              | Filter deployments by environment. Use `production_only: true` as convenience shorthand. |
-| production_only        | boolean               | false            | Convenience flag: equivalent to `include_environments: ['production']` |
+| Parameter            | Type                  | Default    | Description                                                                              |
+| -------------------- | --------------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| node                 | string (canonical ID) | Required   | Starting node (e.g., `shipit://repository/default/config-service`)                       |
+| depth                | integer               | 3 (max: 6) | Max traversal hops                                                                       |
+| direction            | enum                  | DOWNSTREAM | DOWNSTREAM, UPSTREAM, or BOTH                                                            |
+| include_environments | string[]              | all        | Filter deployments by environment. Use `production_only: true` as convenience shorthand. |
+| production_only      | boolean               | false      | Convenience flag: equivalent to `include_environments: ['production']`                   |
 
 **Edge types traversed (downstream):** IMPLEMENTED_BY^-1 -> DEPLOYED_AS -> EMITS_TELEMETRY_AS -> CALLS^-1, DEPENDS_ON^-1, BUILT_BY^-1 -> TRIGGERS^-1
 
 **Response schema:**
+
 ```json
 {
   "affected_nodes": [
-    {"id": "...", "label": "...", "name": "...", "tier_effective": 1, "environment": "production", "owner_effective": "payments-team"}
+    {
+      "id": "...",
+      "label": "...",
+      "name": "...",
+      "tier_effective": 1,
+      "environment": "production",
+      "owner_effective": "payments-team"
+    }
   ],
-  "paths": [
-    {"from": "...", "to": "...", "relationship": "DEPENDS_ON", "depth": 2}
-  ],
+  "paths": [{ "from": "...", "to": "...", "relationship": "DEPENDS_ON", "depth": 2 }],
   "summary": {
     "total_services": 6,
     "total_teams": 3,
@@ -1101,19 +1114,20 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter       | Type                  | Default  | Description                                              |
-|-----------------|-----------------------|----------|----------------------------------------------------------|
-| entity          | string (canonical ID) | Required | Entity to find owners for                                |
-| include_chain   | boolean               | false    | If true, return the full ownership chain (CODEOWNERS -> Team -> Manager) |
+| Parameter     | Type                  | Default  | Description                                                              |
+| ------------- | --------------------- | -------- | ------------------------------------------------------------------------ |
+| entity        | string (canonical ID) | Required | Entity to find owners for                                                |
+| include_chain | boolean               | false    | If true, return the full ownership chain (CODEOWNERS -> Team -> Manager) |
 
 **Edge types traversed:** OWNS^-1, CODEOWNER_OF^-1, MEMBER_OF, ON_CALL_FOR^-1
 
 **Response schema:**
+
 ```json
 {
-  "owners": [{"type": "team", "name": "payments-team", "email": null, "role": "owner"}],
-  "on_call": [{"name": "Jane Doe", "email": "jane@co.com", "rotation": "primary"}],
-  "codeowners": [{"path_pattern": "src/payments/**", "team_or_person": "payments-team"}]
+  "owners": [{ "type": "team", "name": "payments-team", "email": null, "role": "owner" }],
+  "on_call": [{ "name": "Jane Doe", "email": "jane@co.com", "rotation": "primary" }],
+  "codeowners": [{ "path_pattern": "src/payments/**", "team_or_person": "payments-team" }]
 }
 ```
 
@@ -1121,18 +1135,19 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter  | Type                  | Default      | Description          |
-|------------|-----------------------|--------------|----------------------|
-| from       | string (canonical ID) | Required     | Source node          |
-| to         | string (canonical ID) | Required     | Target node          |
-| max_depth  | integer               | 6 (max: 10)  | Max path length      |
+| Parameter | Type                  | Default     | Description     |
+| --------- | --------------------- | ----------- | --------------- |
+| from      | string (canonical ID) | Required    | Source node     |
+| to        | string (canonical ID) | Required    | Target node     |
+| max_depth | integer               | 6 (max: 10) | Max path length |
 
 **Edge types traversed:** DEPENDS_ON, CALLS, USES, CONSUMES, DEPLOYED_AS, RUNS_IN, PART_OF, IMPLEMENTED_BY
 
 **Response schema:**
+
 ```json
 {
-  "paths": [{"nodes": ["..."], "edges": ["..."], "length": 3}],
+  "paths": [{ "nodes": ["..."], "edges": ["..."], "length": 3 }],
   "shortest_path_length": 3,
   "total_paths_found": 5
 }
@@ -1142,22 +1157,28 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter   | Type                  | Default  | Description                                                         |
-|-------------|-----------------------|----------|---------------------------------------------------------------------|
-| entity      | string (canonical ID) | Required | Entity being changed                                                |
-| change_type | enum                  | Required | `code_change`, `schema_migration`, `config_change`, `deprecation`, `decommission` |
-| depth       | integer               | 4 (max: 6) | Max impact hops                                                  |
+| Parameter   | Type                  | Default    | Description                                                                       |
+| ----------- | --------------------- | ---------- | --------------------------------------------------------------------------------- |
+| entity      | string (canonical ID) | Required   | Entity being changed                                                              |
+| change_type | enum                  | Required   | `code_change`, `schema_migration`, `config_change`, `deprecation`, `decommission` |
+| depth       | integer               | 4 (max: 6) | Max impact hops                                                                   |
 
 **Edge types traversed:** Superset of blast_radius + CONSUMES^-1, IMPORTS^-1 (for library changes), USES^-1 (for infra changes)
 
 **Response schema:**
+
 ```json
 {
-  "impact_zones": [
-    {"entity": "...", "impact_type": "direct", "depth": 1, "risk_tier": 1}
-  ],
-  "summary": {"total": 12, "by_tier": {"1": 2, "2": 5, "3": 5}, "by_team": {"payments": 4, "platform": 8}},
-  "recommended_actions": ["Coordinate with payments-team before deploying", "Run integration tests for tier-1 services"]
+  "impact_zones": [{ "entity": "...", "impact_type": "direct", "depth": 1, "risk_tier": 1 }],
+  "summary": {
+    "total": 12,
+    "by_tier": { "1": 2, "2": 5, "3": 5 },
+    "by_team": { "payments": 4, "platform": 8 }
+  },
+  "recommended_actions": [
+    "Coordinate with payments-team before deploying",
+    "Run integration tests for tier-1 services"
+  ]
 }
 ```
 
@@ -1167,11 +1188,11 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters (Phase 2):**
 
-| Parameter     | Type     | Default     | Description                    |
-|---------------|----------|-------------|--------------------------------|
-| query         | string   | Required    | Natural language search query  |
-| entity_types  | string[] | all         | Filter by node label(s)        |
-| limit         | integer  | 10 (max: 50) | Max results                  |
+| Parameter    | Type     | Default      | Description                   |
+| ------------ | -------- | ------------ | ----------------------------- |
+| query        | string   | Required     | Natural language search query |
+| entity_types | string[] | all          | Filter by node label(s)       |
+| limit        | integer  | 10 (max: 50) | Max results                   |
 
 **Backend (Phase 2):** Vector DB similarity search. Returns nodes ranked by cosine similarity.
 
@@ -1179,18 +1200,26 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter        | Type                  | Default  | Description                                           |
-|------------------|-----------------------|----------|-------------------------------------------------------|
-| entity           | string (canonical ID) | Required | Entity to inspect                                     |
-| include_claims   | boolean               | false    | If true, return all PropertyClaims for each property   |
-| include_neighbors| boolean               | true     | If true, return 1-hop neighbors grouped by relationship type |
+| Parameter         | Type                  | Default  | Description                                                  |
+| ----------------- | --------------------- | -------- | ------------------------------------------------------------ |
+| entity            | string (canonical ID) | Required | Entity to inspect                                            |
+| include_claims    | boolean               | false    | If true, return all PropertyClaims for each property         |
+| include_neighbors | boolean               | true     | If true, return 1-hop neighbors grouped by relationship type |
 
 **Response schema:**
+
 ```json
 {
-  "node": {"id": "...", "label": "LogicalService", "properties": {"name": "payments-api"}, "effective_properties": {"owner_effective": "payments-team", "tier_effective": 1}},
-  "claims": [{"property_key": "tier", "value": 1, "source": "backstage", "confidence": 0.95}],
-  "neighbors": {"DEPENDS_ON": [{"id": "...", "label": "LogicalService", "name": "config-service"}]}
+  "node": {
+    "id": "...",
+    "label": "LogicalService",
+    "properties": { "name": "payments-api" },
+    "effective_properties": { "owner_effective": "payments-team", "tier_effective": 1 }
+  },
+  "claims": [{ "property_key": "tier", "value": 1, "source": "backstage", "confidence": 0.95 }],
+  "neighbors": {
+    "DEPENDS_ON": [{ "id": "...", "label": "LogicalService", "name": "config-service" }]
+  }
 }
 ```
 
@@ -1198,21 +1227,22 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 
 **Parameters:**
 
-| Parameter        | Type              | Default | Description                                   |
-|------------------|-------------------|---------|-----------------------------------------------|
-| team             | string            | Required | Team name or canonical ID                    |
-| include_members  | boolean           | true    | Include team member list                      |
-| include_services | boolean           | true    | Include owned LogicalServices with tier and SLO status |
+| Parameter        | Type    | Default  | Description                                            |
+| ---------------- | ------- | -------- | ------------------------------------------------------ |
+| team             | string  | Required | Team name or canonical ID                              |
+| include_members  | boolean | true     | Include team member list                               |
+| include_services | boolean | true     | Include owned LogicalServices with tier and SLO status |
 
 **Edge types traversed:** OWNS, MEMBER_OF^-1, ON_CALL_FOR, MANAGED_BY^-1
 
 **Response schema:**
+
 ```json
 {
-  "team": {"name": "payments-team", "members": ["..."], "manager": "VP Engineering"},
-  "services": [{"name": "payments-api", "tier": 1, "slo_status": "OK"}],
+  "team": { "name": "payments-team", "members": ["..."], "manager": "VP Engineering" },
+  "services": [{ "name": "payments-api", "tier": 1, "slo_status": "OK" }],
   "repos": ["payments-api", "payments-config"],
-  "service_accounts": [{"name": "payments-ci-bot", "type": "ci"}]
+  "service_accounts": [{ "name": "payments-ci-bot", "type": "ci" }]
 }
 ```
 
@@ -1221,13 +1251,19 @@ The MCP server is the primary interface for AI agents. It exposes the knowledge 
 No parameters. Returns the current graph schema: all node labels with property definitions and resolution strategies, all relationship types with direction and cardinality.
 
 **Response schema:**
+
 ```json
 {
   "node_types": [
-    {"label": "LogicalService", "properties": [{"key": "name", "type": "string", "resolution_strategy": "HIGHEST_CONFIDENCE"}]}
+    {
+      "label": "LogicalService",
+      "properties": [
+        { "key": "name", "type": "string", "resolution_strategy": "HIGHEST_CONFIDENCE" }
+      ]
+    }
   ],
   "relationship_types": [
-    {"type": "DEPENDS_ON", "from": "LogicalService", "to": "LogicalService", "cardinality": "N:M"}
+    { "type": "DEPENDS_ON", "from": "LogicalService", "to": "LogicalService", "cardinality": "N:M" }
   ]
 }
 ```
@@ -1238,15 +1274,24 @@ No parameters. Returns the current graph schema: all node labels with property d
 
 **Parameters:**
 
-| Parameter    | Type   | Default          | Description                       |
-|--------------|--------|------------------|-----------------------------------|
-| entity_type  | enum   | LogicalService   | LogicalService or Deployment      |
-| environment  | string | production       | Filter deployments by environment |
+| Parameter   | Type   | Default        | Description                       |
+| ----------- | ------ | -------------- | --------------------------------- |
+| entity_type | enum   | LogicalService | LogicalService or Deployment      |
+| environment | string | production     | Filter deployments by environment |
 
 **Response schema:**
+
 ```json
 {
-  "unmonitored": [{"id": "...", "label": "LogicalService", "name": "...", "tier_effective": 2, "owner_effective": "platform-team"}],
+  "unmonitored": [
+    {
+      "id": "...",
+      "label": "LogicalService",
+      "name": "...",
+      "tier_effective": 2,
+      "owner_effective": "platform-team"
+    }
+  ],
   "total": 5
 }
 ```
@@ -1258,10 +1303,16 @@ No parameters. Returns the current graph schema: all node labels with property d
 Returns aggregate statistics about the knowledge graph. Useful for AI agents to understand the scope and freshness of available data before making specific queries.
 
 **Response schema:**
+
 ```json
 {
-  "node_counts_by_label": {"LogicalService": 142, "Repository": 230, "Deployment": 580, "RuntimeService": 310},
-  "edge_counts_by_type": {"DEPENDS_ON": 420, "CALLS": 890, "OWNS": 142, "IMPLEMENTED_BY": 230},
+  "node_counts_by_label": {
+    "LogicalService": 142,
+    "Repository": 230,
+    "Deployment": 580,
+    "RuntimeService": 310
+  },
+  "edge_counts_by_type": { "DEPENDS_ON": 420, "CALLS": 890, "OWNS": 142, "IMPLEMENTED_BY": 230 },
   "environments": ["dev", "staging", "production"],
   "total_nodes": 2450,
   "total_edges": 5200,
@@ -1277,20 +1328,27 @@ Returns aggregate statistics about the knowledge graph. Useful for AI agents to 
 
 **Parameters:**
 
-| Parameter        | Type                         | Default         | Description                                    |
-|------------------|------------------------------|-----------------|------------------------------------------------|
-| label            | string                       | any             | Filter by node label (e.g., "LogicalService")  |
-| property_filters | object (key-value pairs)     | {}              | Filter by property values (e.g., `{"tier_effective": 1, "lifecycle_effective": "production"}`) |
-| limit            | integer                      | 25 (max: 100)   | Max results                                   |
-| sort_by          | string                       | name            | Property to sort by                            |
+| Parameter        | Type                     | Default       | Description                                                                                    |
+| ---------------- | ------------------------ | ------------- | ---------------------------------------------------------------------------------------------- |
+| label            | string                   | any           | Filter by node label (e.g., "LogicalService")                                                  |
+| property_filters | object (key-value pairs) | {}            | Filter by property values (e.g., `{"tier_effective": 1, "lifecycle_effective": "production"}`) |
+| limit            | integer                  | 25 (max: 100) | Max results                                                                                    |
+| sort_by          | string                   | name          | Property to sort by                                                                            |
 
 Structured filtering without Cypher. Supports equality, array-contains (for tags), and `null` checks.
 
 **Response schema:**
+
 ```json
 {
   "entities": [
-    {"id": "...", "label": "LogicalService", "name": "payments-api", "tier_effective": 1, "owner_effective": "payments-team"}
+    {
+      "id": "...",
+      "label": "LogicalService",
+      "name": "payments-api",
+      "tier_effective": 1,
+      "owner_effective": "payments-team"
+    }
   ],
   "total_matching": 42,
   "returned": 25
@@ -1301,21 +1359,29 @@ Structured filtering without Cypher. Supports equality, array-contains (for tags
 
 **Parameters:**
 
-| Parameter     | Type           | Default         | Description                                    |
-|---------------|----------------|-----------------|------------------------------------------------|
-| since         | string (ISO 8601) | Required     | Start of time window                           |
-| entity_types  | string[]       | all             | Filter by node label(s)                        |
-| limit         | integer        | 50 (max: 200)   | Max results                                   |
+| Parameter    | Type              | Default       | Description             |
+| ------------ | ----------------- | ------------- | ----------------------- |
+| since        | string (ISO 8601) | Required      | Start of time window    |
+| entity_types | string[]          | all           | Filter by node label(s) |
+| limit        | integer           | 50 (max: 200) | Max results             |
 
 Returns entities added, modified, or deleted within the specified time window. Useful for AI agents tracking recent infrastructure changes.
 
 **Response schema:**
+
 ```json
 {
   "changes": [
-    {"id": "...", "label": "Deployment", "name": "...", "change_type": "modified", "changed_at": "2026-02-28T10:00:00Z", "changed_properties": ["replicas", "image"]}
+    {
+      "id": "...",
+      "label": "Deployment",
+      "name": "...",
+      "change_type": "modified",
+      "changed_at": "2026-02-28T10:00:00Z",
+      "changed_properties": ["replicas", "image"]
+    }
   ],
-  "summary": {"added": 3, "modified": 12, "deleted": 1}
+  "summary": { "added": 3, "modified": 12, "deleted": 1 }
 }
 ```
 
@@ -1324,26 +1390,25 @@ Returns entities added, modified, or deleted within the specified time window. U
 **Parameters:**
 
 | Parameter | Type                  | Default  | Description            |
-|-----------|-----------------------|----------|------------------------|
+| --------- | --------------------- | -------- | ---------------------- |
 | entity    | string (canonical ID) | Required | Entity to check health |
 
 Aggregates monitor status, SLO status, and deployment health for the specified entity into a synthesized health status. Traverses MONITORS, DEPLOYED_AS, and EMITS_TELEMETRY_AS relationships.
 
 **Response schema:**
+
 ```json
 {
   "entity": "shipit://logical-service/default/payments-api",
   "overall_status": "degraded",
   "monitors": [
-    {"name": "payments-api-latency", "status": "ALERT", "last_triggered": "2026-02-28T09:30:00Z"},
-    {"name": "payments-api-error-rate", "status": "OK"}
+    { "name": "payments-api-latency", "status": "ALERT", "last_triggered": "2026-02-28T09:30:00Z" },
+    { "name": "payments-api-error-rate", "status": "OK" }
   ],
-  "slos": [
-    {"name": "availability-99.9", "status": "OK", "error_budget_remaining": 0.42}
-  ],
+  "slos": [{ "name": "availability-99.9", "status": "OK", "error_budget_remaining": 0.42 }],
   "deployments": [
-    {"environment": "production", "status": "running", "replicas": "3/3"},
-    {"environment": "staging", "status": "running", "replicas": "1/1"}
+    { "environment": "production", "status": "running", "replicas": "3/3" },
+    { "environment": "staging", "status": "running", "replicas": "1/1" }
   ]
 }
 ```
@@ -1352,28 +1417,35 @@ Aggregates monitor status, SLO status, and deployment health for the specified e
 
 **Parameters:**
 
-| Parameter    | Type   | Default          | Description                                                         |
-|--------------|--------|------------------|---------------------------------------------------------------------|
-| check_type   | enum   | Required         | `unmonitored`, `no_owner`, `no_ci`, `no_docs`, `no_oncall`, `custom` |
-| entity_type  | string | LogicalService   | Filter by node label                                                |
-| environment  | string | all              | Filter deployments by environment                                    |
+| Parameter   | Type   | Default        | Description                                                          |
+| ----------- | ------ | -------------- | -------------------------------------------------------------------- |
+| check_type  | enum   | Required       | `unmonitored`, `no_owner`, `no_ci`, `no_docs`, `no_oncall`, `custom` |
+| entity_type | string | LogicalService | Filter by node label                                                 |
+| environment | string | all            | Filter deployments by environment                                    |
 
 Generalized compliance/hygiene check. Replaces the narrower `list_unmonitored` tool.
 
-| check_type    | Logic                                                                       |
-|---------------|-----------------------------------------------------------------------------|
-| unmonitored   | Entities with no incoming MONITORS relationship                             |
-| no_owner      | Entities with no incoming OWNS relationship                                 |
-| no_ci         | LogicalServices with no BUILT_BY relationship to a Pipeline                 |
-| no_docs       | LogicalServices with no DOCUMENTED_BY relationship                          |
-| no_oncall     | LogicalServices with no ON_CALL_FOR relationship                            |
-| custom        | User-defined check (Cypher expression in schema config, evaluated at query time) |
+| check_type  | Logic                                                                            |
+| ----------- | -------------------------------------------------------------------------------- |
+| unmonitored | Entities with no incoming MONITORS relationship                                  |
+| no_owner    | Entities with no incoming OWNS relationship                                      |
+| no_ci       | LogicalServices with no BUILT_BY relationship to a Pipeline                      |
+| no_docs     | LogicalServices with no DOCUMENTED_BY relationship                               |
+| no_oncall   | LogicalServices with no ON_CALL_FOR relationship                                 |
+| custom      | User-defined check (Cypher expression in schema config, evaluated at query time) |
 
 **Response schema:**
+
 ```json
 {
   "violations": [
-    {"id": "...", "label": "LogicalService", "name": "...", "tier_effective": 2, "owner_effective": "platform-team"}
+    {
+      "id": "...",
+      "label": "LogicalService",
+      "name": "...",
+      "tier_effective": 2,
+      "owner_effective": "platform-team"
+    }
   ],
   "check_type": "unmonitored",
   "total": 5
@@ -1382,11 +1454,11 @@ Generalized compliance/hygiene check. Replaces the narrower `list_unmonitored` t
 
 ### 9.3 Query Routing
 
-| Query Type   | Phase 1                                | Phase 2                                             |
-|--------------|----------------------------------------|-----------------------------------------------------|
-| Structural   | Neo4j Cypher (generated by tool layer) | Neo4j Cypher (generated by tool layer)              |
-| Semantic     | Not available (returns error)          | Vector DB similarity search                          |
-| Hybrid       | Not available (returns error)          | Vector DB for candidate nodes, then Neo4j for graph traversal |
+| Query Type | Phase 1                                | Phase 2                                                       |
+| ---------- | -------------------------------------- | ------------------------------------------------------------- |
+| Structural | Neo4j Cypher (generated by tool layer) | Neo4j Cypher (generated by tool layer)                        |
+| Semantic   | Not available (returns error)          | Vector DB similarity search                                   |
+| Hybrid     | Not available (returns error)          | Vector DB for candidate nodes, then Neo4j for graph traversal |
 
 Phase 1 supports **structural queries only** -- explicit entity names, relationships, and traversals resolved via Neo4j Cypher. Cypher is generated by the tool layer; user-supplied queries go through `graph_query` with guardrails.
 
@@ -1394,17 +1466,17 @@ Phase 1 supports **structural queries only** -- explicit entity names, relations
 
 **v0.3 change:** Raw Cypher is now available in **all tiers** with usage limits, not Enterprise-only.
 
-| Guardrail              | Community        | Team             | Enterprise       |
-|------------------------|------------------|------------------|------------------|
-| Queries per day        | 100              | 500              | Unlimited        |
-| Read-only enforcement  | Yes              | Yes              | Yes              |
-| Timeout                | 10 seconds       | 10 seconds       | Configurable     |
-| Row limit              | 1,000            | 5,000            | Configurable     |
-| Hop limit              | 6 hops           | 6 hops           | Configurable     |
-| APOC procedures        | Disabled         | Disabled         | Configurable     |
-| Audit logging          | Basic (count)    | Full             | Full             |
-| Saved queries          | No               | Yes              | Yes              |
-| RBAC post-filtering    | N/A              | Basic            | Full (graph ACLs)|
+| Guardrail             | Community     | Team       | Enterprise        |
+| --------------------- | ------------- | ---------- | ----------------- |
+| Queries per day       | 100           | 500        | Unlimited         |
+| Read-only enforcement | Yes           | Yes        | Yes               |
+| Timeout               | 10 seconds    | 10 seconds | Configurable      |
+| Row limit             | 1,000         | 5,000      | Configurable      |
+| Hop limit             | 6 hops        | 6 hops     | Configurable      |
+| APOC procedures       | Disabled      | Disabled   | Configurable      |
+| Audit logging         | Basic (count) | Full       | Full              |
+| Saved queries         | No            | Yes        | Yes               |
+| RBAC post-filtering   | N/A           | Basic      | Full (graph ACLs) |
 
 **Additional guardrails:**
 
@@ -1416,22 +1488,22 @@ Phase 1 supports **structural queries only** -- explicit entity names, relations
 
 > **All targets labeled "Unvalidated -- pending benchmark."** These are design-time goals, not measured SLAs. Benchmarks will be run against reference graphs during Phase 1 development.
 
-| Tool                         | P95 Target | Notes                          |
-|------------------------------|-----------|--------------------------------|
-| entity_detail                | <200ms    | Single node + 1-hop neighbors  |
-| find_owners                  | <500ms    | 2-3 hop traversal              |
-| blast_radius (depth <= 3)    | <1s       | Common case                    |
-| blast_radius (depth 4-6)     | <3s       | Deep traversal                 |
-| graph_stats                  | <500ms    | Cached, refreshed every 60s    |
-| search_entities              | <1s       | Index-backed property filters  |
-| recent_changes               | <1s       | Index on `_last_synced`        |
-| health_check                 | <500ms    | Aggregation of 1-2 hop data    |
-| list_violations              | <2s       | Full label scan with filter    |
-| dependency_chain             | <2s       | Shortest path algorithm        |
-| change_impact                | <3s       | Superset of blast_radius       |
-| team_topology                | <500ms    | 1-2 hop from team node         |
-| schema_info                  | <100ms    | Cached in memory               |
-| semantic_search              | <1s       | Phase 2, vector ANN            |
+| Tool                      | P95 Target | Notes                         |
+| ------------------------- | ---------- | ----------------------------- |
+| entity_detail             | <200ms     | Single node + 1-hop neighbors |
+| find_owners               | <500ms     | 2-3 hop traversal             |
+| blast_radius (depth <= 3) | <1s        | Common case                   |
+| blast_radius (depth 4-6)  | <3s        | Deep traversal                |
+| graph_stats               | <500ms     | Cached, refreshed every 60s   |
+| search_entities           | <1s        | Index-backed property filters |
+| recent_changes            | <1s        | Index on `_last_synced`       |
+| health_check              | <500ms     | Aggregation of 1-2 hop data   |
+| list_violations           | <2s        | Full label scan with filter   |
+| dependency_chain          | <2s        | Shortest path algorithm       |
+| change_impact             | <3s        | Superset of blast_radius      |
+| team_topology             | <500ms     | 1-2 hop from team node        |
+| schema_info               | <100ms     | Cached in memory              |
+| semantic_search           | <1s        | Phase 2, vector ANN           |
 
 ### 9.6 Error Responses
 
@@ -1449,19 +1521,19 @@ All MCP tools return errors in a standard schema:
 
 **Error codes:**
 
-| Code                    | HTTP-Equivalent | Description                                                    |
-|-------------------------|-----------------|----------------------------------------------------------------|
-| NODE_NOT_FOUND          | 404             | The specified canonical ID does not exist in the graph         |
-| INVALID_CANONICAL_ID    | 400             | The canonical ID format is malformed                           |
-| INVALID_PARAMETER       | 400             | A required parameter is missing or has an invalid value        |
-| DEPTH_EXCEEDED          | 400             | Requested depth exceeds the maximum allowed                    |
-| HOP_LIMIT_EXCEEDED      | 400             | Cypher query contains variable-length pattern exceeding limit  |
-| QUERY_TIMEOUT           | 408             | Query exceeded the configured timeout                          |
-| ROW_LIMIT_EXCEEDED      | 413             | Query would return more rows than the configured limit         |
-| RATE_LIMIT_EXCEEDED     | 429             | Daily query limit reached (for `graph_query`)                  |
-| RBAC_DENIED             | 403             | Caller does not have permission to access the requested data   |
-| TOOL_NOT_AVAILABLE      | 501             | Tool is deferred to a future phase (e.g., `semantic_search`)   |
-| INTERNAL_ERROR          | 500             | Unexpected server error                                        |
+| Code                 | HTTP-Equivalent | Description                                                   |
+| -------------------- | --------------- | ------------------------------------------------------------- |
+| NODE_NOT_FOUND       | 404             | The specified canonical ID does not exist in the graph        |
+| INVALID_CANONICAL_ID | 400             | The canonical ID format is malformed                          |
+| INVALID_PARAMETER    | 400             | A required parameter is missing or has an invalid value       |
+| DEPTH_EXCEEDED       | 400             | Requested depth exceeds the maximum allowed                   |
+| HOP_LIMIT_EXCEEDED   | 400             | Cypher query contains variable-length pattern exceeding limit |
+| QUERY_TIMEOUT        | 408             | Query exceeded the configured timeout                         |
+| ROW_LIMIT_EXCEEDED   | 413             | Query would return more rows than the configured limit        |
+| RATE_LIMIT_EXCEEDED  | 429             | Daily query limit reached (for `graph_query`)                 |
+| RBAC_DENIED          | 403             | Caller does not have permission to access the requested data  |
+| TOOL_NOT_AVAILABLE   | 501             | Tool is deferred to a future phase (e.g., `semantic_search`)  |
+| INTERNAL_ERROR       | 500             | Unexpected server error                                       |
 
 **Suggestions:** When `NODE_NOT_FOUND` is returned, the MCP server performs a fuzzy name search (Levenshtein distance <= 2) and returns up to 3 suggestions. This helps AI agents self-correct without requiring human intervention.
 
@@ -1488,16 +1560,17 @@ MCP responses are designed to be consumed by AI agents with limited context wind
 
 ---
 
-*End of Part 1 (Sections 1-9). Sections 10-22 continue in Part 2.*
+_End of Part 1 (Sections 1-9). Sections 10-22 continue in Part 2._
+
 ## 10. Web Dashboard
 
 ### 10.1 View Phasing
 
-| Phase | Views |
-|-------|-------|
-| Phase 1 | Home/Overview, Graph Explorer, Connector Hub, Onboarding Wizard |
+| Phase   | Views                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------- |
+| Phase 1 | Home/Overview, Graph Explorer, Connector Hub, Onboarding Wizard                                                |
 | Phase 2 | Entity Detail, Schema Editor (form-based), Claim Explorer, Reconciliation UI, Query Playground, Team Dashboard |
-| Phase 3 | Platform Health (merged into Connector Hub as a tab), Audit Log, AI Agent Activity |
+| Phase 3 | Platform Health (merged into Connector Hub as a tab), Audit Log, AI Agent Activity                             |
 
 ### 10.2 Home/Overview View
 
@@ -1511,12 +1584,12 @@ The Home view is a role-aware landing page that serves as the primary entry poin
 
 **Role-Specific Panels:**
 
-| Role | Panel Content |
-|------|---------------|
-| Platform Engineer | Connector health grid, DLT depth, Event Bus consumer lag, recent sync failures |
-| Engineering Manager | Ownership gap count, services without on-call, team topology summary |
-| SRE | Degraded monitors, Tier-1 service status, blast radius quick-search |
-| Default | Graph stats, recent activity, getting started checklist (if <3 connectors configured) |
+| Role                | Panel Content                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| Platform Engineer   | Connector health grid, DLT depth, Event Bus consumer lag, recent sync failures        |
+| Engineering Manager | Ownership gap count, services without on-call, team topology summary                  |
+| SRE                 | Degraded monitors, Tier-1 service status, blast radius quick-search                   |
+| Default             | Graph stats, recent activity, getting started checklist (if <3 connectors configured) |
 
 Role detection is based on team membership and permissions from the Identity connector. Falls back to Default if no role mapping is configured.
 
@@ -1558,11 +1631,11 @@ Rendering the full knowledge graph in the browser is infeasible for any non-triv
 
 **Layout Algorithms:**
 
-| Layout | Use Case | Library |
-|--------|----------|---------|
-| Dagre (hierarchical) | Dependency chains, upstream/downstream views | cytoscape-dagre |
-| Force-directed (CoSE) | General exploration, no clear hierarchy | cytoscape-cose-bilkent |
-| Concentric | Blast radius visualization (origin at center, hops as rings) | cytoscape-concentric |
+| Layout                | Use Case                                                     | Library                |
+| --------------------- | ------------------------------------------------------------ | ---------------------- |
+| Dagre (hierarchical)  | Dependency chains, upstream/downstream views                 | cytoscape-dagre        |
+| Force-directed (CoSE) | General exploration, no clear hierarchy                      | cytoscape-cose-bilkent |
+| Concentric            | Blast radius visualization (origin at center, hops as rings) | cytoscape-concentric   |
 
 Users can switch layouts via a toolbar dropdown. Layout selection persists per session in Zustand.
 
@@ -1710,28 +1783,28 @@ Primary Navigation (left sidebar):
 
 **Cross-View Linking:**
 
-| From | Action | To |
-|------|--------|----|
-| Graph Explorer | Click node | Entity Detail for that node |
-| Entity Detail | "Inspect Claims" link | Claim Explorer filtered to that entity |
-| Entity Detail | "View in Graph Explorer" link | Graph Explorer centered on that node |
-| Connector Hub | Click connector error | DLQ inspector for that connector |
-| Connector Hub | Platform Health tab | Consumer lag, throughput, graph stats |
-| Team Dashboard | Click service | Entity Detail for that service |
-| Team Dashboard | "View Team Graph" | Graph Explorer filtered to that team's entities |
-| Reconciliation UI | Click merge candidate | Side-by-side Entity Detail comparison |
+| From              | Action                        | To                                              |
+| ----------------- | ----------------------------- | ----------------------------------------------- |
+| Graph Explorer    | Click node                    | Entity Detail for that node                     |
+| Entity Detail     | "Inspect Claims" link         | Claim Explorer filtered to that entity          |
+| Entity Detail     | "View in Graph Explorer" link | Graph Explorer centered on that node            |
+| Connector Hub     | Click connector error         | DLQ inspector for that connector                |
+| Connector Hub     | Platform Health tab           | Consumer lag, throughput, graph stats           |
+| Team Dashboard    | Click service                 | Entity Detail for that service                  |
+| Team Dashboard    | "View Team Graph"             | Graph Explorer filtered to that team's entities |
+| Reconciliation UI | Click merge candidate         | Side-by-side Entity Detail comparison           |
 
 ### 10.11 Tech Stack
 
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| Framework | Next.js 14+ (App Router) | SSR for initial load, RSC for streaming, API routes for BFF pattern |
-| UI Components | shadcn/ui + Tailwind CSS | Accessible, customizable, no vendor lock-in |
-| Graph Visualization | Cytoscape.js (Phase 2: evaluate WebGL alternatives for >10K visible nodes) | Mature graph rendering with plugin ecosystem |
-| Server State | TanStack Query (React Query) | Caching, background refetching, optimistic updates, request deduplication |
-| Client State | Zustand | Lightweight stores for UI-only state: viewport position, filter selections, sidebar state |
-| Real-time | WebSocket/SSE | Sync progress indicators, consumer lag streaming, DLT alert notifications |
-| Auth | NextAuth.js (Community) / Enterprise SSO adapter | OAuth2 for Community, SAML/OIDC for Enterprise |
+| Layer               | Technology                                                                 | Rationale                                                                                 |
+| ------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Framework           | Next.js 14+ (App Router)                                                   | SSR for initial load, RSC for streaming, API routes for BFF pattern                       |
+| UI Components       | shadcn/ui + Tailwind CSS                                                   | Accessible, customizable, no vendor lock-in                                               |
+| Graph Visualization | Cytoscape.js (Phase 2: evaluate WebGL alternatives for >10K visible nodes) | Mature graph rendering with plugin ecosystem                                              |
+| Server State        | TanStack Query (React Query)                                               | Caching, background refetching, optimistic updates, request deduplication                 |
+| Client State        | Zustand                                                                    | Lightweight stores for UI-only state: viewport position, filter selections, sidebar state |
+| Real-time           | WebSocket/SSE                                                              | Sync progress indicators, consumer lag streaming, DLT alert notifications                 |
+| Auth                | NextAuth.js (Community) / Enterprise SSO adapter                           | OAuth2 for Community, SAML/OIDC for Enterprise                                            |
 
 **BFF Pattern:**
 
@@ -1762,14 +1835,14 @@ ShipIt-AI is designed for multi-org from day one. Every node in the graph carrie
 
 **Source Org Namespacing:**
 
-| Source System | `_source_org` Format | Example |
-|---------------|---------------------|---------|
-| GitHub | `github/{org-name}` | `github/acme-corp` |
-| Kubernetes | `k8s/{cluster-name}` | `k8s/us-east-prod` |
-| Jira | `jira/{instance}/{project-key}` | `jira/acme/PLAT` |
-| Datadog | `datadog/{org-name}` | `datadog/acme-prod` |
-| Backstage | `backstage/{instance}` | `backstage/acme` |
-| Identity Provider | `idp/{tenant-name}` | `idp/acme-okta` |
+| Source System     | `_source_org` Format            | Example             |
+| ----------------- | ------------------------------- | ------------------- |
+| GitHub            | `github/{org-name}`             | `github/acme-corp`  |
+| Kubernetes        | `k8s/{cluster-name}`            | `k8s/us-east-prod`  |
+| Jira              | `jira/{instance}/{project-key}` | `jira/acme/PLAT`    |
+| Datadog           | `datadog/{org-name}`            | `datadog/acme-prod` |
+| Backstage         | `backstage/{instance}`          | `backstage/acme`    |
+| Identity Provider | `idp/{tenant-name}`             | `idp/acme-okta`     |
 
 ---
 
@@ -1777,42 +1850,42 @@ ShipIt-AI is designed for multi-org from day one. Every node in the graph carrie
 
 ### 12.1 Failure Modes
 
-| Failure Mode | Impact | Mitigation |
-|-------------|--------|------------|
-| Rate limiting (429) | Sync slows temporarily | Exponential backoff with jitter, respect Retry-After headers, per-connector rate budget |
-| Auth expiration | All API calls fail | Auto-refresh tokens (OAuth), alert user for PAT/API key rotation |
-| Partial fetch failure | Some entities not synced | Checkpoint-based sync; resume from last cursor, not restart |
-| Source API outage | Connector cannot reach source | Circuit breaker: open after 5 consecutive failures, half-open retry every 5 min (configurable) |
-| Schema mismatch | Source returns unexpected shape | Normalizer catches errors, routes to DLT, continues with valid data |
-| Webhook delivery failure | Real-time events lost | Webhook idempotency keys + scheduled reconciliation as safety net |
-| Graph write failure | Core Writer rejects a write | Core Writer retries with backoff, DLT for persistent failures, alert in UI |
+| Failure Mode             | Impact                          | Mitigation                                                                                     |
+| ------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Rate limiting (429)      | Sync slows temporarily          | Exponential backoff with jitter, respect Retry-After headers, per-connector rate budget        |
+| Auth expiration          | All API calls fail              | Auto-refresh tokens (OAuth), alert user for PAT/API key rotation                               |
+| Partial fetch failure    | Some entities not synced        | Checkpoint-based sync; resume from last cursor, not restart                                    |
+| Source API outage        | Connector cannot reach source   | Circuit breaker: open after 5 consecutive failures, half-open retry every 5 min (configurable) |
+| Schema mismatch          | Source returns unexpected shape | Normalizer catches errors, routes to DLT, continues with valid data                            |
+| Webhook delivery failure | Real-time events lost           | Webhook idempotency keys + scheduled reconciliation as safety net                              |
+| Graph write failure      | Core Writer rejects a write     | Core Writer retries with backoff, DLT for persistent failures, alert in UI                     |
 
 ### 12.2 Connector-Specific Staleness Windows
 
 Different connectors have fundamentally different data velocity. A Kubernetes Deployment that hasn't synced in 10 minutes is concerning; a Backstage catalog entry that hasn't synced in 12 hours is normal.
 
-| Connector | Healthy Window | Stale Window | Orphan Threshold |
-|-----------|---------------|-------------|------------------|
-| Kubernetes | < 5 minutes | 5-30 minutes | > 2 hours |
-| GitHub (webhooks active) | < 15 minutes | 15-60 minutes | > 6 hours |
-| GitHub (polling only) | < 2 hours | 2-6 hours | > 24 hours |
-| Datadog | < 10 minutes | 10-60 minutes | > 6 hours |
-| Backstage | < 24 hours | 24-48 hours | > 7 days |
-| Jira | < 1 hour | 1-6 hours | > 24 hours |
-| Identity Provider | < 24 hours | 24-72 hours | > 7 days |
+| Connector                | Healthy Window | Stale Window  | Orphan Threshold |
+| ------------------------ | -------------- | ------------- | ---------------- |
+| Kubernetes               | < 5 minutes    | 5-30 minutes  | > 2 hours        |
+| GitHub (webhooks active) | < 15 minutes   | 15-60 minutes | > 6 hours        |
+| GitHub (polling only)    | < 2 hours      | 2-6 hours     | > 24 hours       |
+| Datadog                  | < 10 minutes   | 10-60 minutes | > 6 hours        |
+| Backstage                | < 24 hours     | 24-48 hours   | > 7 days         |
+| Jira                     | < 1 hour       | 1-6 hours     | > 24 hours       |
+| Identity Provider        | < 24 hours     | 24-72 hours   | > 7 days         |
 
 ### 12.3 Reconciliation Intervals
 
 Each connector type has a recommended reconciliation interval -- a full re-sync that catches any events missed by real-time mechanisms.
 
-| Connector | Reconciliation Interval | Rationale |
-|-----------|------------------------|-----------|
-| Kubernetes | Hourly | Watch API is reliable but can miss events during API server restarts |
-| GitHub | Hourly | Webhook delivery is best-effort; hourly reconciliation catches gaps |
-| Datadog | Daily | Monitor and service map data changes infrequently |
-| Backstage | Hourly | Primary catalog source; frequent polling ensures freshness |
-| Jira | Daily | Issue data is additive; daily reconciliation is sufficient |
-| Identity Provider | Daily | Org structure changes infrequently |
+| Connector         | Reconciliation Interval | Rationale                                                            |
+| ----------------- | ----------------------- | -------------------------------------------------------------------- |
+| Kubernetes        | Hourly                  | Watch API is reliable but can miss events during API server restarts |
+| GitHub            | Hourly                  | Webhook delivery is best-effort; hourly reconciliation catches gaps  |
+| Datadog           | Daily                   | Monitor and service map data changes infrequently                    |
+| Backstage         | Hourly                  | Primary catalog source; frequent polling ensures freshness           |
+| Jira              | Daily                   | Issue data is additive; daily reconciliation is sufficient           |
+| Identity Provider | Daily                   | Org structure changes infrequently                                   |
 
 ### 12.4 Dead Letter Topic (DLT)
 
@@ -1845,20 +1918,20 @@ FAILED ──(manual retry or next scheduled sync)──> SYNCING
 
 ### 13.1 Data Classification
 
-| Classification | Description | Examples | Default TTL |
-|---------------|-------------|----------|-------------|
-| Source Ingested | Data pulled directly from source systems | LogicalService nodes, Deployment nodes, PropertyClaims, relationships | Retained while source exists; orphan detection per connector staleness window |
-| Derived | Data computed by ShipIt-AI from source data | Vector embeddings, code summaries, risk scores, LLM-generated descriptions | 90 days since last regeneration (configurable). Re-derived on next sync if source changes. |
-| Operational | Internal platform data | Sync logs, idempotency keys, DLT contents, MCP query audit logs | 30 days (configurable). Idempotency log: 30 days. DLT: 7 days. |
+| Classification  | Description                                 | Examples                                                                   | Default TTL                                                                                |
+| --------------- | ------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Source Ingested | Data pulled directly from source systems    | LogicalService nodes, Deployment nodes, PropertyClaims, relationships      | Retained while source exists; orphan detection per connector staleness window              |
+| Derived         | Data computed by ShipIt-AI from source data | Vector embeddings, code summaries, risk scores, LLM-generated descriptions | 90 days since last regeneration (configurable). Re-derived on next sync if source changes. |
+| Operational     | Internal platform data                      | Sync logs, idempotency keys, DLT contents, MCP query audit logs            | 30 days (configurable). Idempotency log: 30 days. DLT: 7 days.                             |
 
 ### 13.2 Staleness Detection
 
 Every node carries a `_last_synced` timestamp and a `_source_system` label. A background job evaluates staleness using connector-specific windows (see Section 12.2):
 
-| Status | Definition | Visual Indicator |
-|--------|-----------|------------------|
-| Healthy | Synced within the connector's healthy window | Green dot |
-| Stale | Past healthy window but within the stale window | Yellow dot + "Stale" badge |
+| Status   | Definition                                             | Visual Indicator           |
+| -------- | ------------------------------------------------------ | -------------------------- |
+| Healthy  | Synced within the connector's healthy window           | Green dot                  |
+| Stale    | Past healthy window but within the stale window        | Yellow dot + "Stale" badge |
 | Orphaned | Past the orphan threshold, flagged for review/deletion | Red dot + "Orphaned" badge |
 
 Staleness thresholds are configurable per connector type in the Connector Hub settings. Orphaned nodes are not auto-deleted; they are flagged in the Reconciliation UI for human review. After 30 days in orphaned status with no action, they are soft-deleted (`_deleted=true`).
@@ -1882,12 +1955,12 @@ When an entity is deleted from the source system (person leaves org, repo archiv
 
 **Restore Procedures:**
 
-| Scenario | Procedure | RTO |
-|----------|-----------|-----|
-| Neo4j corruption / data loss | Restore from latest daily backup using `neo4j-admin database load` | < 1 hour |
-| Accidental mass deletion | Restore from backup, then replay Event Bus events from the deletion timestamp forward | < 2 hours |
-| Event Bus data loss (< 7 days old) | Replay from Event Bus retention window | < 1 hour |
-| Full disaster recovery | Restore Neo4j from backup + trigger full re-sync from all connectors | < 4 hours |
+| Scenario                           | Procedure                                                                             | RTO       |
+| ---------------------------------- | ------------------------------------------------------------------------------------- | --------- |
+| Neo4j corruption / data loss       | Restore from latest daily backup using `neo4j-admin database load`                    | < 1 hour  |
+| Accidental mass deletion           | Restore from backup, then replay Event Bus events from the deletion timestamp forward | < 2 hours |
+| Event Bus data loss (< 7 days old) | Replay from Event Bus retention window                                                | < 1 hour  |
+| Full disaster recovery             | Restore Neo4j from backup + trigger full re-sync from all connectors                  | < 4 hours |
 
 **Event Bus as DR Mechanism:**
 
@@ -1903,59 +1976,59 @@ For data older than 7 days, full re-sync from connectors is the fallback. Each c
 
 ### 14.1 Ingestion Performance Targets
 
-| Metric | Community (Neo4j CE) | Enterprise (Neo4j EE) | Notes |
-|--------|---------------------|----------------------|-------|
-| Core Writer batch size | 500 entities/transaction | 1,000 entities/transaction | CE lacks causal clustering; smaller batches reduce lock contention |
-| Core Writer throughput | > 3,000 entities/min | > 5,000 entities/min | Per consumer instance. EE benefits from causal clustering read replicas. |
-| Event Bus lag (P95) | < 90 seconds | < 60 seconds | Community has single Core Writer instance |
-| Event Bus lag (P99) | < 10 minutes | < 5 minutes | Acceptable during full-sync bursts |
-| Connector full sync | < 30 min for 10K entities | < 30 min for 10K entities | Bottlenecked by source API rate limits, not ShipIt-AI |
-| Neo4j write latency (P95) | < 150ms per batch MERGE | < 100ms per batch MERGE | Requires indexes on canonical IDs and linking keys |
+| Metric                    | Community (Neo4j CE)      | Enterprise (Neo4j EE)      | Notes                                                                    |
+| ------------------------- | ------------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| Core Writer batch size    | 500 entities/transaction  | 1,000 entities/transaction | CE lacks causal clustering; smaller batches reduce lock contention       |
+| Core Writer throughput    | > 3,000 entities/min      | > 5,000 entities/min       | Per consumer instance. EE benefits from causal clustering read replicas. |
+| Event Bus lag (P95)       | < 90 seconds              | < 60 seconds               | Community has single Core Writer instance                                |
+| Event Bus lag (P99)       | < 10 minutes              | < 5 minutes                | Acceptable during full-sync bursts                                       |
+| Connector full sync       | < 30 min for 10K entities | < 30 min for 10K entities  | Bottlenecked by source API rate limits, not ShipIt-AI                    |
+| Neo4j write latency (P95) | < 150ms per batch MERGE   | < 100ms per batch MERGE    | Requires indexes on canonical IDs and linking keys                       |
 
 ### 14.2 MCP Tool Latency Targets
 
 Per-tool latency decomposition (reference Section 9.5):
 
-| Tool | Target P95 | Cypher Execution | Post-processing | Network Overhead |
-|------|-----------|-----------------|-----------------|-----------------|
-| blast_radius | < 800ms | ~400ms (variable-length path, depth 3) | ~200ms (result shaping) | ~200ms |
-| find_owners | < 500ms | ~200ms (1-2 hop traversal) | ~100ms | ~200ms |
-| dependency_chain | < 1,000ms | ~500ms (shortest path, max depth 6) | ~300ms | ~200ms |
-| entity_detail | < 400ms | ~150ms (single node + 1-hop) | ~50ms | ~200ms |
-| search_entities | < 600ms | ~300ms (index lookup) | ~100ms | ~200ms |
-| schema_info | < 300ms | ~50ms (meta-node read, cached) | ~50ms | ~200ms |
-| graph_stats | < 500ms | ~200ms (count queries) | ~100ms | ~200ms |
-| semantic_search | < 1,500ms | ~800ms (vector similarity) | ~200ms (re-rank + metadata fetch) | ~200ms |
+| Tool             | Target P95 | Cypher Execution                       | Post-processing                   | Network Overhead |
+| ---------------- | ---------- | -------------------------------------- | --------------------------------- | ---------------- |
+| blast_radius     | < 800ms    | ~400ms (variable-length path, depth 3) | ~200ms (result shaping)           | ~200ms           |
+| find_owners      | < 500ms    | ~200ms (1-2 hop traversal)             | ~100ms                            | ~200ms           |
+| dependency_chain | < 1,000ms  | ~500ms (shortest path, max depth 6)    | ~300ms                            | ~200ms           |
+| entity_detail    | < 400ms    | ~150ms (single node + 1-hop)           | ~50ms                             | ~200ms           |
+| search_entities  | < 600ms    | ~300ms (index lookup)                  | ~100ms                            | ~200ms           |
+| schema_info      | < 300ms    | ~50ms (meta-node read, cached)         | ~50ms                             | ~200ms           |
+| graph_stats      | < 500ms    | ~200ms (count queries)                 | ~100ms                            | ~200ms           |
+| semantic_search  | < 1,500ms  | ~800ms (vector similarity)             | ~200ms (re-rank + metadata fetch) | ~200ms           |
 
 ### 14.3 Write Amplification Analysis
 
 With the JSON claims model (ADR-002), property claims are stored as a JSON array on the entity node rather than as separate PropertyClaim nodes with HAS_CLAIM relationships.
 
-| Operation | Separate Claim Nodes (v0.2) | JSON Claims (v0.3) | Reduction |
-|-----------|---------------------------|--------------------|-----------|
-| Write 1 entity with 10 properties | ~45 Neo4j ops (1 MERGE entity + 10 MERGE claims + 10 MERGE HAS_CLAIM + ~24 index updates) | ~2 Neo4j ops (1 MERGE entity with JSON + 1 index update) | ~95% |
-| Read entity with claims | 1 node read + 10 claim traversals | 1 node read (claims inline) | ~90% |
-| Claim resolution | Query 10 claim nodes, sort, update effective | Parse JSON array in application, update effective | Comparable |
+| Operation                         | Separate Claim Nodes (v0.2)                                                               | JSON Claims (v0.3)                                       | Reduction  |
+| --------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------- |
+| Write 1 entity with 10 properties | ~45 Neo4j ops (1 MERGE entity + 10 MERGE claims + 10 MERGE HAS_CLAIM + ~24 index updates) | ~2 Neo4j ops (1 MERGE entity with JSON + 1 index update) | ~95%       |
+| Read entity with claims           | 1 node read + 10 claim traversals                                                         | 1 node read (claims inline)                              | ~90%       |
+| Claim resolution                  | Query 10 claim nodes, sort, update effective                                              | Parse JSON array in application, update effective        | Comparable |
 
 **Trade-off:** JSON claims sacrifice graph-native claim querying (no direct Cypher traversal of claims). The Claim Explorer UI handles this by parsing the JSON in the API Server. For the expected claim volume per entity (typically 5-20 claims), JSON parsing overhead is negligible.
 
 ### 14.4 Graph Size Projections
 
-| Installation Size | Entities | Relationships | Estimated Neo4j Storage | Recommended Neo4j Heap |
-|-------------------|----------|---------------|------------------------|----------------------|
-| Small (< 100 services) | ~2K nodes | ~5K edges | < 1 GB | 1 GB |
-| Medium (100-1K services) | ~20K nodes | ~80K edges | 5-10 GB | 4 GB |
-| Large (1K+ services) | ~200K nodes | ~1M edges | 50-100 GB | 16 GB |
+| Installation Size        | Entities    | Relationships | Estimated Neo4j Storage | Recommended Neo4j Heap |
+| ------------------------ | ----------- | ------------- | ----------------------- | ---------------------- |
+| Small (< 100 services)   | ~2K nodes   | ~5K edges     | < 1 GB                  | 1 GB                   |
+| Medium (100-1K services) | ~20K nodes  | ~80K edges    | 5-10 GB                 | 4 GB                   |
+| Large (1K+ services)     | ~200K nodes | ~1M edges     | 50-100 GB               | 16 GB                  |
 
 ### 14.5 Degradation Plan
 
-| Entity Count | Expected Behavior | Action Required |
-|-------------|-------------------|-----------------|
-| < 10K | All operations within target latency. Single Core Writer instance sufficient. | None |
-| 10K-50K | MCP tool latency may increase 2-3x for deep traversals (depth > 3). Core Writer throughput may require tuning. | Optimize Cypher queries, increase batch size, add Neo4j indexes for hot query patterns |
-| 50K-100K | blast_radius and dependency_chain may exceed 2s P95. Graph Explorer may lag on initial load. | Mandatory result pagination. Server-side graph aggregation. Consider Neo4j EE with read replicas. |
-| 100K-500K | Single-instance Neo4j CE may hit memory limits. Full-graph queries become impractical. | Migrate to Neo4j EE. Implement query-level circuit breakers (abort if > 5s). Pre-compute common traversals. |
-| > 500K | Beyond validated scale. | Requires architectural review: sharding strategy, federated graph, or graph-per-org. |
+| Entity Count | Expected Behavior                                                                                              | Action Required                                                                                             |
+| ------------ | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| < 10K        | All operations within target latency. Single Core Writer instance sufficient.                                  | None                                                                                                        |
+| 10K-50K      | MCP tool latency may increase 2-3x for deep traversals (depth > 3). Core Writer throughput may require tuning. | Optimize Cypher queries, increase batch size, add Neo4j indexes for hot query patterns                      |
+| 50K-100K     | blast_radius and dependency_chain may exceed 2s P95. Graph Explorer may lag on initial load.                   | Mandatory result pagination. Server-side graph aggregation. Consider Neo4j EE with read replicas.           |
+| 100K-500K    | Single-instance Neo4j CE may hit memory limits. Full-graph queries become impractical.                         | Migrate to Neo4j EE. Implement query-level circuit breakers (abort if > 5s). Pre-compute common traversals. |
+| > 500K       | Beyond validated scale.                                                                                        | Requires architectural review: sharding strategy, federated graph, or graph-per-org.                        |
 
 ### 14.6 Performance Validation Plan
 
@@ -2012,24 +2085,24 @@ Generates:
 
 ```typescript
 interface CanonicalNode {
-  id: string;                       // Canonical ID: shipit://{label}/{namespace}/{name}
-  label: string;                    // Node label (e.g., 'LogicalService', 'Repository')
+  id: string; // Canonical ID: shipit://{label}/{namespace}/{name}
+  label: string; // Node label (e.g., 'LogicalService', 'Repository')
   properties: Record<string, any>;
-  _claims: PropertyClaim[];         // JSON array stored on entity node (v0.3: replaces separate claim nodes)
+  _claims: PropertyClaim[]; // JSON array stored on entity node (v0.3: replaces separate claim nodes)
   _source_system: string;
   _source_org: string;
   _source_id: string;
-  _last_synced: string;             // ISO 8601
-  _event_version: number | string;  // Monotonic integer or ISO 8601 timestamp only
+  _last_synced: string; // ISO 8601
+  _event_version: number | string; // Monotonic integer or ISO 8601 timestamp only
 }
 
 interface CanonicalEdge {
-  type: string;                     // Relationship type (e.g., 'DEPENDS_ON')
-  from: string;                     // Source node canonical ID
-  to: string;                       // Target node canonical ID
+  type: string; // Relationship type (e.g., 'DEPENDS_ON')
+  from: string; // Source node canonical ID
+  to: string; // Target node canonical ID
   properties?: Record<string, any>;
-  _source: string;                  // Connector that asserted this edge
-  _confidence: number;              // Confidence level (0.0-1.0)
+  _source: string; // Connector that asserted this edge
+  _confidence: number; // Confidence level (0.0-1.0)
 }
 ```
 
@@ -2087,11 +2160,11 @@ For users who cannot interact with the visual graph (or prefer tabular data):
 
 ### 16.6 Responsive Design
 
-| Breakpoint | Experience |
-|-----------|-----------|
-| Desktop (>= 1280px) | Full feature set. Primary target. |
-| Tablet (1024px - 1279px) | Sidebar collapses to icons. Graph Explorer uses simplified layout. Full interactivity. |
-| Mobile (< 1024px) | Read-only mode. Entity Detail, search, and Incident Mode search are available. Graph Explorer and Schema Editor are disabled with a "Use desktop for full access" message. |
+| Breakpoint               | Experience                                                                                                                                                                 |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop (>= 1280px)      | Full feature set. Primary target.                                                                                                                                          |
+| Tablet (1024px - 1279px) | Sidebar collapses to icons. Graph Explorer uses simplified layout. Full interactivity.                                                                                     |
+| Mobile (< 1024px)        | Read-only mode. Entity Detail, search, and Incident Mode search are available. Graph Explorer and Schema Editor are disabled with a "Use desktop for full access" message. |
 
 ---
 
@@ -2099,24 +2172,24 @@ For users who cannot interact with the visual graph (or prefer tabular data):
 
 ### 17.1 Metrics
 
-| Category | Metric | Alert Threshold |
-|----------|--------|----------------|
-| Connector Health | Sync duration per connector (P50, P95, P99) | P95 > 2x baseline |
-| Connector Health | Sync failure rate per connector | > 3 consecutive failures |
-| Connector Health | DLT depth per connector | > 10 items (warning), > 50 (critical); configurable |
-| Ingestion | Event Bus consumer lag (P95, P99) | P95 > 60s (warning), P99 > 5min (critical); configurable |
-| Ingestion | Core Writer throughput (entities/min) | Below 80% of expected baseline |
-| Ingestion | Core Writer batch latency (P95) | > 200ms per batch |
-| Graph Integrity | Total node count by label | Sudden drop > 10% |
-| Graph Integrity | Orphaned node count | > 5% of total nodes |
-| Graph Integrity | Staleness percentage by connector | > 10% stale nodes |
-| Graph Integrity | Dangling edges (referencing non-existent nodes) | Any detected |
-| MCP Server | Tool call latency (P50, P95, P99) | P95 > 3 seconds |
-| MCP Server | Tool call error rate | > 1% |
-| MCP Server | `graph_query` (raw Cypher) audit count | Trending (no threshold; audit-only) |
-| Platform | Neo4j disk usage | > 80% capacity |
-| Platform | Vector DB index size | > 80% capacity |
-| Platform | Event Bus disk usage / retention | > 80% capacity |
+| Category         | Metric                                          | Alert Threshold                                          |
+| ---------------- | ----------------------------------------------- | -------------------------------------------------------- |
+| Connector Health | Sync duration per connector (P50, P95, P99)     | P95 > 2x baseline                                        |
+| Connector Health | Sync failure rate per connector                 | > 3 consecutive failures                                 |
+| Connector Health | DLT depth per connector                         | > 10 items (warning), > 50 (critical); configurable      |
+| Ingestion        | Event Bus consumer lag (P95, P99)               | P95 > 60s (warning), P99 > 5min (critical); configurable |
+| Ingestion        | Core Writer throughput (entities/min)           | Below 80% of expected baseline                           |
+| Ingestion        | Core Writer batch latency (P95)                 | > 200ms per batch                                        |
+| Graph Integrity  | Total node count by label                       | Sudden drop > 10%                                        |
+| Graph Integrity  | Orphaned node count                             | > 5% of total nodes                                      |
+| Graph Integrity  | Staleness percentage by connector               | > 10% stale nodes                                        |
+| Graph Integrity  | Dangling edges (referencing non-existent nodes) | Any detected                                             |
+| MCP Server       | Tool call latency (P50, P95, P99)               | P95 > 3 seconds                                          |
+| MCP Server       | Tool call error rate                            | > 1%                                                     |
+| MCP Server       | `graph_query` (raw Cypher) audit count          | Trending (no threshold; audit-only)                      |
+| Platform         | Neo4j disk usage                                | > 80% capacity                                           |
+| Platform         | Vector DB index size                            | > 80% capacity                                           |
+| Platform         | Event Bus disk usage / retention                | > 80% capacity                                           |
 
 ### 17.2 MCP Tool Usage Analytics
 
@@ -2131,12 +2204,12 @@ These analytics are surfaced in the AI Agent Activity view (Phase 3, Section 10.
 
 ### 17.3 Observability Stack
 
-| Layer | Tool | Notes |
-|-------|------|-------|
-| Metrics | Prometheus + Grafana or Datadog | ShipIt-AI exports `/metrics` endpoint in OpenMetrics format |
-| Logging | Structured JSON logs to stdout | Compatible with any log aggregator (Loki, ELK, CloudWatch) |
-| Tracing | OpenTelemetry SDK | Distributed traces for ingestion pipeline and MCP queries |
-| Alerting | Grafana Alerting or PagerDuty webhook | Configurable alert channels (Slack, email, PagerDuty) |
+| Layer    | Tool                                  | Notes                                                       |
+| -------- | ------------------------------------- | ----------------------------------------------------------- |
+| Metrics  | Prometheus + Grafana or Datadog       | ShipIt-AI exports `/metrics` endpoint in OpenMetrics format |
+| Logging  | Structured JSON logs to stdout        | Compatible with any log aggregator (Loki, ELK, CloudWatch)  |
+| Tracing  | OpenTelemetry SDK                     | Distributed traces for ingestion pipeline and MCP queries   |
+| Alerting | Grafana Alerting or PagerDuty webhook | Configurable alert channels (Slack, email, PagerDuty)       |
 
 ---
 
@@ -2144,17 +2217,17 @@ These analytics are surfaced in the AI Agent Activity view (Phase 3, Section 10.
 
 ### 18.1 Core Security Model
 
-| Concern | Approach |
-|---------|----------|
-| Credential storage | Encrypted at rest (AES-256), never logged, never stored in Neo4j. Vault integration (Enterprise). |
-| Connector auth | OAuth2 preferred, GitHub App for GitHub, API keys as fallback. Scoped to minimum required permissions. |
-| Graph access (Community) | Single-tenant, all-or-nothing access to the graph. |
-| Graph access (Enterprise) | RBAC: define which teams can see which node types/namespaces. Graph-level ACLs enforced at tool layer. |
-| MCP Server auth | API key per agent. Rate limiting. Audit logging of all tool calls. |
-| `graph_query` RBAC | Admin-only. Read-only DB role. RBAC post-filtering on results. If RBAC cannot be enforced, query is rejected. |
-| Event Bus auth | mTLS between connectors, Event Bus, and Core Writer. Credentials rotated automatically. |
-| Data sensitivity | Connectors never pull secret values. ConfigMap/Secret names only, not contents. |
-| Network | All external API calls over TLS. Internal traffic on private network / mTLS (Kubernetes). |
+| Concern                   | Approach                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Credential storage        | Encrypted at rest (AES-256), never logged, never stored in Neo4j. Vault integration (Enterprise).             |
+| Connector auth            | OAuth2 preferred, GitHub App for GitHub, API keys as fallback. Scoped to minimum required permissions.        |
+| Graph access (Community)  | Single-tenant, all-or-nothing access to the graph.                                                            |
+| Graph access (Enterprise) | RBAC: define which teams can see which node types/namespaces. Graph-level ACLs enforced at tool layer.        |
+| MCP Server auth           | API key per agent. Rate limiting. Audit logging of all tool calls.                                            |
+| `graph_query` RBAC        | Admin-only. Read-only DB role. RBAC post-filtering on results. If RBAC cannot be enforced, query is rejected. |
+| Event Bus auth            | mTLS between connectors, Event Bus, and Core Writer. Credentials rotated automatically.                       |
+| Data sensitivity          | Connectors never pull secret values. ConfigMap/Secret names only, not contents.                               |
+| Network                   | All external API calls over TLS. Internal traffic on private network / mTLS (Kubernetes).                     |
 
 ### 18.2 Community Tier Credential Storage
 
@@ -2170,16 +2243,16 @@ For self-hosted Community installations that do not have HashiCorp Vault or equi
 
 MCP Server access is authenticated via API keys. Each key is associated with metadata:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `key_id` | Unique identifier (UUID) | `ak_7f3b2a1e` |
-| `agent_name` | Human-readable name | "Claude Code Agent" |
-| `agent_model` | LLM model identifier (optional) | "claude-opus-4-6" |
-| `owner` | Person or team responsible for the agent | "platform-team" |
-| `created_at` | Key creation timestamp | `2026-02-28T10:00:00Z` |
-| `last_used_at` | Last successful API call | `2026-02-28T14:30:00Z` |
-| `expires_at` | Expiration timestamp (optional) | `2026-08-28T10:00:00Z` |
-| `scopes` | Allowed tool names (default: all structured tools) | `["blast_radius", "find_owners", "entity_detail"]` |
+| Field          | Description                                        | Example                                            |
+| -------------- | -------------------------------------------------- | -------------------------------------------------- |
+| `key_id`       | Unique identifier (UUID)                           | `ak_7f3b2a1e`                                      |
+| `agent_name`   | Human-readable name                                | "Claude Code Agent"                                |
+| `agent_model`  | LLM model identifier (optional)                    | "claude-opus-4-6"                                  |
+| `owner`        | Person or team responsible for the agent           | "platform-team"                                    |
+| `created_at`   | Key creation timestamp                             | `2026-02-28T10:00:00Z`                             |
+| `last_used_at` | Last successful API call                           | `2026-02-28T14:30:00Z`                             |
+| `expires_at`   | Expiration timestamp (optional)                    | `2026-08-28T10:00:00Z`                             |
+| `scopes`       | Allowed tool names (default: all structured tools) | `["blast_radius", "find_owners", "entity_detail"]` |
 
 ### 18.4 API Key Rotation & Revocation
 
@@ -2189,13 +2262,13 @@ MCP Server access is authenticated via API keys. Each key is associated with met
 
 ### 18.5 Rate Limiting
 
-| Parameter | Default | Configurable |
-|-----------|---------|-------------|
-| Requests per minute per API key | 60 | Yes |
-| Burst allowance | 10 requests above limit | Yes |
-| Rate limit window | Sliding 1-minute window | No |
-| Response on limit exceeded | HTTP `429 Too Many Requests` with `Retry-After` header | N/A |
-| `graph_query` (raw Cypher) rate | 10 per minute per key (Enterprise only) | Yes |
+| Parameter                       | Default                                                | Configurable |
+| ------------------------------- | ------------------------------------------------------ | ------------ |
+| Requests per minute per API key | 60                                                     | Yes          |
+| Burst allowance                 | 10 requests above limit                                | Yes          |
+| Rate limit window               | Sliding 1-minute window                                | No           |
+| Response on limit exceeded      | HTTP `429 Too Many Requests` with `Retry-After` header | N/A          |
+| `graph_query` (raw Cypher) rate | 10 per minute per key (Enterprise only)                | Yes          |
 
 Rate limiting state is stored in Redis (shared with the in-process event queue). Rate limit headers are included in every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
@@ -2205,23 +2278,23 @@ Rate limiting state is stored in Redis (shared with the in-process event queue).
 
 ### 19.1 Sync Modes
 
-| Mode | Mechanism | Latency | Use Case |
-|------|-----------|---------|----------|
-| Real-time | Webhooks -> Event Bus | Seconds | GitHub push, K8s watch, Datadog alerts, Jira events |
-| Near-real-time | Polling at short intervals (1-5 min) | Minutes | APIs without webhook support |
-| Scheduled | Full reconciliation (hourly/daily) | Hours | Backstage catalog, identity provider, drift detection |
-| Manual | User-triggered re-sync from UI | On-demand | After config changes, debugging |
+| Mode           | Mechanism                            | Latency   | Use Case                                              |
+| -------------- | ------------------------------------ | --------- | ----------------------------------------------------- |
+| Real-time      | Webhooks -> Event Bus                | Seconds   | GitHub push, K8s watch, Datadog alerts, Jira events   |
+| Near-real-time | Polling at short intervals (1-5 min) | Minutes   | APIs without webhook support                          |
+| Scheduled      | Full reconciliation (hourly/daily)   | Hours     | Backstage catalog, identity provider, drift detection |
+| Manual         | User-triggered re-sync from UI       | On-demand | After config changes, debugging                       |
 
 ### 19.2 Connector-Specific Freshness Expectations
 
-| Connector | Real-time | Near-real-time | Scheduled |
-|-----------|-----------|----------------|-----------|
-| GitHub | Webhooks (push, PR, workflow_run) | -- | Hourly reconciliation |
-| Kubernetes | Watch API (streaming) | -- | Hourly reconciliation |
-| Datadog | Monitor webhooks (state changes) | 5-min polling (service map) | Daily reconciliation |
-| Backstage | -- | -- | Hourly polling |
-| Jira | Webhooks (issue_created, issue_updated) | -- | Daily reconciliation |
-| Identity Provider | SCIM push (Enterprise) | -- | Daily polling (Community) |
+| Connector         | Real-time                               | Near-real-time              | Scheduled                 |
+| ----------------- | --------------------------------------- | --------------------------- | ------------------------- |
+| GitHub            | Webhooks (push, PR, workflow_run)       | --                          | Hourly reconciliation     |
+| Kubernetes        | Watch API (streaming)                   | --                          | Hourly reconciliation     |
+| Datadog           | Monitor webhooks (state changes)        | 5-min polling (service map) | Daily reconciliation      |
+| Backstage         | --                                      | --                          | Hourly polling            |
+| Jira              | Webhooks (issue_created, issue_updated) | --                          | Daily reconciliation      |
+| Identity Provider | SCIM push (Enterprise)                  | --                          | Daily polling (Community) |
 
 **Phase 1 Freshness:**
 
@@ -2248,23 +2321,23 @@ Responsibilities:
 
 ### 20.2 Operational Cost Estimate
 
-| Task | Frequency | Estimated Time |
-|------|-----------|---------------|
-| Reconciliation review (merge candidates) | Weekly | 30 minutes |
-| Schema tuning (resolution strategies, property updates) | Bi-weekly | 30 minutes |
-| Connector health checks (DLT review, sync failures) | Weekly | 30 minutes |
-| Data quality review (orphans, staleness, conflicts) | Weekly | 30 minutes |
-| **Total** | **Weekly** | **~2 hours/week** |
+| Task                                                    | Frequency  | Estimated Time    |
+| ------------------------------------------------------- | ---------- | ----------------- |
+| Reconciliation review (merge candidates)                | Weekly     | 30 minutes        |
+| Schema tuning (resolution strategies, property updates) | Bi-weekly  | 30 minutes        |
+| Connector health checks (DLT review, sync failures)     | Weekly     | 30 minutes        |
+| Data quality review (orphans, staleness, conflicts)     | Weekly     | 30 minutes        |
+| **Total**                                               | **Weekly** | **~2 hours/week** |
 
 ### 20.3 Neglect Handling
 
 If nobody reviews the Reconciliation UI for an extended period, pending merge candidates accumulate and graph accuracy degrades. The following automated policies mitigate neglect:
 
-| Candidate Confidence | Auto-Action After 3 Months Pending | Rationale |
-|---------------------|--------------------------------------|-----------|
-| >= 0.95 | Auto-approve merge | Very high confidence; manual review unlikely to override |
-| < 0.70 | Auto-reject (keep separate) | Low confidence; merge is risky without human review |
-| 0.70 - 0.95 | Remain pending; escalating alerts at 1 week, 1 month, 3 months | Requires human judgment; alerts ensure visibility |
+| Candidate Confidence | Auto-Action After 3 Months Pending                             | Rationale                                                |
+| -------------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| >= 0.95              | Auto-approve merge                                             | Very high confidence; manual review unlikely to override |
+| < 0.70               | Auto-reject (keep separate)                                    | Low confidence; merge is risky without human review      |
+| 0.70 - 0.95          | Remain pending; escalating alerts at 1 week, 1 month, 3 months | Requires human judgment; alerts ensure visibility        |
 
 Escalation path: Reconciliation UI badge count -> weekly email digest -> Slack notification to the configured stewardship channel.
 
@@ -2274,12 +2347,12 @@ A single composite metric displayed prominently on the Home view dashboard:
 
 **Graph Health Score = weighted average of:**
 
-| Component | Weight | Calculation |
-|-----------|--------|-------------|
-| Freshness | 30% | % of nodes within their connector-specific healthy window |
-| Orphan Rate | 20% | 1 - (orphaned nodes / total nodes) |
-| Conflict Rate | 20% | 1 - (properties with active claim disagreements / total properties) |
-| Coverage | 30% | LogicalServices in graph / LogicalServices expected (from connected sources) |
+| Component     | Weight | Calculation                                                                  |
+| ------------- | ------ | ---------------------------------------------------------------------------- |
+| Freshness     | 30%    | % of nodes within their connector-specific healthy window                    |
+| Orphan Rate   | 20%    | 1 - (orphaned nodes / total nodes)                                           |
+| Conflict Rate | 20%    | 1 - (properties with active claim disagreements / total properties)          |
+| Coverage      | 30%    | LogicalServices in graph / LogicalServices expected (from connected sources) |
 
 Score is displayed as a percentage with color coding: >= 90% green, 70-89% yellow, < 70% red.
 
@@ -2324,14 +2397,14 @@ Every Entity Detail page includes a "Report Inaccuracy" button. Clicking it:
 
 Configurable notifications for data quality events, delivered via Slack, email, or webhook:
 
-| Event | Default Channel | Frequency |
-|-------|----------------|-----------|
-| Ownership gaps (LogicalService with no OWNS relationship) | Weekly digest | Weekly |
-| New dependencies detected (new DEPENDS_ON or CALLS edges) | Real-time | Per occurrence |
-| Blast radius changes (Tier-1 service gains new downstream dependency) | Real-time | Per occurrence |
-| Stale entity threshold exceeded | Daily digest | Daily |
-| Connector sync failure | Real-time | Per occurrence |
-| Reconciliation candidates pending > 7 days | Weekly reminder | Weekly |
+| Event                                                                 | Default Channel | Frequency      |
+| --------------------------------------------------------------------- | --------------- | -------------- |
+| Ownership gaps (LogicalService with no OWNS relationship)             | Weekly digest   | Weekly         |
+| New dependencies detected (new DEPENDS_ON or CALLS edges)             | Real-time       | Per occurrence |
+| Blast radius changes (Tier-1 service gains new downstream dependency) | Real-time       | Per occurrence |
+| Stale entity threshold exceeded                                       | Daily digest    | Daily          |
+| Connector sync failure                                                | Real-time       | Per occurrence |
+| Reconciliation candidates pending > 7 days                            | Weekly reminder | Weekly         |
 
 Notification channels and frequency are configurable per event type in the Connector Hub settings.
 
@@ -2377,17 +2450,17 @@ This positions ShipIt-AI as **AI-Ready**: the infrastructure is in place for AI 
 
 ### Phase 1a -- Walking Skeleton (Weeks 1-4)
 
-| Deliverable | Details |
-|-------------|---------|
-| GitHub connector | Polling-based (no webhooks). GitHub App authentication. |
-| In-process event queue | BullMQ on Redis. Single-instance. Production Mode (Kafka/Redpanda) deferred to Phase 2. |
-| Core Writer | JSON claim model. Materialized effective properties. Deterministic identity only (primary key + linking key). |
-| Neo4j | Core ontology: LogicalService, Repository, Deployment, RuntimeService, Team, Person, Namespace, Cluster, Pipeline. |
-| Identity resolution | Primary key match + linking key match. No fuzzy matching. |
-| MCP server | Tools: `blast_radius`, `entity_detail`, `schema_info`. |
-| Web UI | Home view (overview + graph stats), Graph Explorer (basic). |
-| Schema configuration | YAML file. No UI editor. |
-| Deployment | Docker Compose. |
+| Deliverable            | Details                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| GitHub connector       | Polling-based (no webhooks). GitHub App authentication.                                                            |
+| In-process event queue | BullMQ on Redis. Single-instance. Production Mode (Kafka/Redpanda) deferred to Phase 2.                            |
+| Core Writer            | JSON claim model. Materialized effective properties. Deterministic identity only (primary key + linking key).      |
+| Neo4j                  | Core ontology: LogicalService, Repository, Deployment, RuntimeService, Team, Person, Namespace, Cluster, Pipeline. |
+| Identity resolution    | Primary key match + linking key match. No fuzzy matching.                                                          |
+| MCP server             | Tools: `blast_radius`, `entity_detail`, `schema_info`.                                                             |
+| Web UI                 | Home view (overview + graph stats), Graph Explorer (basic).                                                        |
+| Schema configuration   | YAML file. No UI editor.                                                                                           |
+| Deployment             | Docker Compose.                                                                                                    |
 
 **Walking Skeleton Milestone:**
 
@@ -2395,45 +2468,45 @@ This positions ShipIt-AI as **AI-Ready**: the infrastructure is in place for AI 
 
 ### Phase 1b -- Second Connector (Weeks 5-8)
 
-| Deliverable | Details |
-|-------------|---------|
-| Kubernetes connector | Watch API (streaming) + hourly reconciliation. |
-| Connector Hub UI | List connectors, view status, trigger re-sync, DLQ inspector. |
-| Onboarding Wizard | Basic first-run setup: connect GitHub, connect Kubernetes, run initial sync. |
-| Docker Compose | Published and documented. < 4 GB memory footprint. |
-| MCP tools | `find_owners`, `dependency_chain`, `graph_stats`, `search_entities`. |
-| Global search | Cmd/Ctrl+K search bar. Exact match only (semantic deferred to Phase 2). |
-| Acceptance tests | Reference graph fixtures + expected output assertions for all MCP tools. |
+| Deliverable          | Details                                                                      |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Kubernetes connector | Watch API (streaming) + hourly reconciliation.                               |
+| Connector Hub UI     | List connectors, view status, trigger re-sync, DLQ inspector.                |
+| Onboarding Wizard    | Basic first-run setup: connect GitHub, connect Kubernetes, run initial sync. |
+| Docker Compose       | Published and documented. < 4 GB memory footprint.                           |
+| MCP tools            | `find_owners`, `dependency_chain`, `graph_stats`, `search_entities`.         |
+| Global search        | Cmd/Ctrl+K search bar. Exact match only (semantic deferred to Phase 2).      |
+| Acceptance tests     | Reference graph fixtures + expected output assertions for all MCP tools.     |
 
 ### Phase 2 -- Breadth & Intelligence (Weeks 9-16)
 
-| Deliverable | Details |
-|-------------|---------|
-| Vector DB | Weaviate deployment. Embedding Generator service. |
-| Connectors | Datadog, Jira, Backstage, Identity Provider. |
-| Event Bus | Kafka/Redpanda (Production Mode). Replaces BullMQ. |
-| Schema Editor UI | Form-based editing. Resolution strategy config. Read-only visual preview (Cytoscape.js). |
-| Web UI views | Entity Detail, Claim Explorer, Reconciliation UI, Query Playground, Team Dashboard. |
-| Webhook support | GitHub App webhooks, Kubernetes Watch API (already in 1b), Jira webhooks. |
-| Identity resolution | Fuzzy matching (configurable threshold) + Reconciliation UI for manual review. |
-| LLM-assisted identity | LLM reviews fuzzy match candidates below threshold. Human approval required. |
-| MCP tools | `recent_changes`, `health_check`, `list_violations`, `change_impact`, `team_topology`, `semantic_search`. |
-| Deployment | Helm chart for Kubernetes. |
+| Deliverable           | Details                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| Vector DB             | Weaviate deployment. Embedding Generator service.                                                         |
+| Connectors            | Datadog, Jira, Backstage, Identity Provider.                                                              |
+| Event Bus             | Kafka/Redpanda (Production Mode). Replaces BullMQ.                                                        |
+| Schema Editor UI      | Form-based editing. Resolution strategy config. Read-only visual preview (Cytoscape.js).                  |
+| Web UI views          | Entity Detail, Claim Explorer, Reconciliation UI, Query Playground, Team Dashboard.                       |
+| Webhook support       | GitHub App webhooks, Kubernetes Watch API (already in 1b), Jira webhooks.                                 |
+| Identity resolution   | Fuzzy matching (configurable threshold) + Reconciliation UI for manual review.                            |
+| LLM-assisted identity | LLM reviews fuzzy match candidates below threshold. Human approval required.                              |
+| MCP tools             | `recent_changes`, `health_check`, `list_violations`, `change_impact`, `team_topology`, `semantic_search`. |
+| Deployment            | Helm chart for Kubernetes.                                                                                |
 
 ### Phase 3 -- Enterprise (Weeks 17-24)
 
-| Deliverable | Details |
-|-------------|---------|
-| SSO/SAML | Enterprise authentication via SAML/OIDC. |
-| RBAC | Full role-based access control with graph-level ACLs. |
-| Audit Log UI | Who changed what, when, diff view, MCP query log. |
-| AI Agent Activity view | MCP tool usage analytics dashboard. |
-| Premium connectors | PagerDuty, Terraform Cloud, AWS Cost Explorer. |
-| Multi-tenant mode | Org-level isolation for managed SaaS. |
-| Event Bus | Cloud queue support (SQS + DynamoDB Event Log, GCP Pub/Sub). |
-| Managed SaaS | Cloud-hosted offering with managed Kafka + Neo4j Aura. |
-| GitHub PR blast radius | GitHub Check / PR comment with auto-generated blast radius. |
-| Slack bot | On-demand graph queries via Slack. |
+| Deliverable            | Details                                                      |
+| ---------------------- | ------------------------------------------------------------ |
+| SSO/SAML               | Enterprise authentication via SAML/OIDC.                     |
+| RBAC                   | Full role-based access control with graph-level ACLs.        |
+| Audit Log UI           | Who changed what, when, diff view, MCP query log.            |
+| AI Agent Activity view | MCP tool usage analytics dashboard.                          |
+| Premium connectors     | PagerDuty, Terraform Cloud, AWS Cost Explorer.               |
+| Multi-tenant mode      | Org-level isolation for managed SaaS.                        |
+| Event Bus              | Cloud queue support (SQS + DynamoDB Event Log, GCP Pub/Sub). |
+| Managed SaaS           | Cloud-hosted offering with managed Kafka + Neo4j Aura.       |
+| GitHub PR blast radius | GitHub Check / PR comment with auto-generated blast radius.  |
+| Slack bot              | On-demand graph queries via Slack.                           |
 
 ### Future Considerations
 
@@ -2450,28 +2523,28 @@ This positions ShipIt-AI as **AI-Ready**: the infrastructure is in place for AI 
 
 ### 24.1 Revised 6-Month Targets
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Graph completeness | > 70% of known LogicalServices | Graph entity count vs Backstage + Kubernetes discovery |
-| Data freshness | > 95% of nodes within SLA | Per-connector staleness window compliance |
-| MCP tool latency | See per-tool targets (Section 14.2) | MCP response time metrics (P50, P95, P99) |
-| AI answer accuracy | > 90% correct blast radius | 20-30 reference questions with ground truth, validated monthly |
-| Ingestion lag | P95 < 60 seconds | Event Bus consumer lag metric |
-| Community adoption | 500+ GitHub stars, 3-5 community connectors | GitHub metrics |
-| Enterprise pipeline | 1-2 paid pilots + 3 design partners | Sales pipeline |
+| Metric              | Target                                      | Measurement                                                    |
+| ------------------- | ------------------------------------------- | -------------------------------------------------------------- |
+| Graph completeness  | > 70% of known LogicalServices              | Graph entity count vs Backstage + Kubernetes discovery         |
+| Data freshness      | > 95% of nodes within SLA                   | Per-connector staleness window compliance                      |
+| MCP tool latency    | See per-tool targets (Section 14.2)         | MCP response time metrics (P50, P95, P99)                      |
+| AI answer accuracy  | > 90% correct blast radius                  | 20-30 reference questions with ground truth, validated monthly |
+| Ingestion lag       | P95 < 60 seconds                            | Event Bus consumer lag metric                                  |
+| Community adoption  | 500+ GitHub stars, 3-5 community connectors | GitHub metrics                                                 |
+| Enterprise pipeline | 1-2 paid pilots + 3 design partners         | Sales pipeline                                                 |
 
 ### 24.2 Leading Indicators
 
 These metrics provide early signal on adoption and value delivery:
 
-| Indicator | Measurement | Why It Matters |
-|-----------|-------------|----------------|
-| Docker Compose installs | Opt-in telemetry (anonymous install ping) | Installation momentum |
-| MCP calls/week/installation | MCP server metrics (aggregated) | Agent adoption and active usage |
-| Graph node growth rate | Week-over-week node count | Graph is growing = connectors are working |
-| Weekly active graph queries | Distinct query sessions per week | Human users are finding value |
-| Time-to-first-insight | Time from `docker-compose up` to first MCP tool call with a meaningful result | Onboarding friction |
-| Reconciliation queue depth | Pending merge candidates over time | Graph accuracy maintenance health |
+| Indicator                   | Measurement                                                                   | Why It Matters                            |
+| --------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------- |
+| Docker Compose installs     | Opt-in telemetry (anonymous install ping)                                     | Installation momentum                     |
+| MCP calls/week/installation | MCP server metrics (aggregated)                                               | Agent adoption and active usage           |
+| Graph node growth rate      | Week-over-week node count                                                     | Graph is growing = connectors are working |
+| Weekly active graph queries | Distinct query sessions per week                                              | Human users are finding value             |
+| Time-to-first-insight       | Time from `docker-compose up` to first MCP tool call with a meaningful result | Onboarding friction                       |
+| Reconciliation queue depth  | Pending merge candidates over time                                            | Graph accuracy maintenance health         |
 
 ### 24.3 AI Answer Accuracy Validation
 
@@ -2489,21 +2562,21 @@ The > 90% blast radius accuracy target is validated via a **reference question s
 
 ### 25.1 Closed Decisions
 
-| Question | Decision | ADR Reference |
-|----------|----------|---------------|
-| API Server language | TypeScript (Node.js) | ADR-001 |
-| Schema storage | Neo4j meta-nodes (schema-as-graph) | ADR-009 |
-| Vector DB | Weaviate (deferred to Phase 2) | ADR-005 |
-| PropertyClaim storage | JSON on entity nodes (not separate claim nodes) | ADR-002 |
+| Question              | Decision                                        | ADR Reference |
+| --------------------- | ----------------------------------------------- | ------------- |
+| API Server language   | TypeScript (Node.js)                            | ADR-001       |
+| Schema storage        | Neo4j meta-nodes (schema-as-graph)              | ADR-009       |
+| Vector DB             | Weaviate (deferred to Phase 2)                  | ADR-005       |
+| PropertyClaim storage | JSON on entity nodes (not separate claim nodes) | ADR-002       |
 
 ### 25.2 Open Questions
 
-| Question | Options | Deadline |
-|----------|---------|----------|
-| Embedding model | OpenAI text-embedding-3 vs local (all-MiniLM-L6-v2) | Phase 2 start (Week 9) |
-| Pricing model | Per-connector vs per-seat vs hybrid | Week 16 |
-| Fuzzy match threshold | 0.80 vs 0.85 vs 0.90 | Phase 2, empirical testing with real data |
-| Event Log store for SQS | DynamoDB vs S3 | Phase 3 start (Week 17) |
+| Question                | Options                                             | Deadline                                  |
+| ----------------------- | --------------------------------------------------- | ----------------------------------------- |
+| Embedding model         | OpenAI text-embedding-3 vs local (all-MiniLM-L6-v2) | Phase 2 start (Week 9)                    |
+| Pricing model           | Per-connector vs per-seat vs hybrid                 | Week 16                                   |
+| Fuzzy match threshold   | 0.80 vs 0.85 vs 0.90                                | Phase 2, empirical testing with real data |
+| Event Log store for SQS | DynamoDB vs S3                                      | Phase 3 start (Week 17)                   |
 
 ### 25.3 Decision-Making Process
 
@@ -2517,43 +2590,43 @@ The > 90% blast radius accuracy target is validated via a **reference question s
 
 ### 26.1 Technical Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Neo4j performance at scale (> 100K nodes) | Medium | High | Benchmark with synthetic data at 10x target. Define circuit breakers for queries exceeding 5s. Degradation plan in Section 14.5. |
-| Entity reconciliation false merges | Medium | High | Conservative default threshold (0.85). All merges reversible via split operation. Tier-1 entities require manual confirmation regardless of confidence score. |
-| MCP Cypher generation produces incorrect traversals | Medium | Medium | Acceptance test suite with reference graph fixtures (Section 9.5). Every tool has regression tests. CI blocks merge on test failure. |
-| Core Writer exactly-once semantics failure | Low | High | Transactional idempotency log in Neo4j. Every write uses `{connector_id}:{entity_primary_key}:{event_version}` idempotency key. Duplicate events are detected and skipped. |
-| JSON claims model limits future query patterns | Low | Medium | JSON model validated for expected query patterns (Claim Explorer, resolution). Migration path to separate nodes documented if needed. |
+| Risk                                                | Likelihood | Impact | Mitigation                                                                                                                                                                 |
+| --------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Neo4j performance at scale (> 100K nodes)           | Medium     | High   | Benchmark with synthetic data at 10x target. Define circuit breakers for queries exceeding 5s. Degradation plan in Section 14.5.                                           |
+| Entity reconciliation false merges                  | Medium     | High   | Conservative default threshold (0.85). All merges reversible via split operation. Tier-1 entities require manual confirmation regardless of confidence score.              |
+| MCP Cypher generation produces incorrect traversals | Medium     | Medium | Acceptance test suite with reference graph fixtures (Section 9.5). Every tool has regression tests. CI blocks merge on test failure.                                       |
+| Core Writer exactly-once semantics failure          | Low        | High   | Transactional idempotency log in Neo4j. Every write uses `{connector_id}:{entity_primary_key}:{event_version}` idempotency key. Duplicate events are detected and skipped. |
+| JSON claims model limits future query patterns      | Low        | Medium | JSON model validated for expected query patterns (Claim Explorer, resolution). Migration path to separate nodes documented if needed.                                      |
 
 ### 26.2 Adoption Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Setup complexity deters evaluation | High | High | Lite Mode (single Docker Compose, < 4 GB RAM). Walking Skeleton milestone: < 15 min time-to-first-value. Onboarding Wizard guides first-run setup. |
-| No value until 3+ connectors configured | High | High | GitHub-only experience must be compelling on its own: repository graph, CODEOWNERS ownership, GitHub Actions pipeline visualization. Pre-built demo datasets for evaluation. |
-| MCP protocol adoption stalls | Medium | High | MCP tools are the primary interface, but REST and GraphQL APIs are also supported for non-MCP agents and direct integration. |
-| Graph accuracy erodes without stewardship | Medium | High | Automated neglect handling (Section 20.3). Graph Health Score as a prominent dashboard metric. Escalating alerts for unreviewed reconciliation candidates. |
+| Risk                                      | Likelihood | Impact | Mitigation                                                                                                                                                                   |
+| ----------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Setup complexity deters evaluation        | High       | High   | Lite Mode (single Docker Compose, < 4 GB RAM). Walking Skeleton milestone: < 15 min time-to-first-value. Onboarding Wizard guides first-run setup.                           |
+| No value until 3+ connectors configured   | High       | High   | GitHub-only experience must be compelling on its own: repository graph, CODEOWNERS ownership, GitHub Actions pipeline visualization. Pre-built demo datasets for evaluation. |
+| MCP protocol adoption stalls              | Medium     | High   | MCP tools are the primary interface, but REST and GraphQL APIs are also supported for non-MCP agents and direct integration.                                                 |
+| Graph accuracy erodes without stewardship | Medium     | High   | Automated neglect handling (Section 20.3). Graph Health Score as a prominent dashboard metric. Escalating alerts for unreviewed reconciliation candidates.                   |
 
 ### 26.3 Existential Risks
 
 1. **Platform vendors absorb the feature.** GitHub Copilot ships an Infrastructure Graph; Datadog adds an AI-queryable service catalog; Backstage adds deep graph traversal.
-   - *Mitigation:* Move fast, build community, differentiate on the provenance model (multi-source claims with resolution strategies are architecturally unique). No single vendor can unify data across all tools.
+   - _Mitigation:_ Move fast, build community, differentiate on the provenance model (multi-source claims with resolution strategies are architecturally unique). No single vendor can unify data across all tools.
 
 2. **Graph is never accurate enough.** 15% false merges destroy trust in week 1. Users stop querying because answers are unreliable.
-   - *Mitigation:* Conservative defaults. Phase 1 uses deterministic-only matching (no fuzzy). Prominent data quality signals (Graph Health Score, staleness badges, conflict indicators). "Report Inaccuracy" button on every entity.
+   - _Mitigation:_ Conservative defaults. Phase 1 uses deterministic-only matching (no fuzzy). Prominent data quality signals (Graph Health Score, staleness badges, conflict indicators). "Report Inaccuracy" button on every entity.
 
 3. **Complexity prevents adoption.** 7 services in Docker Compose vs SaaS competitors with 30-minute signup.
-   - *Mitigation:* Lite Mode with minimal services. Radical Phase 1 scope reduction (BullMQ instead of Kafka, no Vector DB until Phase 2). < 15 min time-to-value target as a hard requirement. Kill criteria enforce this.
+   - _Mitigation:_ Lite Mode with minimal services. Radical Phase 1 scope reduction (BullMQ instead of Kafka, no Vector DB until Phase 2). < 15 min time-to-value target as a hard requirement. Kill criteria enforce this.
 
 ### 26.4 Kill Criteria
 
 If after Phase 1b (Week 8), any of the following conditions are true, the project pivots to a **Backstage plugin approach** (graph engine + MCP server as a Backstage plugin, eliminating the standalone dashboard and connector infrastructure):
 
-| Criterion | Threshold |
-|-----------|-----------|
+| Criterion             | Threshold                                                                    |
+| --------------------- | ---------------------------------------------------------------------------- |
 | Time-to-first-insight | Exceeds 30 minutes from `docker-compose up` to a correct blast radius answer |
-| Blast radius accuracy | < 70% correct on 20 reference queries |
-| Memory footprint | Docker Compose deployment requires > 8 GB RAM |
+| Blast radius accuracy | < 70% correct on 20 reference queries                                        |
+| Memory footprint      | Docker Compose deployment requires > 8 GB RAM                                |
 
 Kill criteria are evaluated at the Week 8 milestone review. The evaluation is documented as an ADR regardless of outcome.
 
@@ -2591,20 +2664,83 @@ blast_radius(node='shipit://repository/default/config-service', depth=4)
   },
   "result": {
     "affected_nodes": [
-      {"id": "shipit://logical-service/default/config-service", "label": "LogicalService", "name": "config-service", "tier_effective": 2, "owner_effective": "platform-team"},
-      {"id": "shipit://deployment/production/config-service-prod", "label": "Deployment", "name": "config-service-prod", "environment": "production"},
-      {"id": "shipit://runtime-service/default/config-service", "label": "RuntimeService", "name": "config-service"},
-      {"id": "shipit://logical-service/default/payments-api", "label": "LogicalService", "name": "payments-api", "tier_effective": 1, "owner_effective": "payments-team"},
-      {"id": "shipit://logical-service/default/ledger-service", "label": "LogicalService", "name": "ledger-service", "tier_effective": 1, "owner_effective": "payments-team"},
-      {"id": "shipit://logical-service/default/card-issuance", "label": "LogicalService", "name": "card-issuance", "tier_effective": 2, "owner_effective": "cards-team"}
+      {
+        "id": "shipit://logical-service/default/config-service",
+        "label": "LogicalService",
+        "name": "config-service",
+        "tier_effective": 2,
+        "owner_effective": "platform-team"
+      },
+      {
+        "id": "shipit://deployment/production/config-service-prod",
+        "label": "Deployment",
+        "name": "config-service-prod",
+        "environment": "production"
+      },
+      {
+        "id": "shipit://runtime-service/default/config-service",
+        "label": "RuntimeService",
+        "name": "config-service"
+      },
+      {
+        "id": "shipit://logical-service/default/payments-api",
+        "label": "LogicalService",
+        "name": "payments-api",
+        "tier_effective": 1,
+        "owner_effective": "payments-team"
+      },
+      {
+        "id": "shipit://logical-service/default/ledger-service",
+        "label": "LogicalService",
+        "name": "ledger-service",
+        "tier_effective": 1,
+        "owner_effective": "payments-team"
+      },
+      {
+        "id": "shipit://logical-service/default/card-issuance",
+        "label": "LogicalService",
+        "name": "card-issuance",
+        "tier_effective": 2,
+        "owner_effective": "cards-team"
+      }
     ],
     "paths": [
-      {"from": "shipit://repository/default/config-service", "to": "shipit://logical-service/default/config-service", "relationship": "IMPLEMENTED_BY", "depth": 1},
-      {"from": "shipit://logical-service/default/config-service", "to": "shipit://deployment/production/config-service-prod", "relationship": "DEPLOYED_AS", "depth": 2},
-      {"from": "shipit://deployment/production/config-service-prod", "to": "shipit://runtime-service/default/config-service", "relationship": "EMITS_TELEMETRY_AS", "depth": 3},
-      {"from": "shipit://runtime-service/default/config-service", "to": "shipit://logical-service/default/payments-api", "relationship": "CALLS (inverse)", "depth": 4},
-      {"from": "shipit://runtime-service/default/config-service", "to": "shipit://logical-service/default/ledger-service", "relationship": "CALLS (inverse)", "depth": 4},
-      {"from": "shipit://runtime-service/default/config-service", "to": "shipit://logical-service/default/card-issuance", "relationship": "CALLS (inverse)", "depth": 4}
+      {
+        "from": "shipit://repository/default/config-service",
+        "to": "shipit://logical-service/default/config-service",
+        "relationship": "IMPLEMENTED_BY",
+        "depth": 1
+      },
+      {
+        "from": "shipit://logical-service/default/config-service",
+        "to": "shipit://deployment/production/config-service-prod",
+        "relationship": "DEPLOYED_AS",
+        "depth": 2
+      },
+      {
+        "from": "shipit://deployment/production/config-service-prod",
+        "to": "shipit://runtime-service/default/config-service",
+        "relationship": "EMITS_TELEMETRY_AS",
+        "depth": 3
+      },
+      {
+        "from": "shipit://runtime-service/default/config-service",
+        "to": "shipit://logical-service/default/payments-api",
+        "relationship": "CALLS (inverse)",
+        "depth": 4
+      },
+      {
+        "from": "shipit://runtime-service/default/config-service",
+        "to": "shipit://logical-service/default/ledger-service",
+        "relationship": "CALLS (inverse)",
+        "depth": 4
+      },
+      {
+        "from": "shipit://runtime-service/default/config-service",
+        "to": "shipit://logical-service/default/card-issuance",
+        "relationship": "CALLS (inverse)",
+        "depth": 4
+      }
     ],
     "summary": {
       "total_services": 6,
@@ -2699,24 +2835,24 @@ All MCP tool responses are wrapped in a `_meta` envelope that provides execution
   "result": {
     "affected_nodes": ["..."],
     "paths": ["..."],
-    "summary": {"total_services": 6, "total_teams": 3, "tier1_count": 2}
+    "summary": { "total_services": 6, "total_teams": 3, "tier1_count": 2 }
   }
 }
 ```
 
 **`_meta` Fields:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tool` | string | Tool name that generated this response |
-| `execution_time_ms` | number | Server-side execution time in milliseconds |
-| `data_freshness` | object | Oldest node sync timestamp and overall freshness status (`healthy`, `stale`, `degraded`) |
-| `truncated` | boolean | Whether the result was truncated due to size limits |
-| `next_cursor` | string or null | Cursor for paginated results; null if all results returned |
-| `result_count` | number | Number of items in this response |
-| `total_available` | number | Total items available (may be > result_count if truncated) |
-| `warnings` | string[] | Non-fatal warnings (e.g., "3 nodes in result are stale") |
-| `suggested_follow_up` | string[] | Tool names that would provide useful follow-up information |
+| Field                 | Type           | Description                                                                              |
+| --------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `tool`                | string         | Tool name that generated this response                                                   |
+| `execution_time_ms`   | number         | Server-side execution time in milliseconds                                               |
+| `data_freshness`      | object         | Oldest node sync timestamp and overall freshness status (`healthy`, `stale`, `degraded`) |
+| `truncated`           | boolean        | Whether the result was truncated due to size limits                                      |
+| `next_cursor`         | string or null | Cursor for paginated results; null if all results returned                               |
+| `result_count`        | number         | Number of items in this response                                                         |
+| `total_available`     | number         | Total items available (may be > result_count if truncated)                               |
+| `warnings`            | string[]       | Non-fatal warnings (e.g., "3 nodes in result are stale")                                 |
+| `suggested_follow_up` | string[]       | Tool names that would provide useful follow-up information                               |
 
 ### A.5 MCP Error Response Example
 
@@ -2737,14 +2873,14 @@ When a tool call fails, the response includes structured error information with 
 
 **Error Codes:**
 
-| Code | HTTP Status | Description |
-|------|------------|-------------|
-| `NODE_NOT_FOUND` | 404 | The specified canonical ID does not exist in the graph |
-| `INVALID_PARAMETER` | 400 | A required parameter is missing or has an invalid value |
-| `QUERY_TIMEOUT` | 408 | The underlying Cypher query exceeded the timeout threshold |
-| `PERMISSION_DENIED` | 403 | The API key does not have permission for this tool or entity |
-| `RATE_LIMITED` | 429 | The API key has exceeded its rate limit |
-| `INTERNAL_ERROR` | 500 | An unexpected server error occurred |
+| Code                | HTTP Status | Description                                                  |
+| ------------------- | ----------- | ------------------------------------------------------------ |
+| `NODE_NOT_FOUND`    | 404         | The specified canonical ID does not exist in the graph       |
+| `INVALID_PARAMETER` | 400         | A required parameter is missing or has an invalid value      |
+| `QUERY_TIMEOUT`     | 408         | The underlying Cypher query exceeded the timeout threshold   |
+| `PERMISSION_DENIED` | 403         | The API key does not have permission for this tool or entity |
+| `RATE_LIMITED`      | 429         | The API key has exceeded its rate limit                      |
+| `INTERNAL_ERROR`    | 500         | An unexpected server error occurred                          |
 
 All error responses include `suggestions` where possible to help AI agents self-correct.
 
@@ -2754,25 +2890,25 @@ The `CanonicalNode` interface defines the shape of entity data flowing through t
 
 ```typescript
 interface CanonicalNode {
-  id: string;                       // shipit://{label}/{namespace}/{name}
-  label: string;                    // Node label (e.g., 'LogicalService')
-  properties: Record<string, any>;  // Entity properties
-  _claims: PropertyClaim[];         // JSON array stored on entity node
-  _source_system: string;           // Connector type (e.g., 'github', 'kubernetes')
-  _source_org: string;              // Source org (e.g., 'github/acme-corp')
-  _source_id: string;               // Linking key from source system
-  _last_synced: string;             // ISO 8601 timestamp
-  _event_version: number | string;  // Monotonic integer or ISO 8601 only
+  id: string; // shipit://{label}/{namespace}/{name}
+  label: string; // Node label (e.g., 'LogicalService')
+  properties: Record<string, any>; // Entity properties
+  _claims: PropertyClaim[]; // JSON array stored on entity node
+  _source_system: string; // Connector type (e.g., 'github', 'kubernetes')
+  _source_org: string; // Source org (e.g., 'github/acme-corp')
+  _source_id: string; // Linking key from source system
+  _last_synced: string; // ISO 8601 timestamp
+  _event_version: number | string; // Monotonic integer or ISO 8601 only
 }
 
 interface PropertyClaim {
-  property_key: string;             // Property name (e.g., 'tier', 'owner')
-  value: any;                       // Claimed value
-  source: string;                   // Connector or actor (e.g., 'backstage', 'manual:user@co.com')
-  source_id: string;                // Linking key of the source entity
-  ingested_at: string;              // ISO 8601 timestamp
-  confidence: number;               // 0.0 - 1.0
-  evidence: string | null;          // Human-readable justification
+  property_key: string; // Property name (e.g., 'tier', 'owner')
+  value: any; // Claimed value
+  source: string; // Connector or actor (e.g., 'backstage', 'manual:user@co.com')
+  source_id: string; // Linking key of the source entity
+  ingested_at: string; // ISO 8601 timestamp
+  confidence: number; // 0.0 - 1.0
+  evidence: string | null; // Human-readable justification
 }
 ```
 
@@ -2785,4 +2921,4 @@ interface PropertyClaim {
 
 ---
 
-*End of Document -- ShipIt-AI Design Document v0.3 (Part 2, Sections 10-26 + Appendix)*
+_End of Document -- ShipIt-AI Design Document v0.3 (Part 2, Sections 10-26 + Appendix)_

@@ -137,9 +137,7 @@ describe('blast_radius tool', () => {
       summary: { resultAvailableAfter: 1 },
     });
     responses.set('n.id IS NOT NULL', {
-      records: [
-        createMockRecord({ id: 'shipit://logical-service/default/payments-api' }),
-      ],
+      records: [createMockRecord({ id: 'shipit://logical-service/default/payments-api' })],
       summary: { resultAvailableAfter: 1 },
     });
     // Override to return empty for blast radius query

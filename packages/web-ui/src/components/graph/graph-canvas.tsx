@@ -1,31 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
-import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
+import { useEffect, useMemo, useRef } from 'react';
+import cytoscape, { type ElementDefinition } from 'cytoscape';
+import {
+  GraphCanvas as DSGraphCanvas,
+  readThemeTokens,
+  type GraphCanvasHandle,
+} from '@ship-it-ui/cytoscape';
+import { useTheme } from '@ship-it-ui/ui';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
-
-const nodeColors: Record<string, { bg: string; border: string }> = {
-  LogicalService: { bg: '#3b82f6', border: '#2563eb' },
-  Repository: { bg: '#22c55e', border: '#16a34a' },
-  Deployment: { bg: '#f97316', border: '#ea580c' },
-  RuntimeService: { bg: '#a855f7', border: '#9333ea' },
-  Team: { bg: '#14b8a6', border: '#0d9488' },
-  Person: { bg: '#6b7280', border: '#4b5563' },
-  Pipeline: { bg: '#eab308', border: '#ca8a04' },
-  Monitor: { bg: '#ef4444', border: '#dc2626' },
-};
-
-const nodeShapes: Record<string, string> = {
-  LogicalService: 'ellipse',
-  Repository: 'round-rectangle',
-  Deployment: 'hexagon',
-  RuntimeService: 'diamond',
-  Team: 'ellipse',
-  Person: 'ellipse',
-  Pipeline: 'round-rectangle',
-  Monitor: 'triangle',
-};
 
 interface GraphCanvasProps {
   data: GraphData;
@@ -34,15 +18,55 @@ interface GraphCanvasProps {
 
 export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef = useRef<Core | null>(null);
-  const { layout, filters } = useGraphStore();
+  const handleRef = useRef<GraphCanvasHandle | null>(null);
+  const { layout, filters, setCyInstance } = useGraphStore();
+  const { theme } = useTheme();
 
-  const getLayoutConfig = useCallback(() => {
+  // The DS base edge style doesn't set `color`, so without this our edge
+  // labels render in cytoscape's default black and disappear on the dark
+  // panel. Re-resolve on theme flip so the tone tracks dark/light.
+  const palette = useMemo(() => {
+    void theme;
+    return typeof document === 'undefined' ? null : readThemeTokens();
+  }, [theme]);
+
+  const elements = useMemo<ElementDefinition[]>(() => {
+    const nodeIds = new Set(data.nodes.map((n) => n.data.id));
+    // Cytoscape throws if an edge references a missing endpoint. Filter
+    // defensively so a stale or truncated response from the API can't crash
+    // the explorer; the API is supposed to keep these in sync but a single
+    // dangling edge takes the whole canvas down.
+    const safeEdges = data.edges.filter(
+      (e) => nodeIds.has(e.data.source) && nodeIds.has(e.data.target),
+    );
+    return [
+      ...data.nodes.map((n) => ({
+        data: { ...n.data, entityType: n.data.type, label: n.data.name },
+        group: 'nodes' as const,
+      })),
+      ...safeEdges.map((e) => ({ data: e.data, group: 'edges' as const })),
+    ];
+  }, [data]);
+
+  const layoutConfig = useMemo(() => {
     switch (layout) {
       case 'dagre':
         return { name: 'breadthfirst', directed: true, spacingFactor: 1.5, padding: 50 };
       case 'cose':
-        return { name: 'cose', idealEdgeLength: 100, nodeOverlap: 20, padding: 50, animate: false };
+        // Spread nodes out: longer ideal edges + stronger node repulsion + a
+        // higher overlap penalty so the layout doesn't settle with nodes
+        // overlapping or hugging each other. `componentSpacing` also matters
+        // when the graph has disconnected subgraphs.
+        return {
+          name: 'cose',
+          idealEdgeLength: 160,
+          nodeRepulsion: 8000,
+          nodeOverlap: 40,
+          componentSpacing: 200,
+          numIter: 2000,
+          padding: 50,
+          animate: false,
+        };
       case 'concentric':
         return { name: 'concentric', minNodeSpacing: 60, padding: 50 };
       default:
@@ -50,149 +74,117 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     }
   }, [layout]);
 
+  // Track whether we've successfully run the layout in a non-zero container.
+  // Used so the ResizeObserver can perform a one-shot initial layout if the
+  // canvas mounted at 0×0 and only got real dimensions after layout commit.
+  const hasLaidOutRef = useRef(false);
+
+  // Resize observer: keep cytoscape's canvas matched to the container, but
+  // *don't* re-run the layout on every resize. Force-directed (cose) and
+  // breadthfirst layouts use container dimensions for spacing and finish with
+  // fit:true, so re-running compounds the zoom. The DS doesn't ship its own
+  // resize handling; this stays a consumer concern.
   useEffect(() => {
-    if (!containerRef.current) return;
-
-    const elements: ElementDefinition[] = [
-      ...data.nodes.map((n) => ({
-        data: n.data,
-        group: 'nodes' as const,
-      })),
-      ...data.edges.map((e) => ({
-        data: e.data,
-        group: 'edges' as const,
-      })),
-    ];
-
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements,
-      style: [
-        {
-          selector: 'node',
-          style: {
-            label: 'data(name)',
-            'text-valign': 'bottom',
-            'text-margin-y': 8,
-            'font-size': '11px',
-            color: '#374151',
-            'text-max-width': '100px',
-            'text-wrap': 'ellipsis',
-            width: 40,
-            height: 40,
-            'background-color': '#6b7280',
-            'border-width': 2,
-            'border-color': '#4b5563',
-          },
-        },
-        ...Object.entries(nodeColors).map(([type, colors]) => ({
-          selector: `node[type="${type}"]`,
-          style: {
-            'background-color': colors.bg,
-            'border-color': colors.border,
-            shape: (nodeShapes[type] || 'ellipse') as cytoscape.Css.NodeShape,
-          },
-        })),
-        {
-          selector: 'node[type="Person"]',
-          style: { width: 28, height: 28, 'font-size': '9px' },
-        },
-        {
-          selector: 'edge',
-          style: {
-            width: 1.5,
-            'line-color': '#d1d5db',
-            'target-arrow-color': '#d1d5db',
-            'target-arrow-shape': 'triangle',
-            'curve-style': 'bezier',
-            label: 'data(type)',
-            'font-size': '8px',
-            color: '#9ca3af',
-            'text-rotation': 'autorotate',
-            'text-margin-y': -10,
-          },
-        },
-        {
-          selector: 'node:selected',
-          style: {
-            'border-width': 3,
-            'border-color': '#2563eb',
-            'overlay-opacity': 0.1,
-            'overlay-color': '#3b82f6',
-          },
-        },
-        {
-          selector: '.hidden',
-          style: { display: 'none' },
-        },
-      ],
-      layout: getLayoutConfig(),
-      minZoom: 0.2,
-      maxZoom: 3,
-      wheelSensitivity: 0.3,
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      const cy = handleRef.current?.cy;
+      if (!cy) return;
+      cy.resize();
+      if (!hasLaidOutRef.current && cy.nodes().length > 0) {
+        const { width, height } = container.getBoundingClientRect();
+        if (width > 0 && height > 0) {
+          cy.layout(layoutConfig).run();
+          hasLaidOutRef.current = true;
+        }
+      }
     });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [layoutConfig]);
 
-    cy.on('tap', 'node', (evt) => {
-      const nodeId = evt.target.id();
-      onNodeClick?.(nodeId);
-    });
-
-    cyRef.current = cy;
-
-    return () => {
-      cy.destroy();
+  // Run layout when elements or layout config changes. Also publish the live
+  // cy instance to the store so GraphControls (zoom, fit, etc.) can drive it.
+  useEffect(() => {
+    const cy = handleRef.current?.cy;
+    if (!cy) return;
+    setCyInstance(cy);
+    cy.resize();
+    const { width, height } = containerRef.current?.getBoundingClientRect() ?? {
+      width: 0,
+      height: 0,
     };
-  }, [data, getLayoutConfig, onNodeClick]);
+    if (width > 0 && height > 0) {
+      cy.layout(layoutConfig).run();
+      hasLaidOutRef.current = true;
+    } else {
+      hasLaidOutRef.current = false;
+    }
+    return () => {
+      setCyInstance(null);
+    };
+  }, [elements, layoutConfig, setCyInstance]);
 
+  // Apply visibility filters by toggling Cytoscape classes on the live instance.
   useEffect(() => {
-    const cy = cyRef.current;
+    const cy = handleRef.current?.cy;
     if (!cy) return;
 
     cy.nodes().forEach((node) => {
-      const nodeData = node.data();
+      const d = node.data();
       let visible = true;
+      if (filters.nodeLabels.length > 0 && !filters.nodeLabels.includes(d.entityType ?? d.type))
+        visible = false;
+      if (
+        filters.environments.length > 0 &&
+        d.environment &&
+        !filters.environments.includes(d.environment)
+      )
+        visible = false;
+      if (filters.tiers.length > 0 && d.tier && !filters.tiers.includes(String(d.tier)))
+        visible = false;
+      if (filters.owners.length > 0 && d.owner && !filters.owners.includes(d.owner))
+        visible = false;
 
-      if (filters.nodeLabels.length > 0 && !filters.nodeLabels.includes(nodeData.type)) {
-        visible = false;
-      }
-      if (filters.environments.length > 0 && nodeData.environment && !filters.environments.includes(nodeData.environment)) {
-        visible = false;
-      }
-      if (filters.tiers.length > 0 && nodeData.tier && !filters.tiers.includes(String(nodeData.tier))) {
-        visible = false;
-      }
-      if (filters.owners.length > 0 && nodeData.owner && !filters.owners.includes(nodeData.owner)) {
-        visible = false;
-      }
-
-      if (visible) {
-        node.removeClass('hidden');
-      } else {
-        node.addClass('hidden');
-      }
+      if (visible) node.removeClass('hidden');
+      else node.addClass('hidden');
     });
 
     cy.edges().forEach((edge) => {
       const source = edge.source();
       const target = edge.target();
-      if (source.hasClass('hidden') || target.hasClass('hidden')) {
-        edge.addClass('hidden');
-      } else {
-        edge.removeClass('hidden');
-      }
+      if (source.hasClass('hidden') || target.hasClass('hidden')) edge.addClass('hidden');
+      else edge.removeClass('hidden');
     });
-  }, [filters]);
-
-  useEffect(() => {
-    const cy = cyRef.current;
-    if (!cy) return;
-    cy.layout(getLayoutConfig()).run();
-  }, [layout, getLayoutConfig]);
+  }, [filters, elements]);
 
   return (
     <div
       ref={containerRef}
-      className="h-full w-full bg-gray-50 rounded-lg border"
-    />
+      className="bg-bg border-border h-full w-full overflow-hidden rounded-md border"
+    >
+      <DSGraphCanvas
+        ref={handleRef}
+        engine={cytoscape}
+        elements={elements}
+        layout={layoutConfig}
+        onSelect={(node) => onNodeClick?.(node.id())}
+        styleOptions={{
+          extra: [
+            { selector: '.hidden', style: { display: 'none' } },
+            {
+              selector: 'edge',
+              style: {
+                label: 'data(type)',
+                'font-size': '8px',
+                'text-rotation': 'autorotate',
+                'text-margin-y': -10,
+                ...(palette ? { color: palette.textMuted } : {}),
+              },
+            },
+          ],
+        }}
+      />
+    </div>
   );
 }

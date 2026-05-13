@@ -73,10 +73,7 @@ export function generateEntityDetailCypher(
   };
 }
 
-export function generateFindOwnersCypher(
-  entityId: string,
-  includeChain: boolean,
-): CypherQuery {
+export function generateFindOwnersCypher(entityId: string, includeChain: boolean): CypherQuery {
   if (!includeChain) {
     return {
       query: `

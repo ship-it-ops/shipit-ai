@@ -11,7 +11,10 @@ export function registerFindOwners(server: McpServer, neo4j: Neo4jClient): void 
     'Find owners, code owners, and on-call personnel for an entity. Traverses OWNS, CODEOWNER_OF, MEMBER_OF, and ON_CALL_FOR relationships.',
     {
       entity: z.string().describe('Entity canonical ID'),
-      include_chain: z.boolean().default(false).describe('Return full ownership chain (CODEOWNERS -> Team -> Members)'),
+      include_chain: z
+        .boolean()
+        .default(false)
+        .describe('Return full ownership chain (CODEOWNERS -> Team -> Members)'),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {

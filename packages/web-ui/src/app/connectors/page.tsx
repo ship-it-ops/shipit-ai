@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { ConnectorCard } from '@/components/connectors/connector-card';
 import { ConnectorDetail } from '@/components/connectors/connector-detail';
 import { AddConnectorDialog } from '@/components/connectors/add-connector-dialog';
@@ -17,19 +17,16 @@ export default function ConnectorHubPage() {
   const selectedConnector = connectors.find((c) => c.id === selectedId);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 p-6">
+      <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Connector Hub</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage your data source integrations
-          </p>
+          <h1 className="text-text text-[22px] font-semibold tracking-tight">Connector Hub</h1>
+          <p className="text-text-muted text-[13px]">Manage your data source integrations</p>
         </div>
-        <Button onClick={() => setAddDialogOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Connector
+        <Button icon={<IconGlyph name="add" />} onClick={() => setAddDialogOpen(true)}>
+          Add connector
         </Button>
-      </div>
+      </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {connectors.map((connector) => (

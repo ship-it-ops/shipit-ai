@@ -14,8 +14,4 @@ export interface MergeEvent {
   confidence_score: number;
 }
 
-export type IdentityMatchStep =
-  | 'primary_key'
-  | 'linking_key'
-  | 'fuzzy'
-  | 'manual';
+export type IdentityMatchStep = 'primary_key' | 'linking_key' | 'fuzzy' | 'manual';

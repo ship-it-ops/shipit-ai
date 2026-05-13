@@ -1,42 +1,50 @@
 'use client';
 
-import Link from 'next/link';
-import { Plus, Network, Search } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
+import { Card, Button } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
 
 export function QuickActions() {
+  const router = useRouter();
   const { setSearchOpen } = useUIStore();
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Quick Actions</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        <Link href="/connectors">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Plus className="h-4 w-4" />
-            Add Connector
-          </Button>
-        </Link>
-        <Link href="/explore">
-          <Button variant="outline" size="sm" className="gap-2">
-            <Network className="h-4 w-4" />
-            Explore Graph
-          </Button>
-        </Link>
+    <Card title="Quick Actions">
+      <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
           size="sm"
-          className="gap-2"
+          icon={<IconGlyph name="add" />}
+          onClick={() => router.push('/connectors')}
+        >
+          Add Connector
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="graph" />}
+          onClick={() => router.push('/explore')}
+        >
+          Explore Graph
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="ask" />}
+          onClick={() => router.push('/ask')}
+        >
+          Ask
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          icon={<IconGlyph name="search" />}
           onClick={() => setSearchOpen(true)}
         >
-          <Search className="h-4 w-4" />
           Search Entities
         </Button>
-      </CardContent>
+      </div>
     </Card>
   );
 }

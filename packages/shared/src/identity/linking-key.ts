@@ -1,15 +1,6 @@
-export type ConnectorType =
-  | 'github'
-  | 'kubernetes'
-  | 'datadog'
-  | 'backstage'
-  | 'jira'
-  | 'identity';
+export type ConnectorType = 'github' | 'kubernetes' | 'datadog' | 'backstage' | 'jira' | 'identity';
 
-export function buildLinkingKey(
-  connector: ConnectorType,
-  ...parts: string[]
-): string {
+export function buildLinkingKey(connector: ConnectorType, ...parts: string[]): string {
   const prefix = getLinkingKeyPrefix(connector);
   return `${prefix}://${parts.join('/')}`;
 }
@@ -31,9 +22,7 @@ function getLinkingKeyPrefix(connector: ConnectorType): string {
   }
 }
 
-export function parseLinkingKey(
-  key: string,
-): { connector: string; parts: string[] } | null {
+export function parseLinkingKey(key: string): { connector: string; parts: string[] } | null {
   const match = key.match(/^([a-z0-9]+):\/\/(.+)$/);
   if (!match) return null;
   return {

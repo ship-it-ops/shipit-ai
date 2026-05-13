@@ -1,8 +1,4 @@
-export type {
-  CanonicalNode,
-  CanonicalEdge,
-  CanonicalEntity,
-} from './canonical.js';
+export type { CanonicalNode, CanonicalEdge, CanonicalEntity } from './canonical.js';
 
 export type {
   PropertyClaim,
@@ -19,14 +15,6 @@ export type {
   ShipItSchema,
 } from './schema.js';
 
-export type {
-  EventEnvelope,
-  EventHandler,
-  EventBusClient,
-} from './events.js';
+export type { EventEnvelope, EventHandler, EventBusClient } from './events.js';
 
-export type {
-  RenameSignal,
-  MergeEvent,
-  IdentityMatchStep,
-} from './identity.js';
+export type { RenameSignal, MergeEvent, IdentityMatchStep } from './identity.js';

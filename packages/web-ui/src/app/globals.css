@@ -1,41 +1,269 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/**
+ * Global stylesheet for ShipIt-AI web-ui.
+ *
+ * The design system's own globals.css (`@ship-it-ui/ui/styles/globals.css`)
+ * imports Geist via `@fontsource-variable/geist` from CSS, which the Next 14 +
+ * Tailwind v4-beta.3 PostCSS chain doesn't rebase the relative font URLs for —
+ * webpack ends up looking for `./files/*.woff2` next to this file. Workaround:
+ * pull in the DS pieces (tokens, animations, @theme inline, @layer base) here
+ * and load Geist via JS imports in `layout.tsx`, which *does* go through the
+ * css-loader URL rebasing path.
+ */
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
-    --sidebar: 222.2 47.4% 11.2%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-accent: 217.2 32.6% 17.5%;
-    --sidebar-muted: 215 20.2% 65.1%;
-  }
+@import 'tailwindcss';
+@import '@ship-it-ui/tokens/styles/tokens.css';
+
+/* Source detection — Tailwind v4 needs to see every place utility classes
+ * are written. Defaults cover this app's own src/, the @source globs below
+ * pull in the DS's compiled JS so utility classes baked into DS components
+ * survive into the final stylesheet. */
+@source '../**/*.{ts,tsx}';
+@source '../../node_modules/@ship-it-ui/ui/dist/**/*.{js,cjs}';
+@source '../../node_modules/@ship-it-ui/shipit/dist/**/*.{js,cjs}';
+@source '../../node_modules/@ship-it-ui/cytoscape/dist/**/*.{js,cjs}';
+@source '../../node_modules/@ship-it-ui/next/dist/**/*.{js,cjs}';
+
+/*
+ * `@theme inline` mirrors the DS's bridge between CSS variables and Tailwind
+ * utility names. Mirrors `@ship-it-ui/ui/src/styles/globals.css` — keep in sync
+ * if upstream tokens change.
+ */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-panel: var(--color-panel);
+  --color-panel-2: var(--color-panel-2);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-dim: var(--color-text-dim);
+  --color-accent: var(--color-accent);
+  --color-accent-text: var(--color-accent-text);
+  --color-accent-dim: var(--color-accent-dim);
+  --color-accent-glow: var(--color-accent-glow);
+  --color-ok: var(--color-ok);
+  --color-warn: var(--color-warn);
+  --color-err: var(--color-err);
+  --color-purple: var(--color-purple);
+  --color-pink: var(--color-pink);
+
+  --color-on-accent: #0a0a0b;
+
+  --color-ok-fg: var(--color-ok-fg);
+  --color-warn-fg: var(--color-warn-fg);
+  --color-err-fg: var(--color-err-fg);
+
+  --color-ok-text: var(--color-ok-text);
+  --color-warn-text: var(--color-warn-text);
+  --color-err-text: var(--color-err-text);
+
+  --color-cta-from: var(--color-cta-from);
+  --color-cta-to: var(--color-cta-to);
+
+  --font-sans: var(--font-family-sans);
+  --font-mono: var(--font-family-mono);
+
+  --text-eyebrow: var(--font-size-eyebrow);
+  --text-mono: var(--font-size-mono);
+  --text-body: var(--font-size-body);
+  --text-body-lg: var(--font-size-body-lg);
+  --text-h4: var(--font-size-h4);
+  --text-h3: var(--font-size-h3);
+  --text-h2: var(--font-size-h2);
+  --text-h1: var(--font-size-h1);
+  --text-display: var(--font-size-display);
+
+  --font-weight-light: var(--font-weight-light);
+  --font-weight-regular: var(--font-weight-regular);
+  --font-weight-medium: var(--font-weight-medium);
+  --font-weight-semibold: var(--font-weight-semibold);
+  --font-weight-bold: var(--font-weight-bold);
+
+  --tracking-xtight: var(--tracking-xtight);
+  --tracking-tight: var(--tracking-tight);
+  --tracking-normal: var(--tracking-normal);
+  --tracking-wide: var(--tracking-wide);
+  --tracking-xwide: var(--tracking-xwide);
+
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-base: var(--radius-base);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-lg: var(--shadow-lg);
+
+  --z-base: var(--z-base);
+  --z-raised: var(--z-raised);
+  --z-dropdown: var(--z-dropdown);
+  --z-sticky: var(--z-sticky);
+  --z-overlay: var(--z-overlay);
+  --z-modal: var(--z-modal);
+  --z-popover: var(--z-popover);
+  --z-toast: var(--z-toast);
+  --z-tooltip: var(--z-tooltip);
 }
 
 @layer base {
-  * {
-    @apply border-border;
+  html {
+    font-family: var(--font-family-sans);
+    color: var(--color-text);
+    background: var(--color-bg);
+    font-feature-settings: 'cv11', 'ss01';
   }
+
   body {
-    @apply bg-background text-foreground;
+    margin: 0;
+  }
+
+  .ship-mono,
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ──────────────────────── animations (mirrors @ship-it-ui/ui/src/styles/animations.css) ──────────────────────── */
+
+@keyframes ship-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ship-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes ship-indeterminate {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+@keyframes ship-skeleton {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes ship-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  70% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes ship-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ship-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes ship-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ship-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ship-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ship-slide-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes ship-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

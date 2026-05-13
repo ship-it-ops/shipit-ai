@@ -84,19 +84,19 @@ Deliverables:
 
 The following items from the v0.2 design are NOT in Phase 1:
 
-| Item | Deferred To | Reason |
-|------|------------|--------|
-| Schema Editor UI (visual) | Phase 2 | Multi-month UX effort (see ADR-006) |
-| Vector DB (Weaviate/Qdrant) | Phase 2 | Insufficient embeddable data in Phase 1 (see ADR-005) |
-| Kafka event bus | Phase 2 | Resource-heavy, unnecessary at small scale (see ADR-004) |
-| Backstage connector | Phase 2 | Requires Backstage instance; GitHub + K8s are sufficient to demonstrate value |
-| Datadog connector | Phase 2 | Observability data enriches the graph but is not core to the walking skeleton |
-| PagerDuty connector | Phase 2 | On-call data is valuable but not foundational |
-| Jira connector | Phase 3 | Enrichment data, not structural |
-| `semantic_search` MCP tool | Phase 2 | Requires vector DB |
-| `change_timeline` MCP tool | Phase 2 | Requires event history storage |
-| Multi-tenant support | Phase 3 | Enterprise feature |
-| RBAC / SSO | Phase 3 | Enterprise feature |
+| Item                        | Deferred To | Reason                                                                        |
+| --------------------------- | ----------- | ----------------------------------------------------------------------------- |
+| Schema Editor UI (visual)   | Phase 2     | Multi-month UX effort (see ADR-006)                                           |
+| Vector DB (Weaviate/Qdrant) | Phase 2     | Insufficient embeddable data in Phase 1 (see ADR-005)                         |
+| Kafka event bus             | Phase 2     | Resource-heavy, unnecessary at small scale (see ADR-004)                      |
+| Backstage connector         | Phase 2     | Requires Backstage instance; GitHub + K8s are sufficient to demonstrate value |
+| Datadog connector           | Phase 2     | Observability data enriches the graph but is not core to the walking skeleton |
+| PagerDuty connector         | Phase 2     | On-call data is valuable but not foundational                                 |
+| Jira connector              | Phase 3     | Enrichment data, not structural                                               |
+| `semantic_search` MCP tool  | Phase 2     | Requires vector DB                                                            |
+| `change_timeline` MCP tool  | Phase 2     | Requires event history storage                                                |
+| Multi-tenant support        | Phase 3     | Enterprise feature                                                            |
+| RBAC / SSO                  | Phase 3     | Enterprise feature                                                            |
 
 ## Consequences
 

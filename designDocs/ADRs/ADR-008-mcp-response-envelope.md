@@ -54,6 +54,7 @@ We will wrap every MCP tool response in a standard envelope that provides metada
 **`_meta.execution_time_ms`** (integer, required): Wall-clock execution time in milliseconds. Useful for performance monitoring and detecting degraded Neo4j performance.
 
 **`_meta.data_freshness`** (object, required):
+
 - `oldest_node_sync` (ISO 8601 timestamp): The oldest `_last_synced_at` timestamp among all nodes in the result set. This represents the worst-case data age.
 - `freshness_status` (enum: `healthy` | `stale` | `degraded`):
   - `healthy`: All nodes synced within the last 15 minutes.
@@ -69,6 +70,7 @@ We will wrap every MCP tool response in a standard envelope that provides metada
 **`_meta.total_available`** (integer, required): Total number of items matching the query, regardless of pagination. Enables agents to decide whether to paginate.
 
 **`_meta.warnings`** (array of objects, required): Each warning has the structure:
+
 ```json
 {
   "code": "STALE_DATA",
@@ -79,6 +81,7 @@ We will wrap every MCP tool response in a standard envelope that provides metada
 ```
 
 Warning codes include:
+
 - `STALE_DATA`: One or more nodes have not been synced recently.
 - `SINGLE_SOURCE`: Data (e.g., ownership) sourced from only one connector with no corroboration. Example: "Ownership of payment-service sourced only from Backstage catalog."
 - `CONFLICTING_CLAIMS`: Multiple connectors disagree on a property value. Example: "Tier classification differs between Backstage (tier-1) and PagerDuty (tier-2)."
@@ -96,15 +99,13 @@ All errors use a consistent schema, returned instead of the envelope:
   "error": {
     "code": "GRAPH_UNAVAILABLE",
     "message": "Knowledge graph is temporarily unavailable.",
-    "suggestions": [
-      "Retry in 30 seconds",
-      "Check system health at /health"
-    ]
+    "suggestions": ["Retry in 30 seconds", "Check system health at /health"]
   }
 }
 ```
 
 Error codes:
+
 - `GRAPH_UNAVAILABLE`: Neo4j is unreachable (see ADR-007).
 - `INVALID_QUERY`: The tool received invalid parameters.
 - `ENTITY_NOT_FOUND`: The requested entity does not exist in the graph.
@@ -115,14 +116,14 @@ Error codes:
 
 To keep responses within a predictable token budget (~4000 tokens per tool call), the following default limits apply:
 
-| Tool | Default Limit | Max Allowed |
-|------|---------------|-------------|
-| `blast_radius` | 20 nodes | 100 nodes |
-| `dependency_chain` | 10 paths | 50 paths |
-| `semantic_search` | 10 results | 50 results |
-| `find_owners` | 10 owners | 50 owners |
-| `entity_detail` | 1 entity (full) | 1 entity |
-| `schema_info` | Full schema | Full schema |
+| Tool               | Default Limit   | Max Allowed |
+| ------------------ | --------------- | ----------- |
+| `blast_radius`     | 20 nodes        | 100 nodes   |
+| `dependency_chain` | 10 paths        | 50 paths    |
+| `semantic_search`  | 10 results      | 50 results  |
+| `find_owners`      | 10 owners       | 50 owners   |
+| `entity_detail`    | 1 entity (full) | 1 entity    |
+| `schema_info`      | Full schema     | Full schema |
 
 All tools accept an optional `limit` parameter to override the default, up to the max allowed.
 

@@ -1,63 +1,129 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import { Search, ChevronRight } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { type MouseEvent } from 'react';
+import { Kbd } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
-import { Button } from '@/components/ui/button';
+import { UserMenu } from '@/components/layout/user-menu';
 
-const routeNames: Record<string, string> = {
-  '/': 'Home',
-  '/explore': 'Graph Explorer',
-  '/connectors': 'Connector Hub',
-  '/incidents': 'Incident Mode',
+interface Crumb {
+  label: string;
+  href?: string;
+}
+
+interface Trail {
+  section?: Crumb;
+  page: string;
+}
+
+const TRAILS: Record<string, Trail> = {
+  '/': { page: 'Home' },
+  '/explore': { section: { label: 'Explore' }, page: 'Graph Explorer' },
+  '/explore/query': { section: { label: 'Explore' }, page: 'Query Playground' },
+  '/ask': { section: { label: 'Explore' }, page: 'Ask' },
+  '/catalog/teams': { section: { label: 'Catalog' }, page: 'Team Dashboard' },
+  '/connectors': { section: { label: 'Configure' }, page: 'Connector Hub' },
+  '/configure/schema': { section: { label: 'Configure' }, page: 'Schema Editor' },
+  '/incidents': { section: { label: 'Operations' }, page: 'Incident Mode' },
+  '/operations/claims': { section: { label: 'Operations' }, page: 'Claim Explorer' },
+  '/operations/reconciliation': {
+    section: { label: 'Operations' },
+    page: 'Reconciliation',
+  },
+  '/admin/audit': { section: { label: 'Admin' }, page: 'Audit Log' },
+  '/admin/access': { section: { label: 'Admin' }, page: 'Access Control' },
+  '/admin/agent-activity': { section: { label: 'Admin' }, page: 'Agent Activity' },
+  '/profile': { page: 'Profile' },
+  '/settings': { page: 'Settings' },
 };
 
-function Breadcrumbs() {
-  const pathname = usePathname();
-  const parts = pathname.split('/').filter(Boolean);
-
-  if (parts.length === 0) {
-    return <span className="text-sm font-medium">Home</span>;
-  }
-
-  return (
-    <div className="flex items-center gap-1 text-sm">
-      <span className="text-muted-foreground">Home</span>
-      {parts.map((part, i) => {
-        const path = '/' + parts.slice(0, i + 1).join('/');
-        const name = routeNames[path] || part.charAt(0).toUpperCase() + part.slice(1);
-        return (
-          <span key={path} className="flex items-center gap-1">
-            <ChevronRight className="h-3 w-3 text-muted-foreground" />
-            <span className={i === parts.length - 1 ? 'font-medium' : 'text-muted-foreground'}>
-              {name}
-            </span>
-          </span>
-        );
-      })}
-    </div>
-  );
+function trailFor(pathname: string): Trail {
+  if (TRAILS[pathname]) return TRAILS[pathname];
+  const slug = pathname.replace(/^\//, '').split('/')[0] ?? '';
+  return { page: slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : 'Home' };
 }
 
 export function Header() {
+  const pathname = usePathname();
+  const router = useRouter();
   const { setSearchOpen } = useUIStore();
+  const trail = trailFor(pathname);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-background px-6">
-      <Breadcrumbs />
+    <header className="border-border bg-panel grid h-14 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 border-b px-5">
+      <div className="min-w-0 justify-self-start">
+        <BreadcrumbTrail trail={trail} onNavigate={(href) => router.push(href)} />
+      </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-2 text-muted-foreground"
-        onClick={() => setSearchOpen(true)}
-      >
-        <Search className="h-4 w-4" />
-        <span className="hidden sm:inline">Search...</span>
-        <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
-          <span className="text-xs">⌘</span>K
-        </kbd>
-      </Button>
+      <SearchTrigger onClick={() => setSearchOpen(true)} />
+
+      <div className="flex justify-end">
+        <UserMenu />
+      </div>
     </header>
+  );
+}
+
+function BreadcrumbTrail({
+  trail,
+  onNavigate,
+}: {
+  trail: Trail;
+  onNavigate: (href: string) => void;
+}) {
+  const handleClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    onNavigate(href);
+  };
+
+  return (
+    <nav aria-label="Breadcrumb" className="text-[13px]">
+      <ol className="m-0 flex list-none items-center gap-2 p-0">
+        {trail.section && (
+          <>
+            <li className="text-text-muted truncate">
+              {trail.section.href ? (
+                <a
+                  href={trail.section.href}
+                  onClick={handleClick(trail.section.href)}
+                  className="hover:text-text transition-colors"
+                >
+                  {trail.section.label}
+                </a>
+              ) : (
+                <span>{trail.section.label}</span>
+              )}
+            </li>
+            <li aria-hidden className="text-text-dim font-mono">
+              /
+            </li>
+          </>
+        )}
+        <li className="text-text truncate font-medium" aria-current="page">
+          {trail.page}
+        </li>
+      </ol>
+    </nav>
+  );
+}
+
+function SearchTrigger({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Open command palette"
+      className="border-border bg-panel-2 text-text-muted hover:border-border-strong hover:text-text focus-visible:ring-accent-dim flex h-10 w-full min-w-0 items-center gap-3 rounded-md border px-3 text-[13px] transition-colors outline-none focus-visible:ring-[3px] md:w-[420px]"
+    >
+      <span aria-hidden className="text-text-dim text-[15px] leading-none">
+        <IconGlyph name="search" size={15} />
+      </span>
+      <span className="flex-1 truncate text-left">Search entities, services, runbooks…</span>
+      <span className="hidden sm:inline-flex">
+        <Kbd>⌘ K</Kbd>
+      </span>
+    </button>
   );
 }

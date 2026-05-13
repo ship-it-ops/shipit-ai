@@ -35,13 +35,15 @@ vi.mock('bullmq', () => {
     close: mockQueueClose,
   }));
 
-  const Worker = vi.fn().mockImplementation((_name: string, processor: (job: { data: unknown }) => Promise<void>) => {
-    capturedWorkerProcessor = processor;
-    return {
-      close: mockWorkerClose,
-      waitUntilReady: mockWaitUntilReady,
-    };
-  });
+  const Worker = vi
+    .fn()
+    .mockImplementation((_name: string, processor: (job: { data: unknown }) => Promise<void>) => {
+      capturedWorkerProcessor = processor;
+      return {
+        close: mockWorkerClose,
+        waitUntilReady: mockWaitUntilReady,
+      };
+    });
 
   return { Queue, Worker };
 });
@@ -156,9 +158,7 @@ describe('EventBusProducer', () => {
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
     expect(jobs[0].name).toBe('event');
-    expect(jobs[0].opts.jobId).toBe(
-      'github-acme:shipit://LogicalService/github/payments-api:1',
-    );
+    expect(jobs[0].opts.jobId).toBe('github-acme:shipit://LogicalService/github/payments-api:1');
     expect(jobs[0].data.connector_id).toBe('github-acme');
     expect(jobs[0].data.payload).toEqual(entity);
     expect(jobs[0].opts.removeOnComplete).toBe(true);
@@ -255,9 +255,7 @@ describe('EventBusReplay', () => {
       payload: makeEntity(),
     };
 
-    mockXrange.mockResolvedValueOnce([
-      ['1709078400000-0', ['data', JSON.stringify(envelope)]],
-    ]);
+    mockXrange.mockResolvedValueOnce([['1709078400000-0', ['data', JSON.stringify(envelope)]]]);
 
     const replay = new EventBusReplay(TEST_CONFIG);
     await replay.replay('2026-02-28T00:00:00Z');

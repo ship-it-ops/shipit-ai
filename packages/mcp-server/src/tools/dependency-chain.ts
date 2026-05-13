@@ -12,7 +12,13 @@ export function registerDependencyChain(server: McpServer, neo4j: Neo4jClient): 
     {
       from: z.string().describe('Source node canonical ID'),
       to: z.string().describe('Target node canonical ID'),
-      max_depth: z.number().int().min(1).max(10).default(6).describe('Max path length (1-10, default 6)'),
+      max_depth: z
+        .number()
+        .int()
+        .min(1)
+        .max(10)
+        .default(6)
+        .describe('Max path length (1-10, default 6)'),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
@@ -39,9 +45,14 @@ export function registerDependencyChain(server: McpServer, neo4j: Neo4jClient): 
 
         const paths = result.records.map((r) => {
           const pathNodes = r.get('path_nodes') as Array<{ properties: Record<string, unknown> }>;
-          const pathEdges = r.get('path_edges') as Array<{ type: string; from: string; to: string }>;
-          const pathLength = (r.get('path_length') as { toNumber?: () => number })?.toNumber?.()
-            ?? (r.get('path_length') as number);
+          const pathEdges = r.get('path_edges') as Array<{
+            type: string;
+            from: string;
+            to: string;
+          }>;
+          const pathLength =
+            (r.get('path_length') as { toNumber?: () => number })?.toNumber?.() ??
+            (r.get('path_length') as number);
 
           return {
             nodes: pathNodes.map((n) => n.properties.id as string),

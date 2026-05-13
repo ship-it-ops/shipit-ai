@@ -40,9 +40,7 @@ const schemaSchema = z.object({
   mode: z.enum(['full', 'simple']),
   node_types: z.record(z.string(), nodeTypeDefSchema),
   relationship_types: z.record(z.string(), relTypeDefSchema),
-  resolution_defaults: z
-    .record(z.string(), resolutionStrategySchema)
-    .optional(),
+  resolution_defaults: z.record(z.string(), resolutionStrategySchema).optional(),
 });
 
 export function validateSchema(raw: unknown): ShipItSchema {
@@ -55,14 +53,10 @@ export function validateSchemaRelationships(schema: ShipItSchema): string[] {
 
   for (const [relType, relDef] of Object.entries(schema.relationship_types)) {
     if (!nodeLabels.has(relDef.from)) {
-      errors.push(
-        `Relationship ${relType}: 'from' label '${relDef.from}' not found in node_types`,
-      );
+      errors.push(`Relationship ${relType}: 'from' label '${relDef.from}' not found in node_types`);
     }
     if (!nodeLabels.has(relDef.to)) {
-      errors.push(
-        `Relationship ${relType}: 'to' label '${relDef.to}' not found in node_types`,
-      );
+      errors.push(`Relationship ${relType}: 'to' label '${relDef.to}' not found in node_types`);
     }
   }
 

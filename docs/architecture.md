@@ -80,6 +80,7 @@ authenticate() → discover() → fetch() → normalize() → sync()
 ```
 
 The `ConnectorHarness` wraps connectors and handles:
+
 - Sync state management (IDLE → SYNCING → COMPLETING → IDLE/FAILED/DEGRADED)
 - Batch publishing to the event bus (default batch size: 100)
 - Error handling and state transitions
@@ -135,13 +136,13 @@ Every property value in the graph is backed by one or more PropertyClaims:
 
 When multiple sources assert different values for the same property, the resolution strategy determines the winner:
 
-| Strategy | Behavior |
-|----------|----------|
-| `HIGHEST_CONFIDENCE` | Effective confidence (with time decay) wins; tiebreak by recency |
-| `MANUAL_OVERRIDE_FIRST` | Manual claims always win; fallback to `HIGHEST_CONFIDENCE` |
-| `AUTHORITATIVE_ORDER` | Source priority: manual > backstage > github > kubernetes > datadog > jira > identity |
-| `LATEST_TIMESTAMP` | Most recently ingested value wins |
-| `MERGE_SET` | Union all values into an array (for tags, labels) |
+| Strategy                | Behavior                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `HIGHEST_CONFIDENCE`    | Effective confidence (with time decay) wins; tiebreak by recency                      |
+| `MANUAL_OVERRIDE_FIRST` | Manual claims always win; fallback to `HIGHEST_CONFIDENCE`                            |
+| `AUTHORITATIVE_ORDER`   | Source priority: manual > backstage > github > kubernetes > datadog > jira > identity |
+| `LATEST_TIMESTAMP`      | Most recently ingested value wins                                                     |
+| `MERGE_SET`             | Union all values into an array (for tags, labels)                                     |
 
 Confidence decays over time: `effective = max(0, base - 0.01 * weeks_since_ingestion)`.
 
@@ -163,6 +164,7 @@ shipit://{label}/{namespace}/{name}
 ```
 
 Examples:
+
 - `shipit://repository/default/config-service`
 - `shipit://team/default/platform-team`
 - `shipit://deployment/production/config-svc-prod`
@@ -172,6 +174,7 @@ Examples:
 The MCP Server connects to Neo4j directly (read-only) and exposes 8 tools via the Model Context Protocol's stdio transport. All responses are wrapped in a standard envelope with metadata (`_meta`) including query time, data quality indicators, and suggested follow-up queries.
 
 Guardrails for the `graph_query` tool:
+
 - Write operations are rejected
 - Variable-length patterns are limited to 6 hops
 - Results are capped at 1000 rows
@@ -181,6 +184,7 @@ Guardrails for the `graph_query` tool:
 ## API Server
 
 Fastify 4 with OpenAPI documentation via `@fastify/swagger`. Routes are organized into four groups:
+
 - `/api/health` — Health check
 - `/api/connectors` — Connector CRUD and sync triggers
 - `/api/schema` — Schema management (YAML)
@@ -189,6 +193,7 @@ Fastify 4 with OpenAPI documentation via `@fastify/swagger`. Routes are organize
 ## Web UI
 
 Next.js 14 (App Router) with:
+
 - Cytoscape.js for interactive graph visualization
 - Zustand for state management
 - TanStack React Query for data fetching

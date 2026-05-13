@@ -49,7 +49,9 @@ describe('entity_detail tool', () => {
     });
 
     const neo4j = createMockNeo4jClient(responses);
-    const result = await neo4j.runCypher('MATCH (n {id: $entityId}) OPTIONAL', { entityId: 'shipit://logical-service/default/payments-api' });
+    const result = await neo4j.runCypher('MATCH (n {id: $entityId}) OPTIONAL', {
+      entityId: 'shipit://logical-service/default/payments-api',
+    });
 
     const record = result.records[0];
     const nodeData = record.get('node') as { properties: Record<string, unknown> };
@@ -120,7 +122,9 @@ describe('entity_detail tool', () => {
     const result = await neo4j.runCypher('MATCH (n {id: $entityId})', {});
 
     const nodeData = result.records[0].get('node') as { properties: Record<string, unknown> };
-    const claims = JSON.parse(nodeData.properties._claims as string) as Array<{ property_key: string }>;
+    const claims = JSON.parse(nodeData.properties._claims as string) as Array<{
+      property_key: string;
+    }>;
     expect(claims.length).toBe(2);
     expect(claims[0].property_key).toBe('tier');
   });

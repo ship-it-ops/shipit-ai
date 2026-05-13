@@ -36,18 +36,18 @@ Example structure:
 version: 1
 node_types:
   LogicalService:
-    description: "A logical service representing a business capability"
+    description: 'A logical service representing a business capability'
     properties:
       name:
         type: string
         required: true
-        description: "Human-readable service name"
+        description: 'Human-readable service name'
       tier_effective:
         type: string
         required: true
-        default: "tier-3"
+        default: 'tier-3'
         resolution_strategy: highest_tier_wins
-        valid_values: ["tier-1", "tier-2", "tier-3"]
+        valid_values: ['tier-1', 'tier-2', 'tier-3']
       owner:
         type: string
         required: false
@@ -58,7 +58,7 @@ node_types:
       - k8s_app_label
 
   Repository:
-    description: "A source code repository"
+    description: 'A source code repository'
     properties:
       name:
         type: string
@@ -68,7 +68,7 @@ node_types:
         required: true
       default_branch:
         type: string
-        default: "main"
+        default: 'main'
 
 relationships:
   IMPLEMENTED_BY:
@@ -76,7 +76,7 @@ relationships:
     to: Repository
     cardinality: one-to-many
     required: true
-    description: "Links a service to its source repositories"
+    description: 'Links a service to its source repositories'
 
   OWNS:
     from: Team
@@ -92,6 +92,7 @@ A CLI command (`shipit schema validate`) checks the YAML file for errors without
 ### Phase 2: Form-Based Schema Editor UI with Read-Only Preview
 
 A web-based form UI that allows users to:
+
 - Add, edit, and delete node types via form fields (not drag-and-drop).
 - Define properties with dropdowns for data type and resolution strategy.
 - Define relationships by selecting source and target node types.
@@ -103,6 +104,7 @@ The form-based editor is simpler to build and more accessible than a drag-and-dr
 ### Phase 3: Full Interactive Visual Editor
 
 A canvas-based visual editor where users can:
+
 - Drag and drop node types onto a canvas.
 - Draw relationship lines between nodes.
 - Click on nodes to edit properties inline.

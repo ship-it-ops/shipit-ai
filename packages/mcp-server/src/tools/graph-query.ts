@@ -8,7 +8,11 @@ import type { McpServerConfig } from '../config.js';
 const WRITE_KEYWORDS = /\b(MERGE|CREATE|DELETE|DETACH|SET|REMOVE|DROP|CALL\s*\{)\b/i;
 const HOP_PATTERN = /\*\d*\.\.(\d+)/g;
 
-export function registerGraphQuery(server: McpServer, neo4j: Neo4jClient, config: McpServerConfig): void {
+export function registerGraphQuery(
+  server: McpServer,
+  neo4j: Neo4jClient,
+  config: McpServerConfig,
+): void {
   server.tool(
     'graph_query',
     'Execute a raw Cypher query against the knowledge graph. Read-only queries only. Subject to guardrails: parameterized queries, timeout, row limit, hop limit.',
@@ -80,10 +84,7 @@ export function registerGraphQuery(server: McpServer, neo4j: Neo4jClient, config
           const error = createError(McpErrorCode.QUERY_TIMEOUT, 'Query exceeded timeout limit.');
           return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
         }
-        const error = createError(
-          McpErrorCode.INTERNAL_ERROR,
-          `graph_query failed: ${message}`,
-        );
+        const error = createError(McpErrorCode.INTERNAL_ERROR, `graph_query failed: ${message}`);
         return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
       }
     },

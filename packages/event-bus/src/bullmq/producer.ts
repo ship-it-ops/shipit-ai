@@ -10,10 +10,7 @@ function buildIdempotencyKey(connectorId: string, node: CanonicalNode): string {
   return `${connectorId}:${node.id}:${node._event_version}`;
 }
 
-function buildEnvelopes(
-  entities: CanonicalEntity[],
-  connectorId: string,
-): EventEnvelope[] {
+function buildEnvelopes(entities: CanonicalEntity[], connectorId: string): EventEnvelope[] {
   const envelopes: EventEnvelope[] = [];
   const now = new Date().toISOString();
 
@@ -41,7 +38,9 @@ export class EventBusProducer {
     this.queue = new Queue(config.queueName, {
       connection: { host: config.redisHost, port: config.redisPort, maxRetriesPerRequest: null },
     });
-    this.streamRedis = new Redis(config.redisPort, config.redisHost, { maxRetriesPerRequest: null });
+    this.streamRedis = new Redis(config.redisPort, config.redisHost, {
+      maxRetriesPerRequest: null,
+    });
     this.retentionDays = config.retentionDays;
   }
 
@@ -66,12 +65,7 @@ export class EventBusProducer {
     if (envelopes.length > 0) {
       const pipeline = this.streamRedis.pipeline();
       for (const env of envelopes) {
-        pipeline.xadd(
-          EVENT_LOG_STREAM,
-          '*',
-          'data',
-          JSON.stringify(env),
-        );
+        pipeline.xadd(EVENT_LOG_STREAM, '*', 'data', JSON.stringify(env));
       }
 
       // Trim stream by retention period

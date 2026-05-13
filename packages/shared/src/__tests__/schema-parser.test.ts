@@ -7,10 +7,7 @@ import { DEFAULT_SCHEMA } from '../schema/defaults.js';
 
 describe('parseSchemaFile', () => {
   it('parses the default YAML schema file', () => {
-    const yamlPath = resolve(
-      import.meta.dirname,
-      '../../../../config/shipit-schema.yaml',
-    );
+    const yamlPath = resolve(import.meta.dirname, '../../../../config/shipit-schema.yaml');
     const yamlContent = readFileSync(yamlPath, 'utf-8');
     const schema = parseSchemaFile(yamlContent);
 

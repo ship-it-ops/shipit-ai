@@ -8,11 +8,7 @@ export interface CodeownersEntry {
   repo_full_name: string;
 }
 
-const CODEOWNERS_PATHS = [
-  'CODEOWNERS',
-  '.github/CODEOWNERS',
-  'docs/CODEOWNERS',
-];
+const CODEOWNERS_PATHS = ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS'];
 
 export async function fetchCodeowners(
   octokit: Octokit,
@@ -63,11 +59,7 @@ async function fetchCodeownersFile(
   return null;
 }
 
-export function parseCodeowners(
-  content: string,
-  repoName: string,
-  org: string,
-): CodeownersEntry[] {
+export function parseCodeowners(content: string, repoName: string, org: string): CodeownersEntry[] {
   const entries: CodeownersEntry[] = [];
 
   for (const line of content.split('\n')) {

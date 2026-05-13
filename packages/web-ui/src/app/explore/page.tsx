@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Filter, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useCallback, useMemo } from 'react';
+import { Button, Input } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
+import {
+  GraphLegend,
+  listEntityTypes,
+  type EntityType,
+  type GraphLegendEntry,
+} from '@ship-it-ui/shipit';
 import { GraphCanvas } from '@/components/graph/graph-canvas';
 import { GraphControls } from '@/components/graph/graph-controls';
 import { FilterPanel } from '@/components/graph/filter-panel';
@@ -19,10 +24,19 @@ export default function GraphExplorerPage() {
   const { data: graphData } = useInitialGraphData();
 
   const handleNodeClick = useCallback(
-    (nodeId: string) => {
-      setSelectedNode(nodeId);
-    },
-    [setSelectedNode]
+    (nodeId: string) => setSelectedNode(nodeId),
+    [setSelectedNode],
+  );
+
+  // Legend entries from the registered entity types — stays in sync with
+  // `src/lib/entity-types.ts` so new node types automatically appear.
+  const legendEntries = useMemo<GraphLegendEntry[]>(
+    () =>
+      listEntityTypes().map(([type, meta]) => ({
+        type: type as EntityType,
+        label: meta.label,
+      })),
+    [],
   );
 
   return (
@@ -30,24 +44,22 @@ export default function GraphExplorerPage() {
       <FilterPanel open={filterOpen} onClose={() => setFilterOpen(false)} />
 
       <div className="flex flex-1 flex-col">
-        <div className="flex items-center gap-3 border-b px-4 py-3">
+        <div className="border-border flex items-center gap-3 border-b px-4 py-3">
           <Button
             variant={filterOpen ? 'secondary' : 'outline'}
             size="sm"
-            className="gap-2"
+            icon={<IconGlyph name="schema" size={12} />}
             onClick={() => setFilterOpen(!filterOpen)}
           >
-            <Filter className="h-4 w-4" />
             Filters
           </Button>
 
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="max-w-md flex-1">
             <Input
-              placeholder="Search nodes..."
+              icon={<IconGlyph name="search" />}
+              placeholder="Search nodes…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9"
             />
           </div>
 
@@ -56,12 +68,27 @@ export default function GraphExplorerPage() {
           </div>
         </div>
 
-        <div className="relative flex-1">
+        <div className="relative flex-1 p-3">
           {graphData ? (
-            <GraphCanvas data={graphData} onNodeClick={handleNodeClick} />
+            <>
+              <GraphCanvas data={graphData} onNodeClick={handleNodeClick} />
+              <div className="absolute right-5 bottom-5 z-10">
+                <GraphLegend
+                  entries={legendEntries}
+                  heading="Node types"
+                  className="bg-panel/95 border-border max-w-[180px] border shadow-lg backdrop-blur"
+                />
+              </div>
+            </>
           ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
-              <p>No graph data yet. Seed data with <code className="bg-muted px-1.5 py-0.5 rounded text-xs">pnpm seed</code> to get started.</p>
+            <div className="text-text-muted flex h-full items-center justify-center">
+              <p className="text-[13px]">
+                No graph data yet. Seed data with{' '}
+                <code className="bg-panel-2 text-text rounded-xs px-[6px] py-[2px] font-mono text-[11px]">
+                  pnpm seed
+                </code>{' '}
+                to get started.
+              </p>
             </div>
           )}
         </div>

@@ -11,20 +11,32 @@ import {
 describe('Cypher Generator', () => {
   describe('generateBlastRadiusCypher', () => {
     it('should generate downstream traversal query', () => {
-      const result = generateBlastRadiusCypher('shipit://logical-service/default/config-service', 3, 'DOWNSTREAM');
+      const result = generateBlastRadiusCypher(
+        'shipit://logical-service/default/config-service',
+        3,
+        'DOWNSTREAM',
+      );
       expect(result.query).toContain('MATCH (start {id: $nodeId})');
       expect(result.query).toContain('*1..3');
       expect(result.params.nodeId).toBe('shipit://logical-service/default/config-service');
     });
 
     it('should generate upstream traversal query', () => {
-      const result = generateBlastRadiusCypher('shipit://logical-service/default/config-service', 3, 'UPSTREAM');
+      const result = generateBlastRadiusCypher(
+        'shipit://logical-service/default/config-service',
+        3,
+        'UPSTREAM',
+      );
       expect(result.query).toContain('<-[');
       expect(result.params.nodeId).toBe('shipit://logical-service/default/config-service');
     });
 
     it('should generate bidirectional traversal query', () => {
-      const result = generateBlastRadiusCypher('shipit://logical-service/default/config-service', 3, 'BOTH');
+      const result = generateBlastRadiusCypher(
+        'shipit://logical-service/default/config-service',
+        3,
+        'BOTH',
+      );
       expect(result.query).toContain('-[:');
       expect(result.query).not.toContain('->');
       expect(result.query).not.toContain('<-');

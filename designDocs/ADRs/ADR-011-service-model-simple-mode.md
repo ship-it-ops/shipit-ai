@@ -24,6 +24,7 @@ These four nodes are connected by relationships: `LogicalService -[:IMPLEMENTED_
 For organizations with 500+ services, multiple environments, monorepos, and sidecars, the 4-node model is essential. A single LogicalService might have 3 repositories (main service, shared library, config repo), 4 deployments (dev, staging, production-us, production-eu), and 6 runtime services (main process, sidecar proxy, canary, and their monitoring entities).
 
 For organizations with fewer than 100 services, where each service has one repo, one deployment, and one runtime identity, the 4-node model creates unnecessary complexity:
+
 - **4x node count.** 50 services become 200 nodes before adding Teams, Persons, or APIs.
 - **Query complexity.** "Who owns this service?" requires traversing from RuntimeService through Deployment to LogicalService to Team. In the simple case, this is three hops where one would suffice.
 - **Onboarding friction.** New users must understand four node types and their relationships before they can reason about the graph. The mental model is heavier than necessary.
@@ -50,10 +51,11 @@ A configuration option collapses the 4-node model into a single **Service** node
 
 ```yaml
 # schema/ontology.yaml
-service_model: simple  # Options: "full" (default) | "simple"
+service_model: simple # Options: "full" (default) | "simple"
 ```
 
 In Simple Mode:
+
 - A single `:Service` node represents the entire service, combining properties from LogicalService, Repository, Deployment, and RuntimeService.
 - Properties that exist on multiple node types in the full model are flattened: `name`, `tier`, `owner` (from LogicalService), `repo_url`, `language` (from Repository), `environment`, `replicas` (from Deployment), `health_status`, `slo_target` (from RuntimeService).
 - Relationships connect directly to the Service node: `Team -[:OWNS]-> Service`, `Service -[:DEPENDS_ON]-> Service`, `Service -[:DEPLOYED_IN]-> Environment`.
@@ -61,15 +63,16 @@ In Simple Mode:
 
 ### Recommended usage
 
-| Organization profile | Recommended mode |
-|---------------------|-----------------|
-| < 100 services, no monorepos, no sidecars | Simple Mode |
-| 100+ services, or monorepos, or sidecars | Full Model |
-| Starting small, expect to grow | Start Full Model (migration Simple-to-Full is supported; reverse is not) |
+| Organization profile                      | Recommended mode                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------ |
+| < 100 services, no monorepos, no sidecars | Simple Mode                                                              |
+| 100+ services, or monorepos, or sidecars  | Full Model                                                               |
+| Starting small, expect to grow            | Start Full Model (migration Simple-to-Full is supported; reverse is not) |
 
 ### Migration: Simple to Full
 
 A migration script converts Simple Mode to Full Model:
+
 1. For each `:Service` node, create a `:LogicalService`, `:Repository`, `:Deployment`, and `:RuntimeService` node.
 2. Distribute properties to the appropriate node type based on the schema definition.
 3. Create the `IMPLEMENTED_BY`, `DEPLOYED_AS`, and `OBSERVED_AS` relationships.
@@ -81,6 +84,7 @@ This migration is a one-time operation and is destructive (the Simple Mode graph
 ### Migration: Full to Simple (NOT supported)
 
 Collapsing the Full Model to Simple Mode is not supported because:
+
 - The 4-node model represents real structural distinctions (one service with three repos and four deployments). Collapsing to a single node loses this information.
 - Property name collisions would require arbitrary resolution rules (which `name` wins -- the LogicalService name or the Repository name?).
 - Relationship targets become ambiguous (does `DEPENDS_ON` connect to the logical service or the runtime instance?).
@@ -92,11 +96,13 @@ Users who outgrow Simple Mode should migrate to Full Model, not the reverse.
 For organizations using the Full Model with monorepos or sidecars:
 
 **Monorepos:**
+
 - One `:Repository` node for the monorepo.
 - Multiple `:LogicalService` nodes, each linked to the same Repository via `IMPLEMENTED_BY`.
 - The linking key for each service includes a path within the monorepo (e.g., `github_slug: acme-org/monorepo/services/payment`).
 
 **Sidecars:**
+
 - One `:Deployment` node for the pod.
 - Multiple `:RuntimeService` nodes for each container (main service, sidecar proxy, log collector).
 - The main RuntimeService has a `role: primary` property. Sidecars have `role: sidecar`.

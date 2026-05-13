@@ -5,8 +5,8 @@ ShipIt-AI uses a YAML schema to define the node types, relationships, and resolu
 ## Schema File Format
 
 ```yaml
-version: "1.0"
-mode: full  # or "simple"
+version: '1.0'
+mode: full # or "simple"
 
 node_types:
   LogicalService:
@@ -30,7 +30,7 @@ relationship_types:
   IMPLEMENTED_BY:
     from: LogicalService
     to: Repository
-    cardinality: "1:N"
+    cardinality: '1:N'
     description: LogicalService is implemented by this repository
 
 resolution_defaults:
@@ -43,29 +43,29 @@ resolution_defaults:
 
 ## Schema Modes
 
-| Mode | Description |
-|------|-------------|
-| `full` | All 12 node types and 16+ relationship types. For organizations with complex service architectures. |
+| Mode     | Description                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------- |
+| `full`   | All 12 node types and 16+ relationship types. For organizations with complex service architectures.     |
 | `simple` | Reduced set focused on LogicalService, Repository, Team, and Person. For smaller teams getting started. |
 
 See [ADR-011](../designDocs/ADRs/ADR-011-service-model-simple-mode.md) for the design rationale.
 
 ## Node Types
 
-| Node Type | Description | Unique Key | Key Properties |
-|-----------|-------------|------------|----------------|
-| `LogicalService` | A named, team-owned service concept | `name` | name, tier, owner, lifecycle, language, domain, tags, description |
-| `Repository` | A source code repository | `name` | name, url, default_branch, visibility, language, topics |
-| `Deployment` | A running instance in an environment | `name` | name, namespace, cluster, environment, image, replicas, status |
-| `RuntimeService` | Identity seen by observability tools | `name` | name, dd_service, apm_name, environment |
-| `BuildArtifact` | A built container image or binary | `name` | name, image_tag, sha, registry |
-| `Environment` | A deployment target | `name` | name, type, region, classification |
-| `Team` | An engineering team or squad | `name` | name, slug, description |
-| `Person` | An individual | `email` | name, email, github_handle, role |
-| `Pipeline` | A CI/CD workflow | `name` | name, trigger, status, last_run |
-| `Monitor` | An observability check | `name` | name, type, query, status, threshold |
-| `Namespace` | A Kubernetes namespace | `name` | name, cluster, labels |
-| `Cluster` | A Kubernetes cluster | `name` | name, provider, region, version |
+| Node Type        | Description                          | Unique Key | Key Properties                                                    |
+| ---------------- | ------------------------------------ | ---------- | ----------------------------------------------------------------- |
+| `LogicalService` | A named, team-owned service concept  | `name`     | name, tier, owner, lifecycle, language, domain, tags, description |
+| `Repository`     | A source code repository             | `name`     | name, url, default_branch, visibility, language, topics           |
+| `Deployment`     | A running instance in an environment | `name`     | name, namespace, cluster, environment, image, replicas, status    |
+| `RuntimeService` | Identity seen by observability tools | `name`     | name, dd_service, apm_name, environment                           |
+| `BuildArtifact`  | A built container image or binary    | `name`     | name, image_tag, sha, registry                                    |
+| `Environment`    | A deployment target                  | `name`     | name, type, region, classification                                |
+| `Team`           | An engineering team or squad         | `name`     | name, slug, description                                           |
+| `Person`         | An individual                        | `email`    | name, email, github_handle, role                                  |
+| `Pipeline`       | A CI/CD workflow                     | `name`     | name, trigger, status, last_run                                   |
+| `Monitor`        | An observability check               | `name`     | name, type, query, status, threshold                              |
+| `Namespace`      | A Kubernetes namespace               | `name`     | name, cluster, labels                                             |
+| `Cluster`        | A Kubernetes cluster                 | `name`     | name, provider, region, version                                   |
 
 ### Property Types
 
@@ -84,26 +84,26 @@ Some properties accept a fixed set of values:
 
 ## Relationship Types
 
-| Relationship | From | To | Cardinality | Description |
-|-------------|------|-----|-------------|-------------|
-| `IMPLEMENTED_BY` | LogicalService | Repository | 1:N | Service is implemented by this repo |
-| `DEPLOYED_AS` | LogicalService | Deployment | 1:N | Service has this deployment |
-| `EMITS_TELEMETRY_AS` | Deployment | RuntimeService | N:M | Deployment observed as this runtime service |
-| `BUILT_FROM` | BuildArtifact | Repository | N:1 | Artifact built from this repo |
-| `RUNS_IMAGE` | Deployment | BuildArtifact | N:1 | Deployment runs this image |
-| `RUNS_IN_ENV` | Deployment | Environment | N:1 | Deployment runs in this environment |
-| `DEPENDS_ON` | LogicalService | LogicalService | N:M | Service dependency |
-| `CALLS` | RuntimeService | RuntimeService | N:M | Runtime call relationship |
-| `OWNS` | Team | LogicalService | 1:N | Team owns this service |
-| `MEMBER_OF` | Person | Team | N:M | Person belongs to this team |
-| `CONTRIBUTES_TO` | Person | Repository | N:M | Person contributes to this repo |
-| `RUNS_IN` | Deployment | Namespace | N:1 | Deployment runs in this namespace |
-| `PART_OF` | Namespace | Cluster | N:1 | Namespace is part of this cluster |
-| `BUILT_BY` | LogicalService | Pipeline | 1:N | Service is built by this pipeline |
-| `TRIGGERS` | Pipeline | Pipeline | N:M | Pipeline triggers another |
-| `MONITORS` | Monitor | LogicalService | N:M | Monitor watches this service |
-| `CODEOWNER_OF` | Person | Repository | N:M | Person is a code owner |
-| `ON_CALL_FOR` | Person | LogicalService | N:M | Person is on-call for this service |
+| Relationship         | From           | To             | Cardinality | Description                                 |
+| -------------------- | -------------- | -------------- | ----------- | ------------------------------------------- |
+| `IMPLEMENTED_BY`     | LogicalService | Repository     | 1:N         | Service is implemented by this repo         |
+| `DEPLOYED_AS`        | LogicalService | Deployment     | 1:N         | Service has this deployment                 |
+| `EMITS_TELEMETRY_AS` | Deployment     | RuntimeService | N:M         | Deployment observed as this runtime service |
+| `BUILT_FROM`         | BuildArtifact  | Repository     | N:1         | Artifact built from this repo               |
+| `RUNS_IMAGE`         | Deployment     | BuildArtifact  | N:1         | Deployment runs this image                  |
+| `RUNS_IN_ENV`        | Deployment     | Environment    | N:1         | Deployment runs in this environment         |
+| `DEPENDS_ON`         | LogicalService | LogicalService | N:M         | Service dependency                          |
+| `CALLS`              | RuntimeService | RuntimeService | N:M         | Runtime call relationship                   |
+| `OWNS`               | Team           | LogicalService | 1:N         | Team owns this service                      |
+| `MEMBER_OF`          | Person         | Team           | N:M         | Person belongs to this team                 |
+| `CONTRIBUTES_TO`     | Person         | Repository     | N:M         | Person contributes to this repo             |
+| `RUNS_IN`            | Deployment     | Namespace      | N:1         | Deployment runs in this namespace           |
+| `PART_OF`            | Namespace      | Cluster        | N:1         | Namespace is part of this cluster           |
+| `BUILT_BY`           | LogicalService | Pipeline       | 1:N         | Service is built by this pipeline           |
+| `TRIGGERS`           | Pipeline       | Pipeline       | N:M         | Pipeline triggers another                   |
+| `MONITORS`           | Monitor        | LogicalService | N:M         | Monitor watches this service                |
+| `CODEOWNER_OF`       | Person         | Repository     | N:M         | Person is a code owner                      |
+| `ON_CALL_FOR`        | Person         | LogicalService | N:M         | Person is on-call for this service          |
 
 ## Resolution Strategies
 

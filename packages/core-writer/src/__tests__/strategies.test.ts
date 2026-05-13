@@ -138,10 +138,7 @@ describe('resolveClaims', () => {
     });
 
     it('merges array values', () => {
-      const claims = [
-        makeClaim({ value: ['a', 'b'] }),
-        makeClaim({ value: ['b', 'c'] }),
-      ];
+      const claims = [makeClaim({ value: ['a', 'b'] }), makeClaim({ value: ['b', 'c'] })];
       const result = resolveClaims(claims, 'MERGE_SET');
       const values = result!.effective_value as string[];
       expect(values).toHaveLength(3);

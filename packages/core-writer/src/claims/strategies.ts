@@ -49,20 +49,12 @@ function resolveHighestConfidence(
 ): ClaimResolutionResult {
   const scored = claims.map((c) => ({
     claim: c,
-    effective: computeEffectiveConfidence(
-      c.confidence,
-      c.ingested_at,
-      now,
-      decayRate,
-    ),
+    effective: computeEffectiveConfidence(c.confidence, c.ingested_at, now, decayRate),
   }));
   scored.sort((a, b) => {
     if (b.effective !== a.effective) return b.effective - a.effective;
     // Tiebreak: most recent ingestion wins
-    return (
-      new Date(b.claim.ingested_at).getTime() -
-      new Date(a.claim.ingested_at).getTime()
-    );
+    return new Date(b.claim.ingested_at).getTime() - new Date(a.claim.ingested_at).getTime();
   });
   const winner = scored[0].claim;
   return {
@@ -83,9 +75,7 @@ const SOURCE_PRIORITY = [
   'identity',
 ];
 
-function resolveAuthoritativeOrder(
-  claims: PropertyClaim[],
-): ClaimResolutionResult {
+function resolveAuthoritativeOrder(claims: PropertyClaim[]): ClaimResolutionResult {
   const sorted = [...claims].sort((a, b) => {
     const aIdx = SOURCE_PRIORITY.findIndex((p) => a.source.startsWith(p));
     const bIdx = SOURCE_PRIORITY.findIndex((p) => b.source.startsWith(p));
@@ -100,12 +90,9 @@ function resolveAuthoritativeOrder(
   };
 }
 
-function resolveLatestTimestamp(
-  claims: PropertyClaim[],
-): ClaimResolutionResult {
+function resolveLatestTimestamp(claims: PropertyClaim[]): ClaimResolutionResult {
   const sorted = [...claims].sort(
-    (a, b) =>
-      new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime(),
+    (a, b) => new Date(b.ingested_at).getTime() - new Date(a.ingested_at).getTime(),
   );
   const winner = sorted[0];
   return {

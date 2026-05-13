@@ -12,10 +12,7 @@ export class BatchProcessor {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private readonly onFlush: (batch: EventEnvelope[]) => Promise<void>;
 
-  constructor(
-    onFlush: (batch: EventEnvelope[]) => Promise<void>,
-    options: BatchProcessorOptions,
-  ) {
+  constructor(onFlush: (batch: EventEnvelope[]) => Promise<void>, options: BatchProcessorOptions) {
     this.onFlush = onFlush;
     this.batchSize = options.batchSize;
     this.flushIntervalMs = options.flushIntervalMs ?? 5000;

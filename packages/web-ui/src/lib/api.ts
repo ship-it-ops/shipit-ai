@@ -88,7 +88,9 @@ export async function searchEntities(query: string): Promise<SearchResult[]> {
 }
 
 export async function fetchNeighborhood(nodeId: string, depth: number = 2): Promise<GraphData> {
-  return apiFetch<GraphData>(`/api/graph/neighborhood/${encodeURIComponent(nodeId)}?depth=${depth}`);
+  return apiFetch<GraphData>(
+    `/api/graph/neighborhood/${encodeURIComponent(nodeId)}?depth=${depth}`,
+  );
 }
 
 export async function fetchGraphOverview(limit: number = 100): Promise<GraphData> {

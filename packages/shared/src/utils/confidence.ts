@@ -8,8 +8,7 @@ export function computeEffectiveConfidence(
   decayRate: number = DEFAULT_DECAY_RATE,
 ): number {
   const ingestedDate = new Date(ingestedAt);
-  const weeksSinceIngested =
-    (now.getTime() - ingestedDate.getTime()) / MS_PER_WEEK;
+  const weeksSinceIngested = (now.getTime() - ingestedDate.getTime()) / MS_PER_WEEK;
   const decayed = baseConfidence - decayRate * weeksSinceIngested;
   return Math.max(0, Math.min(1, decayed));
 }
