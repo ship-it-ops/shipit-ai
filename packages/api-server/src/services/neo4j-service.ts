@@ -141,10 +141,6 @@ export class Neo4jService {
       'MATCH (n) RETURN n, labels(n) AS labels LIMIT $limit',
       { limit: neo4j.int(limit) },
     );
-    const edgeRecords = await this.runQuery(
-      'MATCH (a)-[r]->(b) RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS props LIMIT $limit',
-      { limit: neo4j.int(limit * 2) },
-    );
 
     const nodesMap = new Map<string, CytoscapeNode>();
     for (const record of nodeRecords) {
@@ -166,6 +162,21 @@ export class Neo4jService {
         });
       }
     }
+
+    const nodeIds = Array.from(nodesMap.keys());
+
+    // Only fetch edges where *both* endpoints landed in the limited node set —
+    // Cytoscape throws if an edge references a missing node. Without the id
+    // filter, two independent `LIMIT`s would slice nodes and edges out of sync.
+    const edgeRecords =
+      nodeIds.length === 0
+        ? []
+        : await this.runQuery(
+            `MATCH (a)-[r]->(b)
+             WHERE a.id IN $ids AND b.id IN $ids
+             RETURN a.id AS source, b.id AS target, type(r) AS type, properties(r) AS props`,
+            { ids: nodeIds },
+          );
 
     const edges: CytoscapeEdge[] = edgeRecords.map((record) => ({
       data: {

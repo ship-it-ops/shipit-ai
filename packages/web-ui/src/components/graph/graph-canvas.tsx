@@ -30,16 +30,23 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     return typeof document === 'undefined' ? null : readThemeTokens();
   }, [theme]);
 
-  const elements = useMemo<ElementDefinition[]>(
-    () => [
+  const elements = useMemo<ElementDefinition[]>(() => {
+    const nodeIds = new Set(data.nodes.map((n) => n.data.id));
+    // Cytoscape throws if an edge references a missing endpoint. Filter
+    // defensively so a stale or truncated response from the API can't crash
+    // the explorer; the API is supposed to keep these in sync but a single
+    // dangling edge takes the whole canvas down.
+    const safeEdges = data.edges.filter(
+      (e) => nodeIds.has(e.data.source) && nodeIds.has(e.data.target),
+    );
+    return [
       ...data.nodes.map((n) => ({
         data: { ...n.data, entityType: n.data.type, label: n.data.name },
         group: 'nodes' as const,
       })),
-      ...data.edges.map((e) => ({ data: e.data, group: 'edges' as const })),
-    ],
-    [data],
-  );
+      ...safeEdges.map((e) => ({ data: e.data, group: 'edges' as const })),
+    ];
+  }, [data]);
 
   const layoutConfig = useMemo(() => {
     switch (layout) {
