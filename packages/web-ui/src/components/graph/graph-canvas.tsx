@@ -4,63 +4,12 @@ import { useEffect, useMemo, useRef } from 'react';
 import cytoscape, { type ElementDefinition } from 'cytoscape';
 import {
   GraphCanvas as DSGraphCanvas,
+  readThemeTokens,
   type GraphCanvasHandle,
-  type ShipItStylesheetBlock,
 } from '@ship-it-ui/cytoscape';
-import { listEntityTypes } from '@ship-it-ui/shipit';
 import { useTheme } from '@ship-it-ui/ui';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
-
-// `@ship-it-ui/cytoscape@0.0.3`'s `glyphDataUrl` emits SVGs with only a
-// `viewBox` — no `width`/`height` attributes — and cytoscape can't size those
-// background-image SVGs on its canvas, so the glyph never paints. Restore the
-// docs-page aesthetic by emitting our own per-type `background-image` rules
-// with explicit dimensions. Override wins because we register the rules after
-// the DS's via `styleOptions.extra`.
-function glyphSvgDataUrl(glyph: string, color: string): string {
-  const svg =
-    `<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 52 52'>` +
-    `<text x='26' y='34' text-anchor='middle' ` +
-    `font-family='ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace' ` +
-    `font-size='26' fill='${color}'>${glyph}</text>` +
-    `</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function buildGlyphOverrides(): ShipItStylesheetBlock[] {
-  if (typeof document === 'undefined') return [];
-  // Resolve each registered type's tone to sRGB via the same trick the DS uses
-  // in `readThemeTokens` — render to a hidden canvas pixel and read back.
-  const canvas = document.createElement('canvas');
-  canvas.width = 1;
-  canvas.height = 1;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  function colorVarToRgb(cssVar: string): string {
-    if (!ctx) return cssVar;
-    // Pull the underlying `--color-…` value off the document root, then paint
-    // it onto the 1×1 canvas to coerce oklch() → sRGB.
-    const match = cssVar.match(/var\((--[^,)]+)/);
-    const name = match?.[1] ?? '';
-    const raw = name
-      ? getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-      : cssVar;
-    ctx.clearRect(0, 0, 1, 1);
-    ctx.fillStyle = '#000';
-    ctx.fillStyle = raw || cssVar;
-    ctx.fillRect(0, 0, 1, 1);
-    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-    return `rgb(${r}, ${g}, ${b})`;
-  }
-  return listEntityTypes().map(([type, meta]) => ({
-    selector: `node[entityType = "${type.replace(/[\\"]/g, (c) => `\\${c}`)}"]`,
-    style: {
-      'background-image': glyphSvgDataUrl(meta.glyph, colorVarToRgb(meta.colorVar)),
-      'background-fit': 'contain',
-      'background-clip': 'none',
-    },
-  })) as ShipItStylesheetBlock[];
-}
 
 interface GraphCanvasProps {
   data: GraphData;
@@ -73,10 +22,12 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
   const { layout, filters, setCyInstance } = useGraphStore();
   const { theme } = useTheme();
 
-  // Re-derive on theme flip so glyph fill matches the active palette.
-  const glyphOverrides = useMemo(() => {
+  // The DS base edge style doesn't set `color`, so without this our edge
+  // labels render in cytoscape's default black and disappear on the dark
+  // panel. Re-resolve on theme flip so the tone tracks dark/light.
+  const palette = useMemo(() => {
     void theme;
-    return buildGlyphOverrides();
+    return typeof document === 'undefined' ? null : readThemeTokens();
   }, [theme]);
 
   const elements = useMemo<ElementDefinition[]>(
@@ -200,7 +151,6 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         onSelect={(node) => onNodeClick?.(node.id())}
         styleOptions={{
           extra: [
-            ...glyphOverrides,
             { selector: '.hidden', style: { display: 'none' } },
             {
               selector: 'edge',
@@ -209,6 +159,7 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
                 'font-size': '8px',
                 'text-rotation': 'autorotate',
                 'text-margin-y': -10,
+                ...(palette ? { color: palette.textMuted } : {}),
               },
             },
           ],

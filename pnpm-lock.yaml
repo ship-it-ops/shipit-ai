@@ -206,8 +206,8 @@ importers:
         specifier: ^5.1.0
         version: 5.2.7
       '@ship-it-ui/cytoscape':
-        specifier: ^0.0.3
-        version: 0.0.3(@ship-it-ui/shipit@0.0.5(@ship-it-ui/icons@0.0.4(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: ^0.0.4
+        version: 0.0.4(@ship-it-ui/shipit@0.0.5(@ship-it-ui/icons@0.0.4(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@ship-it-ui/icons':
         specifier: ^0.0.4
         version: 0.0.4(react@19.2.6)
@@ -1783,8 +1783,8 @@ packages:
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
 
-  '@ship-it-ui/cytoscape@0.0.3':
-    resolution: {integrity: sha512-kMX7WdejtVIBzC4BbGmMTG8Lu2YT9+nBfpNI0mvFnxorFxrWK4OTKB4GqTFnfSCGNE517fpzs7Mt8eNxM/CFkw==}
+  '@ship-it-ui/cytoscape@0.0.4':
+    resolution: {integrity: sha512-u5xE1HSt+tKWUYvYRQYD4OZcZiKEoTYQV1EGRgKb3O3Pv3F7zpAx8f/cGwPOV86aKRhWkTAIE1faKLI2kPJDiA==}
     peerDependencies:
       '@ship-it-ui/shipit': 0.0.5
       '@ship-it-ui/ui': 0.0.5
@@ -6032,7 +6032,7 @@ snapshots:
 
   '@rtsao/scc@1.1.0': {}
 
-  '@ship-it-ui/cytoscape@0.0.3(@ship-it-ui/shipit@0.0.5(@ship-it-ui/icons@0.0.4(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/cytoscape@0.0.4(@ship-it-ui/shipit@0.0.5(@ship-it-ui/icons@0.0.4(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@ship-it-ui/shipit': 0.0.5(@ship-it-ui/icons@0.0.4(react@19.2.6))(@ship-it-ui/ui@0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@ship-it-ui/ui': 0.0.5(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
