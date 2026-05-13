@@ -66,8 +66,8 @@ export function PlaceholderPage({
       <div className="border-border bg-panel-2 text-text-muted rounded-base flex items-center gap-2 border border-dashed px-4 py-3 text-[12px]">
         <IconGlyph name="warn" size={12} />
         <span>
-          This screen is a placeholder. The underlying capability is on the roadmap (see the
-          design doc &sect;10).
+          This screen is a placeholder. The underlying capability is on the roadmap (see the design
+          doc &sect;10).
         </span>
       </div>
     </div>

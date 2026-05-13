@@ -257,19 +257,6 @@
   }
 }
 
-/*
- * Cytoscape injects an unlayered `.__________cytoscape_container { position: relative }`
- * stylesheet into <head> at runtime. Tailwind v4 emits its utilities into
- * `@layer utilities`, which is outranked by any unlayered rule regardless of
- * source order — so `@ship-it-ui/cytoscape`'s `<div className="absolute inset-0">`
- * mount point collapses to height 0 and nothing renders. Restore the intended
- * sizing with an unlayered rule that beats cytoscape's by source order.
- */
-.__________cytoscape_container {
-  position: absolute;
-  inset: 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

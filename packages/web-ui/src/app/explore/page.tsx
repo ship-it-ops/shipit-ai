@@ -72,7 +72,7 @@ export default function GraphExplorerPage() {
           {graphData ? (
             <>
               <GraphCanvas data={graphData} onNodeClick={handleNodeClick} />
-              <div className="absolute bottom-5 right-5 z-10">
+              <div className="absolute right-5 bottom-5 z-10">
                 <GraphLegend
                   entries={legendEntries}
                   heading="Node types"

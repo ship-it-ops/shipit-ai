@@ -34,6 +34,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Catalog',
     items: [
+      { label: 'Entities', href: '/catalog', glyph: 'document' },
       { label: 'Team Dashboard', href: '/catalog/teams', glyph: 'person', badge: 'P2' },
     ],
   },
@@ -112,15 +113,34 @@ function SidebarNavItem({
     router.push(href);
   };
 
+  if (collapsed) {
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        aria-current={active ? 'page' : undefined}
+        aria-label={label}
+        title={label}
+        className={
+          'focus-visible:ring-accent-dim grid h-10 w-10 cursor-pointer place-items-center rounded-sm outline-none transition-colors duration-(--duration-micro) focus-visible:ring-[3px] ' +
+          (active
+            ? 'bg-accent-dim text-accent'
+            : 'text-text-muted hover:text-text hover:bg-panel-2')
+        }
+      >
+        <IconGlyph name={glyph} size={20} />
+      </a>
+    );
+  }
+
   return (
     <NavItem
       href={href}
       icon={<IconGlyph name={glyph} size={14} />}
-      label={collapsed ? '' : label}
+      label={label}
       active={active}
-      badge={collapsed ? undefined : badge}
+      badge={badge}
       onClick={handleClick}
-      title={collapsed ? label : undefined}
       aria-label={label}
     />
   );
@@ -134,18 +154,30 @@ export function Sidebar() {
   const allHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
   const activeHref = pickActiveHref(pathname, allHrefs);
 
+  const labeledGroups = navGroups.filter((g) => g.label);
+
   return (
     <DSSidebar width={width} className="gap-3">
       <BrandHeader collapsed={sidebarCollapsed} />
-      <nav className="flex flex-1 flex-col gap-3 overflow-y-auto">
-        {navGroups.map((group, i) => (
-          <GroupBlock
-            key={i}
-            group={group}
-            collapsed={sidebarCollapsed}
-            activeHref={activeHref}
-          />
-        ))}
+      <nav
+        className={
+          sidebarCollapsed
+            ? 'flex flex-1 flex-col items-center gap-2 overflow-y-auto'
+            : 'flex flex-1 flex-col gap-3 overflow-y-auto'
+        }
+      >
+        {navGroups.map((group, i) => {
+          const isLastLabeled = group.label === labeledGroups[labeledGroups.length - 1]?.label;
+          return (
+            <GroupBlock
+              key={i}
+              group={group}
+              collapsed={sidebarCollapsed}
+              activeHref={activeHref}
+              showDivider={sidebarCollapsed && !!group.label && !isLastLabeled}
+            />
+          );
+        })}
       </nav>
       <CollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
     </DSSidebar>
@@ -154,7 +186,13 @@ export function Sidebar() {
 
 function BrandHeader({ collapsed }: { collapsed: boolean }) {
   return (
-    <div className="border-border flex items-center gap-2 border-b pb-3">
+    <div
+      className={
+        collapsed
+          ? 'border-border flex items-center justify-center border-b pb-3'
+          : 'border-border flex items-center gap-2 border-b pb-3'
+      }
+    >
       <span className="bg-accent text-on-accent grid h-8 w-8 shrink-0 place-items-center rounded-md text-[14px] font-semibold">
         S
       </span>
@@ -169,10 +207,12 @@ function GroupBlock({
   group,
   collapsed,
   activeHref,
+  showDivider,
 }: {
   group: NavGroup;
   collapsed: boolean;
   activeHref: string | null;
+  showDivider: boolean;
 }) {
   const renderItem = (item: NavLink) => (
     <SidebarNavItem
@@ -186,7 +226,17 @@ function GroupBlock({
     />
   );
 
-  if (collapsed || !group.label) {
+  if (collapsed) {
+    return (
+      <div className="flex w-full flex-col items-center gap-1">
+        {group.items.map(renderItem)}
+        {showDivider && (
+          <span aria-hidden className="bg-border my-1 h-px w-6 rounded-full opacity-70" />
+        )}
+      </div>
+    );
+  }
+  if (!group.label) {
     return <div className="flex flex-col gap-[2px]">{group.items.map(renderItem)}</div>;
   }
   return <NavSection label={group.label}>{group.items.map(renderItem)}</NavSection>;
@@ -200,7 +250,7 @@ function CollapseButton({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         onClick={onToggle}
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        className="text-text-muted hover:text-text hover:bg-panel-2 focus-visible:ring-accent-dim rounded-xs flex w-full items-center justify-center gap-2 px-2 py-[6px] text-[12px] outline-none focus-visible:ring-[3px]"
+        className="text-text-muted hover:text-text hover:bg-panel-2 focus-visible:ring-accent-dim flex w-full items-center justify-center gap-2 rounded-xs px-2 py-[6px] text-[12px] outline-none focus-visible:ring-[3px]"
       >
         <span aria-hidden className="font-mono text-[11px]">
           {collapsed ? '›' : '‹'}

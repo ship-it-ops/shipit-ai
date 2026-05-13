@@ -19,3 +19,11 @@ export function useInitialGraphData() {
     retry: 1,
   });
 }
+
+export function useCatalogEntities(limit: number = 500) {
+  return useQuery<GraphData>({
+    queryKey: ['catalog-overview', limit],
+    queryFn: () => fetchGraphOverview(limit),
+    retry: 1,
+  });
+}

@@ -1,6 +1,16 @@
 'use client';
 
-import { Badge, Button, Card, Checkbox, EmptyState, Tabs, TabsList, Tab, TabsContent } from '@ship-it-ui/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  EmptyState,
+  Tabs,
+  TabsList,
+  Tab,
+  TabsContent,
+} from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 
@@ -52,9 +62,7 @@ export default function SettingsPage() {
             </div>
           </Card>
           <Card title="Subscriptions">
-            <p className="text-text-muted mb-3 text-[12px]">
-              What you want to be told about.
-            </p>
+            <p className="text-text-muted mb-3 text-[12px]">What you want to be told about.</p>
             <div className="flex flex-col gap-2">
               <Checkbox label="Incidents on services I own" defaultChecked disabled />
               <Checkbox label="Connector sync failures" defaultChecked disabled />

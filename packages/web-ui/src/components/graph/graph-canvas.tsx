@@ -1,62 +1,70 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import cytoscape, { type ElementDefinition } from 'cytoscape';
 import {
   GraphCanvas as DSGraphCanvas,
-  readThemeTokens,
   type GraphCanvasHandle,
-  type ThemeTokenPalette,
+  type ShipItStylesheetBlock,
 } from '@ship-it-ui/cytoscape';
+import { listEntityTypes } from '@ship-it-ui/shipit';
 import { useTheme } from '@ship-it-ui/ui';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
 
+// `@ship-it-ui/cytoscape@0.0.3`'s `glyphDataUrl` emits SVGs with only a
+// `viewBox` — no `width`/`height` attributes — and cytoscape can't size those
+// background-image SVGs on its canvas, so the glyph never paints. Restore the
+// docs-page aesthetic by emitting our own per-type `background-image` rules
+// with explicit dimensions. Override wins because we register the rules after
+// the DS's via `styleOptions.extra`.
+function glyphSvgDataUrl(glyph: string, color: string): string {
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='52' height='52' viewBox='0 0 52 52'>` +
+    `<text x='26' y='34' text-anchor='middle' ` +
+    `font-family='ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace' ` +
+    `font-size='26' fill='${color}'>${glyph}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function buildGlyphOverrides(): ShipItStylesheetBlock[] {
+  if (typeof document === 'undefined') return [];
+  // Resolve each registered type's tone to sRGB via the same trick the DS uses
+  // in `readThemeTokens` — render to a hidden canvas pixel and read back.
+  const canvas = document.createElement('canvas');
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  function colorVarToRgb(cssVar: string): string {
+    if (!ctx) return cssVar;
+    // Pull the underlying `--color-…` value off the document root, then paint
+    // it onto the 1×1 canvas to coerce oklch() → sRGB.
+    const match = cssVar.match(/var\((--[^,)]+)/);
+    const name = match?.[1] ?? '';
+    const raw = name
+      ? getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      : cssVar;
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = raw || cssVar;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  return listEntityTypes().map(([type, meta]) => ({
+    selector: `node[entityType = "${type.replace(/[\\"]/g, (c) => `\\${c}`)}"]`,
+    style: {
+      'background-image': glyphSvgDataUrl(meta.glyph, colorVarToRgb(meta.colorVar)),
+      'background-fit': 'contain',
+      'background-clip': 'none',
+    },
+  })) as ShipItStylesheetBlock[];
+}
+
 interface GraphCanvasProps {
   data: GraphData;
   onNodeClick?: (nodeId: string) => void;
-}
-
-// Cytoscape's color parser doesn't accept `oklch()`, which is what our design
-// tokens compute to. Paint each token into a 1×1 canvas and read the pixel
-// back — the rasterizer always emits sRGB. Reading `ctx.fillStyle` is *not*
-// enough: modern Chromium returns the oklch literal unchanged.
-let toRgbCanvas: HTMLCanvasElement | null = null;
-function toRgb(value: string, fallback: string): string {
-  if (typeof document === 'undefined') return value || fallback;
-  if (!toRgbCanvas) {
-    toRgbCanvas = document.createElement('canvas');
-    toRgbCanvas.width = 1;
-    toRgbCanvas.height = 1;
-  }
-  const ctx = toRgbCanvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return value || fallback;
-  ctx.clearRect(0, 0, 1, 1);
-  ctx.fillStyle = '#000';
-  ctx.fillStyle = value || fallback;
-  ctx.fillRect(0, 0, 1, 1);
-  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-function resolveSrgbPalette(): ThemeTokenPalette {
-  const raw = readThemeTokens();
-  return {
-    bg: toRgb(raw.bg, '#0a0a0a'),
-    panel: toRgb(raw.panel, '#0f0f0f'),
-    panel2: toRgb(raw.panel2, '#161616'),
-    border: toRgb(raw.border, '#262626'),
-    borderStrong: toRgb(raw.borderStrong, '#383838'),
-    text: toRgb(raw.text, '#fafafa'),
-    textMuted: toRgb(raw.textMuted, '#a3a3a3'),
-    textDim: toRgb(raw.textDim, '#737373'),
-    accent: toRgb(raw.accent, '#3b82f6'),
-    ok: toRgb(raw.ok, '#10b981'),
-    warn: toRgb(raw.warn, '#f59e0b'),
-    err: toRgb(raw.err, '#ef4444'),
-    purple: toRgb(raw.purple, '#a855f7'),
-    pink: toRgb(raw.pink, '#ec4899'),
-  };
 }
 
 export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
@@ -64,7 +72,12 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
   const handleRef = useRef<GraphCanvasHandle | null>(null);
   const { layout, filters, setCyInstance } = useGraphStore();
   const { theme } = useTheme();
-  const [palette, setPalette] = useState<ThemeTokenPalette | null>(null);
+
+  // Re-derive on theme flip so glyph fill matches the active palette.
+  const glyphOverrides = useMemo(() => {
+    void theme;
+    return buildGlyphOverrides();
+  }, [theme]);
 
   const elements = useMemo<ElementDefinition[]>(
     () => [
@@ -90,21 +103,16 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     }
   }, [layout]);
 
-  // Resolve token palette client-side once mounted; re-resolve on theme flip.
-  useEffect(() => {
-    setPalette(resolveSrgbPalette());
-  }, [theme]);
-
   // Track whether we've successfully run the layout in a non-zero container.
   // Used so the ResizeObserver can perform a one-shot initial layout if the
   // canvas mounted at 0×0 and only got real dimensions after layout commit.
   const hasLaidOutRef = useRef(false);
 
   // Resize observer: keep cytoscape's canvas matched to the container, but
-  // *don't* re-run the layout. Force-directed (cose) and breadthfirst layouts
-  // use container dimensions for spacing and finish with fit:true, so calling
-  // them on every resize compounds the zoom and shrinks nodes off-screen.
-  // Initial-mount 0×0 case is handled by the one-shot fallback inside.
+  // *don't* re-run the layout on every resize. Force-directed (cose) and
+  // breadthfirst layouts use container dimensions for spacing and finish with
+  // fit:true, so re-running compounds the zoom. The DS doesn't ship its own
+  // resize handling; this stays a consumer concern.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -139,8 +147,6 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
       cy.layout(layoutConfig).run();
       hasLaidOutRef.current = true;
     } else {
-      // Container hasn't been sized yet; the ResizeObserver one-shot will
-      // run the layout once it has real dimensions.
       hasLaidOutRef.current = false;
     }
     return () => {
@@ -181,18 +187,6 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     });
   }, [filters, elements]);
 
-  // Don't render the DS canvas until the palette is resolved client-side;
-  // otherwise its first stylesheet pass uses oklch() strings that cytoscape's
-  // color parser rejects (72 warnings + missing colors).
-  if (!palette) {
-    return (
-      <div
-        ref={containerRef}
-        className="bg-bg border-border h-full w-full overflow-hidden rounded-md border"
-      />
-    );
-  }
-
   return (
     <div
       ref={containerRef}
@@ -205,8 +199,8 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         layout={layoutConfig}
         onSelect={(node) => onNodeClick?.(node.id())}
         styleOptions={{
-          palette,
           extra: [
+            ...glyphOverrides,
             { selector: '.hidden', style: { display: 'none' } },
             {
               selector: 'edge',

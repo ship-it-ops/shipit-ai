@@ -22,7 +22,7 @@ export function UserMenu() {
         <button
           type="button"
           aria-label="Open user menu"
-          className="focus-visible:ring-accent-dim ring-offset-panel rounded-full outline-none ring-offset-2 transition-[box-shadow] duration-150 focus-visible:ring-[3px] data-[state=open]:ring-2 data-[state=open]:ring-accent"
+          className="focus-visible:ring-accent-dim ring-offset-panel data-[state=open]:ring-accent rounded-full ring-offset-2 transition-[box-shadow] duration-150 outline-none focus-visible:ring-[3px] data-[state=open]:ring-2"
         >
           <Avatar size="md" name={user.name} />
         </button>
@@ -33,16 +33,10 @@ export function UserMenu() {
           <div className="text-text-dim text-[11px]">{user.email}</div>
         </div>
         <MenuSeparator />
-        <MenuItem
-          icon={<IconGlyph name="person" />}
-          onSelect={() => router.push('/profile')}
-        >
+        <MenuItem icon={<IconGlyph name="person" />} onSelect={() => router.push('/profile')}>
           View profile
         </MenuItem>
-        <MenuItem
-          icon={<IconGlyph name="settings" />}
-          onSelect={() => router.push('/settings')}
-        >
+        <MenuItem icon={<IconGlyph name="settings" />} onSelect={() => router.push('/settings')}>
           Settings
         </MenuItem>
         <MenuSeparator />
