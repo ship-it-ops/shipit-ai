@@ -122,7 +122,7 @@ function SidebarNavItem({
         aria-label={label}
         title={label}
         className={
-          'focus-visible:ring-accent-dim grid h-10 w-10 cursor-pointer place-items-center rounded-sm outline-none transition-colors duration-(--duration-micro) focus-visible:ring-[3px] ' +
+          'focus-visible:ring-accent-dim grid h-10 w-10 cursor-pointer place-items-center rounded-sm transition-colors duration-(--duration-micro) outline-none focus-visible:ring-[3px] ' +
           (active
             ? 'bg-accent-dim text-accent'
             : 'text-text-muted hover:text-text hover:bg-panel-2')

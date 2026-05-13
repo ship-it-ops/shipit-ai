@@ -229,9 +229,7 @@ export default function EntityDetailPage() {
                         | string
                         | undefined
                     }
-                    onOpen={(targetId) =>
-                      router.push(`/catalog/${encodeURIComponent(targetId)}`)
-                    }
+                    onOpen={(targetId) => router.push(`/catalog/${encodeURIComponent(targetId)}`)}
                   />
                 )}
                 {incoming.length > 0 && (
@@ -251,9 +249,7 @@ export default function EntityDetailPage() {
                         | string
                         | undefined
                     }
-                    onOpen={(sourceId) =>
-                      router.push(`/catalog/${encodeURIComponent(sourceId)}`)
-                    }
+                    onOpen={(sourceId) => router.push(`/catalog/${encodeURIComponent(sourceId)}`)}
                   />
                 )}
               </div>
@@ -374,9 +370,7 @@ function RelationGroup({
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-text truncate">{targetName}</span>
-                  <span className="text-text-dim truncate font-mono text-[10px]">
-                    {e.relation}
-                  </span>
+                  <span className="text-text-dim truncate font-mono text-[10px]">{e.relation}</span>
                 </span>
                 <IconGlyph name="caretRight" size={12} />
               </button>

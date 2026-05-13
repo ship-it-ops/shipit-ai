@@ -2,14 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Badge,
-  Button,
-  Dialog,
-  EmptyState,
-  Spinner,
-  formatRelative,
-} from '@ship-it-ui/ui';
+import { Badge, Button, Dialog, EmptyState, Spinner, formatRelative } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
   GraphInspector,
@@ -240,7 +233,7 @@ function ClaimsDialog({ open, onOpenChange, nodeName, nodeId, claims }: ClaimsDi
                   className="border-border border-b last:border-b-0"
                 >
                   <td className="text-text px-3 py-2 font-mono">{claim.property_key}</td>
-                  <td className="text-text break-all px-3 py-2">{String(claim.value)}</td>
+                  <td className="text-text px-3 py-2 break-all">{String(claim.value)}</td>
                   <td className="text-text-muted px-3 py-2 font-mono text-[11px]">
                     {claim.source}
                   </td>

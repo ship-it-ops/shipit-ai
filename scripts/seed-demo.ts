@@ -78,14 +78,54 @@ interface TeamSpec {
 }
 
 const teamSpecs: TeamSpec[] = [
-  { slug: 'payments-team', name: 'Payments', email: 'payments@acmepay.com', description: 'Core money movement: charges, refunds, ledger.' },
-  { slug: 'identity-team', name: 'Identity', email: 'identity@acmepay.com', description: 'Authentication, user accounts, permissions.' },
-  { slug: 'storefront-team', name: 'Storefront', email: 'storefront@acmepay.com', description: 'Web checkout and merchant-facing UI.' },
-  { slug: 'mobile-team', name: 'Mobile', email: 'mobile@acmepay.com', description: 'iOS and Android consumer apps and BFFs.' },
-  { slug: 'data-team', name: 'Data Platform', email: 'data@acmepay.com', description: 'Warehousing, analytics, ML features.' },
-  { slug: 'platform-team', name: 'Platform', email: 'platform@acmepay.com', description: 'Internal platform: config, notifications, dev tooling.' },
-  { slug: 'sre-team', name: 'SRE', email: 'sre@acmepay.com', description: 'Reliability, on-call, observability.' },
-  { slug: 'security-team', name: 'Security', email: 'security@acmepay.com', description: 'AppSec, audit, threat detection.' },
+  {
+    slug: 'payments-team',
+    name: 'Payments',
+    email: 'payments@acmepay.com',
+    description: 'Core money movement: charges, refunds, ledger.',
+  },
+  {
+    slug: 'identity-team',
+    name: 'Identity',
+    email: 'identity@acmepay.com',
+    description: 'Authentication, user accounts, permissions.',
+  },
+  {
+    slug: 'storefront-team',
+    name: 'Storefront',
+    email: 'storefront@acmepay.com',
+    description: 'Web checkout and merchant-facing UI.',
+  },
+  {
+    slug: 'mobile-team',
+    name: 'Mobile',
+    email: 'mobile@acmepay.com',
+    description: 'iOS and Android consumer apps and BFFs.',
+  },
+  {
+    slug: 'data-team',
+    name: 'Data Platform',
+    email: 'data@acmepay.com',
+    description: 'Warehousing, analytics, ML features.',
+  },
+  {
+    slug: 'platform-team',
+    name: 'Platform',
+    email: 'platform@acmepay.com',
+    description: 'Internal platform: config, notifications, dev tooling.',
+  },
+  {
+    slug: 'sre-team',
+    name: 'SRE',
+    email: 'sre@acmepay.com',
+    description: 'Reliability, on-call, observability.',
+  },
+  {
+    slug: 'security-team',
+    name: 'Security',
+    email: 'security@acmepay.com',
+    description: 'AppSec, audit, threat detection.',
+  },
 ];
 
 const teamNodes: SeedNode[] = teamSpecs.map((t) => ({
@@ -175,36 +215,176 @@ interface ServiceSpec {
 
 const serviceSpecs: ServiceSpec[] = [
   // Payments domain
-  { name: 'payments-api', tier: 1, ownerTeam: 'payments-team', lifecycle: 'production', language: 'Go', description: 'Charges, refunds, payment intent orchestration.' },
-  { name: 'ledger-service', tier: 1, ownerTeam: 'payments-team', lifecycle: 'production', language: 'Go', description: 'Double-entry ledger of record.' },
-  { name: 'fraud-detection', tier: 1, ownerTeam: 'payments-team', lifecycle: 'production', language: 'Python', description: 'Real-time fraud scoring on incoming charges.' },
-  { name: 'card-issuance', tier: 2, ownerTeam: 'payments-team', lifecycle: 'production', language: 'Go', description: 'Virtual and physical card issuance.' },
-  { name: 'billing-service', tier: 2, ownerTeam: 'payments-team', lifecycle: 'production', language: 'TypeScript', description: 'Recurring billing and invoicing.' },
+  {
+    name: 'payments-api',
+    tier: 1,
+    ownerTeam: 'payments-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Charges, refunds, payment intent orchestration.',
+  },
+  {
+    name: 'ledger-service',
+    tier: 1,
+    ownerTeam: 'payments-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Double-entry ledger of record.',
+  },
+  {
+    name: 'fraud-detection',
+    tier: 1,
+    ownerTeam: 'payments-team',
+    lifecycle: 'production',
+    language: 'Python',
+    description: 'Real-time fraud scoring on incoming charges.',
+  },
+  {
+    name: 'card-issuance',
+    tier: 2,
+    ownerTeam: 'payments-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Virtual and physical card issuance.',
+  },
+  {
+    name: 'billing-service',
+    tier: 2,
+    ownerTeam: 'payments-team',
+    lifecycle: 'production',
+    language: 'TypeScript',
+    description: 'Recurring billing and invoicing.',
+  },
 
   // Identity domain
-  { name: 'auth-service', tier: 1, ownerTeam: 'identity-team', lifecycle: 'production', language: 'Go', description: 'OAuth2, sessions, MFA.' },
-  { name: 'user-service', tier: 1, ownerTeam: 'identity-team', lifecycle: 'production', language: 'Go', description: 'User profile and account state.' },
-  { name: 'permissions-service', tier: 2, ownerTeam: 'identity-team', lifecycle: 'production', language: 'Go', description: 'Role-based access control.' },
+  {
+    name: 'auth-service',
+    tier: 1,
+    ownerTeam: 'identity-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'OAuth2, sessions, MFA.',
+  },
+  {
+    name: 'user-service',
+    tier: 1,
+    ownerTeam: 'identity-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'User profile and account state.',
+  },
+  {
+    name: 'permissions-service',
+    tier: 2,
+    ownerTeam: 'identity-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Role-based access control.',
+  },
 
   // Storefront / mobile
-  { name: 'web-storefront', tier: 1, ownerTeam: 'storefront-team', lifecycle: 'production', language: 'TypeScript', description: 'Public-facing merchant checkout.' },
-  { name: 'mobile-bff', tier: 1, ownerTeam: 'mobile-team', lifecycle: 'production', language: 'TypeScript', description: 'Backend-for-frontend for iOS / Android.' },
-  { name: 'search-service', tier: 2, ownerTeam: 'storefront-team', lifecycle: 'production', language: 'Go', description: 'Merchant + transaction search.' },
-  { name: 'catalog-service', tier: 2, ownerTeam: 'storefront-team', lifecycle: 'production', language: 'Go', description: 'Product catalog metadata.' },
+  {
+    name: 'web-storefront',
+    tier: 1,
+    ownerTeam: 'storefront-team',
+    lifecycle: 'production',
+    language: 'TypeScript',
+    description: 'Public-facing merchant checkout.',
+  },
+  {
+    name: 'mobile-bff',
+    tier: 1,
+    ownerTeam: 'mobile-team',
+    lifecycle: 'production',
+    language: 'TypeScript',
+    description: 'Backend-for-frontend for iOS / Android.',
+  },
+  {
+    name: 'search-service',
+    tier: 2,
+    ownerTeam: 'storefront-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Merchant + transaction search.',
+  },
+  {
+    name: 'catalog-service',
+    tier: 2,
+    ownerTeam: 'storefront-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Product catalog metadata.',
+  },
 
   // Data / ML
-  { name: 'analytics-pipeline', tier: 3, ownerTeam: 'data-team', lifecycle: 'production', language: 'Python', description: 'Batch ETL feeding the warehouse.' },
-  { name: 'ml-feature-store', tier: 2, ownerTeam: 'data-team', lifecycle: 'production', language: 'Python', description: 'Online feature serving for ML models.' },
-  { name: 'recommendation-service', tier: 2, ownerTeam: 'data-team', lifecycle: 'beta', language: 'Python', description: 'Merchant recommendations (beta rollout).' },
+  {
+    name: 'analytics-pipeline',
+    tier: 3,
+    ownerTeam: 'data-team',
+    lifecycle: 'production',
+    language: 'Python',
+    description: 'Batch ETL feeding the warehouse.',
+  },
+  {
+    name: 'ml-feature-store',
+    tier: 2,
+    ownerTeam: 'data-team',
+    lifecycle: 'production',
+    language: 'Python',
+    description: 'Online feature serving for ML models.',
+  },
+  {
+    name: 'recommendation-service',
+    tier: 2,
+    ownerTeam: 'data-team',
+    lifecycle: 'beta',
+    language: 'Python',
+    description: 'Merchant recommendations (beta rollout).',
+  },
 
   // Platform
-  { name: 'config-service', tier: 1, ownerTeam: 'platform-team', lifecycle: 'production', language: 'Go', description: 'Centralized dynamic config + feature flags.' },
-  { name: 'notification-service', tier: 2, ownerTeam: 'platform-team', lifecycle: 'production', language: 'Go', description: 'Email, SMS, push fan-out.' },
-  { name: 'experimentation-service', tier: 3, ownerTeam: 'platform-team', lifecycle: 'beta', language: 'TypeScript', description: 'A/B test assignment + analysis (beta).' },
-  { name: 'legacy-checkout', tier: 2, ownerTeam: 'storefront-team', lifecycle: 'deprecated', language: 'Ruby', description: 'Pre-rewrite checkout. Sunset target Q3.' },
+  {
+    name: 'config-service',
+    tier: 1,
+    ownerTeam: 'platform-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Centralized dynamic config + feature flags.',
+  },
+  {
+    name: 'notification-service',
+    tier: 2,
+    ownerTeam: 'platform-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Email, SMS, push fan-out.',
+  },
+  {
+    name: 'experimentation-service',
+    tier: 3,
+    ownerTeam: 'platform-team',
+    lifecycle: 'beta',
+    language: 'TypeScript',
+    description: 'A/B test assignment + analysis (beta).',
+  },
+  {
+    name: 'legacy-checkout',
+    tier: 2,
+    ownerTeam: 'storefront-team',
+    lifecycle: 'deprecated',
+    language: 'Ruby',
+    description: 'Pre-rewrite checkout. Sunset target Q3.',
+  },
 
   // Security
-  { name: 'audit-log-service', tier: 2, ownerTeam: 'security-team', lifecycle: 'production', language: 'Go', description: 'Append-only audit trail for compliance.' },
+  {
+    name: 'audit-log-service',
+    tier: 2,
+    ownerTeam: 'security-team',
+    lifecycle: 'production',
+    language: 'Go',
+    description: 'Append-only audit trail for compliance.',
+  },
 ];
 
 const logicalServiceNodes: SeedNode[] = serviceSpecs.map((s) => ({
@@ -378,8 +558,7 @@ const pipelineSpecs: PipelineSpec[] = [
 ];
 
 const pipelineNodes: SeedNode[] = pipelineSpecs.map((p) => {
-  const owner =
-    (p.repo && repoOwnerByName.get(p.repo)) ?? 'platform-team';
+  const owner = (p.repo && repoOwnerByName.get(p.repo)) ?? 'platform-team';
   return {
     label: 'Pipeline',
     id: id.pipeline(p.name),
@@ -400,22 +579,87 @@ interface MonitorSpec {
 }
 
 const monitorSpecs: MonitorSpec[] = [
-  { name: 'payments-latency-p99', service: 'payments-api', status: 'OK', metric: 'http.latency.p99' },
-  { name: 'payments-error-rate', service: 'payments-api', status: 'WARN', metric: 'http.errors.5xx' },
+  {
+    name: 'payments-latency-p99',
+    service: 'payments-api',
+    status: 'OK',
+    metric: 'http.latency.p99',
+  },
+  {
+    name: 'payments-error-rate',
+    service: 'payments-api',
+    status: 'WARN',
+    metric: 'http.errors.5xx',
+  },
   { name: 'payments-saturation', service: 'payments-api', status: 'OK', metric: 'cpu.utilization' },
-  { name: 'ledger-double-spend', service: 'ledger-service', status: 'OK', metric: 'ledger.double_spend.detected' },
-  { name: 'ledger-replication-lag', service: 'ledger-service', status: 'OK', metric: 'db.replication.lag' },
-  { name: 'fraud-fp-rate', service: 'fraud-detection', status: 'WARN', metric: 'fraud.false_positive.rate' },
-  { name: 'auth-login-latency', service: 'auth-service', status: 'OK', metric: 'auth.login.latency' },
+  {
+    name: 'ledger-double-spend',
+    service: 'ledger-service',
+    status: 'OK',
+    metric: 'ledger.double_spend.detected',
+  },
+  {
+    name: 'ledger-replication-lag',
+    service: 'ledger-service',
+    status: 'OK',
+    metric: 'db.replication.lag',
+  },
+  {
+    name: 'fraud-fp-rate',
+    service: 'fraud-detection',
+    status: 'WARN',
+    metric: 'fraud.false_positive.rate',
+  },
+  {
+    name: 'auth-login-latency',
+    service: 'auth-service',
+    status: 'OK',
+    metric: 'auth.login.latency',
+  },
   { name: 'auth-failure-rate', service: 'auth-service', status: 'OK', metric: 'auth.failures' },
-  { name: 'user-service-availability', service: 'user-service', status: 'OK', metric: 'http.availability' },
-  { name: 'storefront-page-load', service: 'web-storefront', status: 'OK', metric: 'rum.page_load' },
-  { name: 'storefront-checkout-funnel', service: 'web-storefront', status: 'ALERT', metric: 'rum.funnel.dropoff' },
+  {
+    name: 'user-service-availability',
+    service: 'user-service',
+    status: 'OK',
+    metric: 'http.availability',
+  },
+  {
+    name: 'storefront-page-load',
+    service: 'web-storefront',
+    status: 'OK',
+    metric: 'rum.page_load',
+  },
+  {
+    name: 'storefront-checkout-funnel',
+    service: 'web-storefront',
+    status: 'ALERT',
+    metric: 'rum.funnel.dropoff',
+  },
   { name: 'search-latency', service: 'search-service', status: 'OK', metric: 'search.latency.p95' },
-  { name: 'config-availability', service: 'config-service', status: 'OK', metric: 'http.availability' },
-  { name: 'notification-delivery', service: 'notification-service', status: 'WARN', metric: 'notif.delivery.rate' },
-  { name: 'analytics-pipeline-lag', service: 'analytics-pipeline', status: 'OK', metric: 'pipeline.lag.minutes' },
-  { name: 'billing-invoice-failure', service: 'billing-service', status: 'OK', metric: 'billing.invoice.failed' },
+  {
+    name: 'config-availability',
+    service: 'config-service',
+    status: 'OK',
+    metric: 'http.availability',
+  },
+  {
+    name: 'notification-delivery',
+    service: 'notification-service',
+    status: 'WARN',
+    metric: 'notif.delivery.rate',
+  },
+  {
+    name: 'analytics-pipeline-lag',
+    service: 'analytics-pipeline',
+    status: 'OK',
+    metric: 'pipeline.lag.minutes',
+  },
+  {
+    name: 'billing-invoice-failure',
+    service: 'billing-service',
+    status: 'OK',
+    metric: 'billing.invoice.failed',
+  },
 ];
 
 const monitorNodes: SeedNode[] = monitorSpecs.map((m) => {
@@ -552,12 +796,40 @@ for (const [from, to] of serviceDeps) {
 }
 
 // DEPENDS_ON: Repository -> Repository (shared library usage)
-const sharedGoUsers = ['payments-api', 'ledger-service', 'card-issuance', 'auth-service', 'user-service', 'permissions-service', 'search-service', 'catalog-service', 'config-service', 'notification-service', 'audit-log-service'];
-const sharedTsUsers = ['web-storefront', 'mobile-bff', 'billing-service', 'experimentation-service'];
-const protoUsers = ['payments-api', 'ledger-service', 'fraud-detection', 'auth-service', 'user-service', 'mobile-bff', 'web-storefront'];
-for (const r of sharedGoUsers) edge('DEPENDS_ON', id.repo(r), id.repo('shared-go-lib'), 'github', 0.85);
-for (const r of sharedTsUsers) edge('DEPENDS_ON', id.repo(r), id.repo('shared-ts-lib'), 'github', 0.85);
-for (const r of protoUsers) edge('DEPENDS_ON', id.repo(r), id.repo('proto-schemas'), 'github', 0.85);
+const sharedGoUsers = [
+  'payments-api',
+  'ledger-service',
+  'card-issuance',
+  'auth-service',
+  'user-service',
+  'permissions-service',
+  'search-service',
+  'catalog-service',
+  'config-service',
+  'notification-service',
+  'audit-log-service',
+];
+const sharedTsUsers = [
+  'web-storefront',
+  'mobile-bff',
+  'billing-service',
+  'experimentation-service',
+];
+const protoUsers = [
+  'payments-api',
+  'ledger-service',
+  'fraud-detection',
+  'auth-service',
+  'user-service',
+  'mobile-bff',
+  'web-storefront',
+];
+for (const r of sharedGoUsers)
+  edge('DEPENDS_ON', id.repo(r), id.repo('shared-go-lib'), 'github', 0.85);
+for (const r of sharedTsUsers)
+  edge('DEPENDS_ON', id.repo(r), id.repo('shared-ts-lib'), 'github', 0.85);
+for (const r of protoUsers)
+  edge('DEPENDS_ON', id.repo(r), id.repo('proto-schemas'), 'github', 0.85);
 
 // CALLS: RuntimeService -> RuntimeService (mirrors a subset of service deps so
 // the runtime call graph reads as the "hot path" rather than every logical
