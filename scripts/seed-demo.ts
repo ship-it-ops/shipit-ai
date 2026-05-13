@@ -212,17 +212,17 @@ const logicalServiceNodes: SeedNode[] = serviceSpecs.map((s) => ({
   id: id.service(s.name),
   properties: {
     name: s.name,
-    tier_effective: s.tier,
-    owner_effective: s.ownerTeam,
-    lifecycle_effective: s.lifecycle,
+    tier: s.tier,
+    owner: s.ownerTeam,
+    lifecycle: s.lifecycle,
     language: s.language,
     description: s.description,
   },
   claims: [
     claim('name', s.name, 'backstage', `backstage://component/${s.name}`),
-    claim('tier_effective', s.tier, 'backstage', `backstage://component/${s.name}`),
-    claim('owner_effective', s.ownerTeam, 'backstage', `backstage://component/${s.name}`),
-    claim('lifecycle_effective', s.lifecycle, 'backstage', `backstage://component/${s.name}`),
+    claim('tier', s.tier, 'backstage', `backstage://component/${s.name}`),
+    claim('owner', s.ownerTeam, 'backstage', `backstage://component/${s.name}`),
+    claim('lifecycle', s.lifecycle, 'backstage', `backstage://component/${s.name}`),
   ],
 }));
 
@@ -234,16 +234,27 @@ interface RepoSpec {
   name: string;
   language: string;
   visibility: 'public' | 'private';
+  owner: string; // team slug — mirrors CODEOWNERS
+  /** Inherited from the implementing service. Shared libs have no tier. */
+  tier?: 1 | 2 | 3;
 }
 
 const repoSpecs: RepoSpec[] = [
-  ...serviceSpecs.map((s) => ({ name: s.name, language: s.language, visibility: 'private' as const })),
-  { name: 'shared-go-lib', language: 'Go', visibility: 'private' },
-  { name: 'shared-ts-lib', language: 'TypeScript', visibility: 'private' },
-  { name: 'proto-schemas', language: 'Protobuf', visibility: 'private' },
-  { name: 'terraform-modules', language: 'HCL', visibility: 'private' },
-  { name: 'open-sdk', language: 'TypeScript', visibility: 'public' },
+  ...serviceSpecs.map<RepoSpec>((s) => ({
+    name: s.name,
+    language: s.language,
+    visibility: 'private',
+    owner: s.ownerTeam,
+    tier: s.tier,
+  })),
+  { name: 'shared-go-lib', language: 'Go', visibility: 'private', owner: 'platform-team' },
+  { name: 'shared-ts-lib', language: 'TypeScript', visibility: 'private', owner: 'platform-team' },
+  { name: 'proto-schemas', language: 'Protobuf', visibility: 'private', owner: 'platform-team' },
+  { name: 'terraform-modules', language: 'HCL', visibility: 'private', owner: 'sre-team' },
+  { name: 'open-sdk', language: 'TypeScript', visibility: 'public', owner: 'platform-team' },
 ];
+
+const repoOwnerByName = new Map(repoSpecs.map((r) => [r.name, r.owner]));
 
 const repoNodes: SeedNode[] = repoSpecs.map((r) => ({
   label: 'Repository',
@@ -254,11 +265,14 @@ const repoNodes: SeedNode[] = repoSpecs.map((r) => ({
     default_branch: 'main',
     visibility: r.visibility,
     language: r.language,
+    owner: r.owner,
+    ...(r.tier !== undefined ? { tier: r.tier } : {}),
   },
   claims: [
     claim('name', r.name, 'github', `github://${ORG}/${r.name}`),
     claim('language', r.language, 'github', `github://${ORG}/${r.name}`),
     claim('visibility', r.visibility, 'github', `github://${ORG}/${r.name}`),
+    claim('owner', r.owner, 'github', `github://${ORG}/${r.name}/CODEOWNERS`),
   ],
 }));
 
@@ -295,7 +309,10 @@ function deploymentsFor(service: ServiceSpec): DeploymentSpec[] {
 
 const deploymentSpecs: DeploymentSpec[] = serviceSpecs.flatMap(deploymentsFor);
 
+const serviceByName = new Map(serviceSpecs.map((s) => [s.name, s]));
+
 const deploymentNodes: SeedNode[] = deploymentSpecs.map((d) => {
+  const svc = serviceByName.get(d.service)!;
   const dName = `${d.service}-${d.env}-${d.region}`;
   return {
     label: 'Deployment',
@@ -307,6 +324,8 @@ const deploymentNodes: SeedNode[] = deploymentSpecs.map((d) => {
       region: d.region,
       replicas: d.replicas,
       cluster: `${d.region}-${d.env === 'production' ? 'prod' : 'np'}`,
+      tier: svc.tier,
+      owner: svc.ownerTeam,
     },
     claims: [
       claim('name', dName, 'kubernetes', `k8s://${d.region}/${d.env}/${d.service}`),
@@ -329,6 +348,8 @@ const runtimeNodes: SeedNode[] = serviceSpecs
       name: `${s.name}-runtime`,
       service: s.name,
       protocol: s.language === 'TypeScript' || s.language === 'Python' ? 'http' : 'grpc',
+      tier: s.tier,
+      owner: s.ownerTeam,
     },
     claims: [
       claim('name', `${s.name}-runtime`, 'datadog', `datadog://apm/${s.name}`),
@@ -356,12 +377,16 @@ const pipelineSpecs: PipelineSpec[] = [
   { name: 'release-train', type: 'cd' },
 ];
 
-const pipelineNodes: SeedNode[] = pipelineSpecs.map((p) => ({
-  label: 'Pipeline',
-  id: id.pipeline(p.name),
-  properties: { name: p.name, type: p.type, state: 'active' },
-  claims: [claim('name', p.name, 'github', `github://${ORG}/actions/${p.name}`)],
-}));
+const pipelineNodes: SeedNode[] = pipelineSpecs.map((p) => {
+  const owner =
+    (p.repo && repoOwnerByName.get(p.repo)) ?? 'platform-team';
+  return {
+    label: 'Pipeline',
+    id: id.pipeline(p.name),
+    properties: { name: p.name, type: p.type, state: 'active', owner },
+    claims: [claim('name', p.name, 'github', `github://${ORG}/actions/${p.name}`)],
+  };
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Monitors — Datadog-style monitors mostly on tier-1 / tier-2 services.
@@ -393,20 +418,25 @@ const monitorSpecs: MonitorSpec[] = [
   { name: 'billing-invoice-failure', service: 'billing-service', status: 'OK', metric: 'billing.invoice.failed' },
 ];
 
-const monitorNodes: SeedNode[] = monitorSpecs.map((m) => ({
-  label: 'Monitor',
-  id: id.monitor(m.name),
-  properties: {
-    name: m.name,
-    service: m.service,
-    status: m.status,
-    metric: m.metric,
-  },
-  claims: [
-    claim('name', m.name, 'datadog', `datadog://monitor/${m.name}`),
-    claim('status', m.status, 'datadog', `datadog://monitor/${m.name}`),
-  ],
-}));
+const monitorNodes: SeedNode[] = monitorSpecs.map((m) => {
+  const svc = serviceByName.get(m.service)!;
+  return {
+    label: 'Monitor',
+    id: id.monitor(m.name),
+    properties: {
+      name: m.name,
+      service: m.service,
+      status: m.status,
+      metric: m.metric,
+      tier: svc.tier,
+      owner: svc.ownerTeam,
+    },
+    claims: [
+      claim('name', m.name, 'datadog', `datadog://monitor/${m.name}`),
+      claim('status', m.status, 'datadog', `datadog://monitor/${m.name}`),
+    ],
+  };
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // All nodes

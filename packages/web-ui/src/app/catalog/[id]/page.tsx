@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   EmptyState,
+  formatRelative,
   Spinner,
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
@@ -27,7 +28,17 @@ const TYPE_BADGE_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
 
 function paramId(raw: string | string[] | undefined): string | null {
   if (!raw) return null;
-  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+  const segment = Array.isArray(raw) ? raw[0] : raw;
+  if (!segment) return null;
+  // `useParams()` in the App Router returns the raw URL segment — not the
+  // decoded value. Our canonical ids contain `://` and `/`, which get
+  // percent-encoded when pushed onto the URL; without an explicit decode
+  // here, every downstream id comparison would silently fail.
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 export default function EntityDetailPage() {
@@ -113,15 +124,23 @@ export default function EntityDetailPage() {
 
   // Surface every other primitive field on the node so different entity types
   // (Deployment vs Monitor vs Pipeline) each show their own metadata without
-  // having to teach this page about each one.
+  // having to teach this page about each one. Underscore-prefixed keys are
+  // Neo4j/Core-Writer system metadata (`_claims`, `_source_system`,
+  // `_last_synced`, `_event_version`) — claims are already projected onto the
+  // node as regular properties, so the raw JSON is noise here. Provenance
+  // (source + last sync) is surfaced separately in the Summary card.
   const RESERVED = new Set(['id', 'label', 'name', 'type', 'environment', 'tier', 'owner']);
   for (const [k, v] of Object.entries(d)) {
     if (RESERVED.has(k)) continue;
+    if (k.startsWith('_')) continue;
     if (v === null || v === undefined) continue;
     if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
       properties.push({ key: k, value: String(v) });
     }
   }
+
+  const sourceSystem = typeof d['_source_system'] === 'string' ? d['_source_system'] : undefined;
+  const lastSynced = typeof d['_last_synced'] === 'string' ? d['_last_synced'] : undefined;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -251,6 +270,20 @@ export default function EntityDetailPage() {
               <dd className="text-text font-mono">{incoming.length}</dd>
               <dt className="text-text-dim font-mono uppercase">Outbound</dt>
               <dd className="text-text font-mono">{outgoing.length}</dd>
+              {sourceSystem && (
+                <>
+                  <dt className="text-text-dim font-mono uppercase">Source</dt>
+                  <dd className="text-text">{sourceSystem}</dd>
+                </>
+              )}
+              {lastSynced && (
+                <>
+                  <dt className="text-text-dim font-mono uppercase">Synced</dt>
+                  <dd className="text-text" title={lastSynced}>
+                    {formatRelative(lastSynced)}
+                  </dd>
+                </>
+              )}
             </dl>
           </Card>
 

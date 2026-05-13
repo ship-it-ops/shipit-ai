@@ -53,7 +53,20 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
       case 'dagre':
         return { name: 'breadthfirst', directed: true, spacingFactor: 1.5, padding: 50 };
       case 'cose':
-        return { name: 'cose', idealEdgeLength: 100, nodeOverlap: 20, padding: 50, animate: false };
+        // Spread nodes out: longer ideal edges + stronger node repulsion + a
+        // higher overlap penalty so the layout doesn't settle with nodes
+        // overlapping or hugging each other. `componentSpacing` also matters
+        // when the graph has disconnected subgraphs.
+        return {
+          name: 'cose',
+          idealEdgeLength: 160,
+          nodeRepulsion: 8000,
+          nodeOverlap: 40,
+          componentSpacing: 200,
+          numIter: 2000,
+          padding: 50,
+          animate: false,
+        };
       case 'concentric':
         return { name: 'concentric', minNodeSpacing: 60, padding: 50 };
       default:

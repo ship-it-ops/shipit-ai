@@ -80,11 +80,20 @@ export class Neo4jService {
   }
 
   async getNeighborhood(nodeId: string, depth: number = 2): Promise<NeighborhoodResult> {
+    // Project edge endpoints by the canonical `id` property — `rel.start` /
+    // `rel.end` would be Neo4j's internal numeric node ids, which the UI can't
+    // line up with the `shipit://…` ids on the node payload.
     const records = await this.runQuery(
       `MATCH (start {id: $nodeId})
        CALL apoc.path.subgraphAll(start, {maxLevel: $depth})
        YIELD nodes, relationships
-       RETURN nodes, relationships`,
+       RETURN nodes,
+              [rel IN relationships | {
+                source: startNode(rel).id,
+                target: endNode(rel).id,
+                type: type(rel),
+                props: properties(rel)
+              }] AS rels`,
       { nodeId, depth: neo4j.int(depth) },
     );
 
@@ -96,11 +105,11 @@ export class Neo4jService {
         properties: Record<string, unknown>;
         labels: string[];
       }>;
-      const rels = record.get('relationships') as Array<{
-        properties: Record<string, unknown>;
+      const rels = record.get('rels') as Array<{
+        source: string;
+        target: string;
         type: string;
-        start: { toString(): string };
-        end: { toString(): string };
+        props: Record<string, unknown>;
       }>;
 
       for (const node of nodes) {
@@ -109,13 +118,13 @@ export class Neo4jService {
         if (!nodesMap.has(id)) {
           nodesMap.set(id, {
             data: {
+              ...node.properties,
               id,
               label: nodeLabel,
               type: nodeLabel,
               name: String(
                 node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
               ),
-              ...node.properties,
             },
           });
         }
@@ -124,10 +133,10 @@ export class Neo4jService {
       for (const rel of rels) {
         edges.push({
           data: {
-            source: String(rel.start),
-            target: String(rel.end),
+            ...rel.props,
+            source: String(rel.source),
+            target: String(rel.target),
             type: rel.type,
-            ...rel.properties,
           },
         });
       }
@@ -151,13 +160,13 @@ export class Neo4jService {
       if (!nodesMap.has(id)) {
         nodesMap.set(id, {
           data: {
+            ...node.properties,
             id,
             label: nodeLabel,
             type: nodeLabel,
             name: String(
               node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
             ),
-            ...node.properties,
           },
         });
       }
@@ -180,10 +189,10 @@ export class Neo4jService {
 
     const edges: CytoscapeEdge[] = edgeRecords.map((record) => ({
       data: {
+        ...(record.get('props') as Record<string, unknown>),
         source: String(record.get('source')),
         target: String(record.get('target')),
         type: String(record.get('type')),
-        ...(record.get('props') as Record<string, unknown>),
       },
     }));
 
