@@ -20,6 +20,10 @@
     "lint": {
       "outputs": []
     },
+    "lint:fix": {
+      "outputs": [],
+      "cache": false
+    },
     "typecheck": {
       "dependsOn": ["^build"],
       "outputs": []

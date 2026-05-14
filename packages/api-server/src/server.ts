@@ -9,6 +9,11 @@ import healthRoutes from './routes/health.js';
 import connectorRoutes from './routes/connectors.js';
 import schemaRoutes from './routes/schema.js';
 import graphRoutes from './routes/graph.js';
+import queryRoutes from './routes/query.js';
+import claimsRoutes, { conflictsRoutes } from './routes/claims.js';
+import teamsRoutes from './routes/teams.js';
+import reconciliationRoutes from './routes/reconciliation.js';
+import incidentEventsRoutes from './routes/incident-events.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -56,7 +61,16 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   if (opts.neo4jService) {
     await server.register(graphRoutes, { prefix: '/api/graph' });
+    await server.register(queryRoutes, { prefix: '/api/query' });
+    await server.register(claimsRoutes, { prefix: '/api/claims' });
+    await server.register(conflictsRoutes, { prefix: '/api/conflicts' });
+    await server.register(teamsRoutes, { prefix: '/api/teams' });
+    await server.register(reconciliationRoutes, { prefix: '/api/reconciliation' });
   }
+
+  // Incident-mode dashboard view log. Doesn't require Neo4j — useful for
+  // adoption analytics from day one, even when running the API standalone.
+  await server.register(incidentEventsRoutes, { prefix: '/api/incident-events' });
 
   return server;
 }

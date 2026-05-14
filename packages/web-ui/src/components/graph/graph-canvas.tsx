@@ -39,12 +39,25 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     const safeEdges = data.edges.filter(
       (e) => nodeIds.has(e.data.source) && nodeIds.has(e.data.target),
     );
+    // Each element needs a deterministic `id` for Cytoscape's internal
+    // `cy.json()` reconciliation to identify it across re-renders. The API
+    // returns edges without one — without this synthesis Cytoscape generates
+    // a fresh random id on every render, fails to reconcile on the next pass,
+    // and intermittently spams "cannot handle elements without an ID
+    // attribute" while silently dropping edges from the canvas.
+    const edgeIdSeen = new Map<string, number>();
     return [
       ...data.nodes.map((n) => ({
         data: { ...n.data, entityType: n.data.type, label: n.data.name },
         group: 'nodes' as const,
       })),
-      ...safeEdges.map((e) => ({ data: e.data, group: 'edges' as const })),
+      ...safeEdges.map((e) => {
+        const base = `${e.data.source}::${e.data.type}::${e.data.target}`;
+        const dupIndex = edgeIdSeen.get(base) ?? 0;
+        edgeIdSeen.set(base, dupIndex + 1);
+        const id = dupIndex === 0 ? base : `${base}#${dupIndex}`;
+        return { data: { ...e.data, id }, group: 'edges' as const };
+      }),
     ];
   }, [data]);
 

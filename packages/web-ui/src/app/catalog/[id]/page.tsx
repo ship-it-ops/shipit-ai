@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Badge,
@@ -13,7 +13,8 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
-import { useGraphData } from '@/lib/hooks/use-graph-data';
+import { useBlastRadius, useGraphData } from '@/lib/hooks/use-graph-data';
+import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 
 const TYPE_BADGE_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
   LogicalService: 'accent',
@@ -46,7 +47,10 @@ export default function EntityDetailPage() {
   const params = useParams<{ id: string }>();
   const id = paramId(params?.id);
 
+  const [blastOpen, setBlastOpen] = useState(false);
+
   const { data, isLoading, error } = useGraphData(id ?? undefined, 1);
+  const blast = useBlastRadius(id ?? undefined, 3, blastOpen);
 
   const node = useMemo(
     () => (id ? data?.nodes.find((n) => n.data.id === id) : undefined),
@@ -285,11 +289,23 @@ export default function EntityDetailPage() {
 
           <Card title="Actions">
             <div className="flex flex-col gap-2">
+              {type === 'LogicalService' && (
+                <Button
+                  fullWidth
+                  variant="primary"
+                  size="sm"
+                  icon={<IconGlyph name="incident" size={11} />}
+                  onClick={() => router.push(`/incidents/${encodeURIComponent(id)}`)}
+                >
+                  Enter Incident Mode
+                </Button>
+              )}
               <Button
                 fullWidth
                 variant="outline"
                 size="sm"
                 icon={<IconGlyph name="target" size={11} />}
+                onClick={() => setBlastOpen(true)}
               >
                 Show blast radius
               </Button>
@@ -298,6 +314,7 @@ export default function EntityDetailPage() {
                 variant="outline"
                 size="sm"
                 icon={<IconGlyph name="search" size={11} />}
+                onClick={() => router.push(`/operations/claims?entity=${encodeURIComponent(id)}`)}
               >
                 Inspect claims
               </Button>
@@ -313,6 +330,20 @@ export default function EntityDetailPage() {
           </Card>
         </aside>
       </div>
+
+      <BlastRadiusDialog
+        open={blastOpen}
+        onOpenChange={setBlastOpen}
+        startId={id}
+        startName={name}
+        data={blast.data}
+        isLoading={blast.isLoading}
+        error={blast.error}
+        onOpenEntity={(targetId) => {
+          setBlastOpen(false);
+          router.push(`/catalog/${encodeURIComponent(targetId)}`);
+        }}
+      />
     </div>
   );
 }

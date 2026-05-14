@@ -21,6 +21,31 @@ export interface CytoscapeEdge {
 export interface NeighborhoodResult {
   nodes: CytoscapeNode[];
   edges: CytoscapeEdge[];
+  /** True when blast-radius hit the server-side node cap; consumers should warn the user. */
+  truncated?: boolean;
+}
+
+/**
+ * Hard cap on blast-radius node count. APOC's `subgraphAll` happily walks
+ * thousands of nodes in a fan-out; with no limit the IC's first-60-second
+ * dashboard query can stall the page. The cap is enforced at the Cypher
+ * layer so we never load the oversize set into memory.
+ */
+const MAX_BLAST_RADIUS_NODES = 200;
+
+/**
+ * Project `_last_synced_age_seconds` onto a node's properties. Computed
+ * server-side because corporate-laptop clock skew is real and breaks any
+ * `Date.now() - lastSynced` math the client tries to do.
+ */
+function withStalenessAge(props: Record<string, unknown>): Record<string, unknown> {
+  const lastSynced = props['_last_synced'];
+  if (typeof lastSynced !== 'string') return props;
+  const t = Date.parse(lastSynced);
+  if (!Number.isFinite(t)) return props;
+  const ageMs = Date.now() - t;
+  if (ageMs < 0) return props;
+  return { ...props, _last_synced_age_seconds: Math.floor(ageMs / 1000) };
 }
 
 export class Neo4jService {
@@ -28,6 +53,11 @@ export class Neo4jService {
 
   constructor(uri: string, user: string, password: string) {
     this.driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
+  }
+
+  /** Used by services that need their own session config (read-only, txn timeout, etc). */
+  getDriver(): Driver {
+    return this.driver;
   }
 
   async runQuery(cypher: string, params: Record<string, unknown> = {}): Promise<Neo4jRecord[]> {
@@ -118,7 +148,7 @@ export class Neo4jService {
         if (!nodesMap.has(id)) {
           nodesMap.set(id, {
             data: {
-              ...node.properties,
+              ...withStalenessAge(node.properties),
               id,
               label: nodeLabel,
               type: nodeLabel,
@@ -145,6 +175,101 @@ export class Neo4jService {
     return { nodes: Array.from(nodesMap.values()), edges };
   }
 
+  /**
+   * Blast radius — entities transitively affected if the start entity is down.
+   *
+   * Walks *inbound* on the impact-bearing relationship types only:
+   * - `DEPENDS_ON` — declared service-to-service / repo-to-repo dependency
+   * - `CALLS` — runtime call dependency
+   * - `MONITORS` — monitors that would fire when this entity breaks
+   *
+   * Other relationships (`IMPLEMENTED_BY`, `DEPLOYED_AS`, `OWNS`, `MEMBER_OF`,
+   * etc.) describe structure, not impact, and are excluded. Entities with no
+   * inbound impact edges (Person, Team, leaf Repositories) correctly return
+   * just themselves.
+   */
+  async getBlastRadius(nodeId: string, depth: number = 3): Promise<NeighborhoodResult> {
+    // Ask APOC for one node beyond the cap so we can detect overflow rather
+    // than silently truncate.
+    const probeLimit = MAX_BLAST_RADIUS_NODES + 1;
+    const records = await this.runQuery(
+      `MATCH (start {id: $nodeId})
+       CALL apoc.path.subgraphAll(start, {
+         maxLevel: $depth,
+         relationshipFilter: '<DEPENDS_ON|<CALLS|<MONITORS',
+         limit: $probeLimit
+       })
+       YIELD nodes, relationships
+       RETURN nodes,
+              [rel IN relationships | {
+                source: startNode(rel).id,
+                target: endNode(rel).id,
+                type: type(rel),
+                props: properties(rel)
+              }] AS rels`,
+      { nodeId, depth: neo4j.int(depth), probeLimit: neo4j.int(probeLimit) },
+    );
+
+    const nodesMap = new Map<string, CytoscapeNode>();
+    let edges: CytoscapeEdge[] = [];
+
+    for (const record of records) {
+      const nodes = record.get('nodes') as Array<{
+        properties: Record<string, unknown>;
+        labels: string[];
+      }>;
+      const rels = record.get('rels') as Array<{
+        source: string;
+        target: string;
+        type: string;
+        props: Record<string, unknown>;
+      }>;
+
+      for (const node of nodes) {
+        const id = String(node.properties.id ?? node.properties.name ?? '');
+        const nodeLabel = node.labels[0] ?? 'Unknown';
+        if (!nodesMap.has(id)) {
+          nodesMap.set(id, {
+            data: {
+              ...withStalenessAge(node.properties),
+              id,
+              label: nodeLabel,
+              type: nodeLabel,
+              name: String(
+                node.properties.name ?? node.properties.login ?? id.split('/').pop() ?? id,
+              ),
+            },
+          });
+        }
+      }
+
+      for (const rel of rels) {
+        edges.push({
+          data: {
+            ...rel.props,
+            source: String(rel.source),
+            target: String(rel.target),
+            type: rel.type,
+          },
+        });
+      }
+    }
+
+    let nodes = Array.from(nodesMap.values());
+    let truncated = false;
+    if (nodes.length > MAX_BLAST_RADIUS_NODES) {
+      truncated = true;
+      nodes = nodes.slice(0, MAX_BLAST_RADIUS_NODES);
+      // Drop dangling edges so Cytoscape doesn't choke on missing endpoints.
+      const keep = new Set(nodes.map((n) => String(n.data.id)));
+      edges = edges.filter(
+        (e) => keep.has(String(e.data.source)) && keep.has(String(e.data.target)),
+      );
+    }
+
+    return { nodes, edges, truncated };
+  }
+
   async getOverview(limit: number = 100): Promise<NeighborhoodResult> {
     const nodeRecords = await this.runQuery(
       'MATCH (n) RETURN n, labels(n) AS labels LIMIT $limit',
@@ -160,7 +285,7 @@ export class Neo4jService {
       if (!nodesMap.has(id)) {
         nodesMap.set(id, {
           data: {
-            ...node.properties,
+            ...withStalenessAge(node.properties),
             id,
             label: nodeLabel,
             type: nodeLabel,
@@ -201,23 +326,37 @@ export class Neo4jService {
 
   async searchEntities(opts: {
     label?: string;
+    /** Free-text query — matched case-insensitively against `name` and the canonical id. */
+    q?: string;
+    /** Exact-match filters (tier, owner, etc.) applied with `=`. */
     filters?: Record<string, unknown>;
     limit?: number;
     sortBy?: string;
   }): Promise<Neo4jRecord[]> {
-    const { label, filters = {}, limit = 25, sortBy } = opts;
+    const { label, q, filters = {}, limit = 25, sortBy } = opts;
     const nodeLabel = label ? `:${label}` : '';
-    const whereClause: string[] = [];
+    const whereClause: string[] = ['coalesce(n._deleted, false) = false'];
     const params: Record<string, unknown> = { limit: neo4j.int(limit) };
+
+    if (q && q.trim()) {
+      // Case-insensitive substring match on name OR canonical id, so a query
+      // like "payments" hits "payments-api", "payments-svc", and any node
+      // whose id contains "payments". Cypher's `CONTAINS` is case-sensitive,
+      // so lower-case both sides explicitly.
+      whereClause.push(
+        '(toLower(coalesce(n.name, "")) CONTAINS toLower($q) OR toLower(coalesce(n.id, "")) CONTAINS toLower($q))',
+      );
+      params.q = q.trim();
+    }
 
     for (const [key, value] of Object.entries(filters)) {
       whereClause.push(`n.${key} = $filter_${key}`);
       params[`filter_${key}`] = value;
     }
 
-    const where = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
-    const order = sortBy ? `ORDER BY n.${sortBy}` : '';
-    const cypher = `MATCH (n${nodeLabel}) ${where} RETURN n ${order} LIMIT $limit`;
+    const where = `WHERE ${whereClause.join(' AND ')}`;
+    const order = sortBy ? `ORDER BY n.${sortBy}` : 'ORDER BY n.name';
+    const cypher = `MATCH (n${nodeLabel}) ${where} RETURN n, labels(n) AS labels ${order} LIMIT $limit`;
 
     return this.runQuery(cypher, params);
   }

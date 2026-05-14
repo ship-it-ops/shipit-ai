@@ -66,6 +66,12 @@ Deliverables:
 
 7. **Smoke test suite** — An end-to-end test that runs the GitHub connector against a fixture repository, verifies entities appear in Neo4j, and verifies the MCP tools return correct responses.
 
+8. **Catalog Browser (web UI)** — A filterable list of every ingested entity at `/catalog`, with facets for type, environment, tier, and owner, and a per-entity detail view at `/catalog/:id` that renders the depth-1 neighborhood (properties + inbound / outbound relations). This is intentionally distinct from the Graph Explorer: the catalog answers "what is in the graph?" without requiring spatial reasoning, and doubles as the accessible tabular alternative to the canvas view called for by ADR-012.
+
+### Information architecture for deferred features
+
+The Phase-1 UI ships navigation entries and placeholder pages for several Phase 2 / Phase 3 / Enterprise features (Query Playground, Team Dashboard, Schema Editor, Claim Explorer, Reconciliation, Audit Log, Access Control, Agent Activity). Each placeholder renders a typed `PlaceholderPage` component with a phase badge (`P2`, `P3`, `EE`) and a short description of what the feature will do. The scaffolding is intentional: it locks in the routing and IA contract so Phase 2+ work can fill in implementations without a navigation refactor, and it sets honest user expectations about what is and isn't built. Placeholders are not deliverables — they are stubs that prevent dead links and signal the product's eventual shape.
+
 ### Phase 1b: Second Connector + Onboarding (Weeks 5-8)
 
 Deliverables:

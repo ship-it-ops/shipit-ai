@@ -15,7 +15,7 @@ ShipIt-AI includes a web-based UI for onboarding, schema exploration, entity bro
 1. **Incident response is high-stress.** During incidents, operators are under cognitive load. Accessibility features (keyboard shortcuts, clear contrast, screen reader support) benefit all users, not just those with disabilities.
 2. **Diverse teams.** Engineering teams include members with visual impairments, motor disabilities, color vision deficiency, and temporary disabilities (e.g., broken arm, migraine). Excluding any team member from incident response tooling is unacceptable.
 3. **Regulatory and procurement requirements.** Enterprise customers may require WCAG compliance for procurement approval. Meeting accessibility standards early avoids costly retrofitting.
-4. **Graph visualization is inherently challenging.** The Graph Explorer -- a key UI component -- uses a canvas-based force-directed graph layout. Canvas rendering is opaque to screen readers, and force-directed layouts produce unpredictable node positions. The Graph Explorer requires specific accessibility provisions that go beyond standard web form accessibility.
+4. **Graph visualization is inherently challenging.** The Graph Explorer -- a key UI component -- renders a Cytoscape-based graph through the `@ship-it-ui/cytoscape` wrapper (see ADR-013). Cytoscape's canvas rendering is opaque to screen readers, and force-directed layouts produce unpredictable node positions. The Graph Explorer requires specific accessibility provisions that go beyond standard web form accessibility.
 
 ## Decision
 
@@ -48,15 +48,20 @@ All ShipIt-AI web UI components will conform to **WCAG 2.1 Level AA** standards.
 
 ### Graph Explorer Accessible Alternative
 
-Because canvas-based graph visualization is inherently inaccessible to screen readers and difficult for keyboard-only users, the Graph Explorer must provide an **alternative tabular view**:
+Because canvas-based graph visualization is inherently inaccessible to screen readers and difficult for keyboard-only users, the product provides an **alternative tabular view** as a first-class navigation surface, not a graph-page sub-mode.
 
-- A table listing all nodes in the current view with columns: Name, Type, Tier, Owner, Connection Count.
-- A table listing all edges with columns: Source, Relationship Type, Target.
-- Sorting and filtering on all columns.
-- Selecting a row in the node table highlights the corresponding node in the graph view (and vice versa).
-- The tabular view is the default for screen reader users (detected via `prefers-reduced-motion` or an explicit user setting).
+The Catalog Browser (ADR-003, Phase 1a) implements this:
 
-This tabular view is not a lesser experience -- it provides information density and filterability that the graph view does not. Some users will prefer it regardless of accessibility needs.
+- `/catalog` lists every ingested entity in a sortable, filterable table with columns Name, Type, Environment, Tier, and Owner. Facets for Type, Environment, Tier, and Owner are exposed in a left rail.
+- `/catalog/:id` renders the per-entity view: properties, inbound and outbound relations, and a Summary card with provenance (source, last sync). Relations are themselves navigable, so the keyboard-only user can traverse the graph one entity at a time using semantic HTML — no canvas required.
+- An "Open in graph" affordance on the detail page launches the Graph Explorer for users who do want the spatial view.
+
+Required follow-ups still on the roadmap to fully satisfy this section:
+
+- Selecting a row in the catalog highlights the corresponding node in the graph view (and vice versa). Today the two surfaces are linked only by the "Open in graph" button.
+- The catalog becomes the default landing surface for users with `prefers-reduced-motion` or an explicit user setting. Today both the catalog and the graph are equally reachable from the sidebar.
+
+The tabular view is not a lesser experience -- it provides information density and filterability that the graph view does not. Some users will prefer it regardless of accessibility needs.
 
 ### Responsive Design
 

@@ -14,6 +14,9 @@ export function loadConfig(): ServerConfig {
     neo4jUser: process.env.NEO4J_USER ?? 'neo4j',
     neo4jPassword: process.env.NEO4J_PASSWORD ?? 'shipit-dev',
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-    schemaPath: process.env.SCHEMA_PATH ?? './shipit-schema.yaml',
+    // Default points at the repo-level config dir. `pnpm dev` is launched from
+    // packages/api-server, so the relative path resolves to <repo>/config/...
+    // Override via SCHEMA_PATH in .env for non-default deployments.
+    schemaPath: process.env.SCHEMA_PATH ?? '../../config/shipit-schema.yaml',
   };
 }

@@ -2,9 +2,11 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { type MouseEvent } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Sidebar as DSSidebar, NavItem, NavSection } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
+import { fetchReconciliationStats, type ReconciliationStats } from '@/lib/api';
 
 interface NavLink {
   label: string;
@@ -27,7 +29,7 @@ const navGroups: NavGroup[] = [
     label: 'Explore',
     items: [
       { label: 'Graph Explorer', href: '/explore', glyph: 'graph' },
-      { label: 'Query Playground', href: '/explore/query', glyph: 'cmd', badge: 'P2' },
+      { label: 'Query Playground', href: '/explore/query', glyph: 'cmd' },
       { label: 'Ask', href: '/ask', glyph: 'ask' },
     ],
   },
@@ -35,26 +37,25 @@ const navGroups: NavGroup[] = [
     label: 'Catalog',
     items: [
       { label: 'Entities', href: '/catalog', glyph: 'document' },
-      { label: 'Team Dashboard', href: '/catalog/teams', glyph: 'person', badge: 'P2' },
+      { label: 'Team Dashboard', href: '/catalog/teams', glyph: 'person' },
     ],
   },
   {
     label: 'Configure',
     items: [
       { label: 'Connector Hub', href: '/connectors', glyph: 'bolt' },
-      { label: 'Schema Editor', href: '/configure/schema', glyph: 'schema', badge: 'P2' },
+      { label: 'Schema Editor', href: '/configure/schema', glyph: 'schema' },
     ],
   },
   {
     label: 'Operations',
     items: [
       { label: 'Incident Mode', href: '/incidents', glyph: 'incident' },
-      { label: 'Claim Explorer', href: '/operations/claims', glyph: 'check', badge: 'P2' },
+      { label: 'Claim Explorer', href: '/operations/claims', glyph: 'check' },
       {
         label: 'Reconciliation',
         href: '/operations/reconciliation',
         glyph: 'graph',
-        badge: 'P2',
       },
     ],
   },
@@ -151,10 +152,31 @@ export function Sidebar() {
   const pathname = usePathname();
   const width = sidebarCollapsed ? 64 : 240;
 
-  const allHrefs = navGroups.flatMap((g) => g.items.map((i) => i.href));
+  const { data: reconStats } = useQuery<ReconciliationStats>({
+    queryKey: ['reconciliation-stats'],
+    queryFn: fetchReconciliationStats,
+    // 30s polling: the queue grows organically as connectors sync; a stale
+    // count for 30s is fine, but a stale count for hours misleads operators.
+    refetchInterval: 30_000,
+    staleTime: 30_000,
+  });
+  const pendingCount = reconStats?.pending ?? 0;
+
+  // Override the Reconciliation nav entry's badge with the pending count when
+  // it's non-zero — otherwise keep the static "P2" so users know it's gated.
+  const decoratedGroups = navGroups.map((g) => ({
+    ...g,
+    items: g.items.map((item) =>
+      item.href === '/operations/reconciliation' && pendingCount > 0
+        ? { ...item, badge: String(pendingCount) }
+        : item,
+    ),
+  }));
+
+  const allHrefs = decoratedGroups.flatMap((g) => g.items.map((i) => i.href));
   const activeHref = pickActiveHref(pathname, allHrefs);
 
-  const labeledGroups = navGroups.filter((g) => g.label);
+  const labeledGroups = decoratedGroups.filter((g) => g.label);
 
   return (
     <DSSidebar width={width} className="gap-3">
@@ -166,7 +188,7 @@ export function Sidebar() {
             : 'flex flex-1 flex-col gap-3 overflow-y-auto'
         }
       >
-        {navGroups.map((group, i) => {
+        {decoratedGroups.map((group, i) => {
           const isLastLabeled = group.label === labeledGroups[labeledGroups.length - 1]?.label;
           return (
             <GroupBlock

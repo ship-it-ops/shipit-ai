@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { fetchNeighborhood, fetchGraphOverview, type GraphData } from '@/lib/api';
+import { fetchBlastRadius, fetchNeighborhood, fetchGraphOverview, type GraphData } from '@/lib/api';
 
 export function useGraphData(nodeId?: string, depth: number = 2) {
   return useQuery<GraphData>({
@@ -24,6 +24,15 @@ export function useCatalogEntities(limit: number = 500) {
   return useQuery<GraphData>({
     queryKey: ['catalog-overview', limit],
     queryFn: () => fetchGraphOverview(limit),
+    retry: 1,
+  });
+}
+
+export function useBlastRadius(nodeId?: string, depth: number = 3, enabled: boolean = true) {
+  return useQuery<GraphData>({
+    queryKey: ['blast-radius', nodeId, depth],
+    queryFn: () => fetchBlastRadius(nodeId!, depth),
+    enabled: !!nodeId && enabled,
     retry: 1,
   });
 }

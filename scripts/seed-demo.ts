@@ -406,6 +406,42 @@ const logicalServiceNodes: SeedNode[] = serviceSpecs.map((s) => ({
   ],
 }));
 
+// Phase 2 — Claim Explorer fixtures. Add a few conflicting claims on real
+// services so the Conflict Dashboard has rows on first load. Each conflict
+// pairs the existing backstage claim with a disagreeing claim from another
+// source. The resolution strategy on each property still picks a winner.
+{
+  const tierConflicts: Array<{ service: string; otherTier: number; otherSource: string }> = [
+    { service: 'payments-api', otherTier: 2, otherSource: 'kubernetes' },
+    { service: 'fraud-detection', otherTier: 1, otherSource: 'datadog' },
+  ];
+  const ownerConflicts: Array<{ service: string; otherOwner: string; otherSource: string }> = [
+    { service: 'ledger-service', otherOwner: 'platform-team', otherSource: 'github' },
+  ];
+  for (const c of tierConflicts) {
+    const node = logicalServiceNodes.find((n) => n.properties.name === c.service);
+    if (!node) continue;
+    node.claims.push({
+      property_key: 'tier',
+      value: c.otherTier,
+      source: c.otherSource,
+      source_id: `${c.otherSource}://${c.service}`,
+      confidence: 0.7,
+    });
+  }
+  for (const c of ownerConflicts) {
+    const node = logicalServiceNodes.find((n) => n.properties.name === c.service);
+    if (!node) continue;
+    node.claims.push({
+      property_key: 'owner',
+      value: c.otherOwner,
+      source: c.otherSource,
+      source_id: `${c.otherSource}://${c.service}/CODEOWNERS`,
+      confidence: 0.85,
+    });
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositories — one per service plus a few shared libs.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -683,6 +719,33 @@ const monitorNodes: SeedNode[] = monitorSpecs.map((m) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — Reconciliation fixtures.
+// A pair of near-duplicate services that should land on the candidate worklist
+// for fuzzy matching: same logical service ingested through two different
+// source paths with slightly different names.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const duplicateServiceNodes: SeedNode[] = [
+  {
+    label: 'LogicalService',
+    id: 'shipit://logical-service/legacy/payments-svc',
+    properties: {
+      name: 'payments-svc',
+      tier: 1,
+      owner: 'payments-team',
+      lifecycle: 'production',
+      language: 'Go',
+      description: 'Legacy entry — same as payments-api per the kubernetes deployment annotations.',
+      namespace: 'legacy',
+    },
+    claims: [
+      claim('name', 'payments-svc', 'kubernetes', 'k8s://prod/payments/payments-svc'),
+      claim('tier', 1, 'kubernetes', 'k8s://prod/payments/payments-svc'),
+    ],
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // All nodes
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -695,6 +758,7 @@ const nodes: SeedNode[] = [
   ...runtimeNodes,
   ...pipelineNodes,
   ...monitorNodes,
+  ...duplicateServiceNodes,
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -733,6 +797,21 @@ for (const r of runtimeNodes) {
 // OWNS: Team -> LogicalService
 for (const s of serviceSpecs) {
   edge('OWNS', id.team(s.ownerTeam), id.service(s.name), 'backstage', 0.95);
+}
+
+// OWNS: Team -> Repository (via CODEOWNERS team-owner). Phase 2 Team Dashboard
+// needs this edge to roll repos up by team — previously only the LogicalService
+// owner edge existed.
+for (const r of repoSpecs) {
+  edge('OWNS', id.team(r.owner), id.repo(r.name), 'github', 0.9);
+}
+
+// OWNS: Team -> Deployment (inherited from the implementing service's team).
+for (const d of deploymentSpecs) {
+  const svc = serviceByName.get(d.service);
+  if (!svc) continue;
+  const deploymentName = `${d.service}-${d.env}-${d.region}`;
+  edge('OWNS', id.team(svc.ownerTeam), id.deployment(deploymentName), 'backstage', 0.9);
 }
 
 // BUILT_BY: Repository -> Pipeline (by repo property)

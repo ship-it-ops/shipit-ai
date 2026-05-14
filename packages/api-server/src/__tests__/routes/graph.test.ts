@@ -4,7 +4,12 @@ import type { Neo4jService } from '../../services/neo4j-service.js';
 import type { FastifyInstance } from 'fastify';
 
 function createMockNeo4jService(): Neo4jService {
+  // queryRoutes calls getDriver() at register time; return a stub driver so the
+  // CypherQueryService constructor doesn't throw, even though these tests never
+  // exercise /api/query.
+  const stubDriver = { session: () => ({ close: vi.fn().mockResolvedValue(undefined) }) };
   return {
+    getDriver: vi.fn().mockReturnValue(stubDriver),
     runQuery: vi.fn().mockResolvedValue([]),
     getGraphStats: vi.fn().mockResolvedValue({
       nodeCount: 42,
