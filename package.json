@@ -23,10 +23,13 @@
     "stop": "docker compose -f docker/docker-compose.yml down",
     "stop:clean": "docker compose -f docker/docker-compose.yml down -v",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.4",
     "neo4j-driver": "^5.28.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.8.0",

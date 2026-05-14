@@ -107,3 +107,90 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # AI code review — gated behind every other CI job. Skipped when the PR
+  # is in draft, when the trigger is a push to main (PRs only), or when any
+  # upstream job failed. No point spending review tokens on code that
+  # doesn't compile or fails its own tests.
+  claude-review:
+    name: Claude Code Review
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, build, docker]
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Need history reaching the base ref so the workflow-change diff
+          # below can compare against it.
+          fetch-depth: 0
+
+      # The Claude action only runs against the workflow definition on the
+      # default branch — a security measure so a PR can't modify the prompt
+      # to exfiltrate secrets. If this PR touches `ci.yml` itself (the file
+      # that defines this job), skip the review with an explanatory comment
+      # instead of letting the action fail.
+      - name: Detect changes to this workflow file
+        id: workflow_check
+        run: |
+          base="${{ github.event.pull_request.base.ref }}"
+          if git diff --name-only "origin/$base...HEAD" -- .github/workflows/ci.yml | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post skip notice (this workflow modified)
+        if: steps.workflow_check.outputs.changed == 'true'
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        with:
+          script: |
+            const marker = '<!-- claude-review-skip-workflow-changed -->';
+            const body = [
+              marker,
+              '⏭️ **Claude review skipped on this PR**',
+              '',
+              'This PR modifies `.github/workflows/ci.yml`, the workflow that defines this review. The automated review only runs against the workflow definition on the default branch (a safety guard so a PR cannot rewrite its own reviewer prompt), so it is suppressed here.',
+              '',
+              'Once this PR is merged into `main`, future PRs will be reviewed against the updated workflow. You can mention `@claude` in a comment if you want a manual review on this PR.',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Run Claude Code Review
+        id: claude-review
+        if: steps.workflow_check.outputs.changed != 'true'
+        uses: anthropics/claude-code-action@v1
+        env:
+          # The ship-reviewed-prs skill auto-detects CI mode from CI=true (set
+          # by GitHub Actions) and submits the review via `gh`. Give gh the
+          # default workflow token — same scope the rest of CI uses.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Pull the ship-reviewed-prs skill from the ship-it-ops/ship-code
+          # marketplace (multi-persona review with comment-lifecycle
+          # suppression + APPROVE / REQUEST_CHANGES / COMMENT decision).
+          # Marketplace manifest: .claude-plugin/marketplace.json on main.
+          plugin_marketplaces: 'https://github.com/ship-it-ops/ship-code.git'
+          plugins: 'ship-reviewed-prs@ship-code'
+          # The skill submits in CI mode (no confirmation gate). Default exit
+          # behavior: REQUEST_CHANGES exits 1 (fails the job), APPROVE and
+          # COMMENT exit 0. Add `--strict` if you want COMMENT to also fail.
+          prompt: '/ship-reviewed-prs ${{ github.event.pull_request.number }}'
+          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
+          # or https://code.claude.com/docs/en/cli-reference for available options
+          # Skill source: https://github.com/ship-it-ops/ship-code/tree/main/skills/ship-reviewed-prs
