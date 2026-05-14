@@ -30,6 +30,11 @@ export class Neo4jService {
     this.driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
   }
 
+  /** Used by services that need their own session config (read-only, txn timeout, etc). */
+  getDriver(): Driver {
+    return this.driver;
+  }
+
   async runQuery(cypher: string, params: Record<string, unknown> = {}): Promise<Neo4jRecord[]> {
     const session = this.driver.session();
     try {

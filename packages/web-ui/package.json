@@ -26,7 +26,8 @@
     "@ship-it-ui/cytoscape": "^0.0.4",
     "@ship-it-ui/next": "^0.0.3",
     "@fontsource-variable/geist": "^5.1.0",
-    "@fontsource-variable/geist-mono": "^5.1.0"
+    "@fontsource-variable/geist-mono": "^5.1.0",
+    "yaml": "^2.8.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

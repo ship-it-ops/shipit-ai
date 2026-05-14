@@ -298,6 +298,9 @@ export default function EntityDetailPage() {
                 variant="outline"
                 size="sm"
                 icon={<IconGlyph name="search" size={11} />}
+                onClick={() =>
+                  router.push(`/operations/claims?entity=${encodeURIComponent(id)}`)
+                }
               >
                 Inspect claims
               </Button>
