@@ -13,6 +13,9 @@
  */
 
 export interface CurrentUser {
+  firstName: string;
+  lastName: string;
+  /** Convenience for views that show the full name (Avatar initials, profile heading). */
   name: string;
   email: string;
   role: string;
@@ -45,15 +48,18 @@ function envCapabilities(): ReadonlyArray<string> {
   return parsed.length > 0 ? parsed : DEFAULT_CAPABILITIES;
 }
 
+const firstName = envOr('NEXT_PUBLIC_DEV_USER_FIRST_NAME', 'Dev');
+const lastName = envOr('NEXT_PUBLIC_DEV_USER_LAST_NAME', 'User');
+
 export const CURRENT_USER: CurrentUser = {
-  name: envOr('NEXT_PUBLIC_DEV_USER_NAME', 'Dev User'),
+  firstName,
+  lastName,
+  // Joined here so consumers don't have to. Trim handles the unlikely case
+  // where someone sets only one of the two halves.
+  name: `${firstName} ${lastName}`.trim(),
   email: envOr('NEXT_PUBLIC_DEV_USER_EMAIL', 'dev@shipit.local'),
   role: envOr('NEXT_PUBLIC_DEV_USER_ROLE', 'Platform Admin'),
   team: envOr('NEXT_PUBLIC_DEV_USER_TEAM', 'platform-team'),
   joinedAt: envOr('NEXT_PUBLIC_DEV_USER_JOINED_AT', '2026-01-01'),
   capabilities: envCapabilities(),
 };
-
-export function firstName(user: CurrentUser): string {
-  return user.name.split(/\s+/)[0] ?? user.name;
-}
