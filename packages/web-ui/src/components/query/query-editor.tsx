@@ -49,7 +49,10 @@ export function QueryEditor({ value, onChange, onSubmit, disabled }: QueryEditor
           <kbd className="bg-panel-2 text-text-muted rounded-xs px-[6px] py-[2px] font-mono text-[10px]">
             ⌘/Ctrl + ⏎
           </kbd>{' '}
-          to run · <kbd className="bg-panel-2 text-text-muted rounded-xs px-[6px] py-[2px] font-mono text-[10px]">Tab</kbd>{' '}
+          to run ·{' '}
+          <kbd className="bg-panel-2 text-text-muted rounded-xs px-[6px] py-[2px] font-mono text-[10px]">
+            Tab
+          </kbd>{' '}
           inserts 2 spaces
         </span>
         <span>Read-only: write keywords are blocked server-side</span>

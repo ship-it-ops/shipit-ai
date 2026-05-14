@@ -85,7 +85,7 @@ export function PropertyEditor({ typeName, def, onChange }: PropertyEditorProps)
         </table>
       </div>
 
-      <div className="border-border bg-panel-2 rounded-xs flex items-center gap-2 border p-2">
+      <div className="border-border bg-panel-2 flex items-center gap-2 rounded-xs border p-2">
         <Input
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -130,9 +130,7 @@ function PropertyRow({
               </Badge>
             )}
           </span>
-          {prop.enum && (
-            <span className="text-text-dim text-[10px]">{prop.enum.join(' · ')}</span>
-          )}
+          {prop.enum && <span className="text-text-dim text-[10px]">{prop.enum.join(' · ')}</span>}
         </div>
       </td>
       <td className="px-3 py-2">
@@ -156,7 +154,9 @@ function PropertyRow({
           <Select
             options={RESOLUTION_STRATEGIES.map((s) => ({ value: s.value, label: s.label }))}
             value={prop.resolution_strategy}
-            onValueChange={(v) => onChange({ resolution_strategy: v as SchemaPropertyDef['resolution_strategy'] })}
+            onValueChange={(v) =>
+              onChange({ resolution_strategy: v as SchemaPropertyDef['resolution_strategy'] })
+            }
             size="sm"
             aria-label={`${name} resolution strategy`}
           />

@@ -75,8 +75,7 @@ function DependencyList({
       ) : (
         <div className="flex flex-col">
           {entries.map((e) => {
-            const tierVariant =
-              e.tier === 1 ? 'err' : e.tier === 2 ? 'warn' : 'neutral';
+            const tierVariant = e.tier === 1 ? 'err' : e.tier === 2 ? 'warn' : 'neutral';
             const metaText = e.owner ? `${e.relation} · ${e.owner}` : e.relation;
             return (
               <EntityListRowButton

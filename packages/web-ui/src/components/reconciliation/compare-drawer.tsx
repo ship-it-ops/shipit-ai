@@ -89,7 +89,9 @@ export function CompareDrawer({ candidateId, onClose }: CompareDrawerProps) {
               <Badge size="sm" variant="accent">
                 {(data.confidence * 100).toFixed(1)}% match
               </Badge>
-              <Badge size="sm" variant="neutral">{data.label}</Badge>
+              <Badge size="sm" variant="neutral">
+                {data.label}
+              </Badge>
             </header>
 
             <section className="flex flex-col gap-2">
@@ -144,7 +146,9 @@ export function CompareDrawer({ candidateId, onClose }: CompareDrawerProps) {
                   size="sm"
                   onClick={() => confirm.mutate()}
                   disabled={confirm.isPending || reject.isPending || distinct.isPending}
-                  icon={confirm.isPending ? <Spinner size="sm" /> : <IconGlyph name="check" size={12} />}
+                  icon={
+                    confirm.isPending ? <Spinner size="sm" /> : <IconGlyph name="check" size={12} />
+                  }
                 >
                   Confirm merge
                 </Button>

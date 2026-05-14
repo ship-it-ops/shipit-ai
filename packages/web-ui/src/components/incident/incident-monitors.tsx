@@ -2,10 +2,7 @@
 
 import { Badge, Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import {
-  type MonitorEntry,
-  monitorContext,
-} from '@/lib/incident/derivations';
+import { type MonitorEntry, monitorContext } from '@/lib/incident/derivations';
 import { getMonitorLinks } from '@/lib/integrations';
 
 interface Props {

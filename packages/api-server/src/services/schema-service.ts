@@ -183,7 +183,11 @@ function diffTypeProps(
     }
   }
 
-  if (added_properties.length === 0 && removed_properties.length === 0 && changed_properties.length === 0) {
+  if (
+    added_properties.length === 0 &&
+    removed_properties.length === 0 &&
+    changed_properties.length === 0
+  ) {
     return null;
   }
   return { added_properties, removed_properties, changed_properties };

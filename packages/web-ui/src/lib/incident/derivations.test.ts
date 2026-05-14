@@ -243,9 +243,7 @@ describe('safetyVerdict', () => {
 
   it('returns RED when any T1 dependent exists', () => {
     const svc = baseSvc({ tier: 3 });
-    const v = safetyVerdict(svc, [
-      { id: 'x', name: 'x', type: 'LogicalService', tier: 1 },
-    ]);
+    const v = safetyVerdict(svc, [{ id: 'x', name: 'x', type: 'LogicalService', tier: 1 }]);
     expect(v.level).toBe('red');
   });
 
@@ -265,12 +263,8 @@ describe('safetyVerdict', () => {
   });
 
   it('returns GREEN only when tier 3 + zero blast + experimental/deprecated lifecycle', () => {
-    expect(
-      safetyVerdict(baseSvc({ tier: 3, lifecycle: 'deprecated' }), []).level,
-    ).toBe('green');
-    expect(
-      safetyVerdict(baseSvc({ tier: 3, lifecycle: 'experimental' }), []).level,
-    ).toBe('green');
+    expect(safetyVerdict(baseSvc({ tier: 3, lifecycle: 'deprecated' }), []).level).toBe('green');
+    expect(safetyVerdict(baseSvc({ tier: 3, lifecycle: 'experimental' }), []).level).toBe('green');
     // production tier-3 with no blast — still YELLOW (default cautious).
     expect(safetyVerdict(baseSvc({ tier: 3, lifecycle: 'production' }), []).level).toBe('yellow');
   });

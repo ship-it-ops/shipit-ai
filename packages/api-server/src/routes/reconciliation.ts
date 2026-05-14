@@ -30,7 +30,8 @@ const reconciliationRoutes: FastifyPluginAsync = async (server) => {
   server.get<{
     Querystring: { status?: string; limit?: string };
   }>('/candidates', async (request) => {
-    const status = (request.query.status as 'pending' | 'confirmed' | 'rejected' | 'distinct') ?? 'pending';
+    const status =
+      (request.query.status as 'pending' | 'confirmed' | 'rejected' | 'distinct') ?? 'pending';
     const limit = request.query.limit ? Number(request.query.limit) : undefined;
     return service.listCandidates({ status, limit });
   });

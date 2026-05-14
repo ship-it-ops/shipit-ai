@@ -102,7 +102,7 @@ export function IncidentHeader({
           Incident Mode
         </button>
 
-        <div className="hidden min-w-0 flex-1 max-w-md sm:block">
+        <div className="hidden max-w-md min-w-0 flex-1 sm:block">
           <EntitySearchBox
             size="sm"
             preferLabel="LogicalService"
@@ -158,9 +158,7 @@ export function IncidentHeader({
             {loading && <Spinner size="sm" />}
             <StalenessChip ageSeconds={ageForChip} />
           </div>
-          <span className="text-text-dim truncate font-mono text-[11px]">
-            {serviceId}
-          </span>
+          <span className="text-text-dim truncate font-mono text-[11px]">{serviceId}</span>
         </div>
       </div>
 

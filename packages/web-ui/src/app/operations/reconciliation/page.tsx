@@ -60,9 +60,7 @@ export default function ReconciliationPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-text text-[22px] font-semibold tracking-tight">Reconciliation</h1>
             <Badge variant="accent">Phase 2</Badge>
-            {stats && stats.pending > 0 && (
-              <Badge variant="warn">{stats.pending} pending</Badge>
-            )}
+            {stats && stats.pending > 0 && <Badge variant="warn">{stats.pending} pending</Badge>}
           </div>
           <p className="text-text-muted mt-1 text-[13px]">
             Fuzzy-matched candidates that fell below the auto-merge threshold. Confirm a merge,
@@ -115,10 +113,7 @@ export default function ReconciliationPage() {
         </TabsContent>
       </Tabs>
 
-      <CompareDrawer
-        candidateId={openCandidateId}
-        onClose={() => setOpenCandidateId(null)}
-      />
+      <CompareDrawer candidateId={openCandidateId} onClose={() => setOpenCandidateId(null)} />
     </div>
   );
 }

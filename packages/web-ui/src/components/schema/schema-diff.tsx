@@ -16,11 +16,7 @@ export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
     diff.changed.length === 0;
 
   if (empty) {
-    return (
-      <p className="text-text-muted text-[12px]">
-        No changes vs the currently saved schema.
-      </p>
-    );
+    return <p className="text-text-muted text-[12px]">No changes vs the currently saved schema.</p>;
   }
 
   return (
@@ -58,11 +54,13 @@ export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
           {diff.changed.map((c) => (
             <div
               key={`${c.kind}:${c.name}`}
-              className="border-border bg-panel rounded-xs flex flex-col gap-1 border p-2"
+              className="border-border bg-panel flex flex-col gap-1 rounded-xs border p-2"
             >
               <div className="flex items-center gap-2">
                 <span className="text-text font-medium">{c.name}</span>
-                <Badge size="sm" variant="neutral">{c.kind}</Badge>
+                <Badge size="sm" variant="neutral">
+                  {c.kind}
+                </Badge>
               </div>
               {c.added_properties.length > 0 && (
                 <div className="text-text-muted text-[11px]">
@@ -78,8 +76,10 @@ export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
                 <ul className="text-text-muted m-0 list-none p-0 text-[11px]">
                   {c.changed_properties.map((p, i) => (
                     <li key={i}>
-                      <span className="font-mono">{p.name}.{p.field}</span>:{' '}
-                      <span className="font-mono">{JSON.stringify(p.before)}</span> →{' '}
+                      <span className="font-mono">
+                        {p.name}.{p.field}
+                      </span>
+                      : <span className="font-mono">{JSON.stringify(p.before)}</span> →{' '}
                       <span className="text-text font-mono">{JSON.stringify(p.after)}</span>
                     </li>
                   ))}
@@ -105,7 +105,9 @@ function Section({
   return (
     <div className="flex flex-col gap-2">
       <div className="text-text-muted text-[11px]">
-        <Badge size="sm" variant={tone}>{title}</Badge>
+        <Badge size="sm" variant={tone}>
+          {title}
+        </Badge>
       </div>
       <div className="flex flex-wrap gap-1">{children}</div>
     </div>

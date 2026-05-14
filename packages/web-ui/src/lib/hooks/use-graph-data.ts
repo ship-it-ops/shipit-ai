@@ -1,12 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import {
-  fetchBlastRadius,
-  fetchNeighborhood,
-  fetchGraphOverview,
-  type GraphData,
-} from '@/lib/api';
+import { fetchBlastRadius, fetchNeighborhood, fetchGraphOverview, type GraphData } from '@/lib/api';
 
 export function useGraphData(nodeId?: string, depth: number = 2) {
   return useQuery<GraphData>({

@@ -135,8 +135,7 @@ function BlastRadiusTable({
   return (
     <div className="flex flex-col">
       {entries.map((entry) => {
-        const tierVariant =
-          entry.tier === 1 ? 'err' : entry.tier === 2 ? 'warn' : 'neutral';
+        const tierVariant = entry.tier === 1 ? 'err' : entry.tier === 2 ? 'warn' : 'neutral';
         return (
           <EntityListRowButton
             key={entry.id}

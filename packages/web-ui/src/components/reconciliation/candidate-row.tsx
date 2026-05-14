@@ -32,7 +32,9 @@ export function CandidateRow({ candidate, onOpen }: CandidateRowProps) {
         <Side name={candidate.rightName} id={candidate.rightId} source={candidate.rightSource} />
       </div>
       <footer className="flex items-center justify-between">
-        <span className="text-text-dim text-[11px]">created {formatRelative(candidate.createdAt)}</span>
+        <span className="text-text-dim text-[11px]">
+          created {formatRelative(candidate.createdAt)}
+        </span>
         <Button size="sm" variant="outline" onClick={() => onOpen(candidate.id)}>
           Open <IconGlyph name="next" size={10} />
         </Button>

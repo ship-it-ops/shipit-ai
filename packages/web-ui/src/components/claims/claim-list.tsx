@@ -31,7 +31,7 @@ function ClaimRow({
   return (
     <li
       className={
-        'border-border bg-panel rounded-xs flex flex-col gap-2 border p-3 ' +
+        'border-border bg-panel flex flex-col gap-2 rounded-xs border p-3 ' +
         (isWinner ? 'border-accent/60' : '')
       }
     >
@@ -83,7 +83,10 @@ function PropertyBlock({ prop }: { prop: ResolvedProperty }) {
           <ClaimRow
             key={c.source + i}
             claim={c}
-            isWinner={prop.winning_claim?.source === c.source && prop.winning_claim?.source_id === c.source_id}
+            isWinner={
+              prop.winning_claim?.source === c.source &&
+              prop.winning_claim?.source_id === c.source_id
+            }
             strategy={prop.strategy}
           />
         ))}

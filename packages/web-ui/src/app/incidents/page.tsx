@@ -68,8 +68,14 @@ export default function IncidentModeLandingPage() {
           <ol className="text-text-muted m-0 flex list-none flex-col gap-2 p-0 text-[13px]">
             <li>1. Search for the affected service by name.</li>
             <li>2. Read the safety verdict, responders, and blast radius.</li>
-            <li>3. Page on-call, declare in your incident tool, or jump to Slack — all from the dashboard footer.</li>
-            <li>4. Paste the dashboard URL into your incident channel so the next responder lands on the same view.</li>
+            <li>
+              3. Page on-call, declare in your incident tool, or jump to Slack — all from the
+              dashboard footer.
+            </li>
+            <li>
+              4. Paste the dashboard URL into your incident channel so the next responder lands on
+              the same view.
+            </li>
           </ol>
         </Card>
       </div>

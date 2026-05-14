@@ -2,15 +2,8 @@
 
 import { Button } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import {
-  type Responders,
-  type ServiceNode,
-  serviceContext,
-} from '@/lib/incident/derivations';
-import {
-  getDeclareIncidentLinks,
-  getTeamChannelLinks,
-} from '@/lib/integrations';
+import { type Responders, type ServiceNode, serviceContext } from '@/lib/incident/derivations';
+import { getDeclareIncidentLinks, getTeamChannelLinks } from '@/lib/integrations';
 
 interface Props {
   service: ServiceNode | undefined;

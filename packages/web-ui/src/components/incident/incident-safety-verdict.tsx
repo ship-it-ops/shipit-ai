@@ -71,10 +71,7 @@ export function IncidentSafetyVerdict({ service, blast, claims, loading }: Props
               <div className="flex flex-1 flex-col gap-1">
                 <span className="font-medium">
                   Verdict may be unreliable — catalog has unresolved conflicts on{' '}
-                  <code className="font-mono">
-                    {contested.map((c) => c.key).join(', ')}
-                  </code>
-                  .
+                  <code className="font-mono">{contested.map((c) => c.key).join(', ')}</code>.
                 </span>
                 <Link
                   href={`/operations/claims?entity=${encodeURIComponent(service?.id ?? '')}`}
@@ -87,7 +84,7 @@ export function IncidentSafetyVerdict({ service, blast, claims, loading }: Props
             <div className="flex flex-col gap-1 pl-6">
               {contested.map((c) => (
                 <div key={c.key} className="flex items-center gap-2 text-[11px]">
-                  <span className="text-text-dim font-mono w-24 truncate">{c.key}</span>
+                  <span className="text-text-dim w-24 truncate font-mono">{c.key}</span>
                   <ConfidenceIndicator value={c.confidence} width={140} />
                 </div>
               ))}
@@ -134,8 +131,8 @@ export function IncidentSafetyVerdict({ service, blast, claims, loading }: Props
             <span className="text-text font-medium">Decision rule</span>
             <RuleExplanation level={verdict.level} />
             <span className="text-text-dim">
-              These rules are conservative — when in doubt the verdict is ELEVATED. Override
-              using your own judgment; the catalog data may be incomplete or stale.
+              These rules are conservative — when in doubt the verdict is ELEVATED. Override using
+              your own judgment; the catalog data may be incomplete or stale.
             </span>
           </div>
         )}
@@ -148,7 +145,10 @@ function RuleExplanation({ level }: { level: SafetyLevel }) {
   const items: Array<[SafetyLevel, string]> = [
     ['red', 'CRITICAL if tier 1, OR any tier-1 service depends on this one downstream.'],
     ['yellow', 'ELEVATED if tier 2, OR ≥5 services downstream, OR service is flagged for PII.'],
-    ['green', 'LOW if tier 3 AND zero downstream impact AND lifecycle is experimental/deprecated/decommissioned.'],
+    [
+      'green',
+      'LOW if tier 3 AND zero downstream impact AND lifecycle is experimental/deprecated/decommissioned.',
+    ],
     ['unknown', 'UNKNOWN if the service is missing from the catalog.'],
   ];
   return (

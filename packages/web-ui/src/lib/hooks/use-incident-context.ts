@@ -2,7 +2,13 @@
 
 import { useMemo } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { fetchEntityClaims, fetchTeam, type EntityClaims, type GraphData, type TeamDetail } from '../api';
+import {
+  fetchEntityClaims,
+  fetchTeam,
+  type EntityClaims,
+  type GraphData,
+  type TeamDetail,
+} from '../api';
 import { useBlastRadius, useGraphData } from './use-graph-data';
 
 /**
@@ -50,7 +56,10 @@ function useServiceClaims(serviceId: string | undefined) {
  * Find the owning team id from a depth-1 neighborhood. Returns the source
  * of the first OWNS edge whose target is the service id.
  */
-function ownerTeamIdOf(graph: GraphData | undefined, serviceId: string | undefined): string | undefined {
+function ownerTeamIdOf(
+  graph: GraphData | undefined,
+  serviceId: string | undefined,
+): string | undefined {
   if (!graph || !serviceId) return undefined;
   for (const e of graph.edges) {
     if (e.data.type === 'OWNS' && e.data.target === serviceId) {

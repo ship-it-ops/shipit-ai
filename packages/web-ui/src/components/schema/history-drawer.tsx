@@ -53,7 +53,7 @@ export function HistoryDrawer({ open, onClose, onRollback, rollingBack }: Histor
               return (
                 <li
                   key={s.version}
-                  className="border-border bg-panel rounded-xs flex items-center justify-between gap-3 border p-3"
+                  className="border-border bg-panel flex items-center justify-between gap-3 rounded-xs border p-3"
                 >
                   <div className="flex flex-col gap-1">
                     <span className="text-text text-[12px]">
@@ -61,7 +61,9 @@ export function HistoryDrawer({ open, onClose, onRollback, rollingBack }: Histor
                     </span>
                     <span className="text-text-dim font-mono text-[10px]">{s.version}</span>
                     <div className="flex items-center gap-2">
-                      <Badge size="sm" variant="neutral">{s.actor}</Badge>
+                      <Badge size="sm" variant="neutral">
+                        {s.actor}
+                      </Badge>
                       <span className="text-text-dim text-[10px]">{s.size} bytes</span>
                     </div>
                   </div>

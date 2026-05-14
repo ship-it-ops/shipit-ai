@@ -9,9 +9,9 @@ describe('checkCypherSafety', () => {
 
   it('allows pure MATCH/RETURN queries', () => {
     expect(checkCypherSafety('MATCH (n) RETURN n LIMIT 10').safe).toBe(true);
-    expect(
-      checkCypherSafety('MATCH (n:LogicalService) WHERE n.tier = 1 RETURN n.name').safe,
-    ).toBe(true);
+    expect(checkCypherSafety('MATCH (n:LogicalService) WHERE n.tier = 1 RETURN n.name').safe).toBe(
+      true,
+    );
   });
 
   it('allows db.* and apoc read procedures', () => {

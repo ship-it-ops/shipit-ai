@@ -131,7 +131,11 @@ export class ClaimService {
       });
     }
 
-    properties.sort((a, b) => Number(b.has_conflict) - Number(a.has_conflict) || a.property_key.localeCompare(b.property_key));
+    properties.sort(
+      (a, b) =>
+        Number(b.has_conflict) - Number(a.has_conflict) ||
+        a.property_key.localeCompare(b.property_key),
+    );
 
     return {
       entityId,

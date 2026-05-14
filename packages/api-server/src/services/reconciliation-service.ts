@@ -72,7 +72,11 @@ function scorePair(a: NodeRow, b: NodeRow) {
       value: trigramJaccard(a.namespace, b.namespace),
       applies: !!a.namespace && !!b.namespace,
     },
-    { key: 'tags', value: setSimilarity(a.tags, b.tags), applies: a.tags.length > 0 && b.tags.length > 0 },
+    {
+      key: 'tags',
+      value: setSimilarity(a.tags, b.tags),
+      applies: a.tags.length > 0 && b.tags.length > 0,
+    },
     {
       key: 'labels',
       value: setSimilarity(a.labels, b.labels),
@@ -327,10 +331,8 @@ export class ReconciliationService {
       id: mergeId,
       sourceId: loser,
       targetId: survivor,
-      sourceName:
-        survivor === candidate.leftId ? candidate.rightName : candidate.leftName,
-      targetName:
-        survivor === candidate.leftId ? candidate.leftName : candidate.rightName,
+      sourceName: survivor === candidate.leftId ? candidate.rightName : candidate.leftName,
+      targetName: survivor === candidate.leftId ? candidate.leftName : candidate.rightName,
       actor,
       timestamp: new Date().toISOString(),
       method: 'fuzzy',
@@ -382,8 +384,12 @@ export class ReconciliationService {
         id: asString(m.properties.id),
         sourceId: asString(m.properties.loserId),
         targetId: asString(m.properties.survivorId),
-        sourceName: l ? asString(l.properties.name, asString(m.properties.loserId)) : asString(m.properties.loserId),
-        targetName: s ? asString(s.properties.name, asString(m.properties.survivorId)) : asString(m.properties.survivorId),
+        sourceName: l
+          ? asString(l.properties.name, asString(m.properties.loserId))
+          : asString(m.properties.loserId),
+        targetName: s
+          ? asString(s.properties.name, asString(m.properties.survivorId))
+          : asString(m.properties.survivorId),
         actor: asString(m.properties.actor),
         timestamp: typeof ts === 'object' && ts && 'toString' in ts ? String(ts) : asString(ts),
         method: (asString(m.properties.method) || 'fuzzy') as MergeEventSummary['method'],
@@ -413,9 +419,7 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-function candidateFromRecord(rec: {
-  get: (k: string) => unknown;
-}): ReconciliationCandidate {
+function candidateFromRecord(rec: { get: (k: string) => unknown }): ReconciliationCandidate {
   const c = rec.get('c') as { properties: Record<string, unknown> };
   const a = rec.get('a') as { properties: Record<string, unknown> };
   const b = rec.get('b') as { properties: Record<string, unknown> };

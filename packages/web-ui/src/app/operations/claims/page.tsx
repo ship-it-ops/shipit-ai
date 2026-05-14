@@ -5,12 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Button, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import {
-  fetchConflicts,
-  fetchEntityClaims,
-  type ConflictRow,
-  type EntityClaims,
-} from '@/lib/api';
+import { fetchConflicts, fetchEntityClaims, type ConflictRow, type EntityClaims } from '@/lib/api';
 import { ClaimList } from '@/components/claims/claim-list';
 import { ConflictTable } from '@/components/claims/conflict-table';
 

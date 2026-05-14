@@ -64,10 +64,9 @@ export class TeamService {
   }
 
   async getTeam(id: string): Promise<TeamDetail | null> {
-    const teamRecords = await this.neo4j.runQuery(
-      `MATCH (t:Team {id: $id}) RETURN t LIMIT 1`,
-      { id },
-    );
+    const teamRecords = await this.neo4j.runQuery(`MATCH (t:Team {id: $id}) RETURN t LIMIT 1`, {
+      id,
+    });
     if (teamRecords.length === 0) return null;
     const t = teamRecords[0].get('t') as { properties: Record<string, unknown> };
     const props = t.properties;

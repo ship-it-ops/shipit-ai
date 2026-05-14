@@ -3,11 +3,7 @@
 import { Card, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { EntityBadge } from '@ship-it-ui/shipit';
-import {
-  type Responders,
-  type ServiceNode,
-  serviceContext,
-} from '@/lib/incident/derivations';
+import { type Responders, type ServiceNode, serviceContext } from '@/lib/incident/derivations';
 import { getPageOnCallLinks, getTeamChannelLinks } from '@/lib/integrations';
 
 interface Props {
@@ -135,9 +131,7 @@ export function IncidentResponders({ service, responders, loading }: Props) {
                     <div className="flex items-center gap-3">
                       <EntityBadge type="Team" />
                       <span className="text-text font-medium">{team.name}</span>
-                      <span className="text-text-dim font-mono text-[10px]">
-                        {team.slug}
-                      </span>
+                      <span className="text-text-dim font-mono text-[10px]">{team.slug}</span>
                     </div>
                     <div className="flex flex-wrap gap-2 text-[11px]">
                       {team.email && (

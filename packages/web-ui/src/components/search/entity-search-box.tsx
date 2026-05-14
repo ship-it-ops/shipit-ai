@@ -143,10 +143,12 @@ export function EntitySearchBox({
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        aria-activedescendant={open && results[cursor] ? `${listId}-${results[cursor].id}` : undefined}
+        aria-activedescendant={
+          open && results[cursor] ? `${listId}-${results[cursor].id}` : undefined
+        }
       />
 
-      {open && (query.length > 0) && (
+      {open && query.length > 0 && (
         <div
           id={listId}
           role="listbox"
@@ -191,12 +193,12 @@ export function EntitySearchBox({
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-text truncate text-[13px] font-medium">{r.name}</span>
-                  <span className="text-text-dim truncate font-mono text-[10px]">{r.canonicalId}</span>
+                  <span className="text-text-dim truncate font-mono text-[10px]">
+                    {r.canonicalId}
+                  </span>
                 </span>
                 <span className="text-text-muted shrink-0 text-[11px]">{meta.label}</span>
-                {r.owner && (
-                  <span className="text-text-dim shrink-0 text-[11px]">{r.owner}</span>
-                )}
+                {r.owner && <span className="text-text-dim shrink-0 text-[11px]">{r.owner}</span>}
               </button>
             );
           })}

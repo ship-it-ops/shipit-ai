@@ -100,8 +100,8 @@ function ResultMeta({ result }: { result: CypherQueryResult }) {
   return (
     <div className="text-text-muted flex items-center gap-3 text-[11px]">
       <span>
-        {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} ·{' '}
-        {result.executionTimeMs}ms
+        {result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'} · {result.executionTimeMs}
+        ms
       </span>
       {result.truncated && (
         <Badge variant="warn" size="sm">

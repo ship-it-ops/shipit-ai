@@ -324,10 +324,7 @@ export function recentChanges(
 // Monitors
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function monitorsFor(
-  graph: GraphData | undefined,
-  serviceId: string,
-): MonitorEntry[] {
+export function monitorsFor(graph: GraphData | undefined, serviceId: string): MonitorEntry[] {
   if (!graph) return [];
   const monitorIds = new Set<string>();
   for (const e of graph.edges) {
@@ -442,10 +439,7 @@ function asTeam(node: GraphNode): TeamContext {
  * "page now," the code owners are "wake if needed (SMEs)." We surface both
  * because that distinction has saved real incidents.
  */
-export function responders(
-  graph: GraphData | undefined,
-  serviceId: string,
-): Responders {
+export function responders(graph: GraphData | undefined, serviceId: string): Responders {
   const empty: Responders = {
     onCall: [],
     owningTeams: [],
@@ -568,7 +562,8 @@ export function safetyVerdict(
   if (tier !== undefined) reasons.push(`Tier T${tier}`);
   if (lifecycle) reasons.push(`Lifecycle: ${lifecycle}`);
   reasons.push(`${summary.total} downstream service${summary.total === 1 ? '' : 's'}`);
-  if (summary.tier1 > 0) reasons.push(`${summary.tier1} T1 dependent${summary.tier1 === 1 ? '' : 's'}`);
+  if (summary.tier1 > 0)
+    reasons.push(`${summary.tier1} T1 dependent${summary.tier1 === 1 ? '' : 's'}`);
   if (service.hasPii) reasons.push('Service flagged for PII');
 
   // CRITICAL

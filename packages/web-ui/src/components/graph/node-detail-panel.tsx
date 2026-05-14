@@ -254,4 +254,3 @@ function ClaimsDialog({ open, onOpenChange, nodeName, nodeId, claims }: ClaimsDi
     </Dialog>
   );
 }
-

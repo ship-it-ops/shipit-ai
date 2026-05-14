@@ -1,6 +1,12 @@
 'use client';
 
-import { Badge, TooltipContent, TooltipProvider, TooltipRoot, TooltipTrigger } from '@ship-it-ui/ui';
+import {
+  Badge,
+  TooltipContent,
+  TooltipProvider,
+  TooltipRoot,
+  TooltipTrigger,
+} from '@ship-it-ui/ui';
 
 interface Props {
   /**
@@ -52,8 +58,8 @@ export function StalenessChip({ ageSeconds, prefix = 'synced' }: Props) {
           </Badge>
         </TooltipTrigger>
         <TooltipContent>
-          When the catalog connector last refreshed this data — not when the
-          underlying state changed.
+          When the catalog connector last refreshed this data — not when the underlying state
+          changed.
         </TooltipContent>
       </TooltipRoot>
     </TooltipProvider>

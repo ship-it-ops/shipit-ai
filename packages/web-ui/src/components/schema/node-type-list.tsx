@@ -32,7 +32,11 @@ export function NodeTypeList({ schema, selected, onSelect, dirty }: NodeTypeList
               <div className="flex flex-col gap-[2px]">
                 <span className="text-text flex items-center gap-1 text-[12px] font-medium">
                   {name}
-                  {isDirty && <Badge size="sm" variant="warn">edited</Badge>}
+                  {isDirty && (
+                    <Badge size="sm" variant="warn">
+                      edited
+                    </Badge>
+                  )}
                 </span>
                 <span className="text-text-dim text-[10px]">{propCount} properties</span>
               </div>

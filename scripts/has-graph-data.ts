@@ -35,7 +35,9 @@ async function main(): Promise<number> {
       );
       const raw = result.records[0]?.get('c');
       const count =
-        typeof raw === 'object' && raw && typeof (raw as { toNumber?: () => number }).toNumber === 'function'
+        typeof raw === 'object' &&
+        raw &&
+        typeof (raw as { toNumber?: () => number }).toNumber === 'function'
           ? (raw as { toNumber: () => number }).toNumber()
           : Number(raw);
       return count > 0 ? 0 : 1;

@@ -70,33 +70,18 @@ export function getServiceDashboardLinks(service: ServiceContext): Deeplink[] {
 }
 
 export function getRepositoryLinks(repo: RepositoryContext): Deeplink[] {
-  return collect(
-    repo,
-    (a, r) => (a.repositoryUrl ? a.repositoryUrl(r) : null),
-    'Repo',
-  );
+  return collect(repo, (a, r) => (a.repositoryUrl ? a.repositoryUrl(r) : null), 'Repo');
 }
 
 export function getDeploymentLinks(deployment: DeploymentContext): Deeplink[] {
-  return collect(
-    deployment,
-    (a, d) => (a.deploymentUrl ? a.deploymentUrl(d) : null),
-    'Console',
-  );
+  return collect(deployment, (a, d) => (a.deploymentUrl ? a.deploymentUrl(d) : null), 'Console');
 }
 
 export function getMonitorLinks(monitor: MonitorContext): Deeplink[] {
-  return collect(
-    monitor,
-    (a, m) => (a.monitorUrl ? a.monitorUrl(m) : null),
-    'Monitor',
-  );
+  return collect(monitor, (a, m) => (a.monitorUrl ? a.monitorUrl(m) : null), 'Monitor');
 }
 
-export function getPageOnCallLinks(
-  person: PersonContext,
-  service: ServiceContext,
-): Deeplink[] {
+export function getPageOnCallLinks(person: PersonContext, service: ServiceContext): Deeplink[] {
   return collect(
     { person, service },
     (a, ctx) => (a.pageOnCallUrl ? a.pageOnCallUrl(ctx.person, ctx.service) : null),
@@ -113,9 +98,5 @@ export function getDeclareIncidentLinks(service: ServiceContext): Deeplink[] {
 }
 
 export function getTeamChannelLinks(team: TeamContext): Deeplink[] {
-  return collect(
-    team,
-    (a, t) => (a.teamChannelUrl ? a.teamChannelUrl(t) : null),
-    'Channel',
-  );
+  return collect(team, (a, t) => (a.teamChannelUrl ? a.teamChannelUrl(t) : null), 'Channel');
 }

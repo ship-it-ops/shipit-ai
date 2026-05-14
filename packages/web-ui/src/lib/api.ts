@@ -382,7 +382,9 @@ export interface ReconciliationStats {
   lastScanAt: string | null;
 }
 
-export async function fetchCandidates(status: CandidateStatus = 'pending'): Promise<ReconciliationCandidate[]> {
+export async function fetchCandidates(
+  status: CandidateStatus = 'pending',
+): Promise<ReconciliationCandidate[]> {
   return apiFetch<ReconciliationCandidate[]>(`/api/reconciliation/candidates?status=${status}`);
 }
 
@@ -391,13 +393,18 @@ export async function fetchCandidate(id: string): Promise<CandidateDetail> {
 }
 
 export async function confirmMerge(id: string): Promise<MergeEventSummary> {
-  return apiFetch<MergeEventSummary>(`/api/reconciliation/candidates/${encodeURIComponent(id)}/confirm`, {
-    method: 'POST',
-  });
+  return apiFetch<MergeEventSummary>(
+    `/api/reconciliation/candidates/${encodeURIComponent(id)}/confirm`,
+    {
+      method: 'POST',
+    },
+  );
 }
 
 export async function rejectCandidate(id: string): Promise<void> {
-  await apiFetch(`/api/reconciliation/candidates/${encodeURIComponent(id)}/reject`, { method: 'POST' });
+  await apiFetch(`/api/reconciliation/candidates/${encodeURIComponent(id)}/reject`, {
+    method: 'POST',
+  });
 }
 
 export async function markCandidateDistinct(id: string): Promise<void> {

@@ -67,9 +67,11 @@ export default function SchemaEditorPage() {
     return out;
   }, [draft, serverSchema]);
 
-  const hasChanges = dirty.size > 0 || (
-    draft && serverSchema && Object.keys(draft.node_types).length !== Object.keys(serverSchema.node_types).length
-  );
+  const hasChanges =
+    dirty.size > 0 ||
+    (draft &&
+      serverSchema &&
+      Object.keys(draft.node_types).length !== Object.keys(serverSchema.node_types).length);
 
   const updateSelected = useCallback(
     (next: SchemaNodeTypeDef) => {
@@ -164,18 +166,15 @@ export default function SchemaEditorPage() {
             </span>
           </div>
           <p className="text-text-muted mt-1 text-[13px]">
-            Form-based ontology management — properties, types, and per-property resolution strategies.
+            Form-based ontology management — properties, types, and per-property resolution
+            strategies.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
             <IconGlyph name="file" size={12} /> History
           </Button>
-          <Button
-            onClick={openSaveDialog}
-            disabled={!hasChanges || saving}
-            size="sm"
-          >
+          <Button onClick={openSaveDialog} disabled={!hasChanges || saving} size="sm">
             {saving ? <Spinner size="sm" /> : <IconGlyph name="check" size={12} />}
             Save changes
           </Button>
@@ -188,21 +187,18 @@ export default function SchemaEditorPage() {
         </div>
       )}
 
-      <div className="grid flex-1 min-h-0 grid-cols-[260px_1fr] gap-0">
+      <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr] gap-0">
         <aside className="border-border min-h-0 overflow-y-auto border-r p-3">
-          <NodeTypeList
-            schema={draft}
-            selected={selected}
-            onSelect={setSelected}
-            dirty={dirty}
-          />
+          <NodeTypeList schema={draft} selected={selected} onSelect={setSelected} dirty={dirty} />
         </aside>
         <main className="min-h-0 overflow-y-auto p-6">
           {currentDef && selected ? (
             <PropertyEditor typeName={selected} def={currentDef} onChange={updateSelected} />
           ) : (
             <Card title="Select a node type">
-              <p className="text-text-muted text-[12px]">Pick a type from the list on the left to edit its properties.</p>
+              <p className="text-text-muted text-[12px]">
+                Pick a type from the list on the left to edit its properties.
+              </p>
             </Card>
           )}
         </main>
@@ -216,7 +212,12 @@ export default function SchemaEditorPage() {
         width={640}
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setDiffOpen(false)} disabled={saving}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDiffOpen(false)}
+              disabled={saving}
+            >
               Cancel
             </Button>
             <Button size="sm" onClick={confirmSave} disabled={saving}>

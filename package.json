@@ -9,6 +9,7 @@
     "test": "turbo test",
     "test:watch": "turbo test:watch",
     "lint": "turbo lint",
+    "lint:fix": "turbo lint:fix",
     "clean": "turbo clean",
     "typecheck": "turbo typecheck",
     "setup": "bash scripts/setup.sh",
@@ -25,6 +26,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
     "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}": "prettier --write"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

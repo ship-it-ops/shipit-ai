@@ -42,9 +42,7 @@ export default function QueryPlaygroundPage() {
       <header className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-text text-[22px] font-semibold tracking-tight">
-              Query Playground
-            </h1>
+            <h1 className="text-text text-[22px] font-semibold tracking-tight">Query Playground</h1>
             <Badge variant="accent">Phase 2</Badge>
           </div>
           <p className="text-text-muted mt-1 text-[13px]">
@@ -62,12 +60,7 @@ export default function QueryPlaygroundPage() {
 
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
         <div className="flex min-w-0 flex-col gap-4">
-          <QueryEditor
-            value={cypher}
-            onChange={setCypher}
-            onSubmit={run}
-            disabled={running}
-          />
+          <QueryEditor value={cypher} onChange={setCypher} onSubmit={run} disabled={running} />
           {errorCode === 'WRITE_BLOCKED' && (
             <div className="border-err/40 text-err rounded-base flex items-start gap-2 border bg-[color:var(--color-err)]/10 px-3 py-2 text-[12px]">
               <IconGlyph name="warn" size={14} />

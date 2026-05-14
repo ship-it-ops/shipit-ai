@@ -56,9 +56,7 @@ export function BlastRadiusDialog({
       groups.set(t, bucket);
     }
     for (const bucket of groups.values()) {
-      bucket.sort((a, b) =>
-        String(a.data.name ?? '').localeCompare(String(b.data.name ?? '')),
-      );
+      bucket.sort((a, b) => String(a.data.name ?? '').localeCompare(String(b.data.name ?? '')));
     }
     return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [affected]);
@@ -75,8 +73,8 @@ export function BlastRadiusDialog({
   } else if (error) {
     body = (
       <div className="text-err text-[13px]">
-        Couldn&apos;t load blast radius. The API may be unavailable, or APOC isn&apos;t installed
-        on this Neo4j instance.
+        Couldn&apos;t load blast radius. The API may be unavailable, or APOC isn&apos;t installed on
+        this Neo4j instance.
       </div>
     );
   } else if (affected.length === 0) {
