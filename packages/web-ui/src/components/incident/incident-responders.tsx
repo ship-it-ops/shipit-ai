@@ -1,7 +1,8 @@
 'use client';
 
-import { Badge, Card, EmptyState, Spinner } from '@ship-it-ui/ui';
+import { Card, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
+import { EntityBadge } from '@ship-it-ui/shipit';
 import {
   type Responders,
   type ServiceNode,
@@ -132,9 +133,7 @@ export function IncidentResponders({ service, responders, loading }: Props) {
                     className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <Badge variant="purple" className="font-mono text-[10px]">
-                        Team
-                      </Badge>
+                      <EntityBadge type="Team" />
                       <span className="text-text font-medium">{team.name}</span>
                       <span className="text-text-dim font-mono text-[10px]">
                         {team.slug}
@@ -178,22 +177,10 @@ export function IncidentResponders({ service, responders, loading }: Props) {
             </h3>
             <div className="flex flex-wrap gap-2 text-[11px]">
               {responders.codeOwners.teams.map((t) => (
-                <span
-                  key={t.id}
-                  className="border-border text-text-muted inline-flex items-center gap-1 rounded-sm border px-2 py-1"
-                >
-                  <IconGlyph name="person" size={10} />
-                  {t.name}
-                </span>
+                <EntityBadge key={t.id} type="Team" label={t.name} />
               ))}
               {responders.codeOwners.people.map((p) => (
-                <span
-                  key={p.id}
-                  className="border-border text-text-muted inline-flex items-center gap-1 rounded-sm border px-2 py-1"
-                >
-                  <IconGlyph name="person" size={10} />
-                  {p.name}
-                </span>
+                <EntityBadge key={p.id} type="Person" label={p.name} />
               ))}
             </div>
           </section>

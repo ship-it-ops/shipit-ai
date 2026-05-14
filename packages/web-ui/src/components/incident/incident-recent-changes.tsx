@@ -2,7 +2,7 @@
 
 import { Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { getEntityTypeMeta } from '@ship-it-ui/shipit';
+import { EntityListRowDiv, type EntityType } from '@ship-it-ui/shipit';
 import type { RecentChangeEntry } from '@/lib/incident/derivations';
 import { StalenessChip } from './staleness-chip';
 
@@ -34,36 +34,22 @@ export function IncidentRecentChanges({ entries }: Props) {
 
   return (
     <Card title={`Recent changes · ${entries.length}`}>
-      <ul className="m-0 flex flex-col p-0">
-        {entries.map((entry, i) => {
-          const meta = getEntityTypeMeta(entry.type);
+      <div className="flex flex-col">
+        {entries.map((entry) => {
+          const metaText = [entry.type, entry.environment, entry.status]
+            .filter(Boolean)
+            .join(' · ');
           return (
-            <li
+            <EntityListRowDiv
               key={entry.id}
-              className={
-                'flex items-center gap-3 py-2 text-[12px] ' +
-                (i > 0 ? 'border-border border-t' : '')
-              }
-            >
-              <span
-                aria-hidden
-                className={`grid h-6 w-6 place-items-center rounded-xs text-[12px] ${meta.toneBg} ${meta.toneClass}`}
-              >
-                {meta.glyph}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="text-text truncate font-medium">{entry.name}</span>
-                <span className="text-text-dim font-mono text-[10px]">
-                  {entry.type}
-                  {entry.environment ? ` · ${entry.environment}` : ''}
-                  {entry.status ? ` · ${entry.status}` : ''}
-                </span>
-              </div>
-              <StalenessChip ageSeconds={entry.lastSyncedAgeSeconds} />
-            </li>
+              type={entry.type as EntityType}
+              name={entry.name}
+              meta={metaText}
+              relation={<StalenessChip ageSeconds={entry.lastSyncedAgeSeconds} />}
+            />
           );
         })}
-      </ul>
+      </div>
     </Card>
   );
 }

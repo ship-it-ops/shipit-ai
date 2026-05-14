@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { getEntityTypeMeta } from '@ship-it-ui/shipit';
+import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
 import { useRecentlyViewed } from '@/lib/hooks/use-recently-viewed';
 
@@ -50,37 +50,17 @@ export default function IncidentModeLandingPage() {
               </button>
             }
           >
-            <ul className="m-0 flex flex-col p-0">
-              {entries.map((entry, i) => {
-                const meta = getEntityTypeMeta(entry.type);
-                return (
-                  <li
-                    key={entry.id}
-                    className={i > 0 ? 'border-border border-t' : undefined}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/incidents/${encodeURIComponent(entry.id)}`)}
-                      className="hover:bg-panel-2 flex w-full items-center gap-3 px-2 py-2 text-left text-[13px]"
-                    >
-                      <span
-                        aria-hidden
-                        className={`grid h-6 w-6 place-items-center rounded-xs text-[12px] ${meta.toneBg} ${meta.toneClass}`}
-                      >
-                        {meta.glyph}
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="text-text truncate font-medium">{entry.name}</span>
-                        <span className="text-text-dim truncate font-mono text-[10px]">
-                          {entry.id}
-                        </span>
-                      </span>
-                      <IconGlyph name="caretRight" size={11} />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="flex flex-col">
+              {entries.map((entry) => (
+                <EntityListRowButton
+                  key={entry.id}
+                  type={entry.type as EntityType}
+                  name={entry.name}
+                  meta={entry.id}
+                  onClick={() => router.push(`/incidents/${encodeURIComponent(entry.id)}`)}
+                />
+              ))}
+            </div>
           </Card>
         )}
 

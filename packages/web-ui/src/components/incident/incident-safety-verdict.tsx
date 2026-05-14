@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Badge, Button, Card, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
+import { ConfidenceIndicator } from '@ship-it-ui/shipit';
 import {
   type BlastRadiusEntry,
   type SafetyLevel,
@@ -42,36 +43,54 @@ export function IncidentSafetyVerdict({ service, blast, claims, loading }: Props
   const tone = LEVEL_TONE[verdict.level];
   const [showWhy, setShowWhy] = useState(false);
 
-  // Detect a contested input property — same logic the claims explorer uses,
-  // but scoped to the keys this verdict actually consumes.
-  const contestedKeys = useMemo(() => {
-    if (!claims) return [];
+  // Detect contested input properties — same logic the claims explorer uses,
+  // but scoped to the keys this verdict actually consumes. Surface the
+  // winning claim's confidence so the IC sees a numeric trust signal,
+  // not just a binary "conflict / no conflict".
+  const contested = useMemo(() => {
+    if (!claims) return [] as Array<{ key: string; confidence: number }>;
     return claims.properties
       .filter(
         (p) =>
           (VERDICT_INPUT_PROPERTY_KEYS as readonly string[]).includes(p.property_key) &&
           p.has_conflict,
       )
-      .map((p) => p.property_key);
+      .map((p) => ({
+        key: p.property_key,
+        confidence: Math.round((p.winning_claim?.confidence ?? 0) * 100),
+      }));
   }, [claims]);
 
   return (
     <Card>
       <div className="flex flex-col gap-3">
-        {contestedKeys.length > 0 && (
-          <div className="border-warn bg-warn/10 text-warn rounded-base flex items-start gap-2 border px-3 py-2 text-[12px]">
-            <IconGlyph name="warn" size={14} />
-            <div className="flex flex-1 flex-col gap-1">
-              <span className="font-medium">
-                Verdict may be unreliable — catalog has unresolved conflicts on{' '}
-                <code className="font-mono">{contestedKeys.join(', ')}</code>.
-              </span>
-              <Link
-                href={`/operations/claims?entity=${encodeURIComponent(service?.id ?? '')}`}
-                className="text-warn underline-offset-2 hover:underline"
-              >
-                Inspect claims →
-              </Link>
+        {contested.length > 0 && (
+          <div className="border-warn bg-warn/10 text-warn rounded-base flex flex-col gap-2 border px-3 py-2 text-[12px]">
+            <div className="flex items-start gap-2">
+              <IconGlyph name="warn" size={14} />
+              <div className="flex flex-1 flex-col gap-1">
+                <span className="font-medium">
+                  Verdict may be unreliable — catalog has unresolved conflicts on{' '}
+                  <code className="font-mono">
+                    {contested.map((c) => c.key).join(', ')}
+                  </code>
+                  .
+                </span>
+                <Link
+                  href={`/operations/claims?entity=${encodeURIComponent(service?.id ?? '')}`}
+                  className="text-warn underline-offset-2 hover:underline"
+                >
+                  Inspect claims →
+                </Link>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1 pl-6">
+              {contested.map((c) => (
+                <div key={c.key} className="flex items-center gap-2 text-[11px]">
+                  <span className="text-text-dim font-mono w-24 truncate">{c.key}</span>
+                  <ConfidenceIndicator value={c.confidence} width={140} />
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -104,7 +123,7 @@ export function IncidentSafetyVerdict({ service, blast, claims, loading }: Props
             variant="ghost"
             size="sm"
             onClick={() => setShowWhy((s) => !s)}
-            icon={<IconGlyph name={showWhy ? 'collapse' : 'expand'} size={11} />}
+            icon={<IconGlyph name={showWhy ? 'caretUp' : 'caretDown'} size={11} />}
           >
             Why?
           </Button>

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Badge, Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { getEntityTypeMeta } from '@ship-it-ui/shipit';
+import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import type { DependencyEntry } from '@/lib/incident/derivations';
 
 interface Props {
@@ -41,14 +41,12 @@ export function IncidentDependencies({ upstream, downstream }: Props) {
       <div className="grid gap-5 md:grid-cols-2">
         <DependencyList
           heading="Depends on"
-          arrow="→"
           entries={upstream}
           onOpen={open}
           emptyText="No outbound dependencies declared."
         />
         <DependencyList
           heading="Used by"
-          arrow="←"
           entries={downstream}
           onOpen={open}
           emptyText="No inbound dependencies declared."
@@ -60,13 +58,11 @@ export function IncidentDependencies({ upstream, downstream }: Props) {
 
 function DependencyList({
   heading,
-  arrow,
   entries,
   onOpen,
   emptyText,
 }: {
   heading: string;
-  arrow: string;
   entries: DependencyEntry[];
   onOpen: (id: string) => void;
   emptyText: string;
@@ -77,44 +73,29 @@ function DependencyList({
       {entries.length === 0 ? (
         <p className="text-text-muted text-[12px]">{emptyText}</p>
       ) : (
-        <ul className="m-0 flex flex-col gap-1 p-0">
+        <div className="flex flex-col">
           {entries.map((e) => {
-            const meta = getEntityTypeMeta(e.type);
             const tierVariant =
               e.tier === 1 ? 'err' : e.tier === 2 ? 'warn' : 'neutral';
+            const metaText = e.owner ? `${e.relation} · ${e.owner}` : e.relation;
             return (
-              <li key={`${e.id}-${e.relation}`}>
-                <button
-                  type="button"
-                  onClick={() => onOpen(e.id)}
-                  className="hover:bg-panel-2 flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-[12px]"
-                >
-                  <span aria-hidden className="text-text-dim w-3 font-mono text-[10px]">
-                    {arrow}
-                  </span>
-                  <span
-                    aria-hidden
-                    className={`grid h-5 w-5 place-items-center rounded-xs text-[11px] ${meta.toneBg} ${meta.toneClass}`}
-                  >
-                    {meta.glyph}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-text truncate">{e.name}</span>
-                    <span className="text-text-dim truncate font-mono text-[10px]">
-                      {e.relation}
-                      {e.owner ? ` · ${e.owner}` : ''}
-                    </span>
-                  </span>
-                  {e.tier !== undefined && (
-                    <Badge variant={tierVariant} className="shrink-0 font-mono text-[10px]">
+              <EntityListRowButton
+                key={`${e.id}-${e.relation}`}
+                type={e.type as EntityType}
+                name={e.name}
+                meta={metaText}
+                relation={
+                  e.tier !== undefined ? (
+                    <Badge variant={tierVariant} className="font-mono text-[10px]">
                       T{e.tier}
                     </Badge>
-                  )}
-                </button>
-              </li>
+                  ) : undefined
+                }
+                onClick={() => onOpen(e.id)}
+              />
             );
           })}
-        </ul>
+        </div>
       )}
     </section>
   );

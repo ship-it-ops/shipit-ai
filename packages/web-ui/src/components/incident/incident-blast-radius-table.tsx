@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Card, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { getEntityTypeMeta } from '@ship-it-ui/shipit';
+import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 import {
   type BlastRadiusEntry,
@@ -133,51 +133,27 @@ function BlastRadiusTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <ul className="m-0 flex flex-col p-0">
-      {entries.map((entry, i) => {
-        const meta = getEntityTypeMeta(entry.type);
+    <div className="flex flex-col">
+      {entries.map((entry) => {
         const tierVariant =
           entry.tier === 1 ? 'err' : entry.tier === 2 ? 'warn' : 'neutral';
         return (
-          <li
+          <EntityListRowButton
             key={entry.id}
-            className={
-              'border-border flex items-center gap-3 border-t px-1 py-2 text-[12px] ' +
-              (i === 0 ? 'border-t-0' : '')
+            type={entry.type as EntityType}
+            name={entry.name}
+            relation={
+              entry.tier !== undefined ? (
+                <Badge variant={tierVariant} className="font-mono text-[10px]">
+                  T{entry.tier}
+                </Badge>
+              ) : undefined
             }
-          >
-            <span
-              aria-hidden
-              className={`grid h-6 w-6 place-items-center rounded-xs text-[12px] ${meta.toneBg} ${meta.toneClass}`}
-            >
-              {meta.glyph}
-            </span>
-            <button
-              type="button"
-              onClick={() => onOpen(entry.id)}
-              className="text-text hover:text-accent flex min-w-0 flex-1 flex-col items-start text-left"
-            >
-              <span className="truncate font-medium">{entry.name}</span>
-              <span className="text-text-dim truncate font-mono text-[10px]">
-                {entry.owner ?? '—'}
-              </span>
-            </button>
-            {entry.tier !== undefined && (
-              <Badge variant={tierVariant} className="shrink-0 font-mono text-[10px]">
-                T{entry.tier}
-              </Badge>
-            )}
-            <button
-              type="button"
-              onClick={() => onOpen(entry.id)}
-              aria-label={`Open ${entry.name}`}
-              className="text-text-dim hover:text-accent shrink-0"
-            >
-              <IconGlyph name="caretRight" size={12} />
-            </button>
-          </li>
+            meta={entry.owner}
+            onClick={() => onOpen(entry.id)}
+          />
         );
       })}
-    </ul>
+    </div>
   );
 }
