@@ -32,6 +32,15 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
     return neo4j.getNeighborhood(request.params.id, depth);
   });
 
+  // GET /api/graph/blast-radius/:id
+  server.get<{
+    Params: { id: string };
+    Querystring: { depth?: string };
+  }>('/blast-radius/:id', async (request) => {
+    const depth = Math.min(Number(request.query.depth ?? 3), 5);
+    return neo4j.getBlastRadius(request.params.id, depth);
+  });
+
   // GET /api/graph/search
   server.get<{
     Querystring: {
@@ -44,19 +53,30 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
   }>('/search', async (request) => {
     const { label, q, tier, owner, limit } = request.query;
     const filters: Record<string, unknown> = {};
-    if (q) filters.name = q;
     if (tier) filters.tier = tier;
     if (owner) filters.owner = owner;
 
     const records = await neo4j.searchEntities({
       label,
+      q,
       filters,
-      limit: limit ? Number(limit) : 25,
+      limit: limit ? Math.min(Number(limit), 100) : 25,
     });
 
+    // Shape consumed by the global command palette + entity search dropdowns.
     return records.map((record) => {
-      const node = record.get('n');
-      return node.properties;
+      const node = record.get('n') as { properties: Record<string, unknown> };
+      const labels = (record.get('labels') as string[] | undefined) ?? [];
+      const props = node.properties;
+      const id = String(props.id ?? '');
+      return {
+        id,
+        canonicalId: id,
+        name: String(props.name ?? id.split('/').pop() ?? id),
+        label: labels[0] ?? 'Unknown',
+        owner: props.owner ? String(props.owner) : undefined,
+        lastSynced: props._last_synced ? String(props._last_synced) : undefined,
+      };
     });
   });
 };

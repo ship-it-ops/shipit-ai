@@ -54,6 +54,8 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** True when blast-radius hit the server-side node cap. */
+  truncated?: boolean;
 }
 
 export interface ActivityEvent {
@@ -93,6 +95,12 @@ export async function fetchNeighborhood(nodeId: string, depth: number = 2): Prom
   );
 }
 
+export async function fetchBlastRadius(nodeId: string, depth: number = 3): Promise<GraphData> {
+  return apiFetch<GraphData>(
+    `/api/graph/blast-radius/${encodeURIComponent(nodeId)}?depth=${depth}`,
+  );
+}
+
 export async function fetchGraphOverview(limit: number = 100): Promise<GraphData> {
   return apiFetch<GraphData>(`/api/graph/overview?limit=${limit}`);
 }
@@ -103,6 +111,25 @@ export async function triggerSync(connectorId: string): Promise<void> {
 
 export async function fetchActivity(): Promise<ActivityEvent[]> {
   return apiFetch<ActivityEvent[]>('/api/activity');
+}
+
+// -- Incident events --------------------------------------------------------
+
+/**
+ * Records a single Incident-Mode dashboard view. Fire-and-forget — failures
+ * never block the page from rendering. Used by Phase 2 adoption analytics.
+ */
+export async function recordIncidentView(serviceId: string): Promise<void> {
+  try {
+    await fetch(`${API_URL}/api/incident-events/view`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceId }),
+      keepalive: true,
+    });
+  } catch {
+    // Intentional: telemetry must never crash the dashboard.
+  }
 }
 
 // -- Query Playground --------------------------------------------------------

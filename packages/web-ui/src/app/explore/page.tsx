@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo } from 'react';
-import { Button, Input } from '@ship-it-ui/ui';
+import { Button } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
   GraphLegend,
@@ -13,19 +13,41 @@ import { GraphCanvas } from '@/components/graph/graph-canvas';
 import { GraphControls } from '@/components/graph/graph-controls';
 import { FilterPanel } from '@/components/graph/filter-panel';
 import { NodeDetailPanel } from '@/components/graph/node-detail-panel';
+import { EntitySearchBox } from '@/components/search/entity-search-box';
 import { useGraphStore } from '@/stores/graph-store';
 import { useInitialGraphData } from '@/lib/hooks/use-graph-data';
 
 export default function GraphExplorerPage() {
   const [filterOpen, setFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const { selectedNode, setSelectedNode } = useGraphStore();
+  const { selectedNode, setSelectedNode, cyInstance } = useGraphStore();
 
   const { data: graphData } = useInitialGraphData();
 
   const handleNodeClick = useCallback(
     (nodeId: string) => setSelectedNode(nodeId),
     [setSelectedNode],
+  );
+
+  // Picking a result from the search dropdown both opens the detail panel and
+  // pans the Cytoscape viewport to the node so it's visible. If the node
+  // isn't in the currently-rendered subgraph (e.g., the overview only loads
+  // 100 nodes), we still open the detail — it'll fetch its own neighborhood.
+  const handleSearchSelect = useCallback(
+    (result: { id: string }) => {
+      setSelectedNode(result.id);
+      if (cyInstance) {
+        const node = cyInstance.getElementById(result.id);
+        if (node && node.length > 0) {
+          cyInstance.animate({
+            center: { eles: node },
+            zoom: Math.max(cyInstance.zoom(), 1),
+            duration: 300,
+          });
+          node.flashClass?.('highlight', 1200);
+        }
+      }
+    },
+    [setSelectedNode, cyInstance],
   );
 
   // Legend entries from the registered entity types — stays in sync with
@@ -55,11 +77,10 @@ export default function GraphExplorerPage() {
           </Button>
 
           <div className="max-w-md flex-1">
-            <Input
-              icon={<IconGlyph name="search" />}
-              placeholder="Search nodes…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+            <EntitySearchBox
+              placeholder="Search nodes by name or canonical id…"
+              size="sm"
+              onSelect={handleSearchSelect}
             />
           </div>
 

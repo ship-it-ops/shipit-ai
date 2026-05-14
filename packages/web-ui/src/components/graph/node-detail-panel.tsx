@@ -2,17 +2,17 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Dialog, EmptyState, Spinner, formatRelative } from '@ship-it-ui/ui';
+import { Badge, Button, Dialog, EmptyState, formatRelative } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
   GraphInspector,
-  getEntityTypeMeta,
   type EntityType,
   type InspectorProperty,
   type InspectorRelation,
 } from '@ship-it-ui/shipit';
 import type { GraphData } from '@/lib/api';
-import { useGraphData } from '@/lib/hooks/use-graph-data';
+import { useBlastRadius } from '@/lib/hooks/use-graph-data';
+import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 
 const APP_TYPE_TO_ENTITY: Record<string, EntityType> = {
   LogicalService: 'service',
@@ -65,8 +65,10 @@ export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelP
     [node],
   );
 
-  // Depth-3 neighborhood = "blast radius" — only fetch when the dialog opens.
-  const blastQuery = useGraphData(dialog === 'blast' ? nodeId : undefined, 3);
+  // Blast radius — directed traversal of inbound impact edges. Only fetches
+  // when the dialog opens, matching what the catalog detail page does. Sharing
+  // the hook + dialog keeps results consistent across surfaces.
+  const blastQuery = useBlastRadius(nodeId, 3, dialog === 'blast');
 
   if (!node) return null;
 
@@ -178,12 +180,12 @@ export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelP
       <BlastRadiusDialog
         open={dialog === 'blast'}
         onOpenChange={(o) => setDialog(o ? 'blast' : null)}
-        nodeId={nodeId}
-        nodeName={name}
+        startId={nodeId}
+        startName={name}
         data={blastQuery.data}
         isLoading={blastQuery.isLoading}
         error={blastQuery.error}
-        onJumpTo={handleJumpTo}
+        onOpenEntity={handleJumpTo}
       />
     </>
   );
@@ -253,119 +255,3 @@ function ClaimsDialog({ open, onOpenChange, nodeName, nodeId, claims }: ClaimsDi
   );
 }
 
-// ──────────────────────────── BlastRadiusDialog ────────────────────────────
-
-interface BlastRadiusDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  nodeId: string;
-  nodeName: string;
-  data: GraphData | undefined;
-  isLoading: boolean;
-  error: unknown;
-  onJumpTo: (id: string) => void;
-}
-
-function BlastRadiusDialog({
-  open,
-  onOpenChange,
-  nodeId,
-  nodeName,
-  data,
-  isLoading,
-  error,
-  onJumpTo,
-}: BlastRadiusDialogProps) {
-  // Exclude the starting node from the list — it's redundant context.
-  const affected = useMemo(() => {
-    if (!data) return [];
-    return data.nodes
-      .filter((n) => n.data.id !== nodeId)
-      .map((n) => {
-        const d = n.data as { id: string; name: string; type: string };
-        return { id: d.id, name: d.name, type: d.type };
-      });
-  }, [data, nodeId]);
-
-  const byType = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const n of affected) map.set(n.type, (map.get(n.type) ?? 0) + 1);
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [affected]);
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-      width={560}
-      title={`Blast radius · ${nodeName}`}
-      description="Entities reachable within 3 hops. Clicking jumps to the catalog detail page."
-    >
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Spinner />
-        </div>
-      ) : error ? (
-        <EmptyState
-          tone="err"
-          icon={<IconGlyph name="warn" size={20} />}
-          title="Couldn't compute blast radius"
-          description="The neighborhood query failed. Check that the API server and Neo4j are reachable."
-        />
-      ) : affected.length === 0 ? (
-        <EmptyState
-          icon={<IconGlyph name="target" size={20} />}
-          title="No reachable entities"
-          description={`${nodeName} has no connections within 3 hops in the current graph.`}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-text-dim font-mono text-[10px] tracking-[1.4px] uppercase">
-              {affected.length} affected
-            </span>
-            {byType.map(([type, count]) => {
-              const meta = getEntityTypeMeta(type);
-              return (
-                <Badge key={type} variant="neutral" size="sm" className="font-mono">
-                  <span aria-hidden className={`mr-1 ${meta.toneClass}`}>
-                    {meta.glyph}
-                  </span>
-                  {meta.label} · {count}
-                </Badge>
-              );
-            })}
-          </div>
-          <ul className="border-border bg-panel-2 max-h-[360px] flex-col overflow-y-auto rounded-md border">
-            {affected.map((n) => {
-              const meta = getEntityTypeMeta(n.type);
-              return (
-                <li key={n.id} className="border-border border-b last:border-b-0">
-                  <button
-                    type="button"
-                    onClick={() => onJumpTo(n.id)}
-                    className="hover:bg-panel focus-visible:ring-accent-dim flex w-full items-center gap-3 px-3 py-2 text-left text-[12px] outline-none focus-visible:ring-[3px]"
-                  >
-                    <span
-                      aria-hidden
-                      className={`grid h-6 w-6 place-items-center rounded-xs text-[13px] ${meta.toneBg} ${meta.toneClass}`}
-                    >
-                      {meta.glyph}
-                    </span>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="text-text truncate">{n.name}</span>
-                      <span className="text-text-dim truncate font-mono text-[10px]">
-                        {meta.label}
-                      </span>
-                    </span>
-                    <IconGlyph name="caretRight" size={12} />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
-    </Dialog>
-  );
-}
