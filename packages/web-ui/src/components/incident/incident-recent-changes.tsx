@@ -2,9 +2,8 @@
 
 import { Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { EntityListRowDiv, type EntityType } from '@ship-it-ui/shipit';
+import { EntityList, EntityListRowDiv, StalenessChip, type EntityType } from '@ship-it-ui/shipit';
 import type { RecentChangeEntry } from '@/lib/incident/derivations';
-import { StalenessChip } from './staleness-chip';
 
 interface Props {
   entries: RecentChangeEntry[];
@@ -34,7 +33,7 @@ export function IncidentRecentChanges({ entries }: Props) {
 
   return (
     <Card title={`Recent changes · ${entries.length}`}>
-      <div className="flex flex-col">
+      <EntityList framed={false}>
         {entries.map((entry) => {
           const metaText = [entry.type, entry.environment, entry.status]
             .filter(Boolean)
@@ -45,11 +44,15 @@ export function IncidentRecentChanges({ entries }: Props) {
               type={entry.type as EntityType}
               name={entry.name}
               meta={metaText}
-              relation={<StalenessChip ageSeconds={entry.lastSyncedAgeSeconds} />}
+              relation={
+                entry.lastSyncedAgeSeconds !== undefined && entry.lastSyncedAgeSeconds >= 0 ? (
+                  <StalenessChip ageSeconds={entry.lastSyncedAgeSeconds} prefix="Synced" />
+                ) : undefined
+              }
             />
           );
         })}
-      </div>
+      </EntityList>
     </Card>
   );
 }

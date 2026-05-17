@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge, Card, type BadgeProps } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 
 export type PlaceholderPhase = 'phase-2' | 'phase-3' | 'enterprise';
 
@@ -17,7 +17,7 @@ const phaseMeta: Record<
 export interface PlaceholderPageProps {
   title: string;
   description: string;
-  glyph: string;
+  glyph: GlyphName;
   phase: PlaceholderPhase;
   features?: ReadonlyArray<string>;
 }

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Badge, Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
+import { EntityList, EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import type { DependencyEntry } from '@/lib/incident/derivations';
 
 interface Props {
@@ -73,7 +73,7 @@ function DependencyList({
       {entries.length === 0 ? (
         <p className="text-text-muted text-[12px]">{emptyText}</p>
       ) : (
-        <div className="flex flex-col">
+        <EntityList framed={false}>
           {entries.map((e) => {
             const tierVariant = e.tier === 1 ? 'err' : e.tier === 2 ? 'warn' : 'neutral';
             const metaText = e.owner ? `${e.relation} · ${e.owner}` : e.relation;
@@ -94,7 +94,7 @@ function DependencyList({
               />
             );
           })}
-        </div>
+        </EntityList>
       )}
     </section>
   );

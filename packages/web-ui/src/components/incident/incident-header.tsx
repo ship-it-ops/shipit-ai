@@ -3,8 +3,8 @@
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Spinner } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
-import { getEntityTypeMeta } from '@ship-it-ui/shipit';
+import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
+import { getEntityTypeMeta, StalenessChip } from '@ship-it-ui/shipit';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
 import {
   type ServiceNode,
@@ -18,7 +18,6 @@ import {
   getServiceDashboardLinks,
 } from '@/lib/integrations';
 import type { GraphData } from '@/lib/api';
-import { StalenessChip } from './staleness-chip';
 
 interface Props {
   serviceId: string;
@@ -30,8 +29,10 @@ interface Props {
   loading?: boolean;
 }
 
-// Map integration ids to actual glyphs from @ship-it-ui/icons. Brand glyphs
-// exist for the major sources; everything else falls back to `external`.
+// Map integration ids to icon names from @ship-it-ui/icons. Brand glyphs exist
+// for the major sources; everything else falls through to DynamicIconGlyph's
+// text fallback. Integration ids come from server data, so we resolve via
+// DynamicIconGlyph rather than the strictly-typed IconGlyph.
 const INTEGRATION_ICON: Record<string, string> = {
   github: 'github',
   datadog: 'datadog',
@@ -127,13 +128,13 @@ export function IncidentHeader({
         <span
           aria-hidden
           className={
-            'rounded-base grid h-12 w-12 shrink-0 place-items-center text-[24px] leading-none ' +
+            'rounded-base grid h-12 w-12 shrink-0 place-items-center leading-none ' +
             meta.toneBg +
             ' ' +
             meta.toneClass
           }
         >
-          {meta.glyph}
+          <DynamicIconGlyph name={meta.iconName} size={24} />
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -156,7 +157,13 @@ export function IncidentHeader({
               </Badge>
             )}
             {loading && <Spinner size="sm" />}
-            <StalenessChip ageSeconds={ageForChip} />
+            {ageForChip !== undefined && ageForChip >= 0 && (
+              <StalenessChip
+                ageSeconds={ageForChip}
+                prefix="Synced"
+                tooltip="When the catalog connector last refreshed this data — not when the underlying state changed."
+              />
+            )}
           </div>
           <span className="text-text-dim truncate font-mono text-[11px]">{serviceId}</span>
         </div>
@@ -172,7 +179,10 @@ export function IncidentHeader({
               rel="noreferrer noopener"
               className="border-border hover:bg-panel-2 inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-[12px]"
             >
-              <IconGlyph name={INTEGRATION_ICON[link.integrationId] ?? 'external'} size={12} />
+              <DynamicIconGlyph
+                name={INTEGRATION_ICON[link.integrationId] ?? 'external'}
+                size={12}
+              />
               <span className="text-text font-medium">{link.integrationName}</span>
               <IconGlyph name="external" size={10} />
             </a>

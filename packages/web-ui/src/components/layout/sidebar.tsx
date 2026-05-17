@@ -4,14 +4,14 @@ import { useRouter, usePathname } from 'next/navigation';
 import { type MouseEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar as DSSidebar, NavItem, NavSection } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
 import { fetchReconciliationStats, type ReconciliationStats } from '@/lib/api';
 
 interface NavLink {
   label: string;
   href: string;
-  glyph: string;
+  glyph: GlyphName;
   /** Optional trailing badge — e.g., 'P2' for Phase 2, 'EE' for Enterprise. */
   badge?: string;
 }
@@ -101,7 +101,7 @@ function SidebarNavItem({
 }: {
   href: string;
   label: string;
-  glyph: string;
+  glyph: GlyphName;
   badge?: string;
   collapsed: boolean;
   active: boolean;

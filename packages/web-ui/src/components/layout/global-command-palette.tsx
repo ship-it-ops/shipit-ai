@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { CommandPalette, type CommandPaletteGroup, type CommandPaletteItem } from '@ship-it-ui/ui';
+import { DynamicIconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useUIStore } from '@/stores/ui-store';
 import { useSearch } from '@/lib/hooks/use-search';
@@ -36,7 +37,11 @@ export function GlobalCommandPalette() {
         id: r.id,
         label: r.name,
         description: r.owner ? `${meta.label} · ${r.owner}` : meta.label,
-        glyph: <span className={meta.toneClass}>{meta.glyph}</span>,
+        glyph: (
+          <span className={meta.toneClass}>
+            <DynamicIconGlyph name={meta.iconName} size={14} />
+          </span>
+        ),
         trailing: r.label,
       };
       (acc[r.label] ??= []).push(item);

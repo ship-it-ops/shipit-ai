@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Badge, Button, Checkbox, Input, Select, Tooltip } from '@ship-it-ui/ui';
+import { Badge, Button, Checkbox, Input, Select, SimpleTooltip } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import type { SchemaNodeTypeDef, SchemaPropertyDef } from '@/lib/api';
 import { PROPERTY_TYPES, RESOLUTION_STRATEGIES } from './strategy-options';
@@ -150,7 +150,7 @@ function PropertyRow({
         />
       </td>
       <td className="px-3 py-2">
-        <Tooltip content={strategy?.description ?? ''} side="top">
+        <SimpleTooltip content={strategy?.description ?? ''} side="top">
           <Select
             options={RESOLUTION_STRATEGIES.map((s) => ({ value: s.value, label: s.label }))}
             value={prop.resolution_strategy}
@@ -160,7 +160,7 @@ function PropertyRow({
             size="sm"
             aria-label={`${name} resolution strategy`}
           />
-        </Tooltip>
+        </SimpleTooltip>
       </td>
       <td className="px-3 py-2 text-right">
         <Button

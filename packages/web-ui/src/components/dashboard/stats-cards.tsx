@@ -1,13 +1,13 @@
 'use client';
 
 import { StatCard } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { useGraphStats } from '@/lib/hooks/use-graph-stats';
 
 interface StatRow {
   label: string;
   value: number;
-  glyph: string;
+  glyph: GlyphName;
 }
 
 export function StatsCards() {

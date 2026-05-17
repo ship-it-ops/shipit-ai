@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Card, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
+import { EntityList, EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 import {
   type BlastRadiusEntry,
@@ -133,7 +133,7 @@ function BlastRadiusTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-col">
+    <EntityList framed={false}>
       {entries.map((entry) => {
         const tierVariant = entry.tier === 1 ? 'err' : entry.tier === 2 ? 'warn' : 'neutral';
         return (
@@ -153,6 +153,6 @@ function BlastRadiusTable({
           />
         );
       })}
-    </div>
+    </EntityList>
   );
 }

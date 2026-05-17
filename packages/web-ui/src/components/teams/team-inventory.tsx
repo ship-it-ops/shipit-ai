@@ -2,13 +2,13 @@
 
 import { useRouter } from 'next/navigation';
 import { Badge, Card, EmptyState } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import type { TeamOwnedEntity } from '@/lib/api';
 
 export interface TeamInventoryProps {
   title: string;
   entities: TeamOwnedEntity[];
-  glyph: string;
+  glyph: GlyphName;
 }
 
 function tierVariant(tier: number | null) {

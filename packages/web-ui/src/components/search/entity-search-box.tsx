@@ -11,7 +11,7 @@ import {
   useState,
 } from 'react';
 import { Input, Spinner } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useSearch } from '@/lib/hooks/use-search';
 import type { SearchResult } from '@/lib/api';
@@ -188,8 +188,8 @@ export function EntitySearchBox({
                   (isActive ? 'bg-panel-2' : 'hover:bg-panel-2/60')
                 }
               >
-                <span className={`text-[16px] leading-none ${meta.toneClass}`} aria-hidden>
-                  {meta.glyph}
+                <span className={`leading-none ${meta.toneClass}`} aria-hidden>
+                  <DynamicIconGlyph name={meta.iconName} size={16} />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-text truncate text-[13px] font-medium">{r.name}</span>

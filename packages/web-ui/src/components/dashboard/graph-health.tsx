@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, HealthScore, formatRelative } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { useGraphStats } from '@/lib/hooks/use-graph-stats';
 
 export function GraphHealth() {
@@ -37,7 +37,7 @@ export function GraphHealth() {
   );
 }
 
-function Row({ glyph, label, value }: { glyph: string; label: string; value: string }) {
+function Row({ glyph, label, value }: { glyph: GlyphName; label: string; value: string }) {
   return (
     <div className="flex items-center justify-between">
       <dt className="text-text-muted inline-flex items-center gap-2">

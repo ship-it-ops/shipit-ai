@@ -4,7 +4,7 @@ import { registerEntityTypes } from '@ship-it-ui/shipit';
 
 registerEntityTypes({
   LogicalService: {
-    glyph: '◇',
+    iconName: 'service',
     label: 'Logical service',
     toneClass: 'text-accent',
     toneBg: 'bg-accent-dim',
@@ -12,7 +12,7 @@ registerEntityTypes({
     badgeVariant: 'accent',
   },
   RuntimeService: {
-    glyph: '◆',
+    iconName: 'server',
     label: 'Runtime service',
     toneClass: 'text-accent-text',
     toneBg: 'bg-accent-dim',
@@ -20,7 +20,7 @@ registerEntityTypes({
     badgeVariant: 'accent',
   },
   Repository: {
-    glyph: '◰',
+    iconName: 'gitBranch',
     label: 'Repository',
     toneClass: 'text-ok',
     toneBg: 'bg-[color-mix(in_oklab,var(--color-ok),transparent_85%)]',
@@ -28,7 +28,7 @@ registerEntityTypes({
     badgeVariant: 'ok',
   },
   Deployment: {
-    glyph: '↑',
+    iconName: 'deployment',
     label: 'Deployment',
     toneClass: 'text-warn',
     toneBg: 'bg-[color-mix(in_oklab,var(--color-warn),transparent_85%)]',
@@ -36,7 +36,7 @@ registerEntityTypes({
     badgeVariant: 'warn',
   },
   Pipeline: {
-    glyph: '⇄',
+    iconName: 'workflow',
     label: 'Pipeline',
     toneClass: 'text-pink',
     toneBg: 'bg-[color-mix(in_oklab,var(--color-pink),transparent_85%)]',
@@ -44,7 +44,7 @@ registerEntityTypes({
     badgeVariant: 'pink',
   },
   Monitor: {
-    glyph: '◬',
+    iconName: 'activity',
     label: 'Monitor',
     toneClass: 'text-err',
     toneBg: 'bg-[color-mix(in_oklab,var(--color-err),transparent_85%)]',
@@ -52,7 +52,7 @@ registerEntityTypes({
     badgeVariant: 'err',
   },
   Team: {
-    glyph: '◯',
+    iconName: 'users',
     label: 'Team',
     toneClass: 'text-purple',
     toneBg: 'bg-[color-mix(in_oklab,var(--color-purple),transparent_85%)]',
@@ -60,7 +60,7 @@ registerEntityTypes({
     badgeVariant: 'purple',
   },
   Person: {
-    glyph: '○',
+    iconName: 'person',
     label: 'Person',
     toneClass: 'text-text-muted',
     toneBg: 'bg-panel-2',
