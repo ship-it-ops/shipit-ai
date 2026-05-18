@@ -7,3 +7,27 @@ shipit.config.local.yaml
 *.log
 coverage/
 .DS_Store
+
+# Local env files — never commit. Allow committed examples/templates.
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+
+# Private keys, certs, and other credential blobs
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.kubeconfig
+credentials.json
+service-account*.json
+
+# Local secret-scanning artifacts
+.secretlint-cache
+gitleaks-report.json

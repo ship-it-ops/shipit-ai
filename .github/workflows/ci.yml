@@ -11,6 +11,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gitleaks can diff PRs end-to-end and catch
+          # anything that slipped in earlier on the branch, not just the
+          # last commit.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -29,6 +45,9 @@ jobs:
       - run: pnpm format:check
 
       - run: pnpm turbo lint
+
+      - name: Secretlint (full repo)
+        run: pnpm exec secretlint --secretlintrc .secretlintrc.json "**/*"
 
   typecheck:
     name: Typecheck
@@ -115,7 +134,7 @@ jobs:
   claude-review:
     name: Claude Code Review
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, build, docker]
+    needs: [secrets-scan, lint, typecheck, test, build, docker]
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     permissions:
       contents: read
