@@ -1,0 +1,43 @@
+# ShipIt-AI local config — copied to shipit.config.local.yaml on first run
+# (preflight) and gitignored. Merges on top of shipit.config.yaml.
+#
+# Put per-developer overrides and local secrets here. Anything that should be
+# the same across all deployments goes in shipit.config.yaml instead.
+
+backend:
+  neo4j:
+    # Matches the password baked into docker/docker-compose.yml's local Neo4j.
+    # Override if you've changed it.
+    password: shipit-dev
+
+frontend:
+  # Mock identity until real auth is wired up. Personalize these — they show
+  # in the user menu and on the profile page.
+  devUser:
+    firstName: Dev
+    lastName: User
+    email: dev@shipit.local
+    role: Platform Admin
+    team: platform-team
+    joinedAt: 2026-01-01
+    capabilities:
+      - admin
+      - graph:write
+      - connectors:manage
+      - schema:edit
+      - mcp:invoke
+
+  # Wire up whichever incident toolchain you actually use. Leaving a value
+  # null hides the corresponding button from the dashboard.
+  #
+  # integrations:
+  #   pagerduty:
+  #     subdomain: acme-pay
+  #   datadog:
+  #     site: datadoghq.com
+  #   github:
+  #     org: ship-it-ops
+  #   slack:
+  #     workspace: acme
+  #   kubernetes:
+  #     consoleUrlTemplate: https://argo.acme.com/applications/{namespace}/{name}

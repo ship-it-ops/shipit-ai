@@ -1,0 +1,56 @@
+# ShipIt-AI configuration — committed, production base.
+#
+# Values here are the defaults every deployment starts from. Use ${ENV_VAR}
+# (required) or ${ENV_VAR:-default} (with fallback) for anything that varies
+# per environment or is a secret. Local development overrides and personal
+# settings go in shipit.config.local.yaml (gitignored).
+#
+# Two top-level sections:
+#   backend.*  — Node services (api-server, mcp-server, etc.). Server-only.
+#   frontend.* — Next.js web-ui. Flattened into NEXT_PUBLIC_SHIPIT_* env vars
+#                at build time, so DO NOT put secrets under frontend.*.
+
+backend:
+  neo4j:
+    uri: ${NEO4J_URI:-bolt://localhost:7687}
+    user: ${NEO4J_USER:-neo4j}
+    password: ${NEO4J_PASSWORD}
+  redis:
+    url: ${REDIS_URL:-redis://localhost:6379}
+  api:
+    port: 3001
+  schema:
+    path: ./config/shipit-schema.yaml
+  cypherQuery:
+    timeoutMs: 5000
+    rowLimit: 1000
+  reconciliation:
+    threshold: 0.85
+  mcp:
+    # Set in shipit.config.local.yaml or override at runtime with
+    # MCP_API_KEY_SECRET. When null, the MCP server accepts unauthenticated
+    # requests (acceptable for local dev only).
+    apiKeySecret: null
+    rateLimits:
+      graphQueryPerDay: 100
+      rowLimit: 1000
+      hopLimit: 6
+      queryTimeoutMs: 10000
+
+frontend:
+  api:
+    url: ${SHIPIT_API_URL:-http://localhost:3001}
+  # devUser is intentionally absent here — set it in shipit.config.local.yaml.
+  # Once real auth lands this whole block goes away.
+  integrations:
+    pagerduty:
+      subdomain: null
+    datadog:
+      site: null
+    github:
+      org: null
+    slack:
+      workspace: null
+      channelPrefix: team-
+    kubernetes:
+      consoleUrlTemplate: null

@@ -68,8 +68,8 @@ ShipIt-AI discovers, maps, and maintains your software ecosystem as a queryable 
 git clone https://github.com/ship-it-ops/ShipIt-AI.git
 cd ShipIt-AI
 
-# Copy environment config
-cp .env.example .env
+# Bootstrap local config (also runs as part of `pnpm setup`/`pnpm start:all`)
+pnpm preflight
 
 # Start infrastructure (Neo4j + Redis)
 docker compose -f docker/docker-compose.yml up -d neo4j redis

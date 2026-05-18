@@ -13,25 +13,27 @@ export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js
 
 async function main() {
   const config = loadConfig();
+  const { neo4j, schema, api } = config.backend;
 
-  const neo4jService = new Neo4jService(config.neo4jUri, config.neo4jUser, config.neo4jPassword);
-  const schemaService = new SchemaService(config.schemaPath);
+  const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
+  const schemaService = new SchemaService(schema.path);
 
   try {
     await schemaService.loadSchema();
   } catch {
-    console.warn('Could not load schema from', config.schemaPath, '- starting with no schema');
+    console.warn('Could not load schema from', schema.path, '- starting with no schema');
   }
 
   const server = await createServer({
     logger: true,
     neo4jService,
     schemaService,
+    config,
   });
 
   try {
-    await server.listen({ port: config.port, host: '0.0.0.0' });
-    console.log(`ShipIt-AI API server listening on port ${config.port}`);
+    await server.listen({ port: api.port, host: '0.0.0.0' });
+    console.log(`ShipIt-AI API server listening on port ${api.port}`);
   } catch (err) {
     server.log.error(err);
     await neo4jService.close();

@@ -1,7 +1,9 @@
 import neo4j, { type Driver, type Integer, type Node, type Relationship } from 'neo4j-driver';
 
-const DEFAULT_TIMEOUT_MS = Number(process.env.QUERY_TIMEOUT_MS ?? 5000);
-const ROW_LIMIT = Number(process.env.QUERY_ROW_LIMIT ?? 1000);
+export interface CypherQueryLimits {
+  timeoutMs: number;
+  rowLimit: number;
+}
 
 function isInteger(value: unknown): value is Integer {
   return typeof value === 'object' && value !== null && neo4j.isInt(value);
@@ -54,23 +56,27 @@ export interface CypherExecResult {
 }
 
 export class CypherQueryService {
-  constructor(private driver: Driver) {}
+  constructor(
+    private driver: Driver,
+    private limits: CypherQueryLimits,
+  ) {}
 
   async execute(cypher: string, params: Record<string, unknown> = {}): Promise<CypherExecResult> {
+    const { timeoutMs, rowLimit } = this.limits;
     const session = this.driver.session({ defaultAccessMode: neo4j.session.READ });
     const started = Date.now();
     try {
       // Server-side timeout via tx config. The driver will abort the transaction
       // when the timeout elapses; we still race against a client-side timeout
       // to make sure the request can't hang forever if the driver is wedged.
-      const tx = session.beginTransaction({ timeout: DEFAULT_TIMEOUT_MS });
+      const tx = session.beginTransaction({ timeout: timeoutMs });
       const queryPromise = tx.run(cypher, params);
 
       let timeoutHandle: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(() => {
-          reject(new Error(`Query exceeded ${DEFAULT_TIMEOUT_MS}ms timeout`));
-        }, DEFAULT_TIMEOUT_MS + 500);
+          reject(new Error(`Query exceeded ${timeoutMs}ms timeout`));
+        }, timeoutMs + 500);
       });
 
       let result;
@@ -83,7 +89,7 @@ export class CypherQueryService {
       await tx.commit();
 
       const columns = result.records[0]?.keys ?? [];
-      const sliced = result.records.slice(0, ROW_LIMIT);
+      const sliced = result.records.slice(0, rowLimit);
       const rows = sliced.map((rec) => {
         const obj: Record<string, unknown> = {};
         for (const key of columns) {
@@ -96,8 +102,8 @@ export class CypherQueryService {
         columns: columns.map(String),
         rows,
         executionTimeMs: Date.now() - started,
-        truncated: result.records.length > ROW_LIMIT,
-        rowLimit: ROW_LIMIT,
+        truncated: result.records.length > rowLimit,
+        rowLimit,
       };
     } finally {
       await session.close();

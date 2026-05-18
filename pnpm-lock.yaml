@@ -211,9 +211,6 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.1.0
         version: 5.2.7
-      '@next/env':
-        specifier: ^16.2.6
-        version: 16.2.6
       '@ship-it-ui/cytoscape':
         specifier: ^0.0.6
         version: 0.0.6(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/shipit@0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

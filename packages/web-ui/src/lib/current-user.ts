@@ -4,13 +4,12 @@
  * this file becomes the seam — replace the export with `useCurrentUser()` or
  * a server-component fetch and every consumer keeps working.
  *
- * Values come from `NEXT_PUBLIC_DEV_USER_*` env vars when set (override per
- * developer via `.env.local`), with neutral fallbacks for fresh checkouts.
- * `NEXT_PUBLIC_*` is required because these reads happen in client
- * components — those vars get inlined at build time.
- *
- * See `.env.example` for the full key list.
+ * Values come from `frontend.devUser` in shipit.config.local.yaml. If the
+ * block is absent we fall back to neutral placeholders so fresh checkouts
+ * still render.
  */
+
+import { clientConfig } from './client-config';
 
 export interface CurrentUser {
   firstName: string;
@@ -25,11 +24,6 @@ export interface CurrentUser {
   capabilities: ReadonlyArray<string>;
 }
 
-function envOr(key: string, fallback: string): string {
-  const v = process.env[key];
-  return v && v.length > 0 ? v : fallback;
-}
-
 const DEFAULT_CAPABILITIES: ReadonlyArray<string> = [
   'admin',
   'graph:write',
@@ -38,18 +32,10 @@ const DEFAULT_CAPABILITIES: ReadonlyArray<string> = [
   'mcp:invoke',
 ];
 
-function envCapabilities(): ReadonlyArray<string> {
-  const raw = process.env['NEXT_PUBLIC_DEV_USER_CAPABILITIES'];
-  if (!raw) return DEFAULT_CAPABILITIES;
-  const parsed = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parsed.length > 0 ? parsed : DEFAULT_CAPABILITIES;
-}
+const cfg = clientConfig.devUser;
 
-const firstName = envOr('NEXT_PUBLIC_DEV_USER_FIRST_NAME', 'Dev');
-const lastName = envOr('NEXT_PUBLIC_DEV_USER_LAST_NAME', 'User');
+const firstName = cfg?.firstName ?? 'Dev';
+const lastName = cfg?.lastName ?? 'User';
 
 export const CURRENT_USER: CurrentUser = {
   firstName,
@@ -57,9 +43,9 @@ export const CURRENT_USER: CurrentUser = {
   // Joined here so consumers don't have to. Trim handles the unlikely case
   // where someone sets only one of the two halves.
   name: `${firstName} ${lastName}`.trim(),
-  email: envOr('NEXT_PUBLIC_DEV_USER_EMAIL', 'dev@shipit.local'),
-  role: envOr('NEXT_PUBLIC_DEV_USER_ROLE', 'Platform Admin'),
-  team: envOr('NEXT_PUBLIC_DEV_USER_TEAM', 'platform-team'),
-  joinedAt: envOr('NEXT_PUBLIC_DEV_USER_JOINED_AT', '2026-01-01'),
-  capabilities: envCapabilities(),
+  email: cfg?.email ?? 'dev@shipit.local',
+  role: cfg?.role ?? 'Platform Admin',
+  team: cfg?.team ?? 'platform-team',
+  joinedAt: cfg?.joinedAt ?? '2026-01-01',
+  capabilities: cfg?.capabilities ?? DEFAULT_CAPABILITIES,
 };

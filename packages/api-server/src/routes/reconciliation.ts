@@ -23,7 +23,13 @@ const reconciliationRoutes: FastifyPluginAsync = async (server) => {
   // Shared instance: the cron scan and the manual /scan endpoint both want the
   // same `lastScanAt` clock.
   if (!server.reconciliationService) {
-    server.decorate('reconciliationService', new ReconciliationService(server.neo4jService));
+    server.decorate(
+      'reconciliationService',
+      new ReconciliationService(
+        server.neo4jService,
+        server.config.backend.reconciliation.threshold,
+      ),
+    );
   }
   const service = server.reconciliationService;
 

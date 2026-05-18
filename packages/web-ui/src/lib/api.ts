@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { clientConfig } from './client-config';
+
+const API_URL = clientConfig.api.url;
 
 export interface GraphStats {
   nodeCount: number;

@@ -20,7 +20,6 @@ import type {
 import type { Neo4jService } from './neo4j-service.js';
 import { jaroWinkler, setSimilarity, trigramJaccard } from './string-similarity.js';
 
-const DEFAULT_THRESHOLD = Number(process.env.RECONCILIATION_THRESHOLD ?? 0.85);
 // Above this, the design doc allows auto-merge. We surface them as
 // pending candidates regardless — keeps Phase 2 in the "human approves" mode.
 const AUTO_MERGE_CEILING = 0.95;
@@ -131,7 +130,7 @@ export class ReconciliationService {
   private lastScanAt: string | null = null;
   constructor(
     private neo4j: Neo4jService,
-    private threshold: number = DEFAULT_THRESHOLD,
+    private threshold: number,
   ) {}
 
   async stats(): Promise<ReconciliationStats> {

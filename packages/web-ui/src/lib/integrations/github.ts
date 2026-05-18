@@ -1,12 +1,13 @@
+import { clientConfig } from '../client-config';
 import type { IncidentIntegration, RepositoryContext, ServiceContext } from './types';
 
 /**
  * GitHub adapter.
  *
- * Configuration: `NEXT_PUBLIC_GITHUB_ORG` (the org slug, e.g., "ship-it-ops").
- * Many repos in the catalog already carry their own canonical `url` — when
- * present we prefer that; the org override is a fallback for repos that
- * never got URL metadata seeded.
+ * Configuration: `frontend.integrations.github.org` in shipit.config.yaml
+ * (the org slug, e.g., "ship-it-ops"). Many repos in the catalog already
+ * carry their own canonical `url` — when present we prefer that; the org
+ * override is a fallback for repos that never got URL metadata seeded.
  *
  * GitHub is the SRE's most-clicked deeplink during triage (per persona
  * research: "the #1 thing I open is the repo to look at recent merges"),
@@ -26,7 +27,7 @@ export const gitHubAdapter: IncidentIntegration = {
 
   repositoryUrl(repo: RepositoryContext) {
     if (repo.url) return repo.url;
-    const org = process.env.NEXT_PUBLIC_GITHUB_ORG;
+    const org = clientConfig.integrations.github.org;
     if (!org) return null;
     return `https://github.com/${encodeURIComponent(org)}/${encodeURIComponent(repo.name)}`;
   },
@@ -35,7 +36,7 @@ export const gitHubAdapter: IncidentIntegration = {
   // The dashboard composer resolves the repo via the IMPLEMENTED_BY edge
   // before calling this; we just shape the URL given that repo context.
   serviceDashboardUrl(service: ServiceContext) {
-    const org = process.env.NEXT_PUBLIC_GITHUB_ORG;
+    const org = clientConfig.integrations.github.org;
     if (!org) return null;
     return `https://github.com/${encodeURIComponent(org)}/${encodeURIComponent(service.name)}/commits`;
   },

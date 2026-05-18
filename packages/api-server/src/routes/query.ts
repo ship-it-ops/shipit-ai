@@ -14,7 +14,10 @@ declare module 'fastify' {
 }
 
 const queryRoutes: FastifyPluginAsync = async (server) => {
-  const service = new CypherQueryService(server.neo4jService.getDriver());
+  const service = new CypherQueryService(
+    server.neo4jService.getDriver(),
+    server.config.backend.cypherQuery,
+  );
 
   server.post<{
     Body: { cypher?: unknown; params?: unknown };

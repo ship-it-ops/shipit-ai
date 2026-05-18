@@ -3,8 +3,7 @@ dist/
 *.tsbuildinfo
 .turbo/
 .next/
-.env
-.env.local
+shipit.config.local.yaml
 *.log
 coverage/
 .DS_Store

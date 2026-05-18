@@ -1,12 +1,14 @@
+import { clientConfig } from '../client-config';
 import type { IncidentIntegration, MonitorContext, ServiceContext } from './types';
 
 /**
  * Datadog adapter.
  *
- * Configuration: `NEXT_PUBLIC_DATADOG_SITE` (e.g., "datadoghq.com",
- * "datadoghq.eu", "us3.datadoghq.com"). The runtime/observability identity
- * comes from `EMITS_TELEMETRY_AS` edges in the catalog graph — those land on
- * the service as `dd_service` after the depth-1 neighborhood resolves.
+ * Configuration: `frontend.integrations.datadog.site` in shipit.config.yaml
+ * (e.g., "datadoghq.com", "datadoghq.eu", "us3.datadoghq.com"). The
+ * runtime/observability identity comes from `EMITS_TELEMETRY_AS` edges in the
+ * catalog graph — those land on the service as `dd_service` after the
+ * depth-1 neighborhood resolves.
  *
  * Phase 1 deeplinks: APM service page, monitor by id (when seeded), monitor
  * search by name (fallback). No declare-incident — Datadog Incident
@@ -17,11 +19,11 @@ export const datadogAdapter: IncidentIntegration = {
   name: 'Datadog',
 
   isConfigured() {
-    return Boolean(process.env.NEXT_PUBLIC_DATADOG_SITE);
+    return Boolean(clientConfig.integrations.datadog.site);
   },
 
   serviceDashboardUrl(service: ServiceContext) {
-    const site = process.env.NEXT_PUBLIC_DATADOG_SITE;
+    const site = clientConfig.integrations.datadog.site;
     if (!site) return null;
     // Prefer the resolved Datadog service name (set by EMITS_TELEMETRY_AS).
     // If absent, search by catalog name — APM's service page accepts either.
@@ -30,7 +32,7 @@ export const datadogAdapter: IncidentIntegration = {
   },
 
   monitorUrl(monitor: MonitorContext) {
-    const site = process.env.NEXT_PUBLIC_DATADOG_SITE;
+    const site = clientConfig.integrations.datadog.site;
     if (!site) return null;
     if (monitor.url) return monitor.url;
     if (monitor.ddMonitorId) {
