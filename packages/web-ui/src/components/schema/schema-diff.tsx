@@ -1,13 +1,14 @@
 'use client';
 
 import { Badge } from '@ship-it-ui/ui';
-import type { SchemaDiff } from '@/lib/api';
+import type { MigrationPreview, SchemaDiff } from '@/lib/api';
 
 export interface SchemaDiffViewProps {
   diff: SchemaDiff;
+  migration?: MigrationPreview | null;
 }
 
-export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
+export function SchemaDiffView({ diff, migration }: SchemaDiffViewProps) {
   const empty =
     diff.added.node_types.length === 0 &&
     diff.added.relationship_types.length === 0 &&
@@ -62,6 +63,17 @@ export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
                   {c.kind}
                 </Badge>
               </div>
+              {c.structural_changes.length > 0 && (
+                <ul className="text-text-muted m-0 list-none p-0 text-[11px]">
+                  {c.structural_changes.map((s, i) => (
+                    <li key={`s:${i}`}>
+                      <span className="font-mono">{s.field}</span>:{' '}
+                      <span className="font-mono">{JSON.stringify(s.before)}</span> →{' '}
+                      <span className="text-text font-mono">{JSON.stringify(s.after)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {c.added_properties.length > 0 && (
                 <div className="text-text-muted text-[11px]">
                   + props: <span className="font-mono">{c.added_properties.join(', ')}</span>
@@ -89,6 +101,52 @@ export function SchemaDiffView({ diff }: SchemaDiffViewProps) {
           ))}
         </Section>
       )}
+
+      {migration && migration.impacts.length > 0 && <MigrationImpacts preview={migration} />}
+    </div>
+  );
+}
+
+function MigrationImpacts({ preview }: { preview: MigrationPreview }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-text-muted flex items-center gap-2 text-[11px]">
+        <Badge size="sm" variant="warn">
+          Migration impact
+        </Badge>
+        {preview.skipped && <span>(Neo4j unavailable — counts could not be checked)</span>}
+      </div>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
+        {preview.impacts.map((impact, i) => (
+          <li
+            key={`imp:${i}`}
+            className="border-border bg-panel flex flex-col gap-1 rounded-xs border p-2 text-[11px]"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-text font-medium">{impact.summary}</span>
+              <span
+                className={
+                  'font-mono ' +
+                  (impact.affected === null
+                    ? 'text-text-dim'
+                    : impact.affected === 0
+                      ? 'text-ok'
+                      : 'text-warn')
+                }
+              >
+                {impact.affected === null
+                  ? 'unknown'
+                  : `${impact.affected.toLocaleString()} affected`}
+              </span>
+            </div>
+            {impact.samples.length > 0 && (
+              <div className="text-text-dim truncate font-mono">
+                e.g. {impact.samples.join(', ')}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

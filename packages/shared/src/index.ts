@@ -33,6 +33,9 @@ export type {
   SchemaDiff,
   SchemaTypeChange,
   SchemaWithHistory,
+  MigrationImpact,
+  MigrationPreview,
+  SchemaVersionConflict,
 } from './types/schema-api.js';
 
 export type {

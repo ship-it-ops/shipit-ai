@@ -28,15 +28,19 @@ export default function ConnectorHubPage() {
         </Button>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {connectors.map((connector) => (
-          <ConnectorCard
-            key={connector.id}
-            connector={connector}
-            onClick={() => setSelectedId(connector.id)}
-          />
-        ))}
-      </div>
+      {connectors.length === 0 ? (
+        <EmptyConnectorsHint />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {connectors.map((connector) => (
+            <ConnectorCard
+              key={connector.id}
+              connector={connector}
+              onClick={() => setSelectedId(connector.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {selectedConnector && (
         <ConnectorDetail
@@ -47,6 +51,26 @@ export default function ConnectorHubPage() {
       )}
 
       <AddConnectorDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+    </div>
+  );
+}
+
+// The "Add connector" button sits in the header's top-right. The hint nudges
+// toward that corner with an up-right arrow so the user's eye lands on the
+// only primary action on the page.
+function EmptyConnectorsHint() {
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
+      <div className="text-text flex items-center gap-2 text-[15px] font-medium">
+        Add your first connector
+        <span className="text-accent inline-flex translate-y-[-1px]" aria-hidden>
+          <IconGlyph name="upRight" size={22} />
+        </span>
+      </div>
+      <p className="text-text-muted max-w-sm text-[12px]">
+        Connectors pull data from GitHub, Kubernetes, Datadog, and other tools into your knowledge
+        graph. Start with whichever owns the most of your service catalog.
+      </p>
     </div>
   );
 }

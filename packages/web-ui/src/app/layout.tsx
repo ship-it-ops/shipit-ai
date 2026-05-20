@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
+import '@ship-it-ui/graph-editor/styles.css';
 import './globals.css';
 import { ThemeBootstrap } from '@ship-it-ui/next';
 import { getThemeFromCookies } from '@ship-it-ui/next/server';

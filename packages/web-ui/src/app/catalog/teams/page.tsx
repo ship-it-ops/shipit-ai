@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, EmptyState, Input, Spinner } from '@ship-it-ui/ui';
+import { EmptyState, Input, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { fetchTeams, type TeamSummary } from '@/lib/api';
 import { TeamSummaryCard } from '@/components/teams/team-summary-card';
@@ -30,10 +30,7 @@ export default function TeamsListPage() {
     <div className="mx-auto flex h-full max-w-[1200px] flex-col gap-4 p-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-text text-[22px] font-semibold tracking-tight">Team Dashboard</h1>
-            <Badge variant="accent">Phase 2</Badge>
-          </div>
+          <h1 className="text-text text-[22px] font-semibold tracking-tight">Team Dashboard</h1>
           <p className="text-text-muted mt-1 text-[13px]">
             Every team in the graph with the services, repositories, and deployments they own.
           </p>

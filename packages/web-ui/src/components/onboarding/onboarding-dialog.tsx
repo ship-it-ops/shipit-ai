@@ -223,54 +223,59 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
     onOpenChange(false);
   }, [onOpenChange]);
 
+  // WizardDialog has no max-height or overflow handling of its own — a tall
+  // step (Review with all seven rows + a failure banner, say) would push the
+  // footer below the viewport. Wrap every step body in a scroll container so
+  // overflow lives inside the dialog instead of falling off the page.
+  const stepBody = (node: ReactNode): ReactNode => (
+    <div className="max-h-[55vh] overflow-y-auto pr-1">{node}</div>
+  );
+
   const steps = useMemo<WizardStep[]>(
     () => [
-      {
-        id: 'welcome',
-        label: 'Welcome',
-        content: <WelcomeStep />,
-      },
       {
         id: 'identity',
         label: 'Identity',
         canAdvance: () => identityValid,
-        content: (
+        content: stepBody(
           <IdentityStep
             firstName={form.firstName}
             lastName={form.lastName}
             email={form.email}
             onChange={set}
-          />
+          />,
         ),
       },
       {
         id: 'profile',
         label: 'Profile',
         canAdvance: () => profileValid,
-        content: (
-          <ProfileStep role={form.role} team={form.team} joinedAt={form.joinedAt} onChange={set} />
+        content: stepBody(
+          <ProfileStep
+            role={form.role}
+            team={form.team}
+            joinedAt={form.joinedAt}
+            capabilities={form.capabilities}
+            onChange={set}
+            onToggleCapability={toggleCapability}
+          />,
         ),
       },
       {
-        id: 'capabilities',
-        label: 'Capabilities',
-        content: <CapabilitiesStep selected={form.capabilities} onToggle={toggleCapability} />,
-      },
-      {
         id: 'seed',
-        label: 'Demo data',
-        content: (
+        label: 'Seed',
+        content: stepBody(
           <SeedStep
             status={seedStatus}
             seedRequested={form.seedRequested}
             onChange={(v) => set('seedRequested', v)}
-          />
+          />,
         ),
       },
       {
         id: 'review',
         label: 'Review',
-        content: (
+        content: stepBody(
           <ReviewStep
             form={form}
             seedStatus={seedStatus}
@@ -278,7 +283,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
             identityFailure={identityFailure}
             seedFailure={seedFailure}
             onManualPasteDismiss={handleManualPasteDismiss}
-          />
+          />,
         ),
       },
     ],
@@ -311,7 +316,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
       steps={steps}
       title="Set up your dev identity"
       description="Local development onboarding — values are mock-only, saved to your gitignored shipit.config.local.yaml."
-      width={620}
+      width={720}
       completeLabel={completeLabel}
       cancelLabel="Skip for now"
       onCancel={handleCancel}
@@ -320,35 +325,6 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
         void handleComplete();
       }}
     />
-  );
-}
-
-function WelcomeStep() {
-  return (
-    <div className="flex flex-col gap-4 text-[13px]">
-      <Banner tone="accent" icon={<IconGlyph name="info" />}>
-        <strong>Local / dev onboarding.</strong> Real auth isn&apos;t wired up yet, so the identity
-        you enter here is mock-only. It populates the user menu, the profile page, and any view that
-        asks &quot;who am I&quot; today.
-      </Banner>
-      <div className="text-text-muted flex flex-col gap-2">
-        <p className="m-0">What happens when you save:</p>
-        <ul className="m-0 flex list-disc flex-col gap-1 pl-5">
-          <li>
-            Your identity is written to{' '}
-            <code className="text-text font-mono text-[12px]">shipit.config.local.yaml</code> in
-            your repo root (gitignored).
-          </li>
-          <li>
-            The UI updates immediately via a localStorage overlay — no dev-server restart needed.
-          </li>
-          <li>
-            If the write fails (read-only file, wrong working directory), you&apos;ll get the exact
-            YAML snippet to paste in by hand.
-          </li>
-        </ul>
-      </div>
-    </div>
   );
 }
 
@@ -365,6 +341,11 @@ function IdentityStep({
 }) {
   return (
     <div className="flex flex-col gap-4">
+      <Banner tone="accent" icon={<IconGlyph name="info" />}>
+        <strong>Local / dev onboarding.</strong> Real auth isn&apos;t wired up yet, so the identity
+        you enter here is mock-only and saved to your gitignored{' '}
+        <code className="font-mono text-[12px]">shipit.config.local.yaml</code>.
+      </Banner>
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" required>
           {(p) => (
@@ -407,35 +388,41 @@ function ProfileStep({
   role,
   team,
   joinedAt,
+  capabilities,
   onChange,
+  onToggleCapability,
 }: {
   role: string;
   team: string;
   joinedAt: string;
+  capabilities: Set<string>;
   onChange: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  onToggleCapability: (id: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <Field label="Role" hint="Free text. Defaults to Platform Admin.">
-        {(p) => (
-          <Input
-            {...p}
-            value={role}
-            placeholder="Platform Admin"
-            onChange={(e) => onChange('role', e.target.value)}
-          />
-        )}
-      </Field>
-      <Field label="Team" hint="Slug used by the team-graph views, e.g. platform-team.">
-        {(p) => (
-          <Input
-            {...p}
-            value={team}
-            placeholder="platform-team"
-            onChange={(e) => onChange('team', e.target.value)}
-          />
-        )}
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Role" hint="Free text.">
+          {(p) => (
+            <Input
+              {...p}
+              value={role}
+              placeholder="Platform Admin"
+              onChange={(e) => onChange('role', e.target.value)}
+            />
+          )}
+        </Field>
+        <Field label="Team" hint="Slug, e.g. platform-team.">
+          {(p) => (
+            <Input
+              {...p}
+              value={team}
+              placeholder="platform-team"
+              onChange={(e) => onChange('team', e.target.value)}
+            />
+          )}
+        </Field>
+      </div>
       <Field label="Joined date">
         {(p) => (
           <Input
@@ -446,39 +433,31 @@ function ProfileStep({
           />
         )}
       </Field>
-    </div>
-  );
-}
-
-function CapabilitiesStep({
-  selected,
-  onToggle,
-}: {
-  selected: Set<string>;
-  onToggle: (id: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-text-muted text-[12px]">
-        Which mock-RBAC scopes you hold. All on by default for local dev. These map to real RBAC
-        once Access Control lands.
-      </p>
-      <div className="border-border bg-panel flex flex-col rounded-md border">
-        {ALL_CAPABILITIES.map((cap, idx) => (
-          <label
-            key={cap.id}
-            className={
-              'flex cursor-pointer items-center gap-3 px-3 py-2.5 text-[13px] ' +
-              (idx > 0 ? 'border-border border-t' : '')
-            }
-          >
-            <Checkbox checked={selected.has(cap.id)} onCheckedChange={() => onToggle(cap.id)} />
-            <span className="flex flex-1 flex-col">
-              <span className="text-text font-mono">{cap.label}</span>
-              <span className="text-text-muted text-[11px]">{cap.hint}</span>
-            </span>
-          </label>
-        ))}
+      <div className="flex flex-col gap-2">
+        <div className="text-text text-[12px] font-medium">Capabilities</div>
+        <p className="text-text-muted m-0 text-[11px]">
+          Mock-RBAC scopes. All on by default; will map to real RBAC once Access Control lands.
+        </p>
+        <div className="border-border bg-panel flex flex-col rounded-md border">
+          {ALL_CAPABILITIES.map((cap, idx) => (
+            <label
+              key={cap.id}
+              className={
+                'flex cursor-pointer items-center gap-3 px-3 py-2 text-[13px] ' +
+                (idx > 0 ? 'border-border border-t' : '')
+              }
+            >
+              <Checkbox
+                checked={capabilities.has(cap.id)}
+                onCheckedChange={() => onToggleCapability(cap.id)}
+              />
+              <span className="flex flex-1 flex-col">
+                <span className="text-text font-mono">{cap.label}</span>
+                <span className="text-text-muted text-[11px]">{cap.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );

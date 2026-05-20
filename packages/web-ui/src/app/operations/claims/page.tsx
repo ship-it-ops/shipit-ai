@@ -3,7 +3,7 @@
 import { Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Button, EmptyState, Spinner } from '@ship-it-ui/ui';
+import { Button, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { fetchConflicts, fetchEntityClaims, type ConflictRow, type EntityClaims } from '@/lib/api';
 import { ClaimList } from '@/components/claims/claim-list';
@@ -28,10 +28,7 @@ function ClaimExplorerContent() {
     <div className="mx-auto flex h-full max-w-[1200px] flex-col gap-4 p-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-text text-[22px] font-semibold tracking-tight">Claim Explorer</h1>
-            <Badge variant="accent">Phase 2</Badge>
-          </div>
+          <h1 className="text-text text-[22px] font-semibold tracking-tight">Claim Explorer</h1>
           <p className="text-text-muted mt-1 text-[13px]">
             {entity
               ? 'Per-property claims with provenance and resolution audit trail.'

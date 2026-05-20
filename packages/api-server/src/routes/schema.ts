@@ -1,8 +1,10 @@
 // Phase 1: GET / PUT / POST /validate (already existed).
 // Phase 2: GET /history, GET /history/:version, POST /diff, POST /rollback.
+// Phase 3: optimistic locking (ETag / If-Match), POST /migration-preview.
 // No auth: schema edits are an operator action; Phase 3 RBAC will gate this.
 import type { FastifyPluginAsync } from 'fastify';
-import type { SchemaService } from '../services/schema-service.js';
+import { SchemaVersionConflictError, type SchemaService } from '../services/schema-service.js';
+import { buildMigrationPreview } from '../services/schema-migration-preview.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -20,6 +22,10 @@ const schemaRoutes: FastifyPluginAsync = async (server) => {
         error: { code: 'NOT_FOUND', message: 'No schema loaded' },
       });
     }
+    // ETag carries the optimistic-locking token. Clients hand it back via
+    // If-Match on PUT so we can reject blind overwrites.
+    const hash = service.getHash();
+    if (hash) reply.header('ETag', `"${hash}"`);
     return schema;
   });
 
@@ -30,11 +36,22 @@ const schemaRoutes: FastifyPluginAsync = async (server) => {
         error: { code: 'VALIDATION_ERROR', message: 'Request body must be a YAML string' },
       });
     }
+    // Strip the quoted-string wrapping that browsers add per RFC 7232.
+    const rawIfMatch = request.headers['if-match'];
+    const ifMatch = typeof rawIfMatch === 'string' ? rawIfMatch.replace(/^"|"$/g, '') : undefined;
     try {
       const actor = request.query.actor ?? 'web-ui';
-      const schema = await service.updateSchema(yamlContent, actor);
+      const schema = await service.updateSchema(yamlContent, actor, ifMatch);
+      const hash = service.getHash();
+      if (hash) reply.header('ETag', `"${hash}"`);
       return schema;
     } catch (err) {
+      if (err instanceof SchemaVersionConflictError) {
+        return reply.status(409).send({
+          error: { code: 'VERSION_CONFLICT', message: err.message },
+          serverHash: err.serverHash,
+        });
+      }
       return reply.status(400).send({
         error: { code: 'SCHEMA_INVALID', message: (err as Error).message },
       });
@@ -73,6 +90,27 @@ const schemaRoutes: FastifyPluginAsync = async (server) => {
     }
   });
 
+  server.post<{ Body: string }>('/migration-preview', async (request, reply) => {
+    const yamlContent = request.body;
+    if (!yamlContent || typeof yamlContent !== 'string') {
+      return reply.status(400).send({
+        error: { code: 'VALIDATION_ERROR', message: 'Request body must be a YAML string' },
+      });
+    }
+    try {
+      const diff = service.diffAgainstCurrent(yamlContent);
+      // Without Neo4j the preview can still return the structural list — it
+      // just reports `affected: null` for each impact so the UI shows the
+      // surface without misleading "0 affected" placeholders.
+      const preview = await buildMigrationPreview(diff, service.getSchema(), server.neo4jService);
+      return preview;
+    } catch (err) {
+      return reply.status(400).send({
+        error: { code: 'SCHEMA_INVALID', message: (err as Error).message },
+      });
+    }
+  });
+
   server.get('/history', async () => {
     return service.getHistory();
   });
@@ -100,6 +138,8 @@ const schemaRoutes: FastifyPluginAsync = async (server) => {
     try {
       const actor = request.query.actor ?? 'web-ui';
       const schema = await service.rollbackTo(version, actor);
+      const hash = service.getHash();
+      if (hash) reply.header('ETag', `"${hash}"`);
       return schema;
     } catch (err) {
       return reply.status(404).send({
