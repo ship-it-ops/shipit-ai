@@ -109,7 +109,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
   const identityValid =
     form.firstName.trim() !== '' &&
     form.lastName.trim() !== '' &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email);
+    /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(form.email);
   const profileValid =
     form.role.trim() !== '' && form.team.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(form.joinedAt);
 

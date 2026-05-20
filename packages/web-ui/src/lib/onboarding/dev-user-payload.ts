@@ -22,7 +22,11 @@ const STRING_FIELDS: Array<keyof Omit<DevUserPayload, 'capabilities'>> = [
   'joinedAt',
 ];
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Excluding `.` from the middle segment removes the polynomial-backtracking
+// ambiguity flagged by CodeQL: when the literal `\.` appears, there's only one
+// way to split the input across the two domain groups. Multi-dot TLDs like
+// `co.uk` still match through the trailing `[^\s@]+`.
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function validateDevUser(body: unknown):
