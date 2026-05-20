@@ -48,7 +48,7 @@ resolution_defaults:
 | `full`   | All 12 node types and 16+ relationship types. For organizations with complex service architectures.     |
 | `simple` | Reduced set focused on LogicalService, Repository, Team, and Person. For smaller teams getting started. |
 
-See [ADR-011](../designDocs/ADRs/ADR-011-service-model-simple-mode.md) for the design rationale.
+See [ADR-011](adrs/ADR-011-service-model-simple-mode.md) for the design rationale.
 
 ## Node Types
 

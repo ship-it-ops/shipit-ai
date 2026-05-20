@@ -146,7 +146,7 @@ When multiple sources assert different values for the same property, the resolut
 
 Confidence decays over time: `effective = max(0, base - 0.01 * weeks_since_ingestion)`.
 
-Claims are stored as a JSON `_claims` array on each node (see [ADR-002](../designDocs/ADRs/ADR-002-propertyclaim-storage.md)), reducing write operations from ~45 to ~2 per entity update.
+Claims are stored as a JSON `_claims` array on each node (see [ADR-002](adrs/ADR-002-propertyclaim-storage.md)), reducing write operations from ~45 to ~2 per entity update.
 
 ## Identity Reconciliation
 

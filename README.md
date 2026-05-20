@@ -100,8 +100,8 @@ ShipIt-AI/
 │   ├── mcp-server/          # Model Context Protocol server — 8 tools for AI agents
 │   └── web-ui/              # Next.js 14 dashboard with Cytoscape.js graph visualization
 ├── docker/                  # Docker Compose, Dockerfiles, Neo4j init scripts
-├── designDocs/              # Design document and Architecture Decision Records
-└── docs/                    # User-facing documentation
+├── designDocs/              # Design documents (vision, scope)
+└── docs/                    # User-facing documentation + Architecture Decision Records
 ```
 
 ## MCP Tools
@@ -199,20 +199,7 @@ See [docs/deployment.md](docs/deployment.md) for environment variables, resource
 
 ## Architecture Decision Records
 
-| ADR                                                               | Title                                  |
-| ----------------------------------------------------------------- | -------------------------------------- |
-| [ADR-001](designDocs/ADRs/ADR-001-api-server-language.md)         | All-TypeScript Stack                   |
-| [ADR-002](designDocs/ADRs/ADR-002-propertyclaim-storage.md)       | PropertyClaim Storage as JSON on Nodes |
-| [ADR-003](designDocs/ADRs/ADR-003-phase1-mvp-scope.md)            | Phase 1 MVP Scope                      |
-| [ADR-004](designDocs/ADRs/ADR-004-event-bus-strategy.md)          | Tiered Event Bus (BullMQ → Kafka)      |
-| [ADR-005](designDocs/ADRs/ADR-005-defer-vector-db.md)             | Defer Vector DB to Phase 2             |
-| [ADR-006](designDocs/ADRs/ADR-006-schema-configuration.md)        | YAML Schema Configuration              |
-| [ADR-007](designDocs/ADRs/ADR-007-neo4j-ha-strategy.md)           | Neo4j High Availability Strategy       |
-| [ADR-008](designDocs/ADRs/ADR-008-mcp-response-envelope.md)       | MCP Response Envelope Standard         |
-| [ADR-009](designDocs/ADRs/ADR-009-schema-storage.md)              | Schema Storage in Neo4j                |
-| [ADR-010](designDocs/ADRs/ADR-010-identity-resolution-phasing.md) | Identity Resolution Phasing            |
-| [ADR-011](designDocs/ADRs/ADR-011-service-model-simple-mode.md)   | Service Model Simple Mode              |
-| [ADR-012](designDocs/ADRs/ADR-012-accessibility-standards.md)     | Accessibility Standards                |
+ADRs capture the architectural decisions behind the codebase and the trade-offs accepted with each. The full index lives at [`docs/adrs/`](docs/adrs/).
 
 ## Roadmap
 
