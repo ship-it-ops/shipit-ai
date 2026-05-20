@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer } from '../../server.js';
 import type { Neo4jService } from '../../services/neo4j-service.js';
 import type { FastifyInstance } from 'fastify';
+import { makeTestConfig } from '../test-config.js';
 
 function createMockNeo4jService(): Neo4jService {
   // queryRoutes calls getDriver() at register time; return a stub driver so the
@@ -64,7 +65,7 @@ describe('Graph routes', () => {
 
   beforeAll(async () => {
     mockNeo4j = createMockNeo4jService();
-    server = await createServer({ neo4jService: mockNeo4j });
+    server = await createServer({ neo4jService: mockNeo4j, config: makeTestConfig() });
     await server.ready();
   });
 

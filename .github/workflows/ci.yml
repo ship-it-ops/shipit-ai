@@ -30,6 +30,9 @@ jobs:
 
       - run: pnpm turbo lint
 
+      - name: Secretlint (full repo)
+        run: pnpm exec secretlint --secretlintrc .secretlintrc.json "**/*"
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest

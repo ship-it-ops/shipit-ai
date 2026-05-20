@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { Badge, Button, Dialog, EmptyState, Spinner } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import type { GraphData } from '@/lib/api';
 
@@ -105,7 +105,7 @@ export function BlastRadiusDialog({
           return (
             <section key={type} className="flex flex-col gap-2">
               <h3 className="text-text-dim flex items-center gap-2 font-mono text-[10px] tracking-[1.4px] uppercase">
-                <span aria-hidden>{meta.glyph}</span>
+                <DynamicIconGlyph aria-hidden name={meta.iconName} size={11} />
                 {meta.label}
                 <span className="text-text-dim font-mono">· {nodes.length}</span>
               </h3>
@@ -123,13 +123,13 @@ export function BlastRadiusDialog({
                         <span
                           aria-hidden
                           className={
-                            'grid h-6 w-6 place-items-center rounded-xs text-[13px] ' +
+                            'grid h-6 w-6 place-items-center rounded-xs ' +
                             meta.toneBg +
                             ' ' +
                             meta.toneClass
                           }
                         >
-                          {meta.glyph}
+                          <DynamicIconGlyph name={meta.iconName} size={13} />
                         </span>
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="text-text truncate font-medium">

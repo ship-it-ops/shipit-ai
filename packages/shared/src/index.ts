@@ -33,6 +33,9 @@ export type {
   SchemaDiff,
   SchemaTypeChange,
   SchemaWithHistory,
+  MigrationImpact,
+  MigrationPreview,
+  SchemaVersionConflict,
 } from './types/schema-api.js';
 
 export type {
@@ -64,3 +67,7 @@ export { DEFAULT_SCHEMA } from './schema/defaults.js';
 
 // Utilities
 export { computeEffectiveConfidence } from './utils/confidence.js';
+
+// Config
+export { loadConfig, findConfigPaths, configSchema } from './config/index.js';
+export type { Config, LoadConfigOptions, ConfigPaths } from './config/index.js';

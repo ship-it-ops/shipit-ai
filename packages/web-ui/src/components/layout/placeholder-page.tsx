@@ -1,24 +1,23 @@
 'use client';
 
 import { Badge, Card, type BadgeProps } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 
-export type PlaceholderPhase = 'phase-2' | 'phase-3' | 'enterprise';
+export type PlaceholderPhase = 'phase-3';
 
 const phaseMeta: Record<
   PlaceholderPhase,
   { label: string; variant: NonNullable<BadgeProps['variant']> }
 > = {
-  'phase-2': { label: 'Phase 2', variant: 'accent' },
   'phase-3': { label: 'Phase 3', variant: 'purple' },
-  enterprise: { label: 'Enterprise', variant: 'warn' },
 };
 
 export interface PlaceholderPageProps {
   title: string;
   description: string;
-  glyph: string;
-  phase: PlaceholderPhase;
+  glyph: GlyphName;
+  /** Optional roadmap badge. Omit to render the page without one. */
+  phase?: PlaceholderPhase;
   features?: ReadonlyArray<string>;
 }
 
@@ -29,7 +28,7 @@ export function PlaceholderPage({
   phase,
   features,
 }: PlaceholderPageProps) {
-  const meta = phaseMeta[phase];
+  const meta = phase ? phaseMeta[phase] : null;
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-3">
@@ -40,7 +39,7 @@ export function PlaceholderPage({
           >
             <IconGlyph name={glyph} size={22} />
           </span>
-          <Badge variant={meta.variant}>{meta.label}</Badge>
+          {meta && <Badge variant={meta.variant}>{meta.label}</Badge>}
         </div>
         <div>
           <h1 className="text-text text-[22px] font-semibold tracking-tight">{title}</h1>

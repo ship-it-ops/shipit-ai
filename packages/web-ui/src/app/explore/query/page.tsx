@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Badge, Button, Spinner } from '@ship-it-ui/ui';
+import { Button, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { runCypherQuery, type CypherQueryResult, type CypherApiError } from '@/lib/api';
 import { QueryEditor } from '@/components/query/query-editor';
@@ -41,10 +41,7 @@ export default function QueryPlaygroundPage() {
     <div className="mx-auto flex h-full max-w-[1400px] flex-col gap-4 p-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-text text-[22px] font-semibold tracking-tight">Query Playground</h1>
-            <Badge variant="accent">Phase 2</Badge>
-          </div>
+          <h1 className="text-text text-[22px] font-semibold tracking-tight">Query Playground</h1>
           <p className="text-text-muted mt-1 text-[13px]">
             Read-only Cypher against the live knowledge graph.
           </p>

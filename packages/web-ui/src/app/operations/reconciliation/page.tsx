@@ -59,7 +59,6 @@ export default function ReconciliationPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-text text-[22px] font-semibold tracking-tight">Reconciliation</h1>
-            <Badge variant="accent">Phase 2</Badge>
             {stats && stats.pending > 0 && <Badge variant="warn">{stats.pending} pending</Badge>}
           </div>
           <p className="text-text-muted mt-1 text-[13px]">
@@ -68,11 +67,9 @@ export default function ReconciliationPage() {
           </p>
         </div>
         <Button
-          variant="outline"
-          size="sm"
           onClick={() => scan.mutate()}
           disabled={scan.isPending}
-          icon={scan.isPending ? <Spinner size="sm" /> : <IconGlyph name="refresh" size={12} />}
+          icon={scan.isPending ? <Spinner size="sm" /> : <IconGlyph name="refresh" />}
         >
           {scan.isPending ? 'Scanning…' : 'Run scan'}
         </Button>

@@ -11,7 +11,7 @@ import {
   Input,
   Spinner,
 } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useCatalogEntities } from '@/lib/hooks/use-graph-data';
 
@@ -86,9 +86,9 @@ function TypeBadge({ type }: { type: string }) {
   const variant = TYPE_BADGE_VARIANT[type] ?? 'neutral';
   return (
     <Badge variant={variant} className="font-mono text-[11px]">
-      <span aria-hidden className="mr-[6px]">
-        {meta?.glyph ?? '·'}
-      </span>
+      {meta?.iconName && (
+        <DynamicIconGlyph name={meta.iconName} size={11} aria-hidden className="mr-[6px]" />
+      )}
       {meta?.label ?? type}
     </Badge>
   );

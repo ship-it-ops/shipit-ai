@@ -1,16 +1,18 @@
 /**
  * Mock current-user record. The app doesn't have an auth layer wired up yet,
- * so every view that needs "who am I" reads this singleton. When auth lands,
- * this file becomes the seam — replace the export with `useCurrentUser()` or
- * a server-component fetch and every consumer keeps working.
+ * so every view that needs "who am I" reads through `useCurrentUser()`. When
+ * auth lands, this hook becomes the seam — every consumer keeps working.
  *
- * Values come from `NEXT_PUBLIC_DEV_USER_*` env vars when set (override per
- * developer via `.env.local`), with neutral fallbacks for fresh checkouts.
- * `NEXT_PUBLIC_*` is required because these reads happen in client
- * components — those vars get inlined at build time.
- *
- * See `.env.example` for the full key list.
+ * Base values come from `frontend.devUser` in shipit.config.local.yaml (baked
+ * into the bundle by next.config.mjs at dev-server start). On the client, we
+ * overlay any value the user saved through the onboarding modal — that value
+ * lives in localStorage so the UI updates without a dev-server restart.
  */
+
+'use client';
+
+import { useEffect, useSyncExternalStore } from 'react';
+import { clientConfig, type DevUserConfig } from './client-config';
 
 export interface CurrentUser {
   firstName: string;
@@ -25,11 +27,6 @@ export interface CurrentUser {
   capabilities: ReadonlyArray<string>;
 }
 
-function envOr(key: string, fallback: string): string {
-  const v = process.env[key];
-  return v && v.length > 0 ? v : fallback;
-}
-
 const DEFAULT_CAPABILITIES: ReadonlyArray<string> = [
   'admin',
   'graph:write',
@@ -38,28 +35,109 @@ const DEFAULT_CAPABILITIES: ReadonlyArray<string> = [
   'mcp:invoke',
 ];
 
-function envCapabilities(): ReadonlyArray<string> {
-  const raw = process.env['NEXT_PUBLIC_DEV_USER_CAPABILITIES'];
-  if (!raw) return DEFAULT_CAPABILITIES;
-  const parsed = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parsed.length > 0 ? parsed : DEFAULT_CAPABILITIES;
+export const DEV_USER_OVERRIDE_KEY = 'shipit:dev-user-override';
+export const ONBOARDING_COMPLETE_KEY = 'shipit:onboarding-complete';
+export const DEV_USER_CHANGED_EVENT = 'shipit:dev-user-changed';
+
+function buildUser(cfg: DevUserConfig | null): CurrentUser {
+  const firstName = cfg?.firstName ?? 'Dev';
+  const lastName = cfg?.lastName ?? 'User';
+  return {
+    firstName,
+    lastName,
+    name: `${firstName} ${lastName}`.trim(),
+    email: cfg?.email ?? 'dev@shipit.local',
+    role: cfg?.role ?? 'Platform Admin',
+    team: cfg?.team ?? 'platform-team',
+    joinedAt: cfg?.joinedAt ?? '2026-01-01',
+    capabilities: cfg?.capabilities ?? DEFAULT_CAPABILITIES,
+  };
 }
 
-const firstName = envOr('NEXT_PUBLIC_DEV_USER_FIRST_NAME', 'Dev');
-const lastName = envOr('NEXT_PUBLIC_DEV_USER_LAST_NAME', 'User');
+const buildTimeUser: CurrentUser = buildUser(clientConfig.devUser);
 
-export const CURRENT_USER: CurrentUser = {
-  firstName,
-  lastName,
-  // Joined here so consumers don't have to. Trim handles the unlikely case
-  // where someone sets only one of the two halves.
-  name: `${firstName} ${lastName}`.trim(),
-  email: envOr('NEXT_PUBLIC_DEV_USER_EMAIL', 'dev@shipit.local'),
-  role: envOr('NEXT_PUBLIC_DEV_USER_ROLE', 'Platform Admin'),
-  team: envOr('NEXT_PUBLIC_DEV_USER_TEAM', 'platform-team'),
-  joinedAt: envOr('NEXT_PUBLIC_DEV_USER_JOINED_AT', '2026-01-01'),
-  capabilities: envCapabilities(),
-};
+function readOverride(): DevUserConfig | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(DEV_USER_OVERRIDE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<DevUserConfig>;
+    if (
+      typeof parsed.firstName === 'string' &&
+      typeof parsed.lastName === 'string' &&
+      typeof parsed.email === 'string' &&
+      typeof parsed.role === 'string' &&
+      typeof parsed.team === 'string' &&
+      typeof parsed.joinedAt === 'string' &&
+      Array.isArray(parsed.capabilities)
+    ) {
+      return parsed as DevUserConfig;
+    }
+  } catch {
+    // Stale override — fall through to the build-time value.
+  }
+  return null;
+}
+
+// useSyncExternalStore guards against tearing if useCurrentUser fires from
+// multiple components during the same render. The snapshot is cached per
+// listener so React's equality check short-circuits when nothing changed.
+let cachedOverrideRaw: string | null | undefined = undefined;
+let cachedUser: CurrentUser = buildTimeUser;
+
+function getSnapshot(): CurrentUser {
+  if (typeof window === 'undefined') return buildTimeUser;
+  const raw = window.localStorage.getItem(DEV_USER_OVERRIDE_KEY);
+  if (raw === cachedOverrideRaw) return cachedUser;
+  cachedOverrideRaw = raw;
+  cachedUser = buildUser(readOverride() ?? clientConfig.devUser);
+  return cachedUser;
+}
+
+function getServerSnapshot(): CurrentUser {
+  return buildTimeUser;
+}
+
+function subscribe(notify: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const handler = () => notify();
+  // Same-tab updates go through a custom event; cross-tab updates come from
+  // the native `storage` event. Both call notify; useSyncExternalStore
+  // dedupes via the snapshot identity check.
+  window.addEventListener(DEV_USER_CHANGED_EVENT, handler);
+  window.addEventListener('storage', handler);
+  return () => {
+    window.removeEventListener(DEV_USER_CHANGED_EVENT, handler);
+    window.removeEventListener('storage', handler);
+  };
+}
+
+export function useCurrentUser(): CurrentUser {
+  const user = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // Re-derive after hydration in case localStorage diverges from the SSR
+  // snapshot — without this, the first client render shows the build-time
+  // values briefly before useSyncExternalStore notices the storage on the
+  // next event.
+  useEffect(() => {
+    cachedOverrideRaw = undefined;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(DEV_USER_CHANGED_EVENT));
+    }
+  }, []);
+  return user;
+}
+
+/** Push a saved devUser into localStorage and broadcast the change. */
+export function persistDevUserOverride(value: DevUserConfig): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(DEV_USER_OVERRIDE_KEY, JSON.stringify(value));
+  window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
+  window.dispatchEvent(new Event(DEV_USER_CHANGED_EVENT));
+}
+
+/** Mark onboarding complete without touching the override (e.g., manual-paste dismiss). */
+export function markOnboardingComplete(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
+  window.dispatchEvent(new Event(DEV_USER_CHANGED_EVENT));
+}

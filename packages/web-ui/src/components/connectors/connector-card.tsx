@@ -4,18 +4,6 @@ import { Badge } from '@ship-it-ui/ui';
 import { ConnectorCard as DSConnectorCard, type ConnectorStatus } from '@ship-it-ui/shipit';
 import type { ConnectorInfo } from '@/lib/api';
 
-// DS `connectorGlyphs` covers github / jira / etc. For ShipIt-AI's broader
-// connector vocabulary, map unknown types to short placeholders so the
-// IconGlyph fallback (which renders the string itself) stays readable.
-const connectorKey: Record<string, string> = {
-  github: 'github',
-  kubernetes: '⎇',
-  datadog: '🐶',
-  backstage: '⌂',
-  jira: 'jira',
-  identity: '◉',
-};
-
 const statusMap: Record<ConnectorInfo['status'], ConnectorStatus> = {
   healthy: 'connected',
   degraded: 'syncing',
@@ -31,7 +19,7 @@ interface ConnectorCardProps {
 export function ConnectorCard({ connector, onClick }: ConnectorCardProps) {
   return (
     <DSConnectorCard
-      connector={connectorKey[connector.type] ?? connector.type}
+      connector={connector.type}
       name={connector.name}
       status={statusMap[connector.status]}
       lastSyncedAt={connector.lastSync ?? undefined}

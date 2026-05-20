@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Badge, Button, Card, Spinner } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { ConfidenceIndicator } from '@ship-it-ui/shipit';
 import {
   type BlastRadiusEntry,
@@ -21,7 +21,10 @@ interface Props {
   loading?: boolean;
 }
 
-const LEVEL_TONE: Record<SafetyLevel, { bg: string; text: string; icon: string; label: string }> = {
+const LEVEL_TONE: Record<
+  SafetyLevel,
+  { bg: string; text: string; icon: GlyphName; label: string }
+> = {
   red: { bg: 'bg-err/10', text: 'text-err', icon: 'incident', label: 'CRITICAL' },
   yellow: { bg: 'bg-warn/10', text: 'text-warn', icon: 'warn', label: 'ELEVATED' },
   green: { bg: 'bg-ok/10', text: 'text-ok', icon: 'check', label: 'LOW' },

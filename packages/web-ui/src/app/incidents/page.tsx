@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
+import { EntityList, EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
 import { useRecentlyViewed } from '@/lib/hooks/use-recently-viewed';
 
@@ -50,7 +50,7 @@ export default function IncidentModeLandingPage() {
               </button>
             }
           >
-            <div className="flex flex-col">
+            <EntityList framed={false}>
               {entries.map((entry) => (
                 <EntityListRowButton
                   key={entry.id}
@@ -60,7 +60,7 @@ export default function IncidentModeLandingPage() {
                   onClick={() => router.push(`/incidents/${encodeURIComponent(entry.id)}`)}
                 />
               ))}
-            </div>
+            </EntityList>
           </Card>
         )}
 

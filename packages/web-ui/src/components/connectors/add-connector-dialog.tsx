@@ -2,13 +2,13 @@
 
 import { useState, type ReactNode } from 'react';
 import { Field, Input, Select, WizardDialog, type WizardStep } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { cn } from '@/lib/utils';
 
 interface ConnectorType {
   id: string;
   name: string;
-  glyph: string;
+  glyph: GlyphName;
   description: string;
 }
 
@@ -220,7 +220,7 @@ function ReviewSummary({
   description,
   rows,
 }: {
-  glyph: string;
+  glyph: GlyphName;
   name: string;
   description: string;
   rows: ReadonlyArray<{ label: string; value: ReactNode }>;

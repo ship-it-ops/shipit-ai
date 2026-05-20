@@ -16,27 +16,24 @@ This guide walks you through setting up ShipIt-AI for local development.
 ```bash
 git clone https://github.com/ship-it-ops/ShipIt-AI.git
 cd ShipIt-AI
-cp .env.example .env
+pnpm preflight
 ```
 
-Edit `.env` with your settings. The defaults work for local development:
+`preflight` checks prerequisites and bootstraps `shipit.config.local.yaml`
+from the committed example. It also prompts for your name/email on first
+run (these populate the user menu until real auth ships).
 
-```bash
-# Infrastructure
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=shipit-dev
-NEO4J_DATABASE=neo4j
-REDIS_URL=redis://localhost:6379
+Configuration model — Backstage-style two-file YAML:
 
-# API Server
-API_SERVER_PORT=3001
-SCHEMA_PATH=./shipit-schema.yaml
+- **`shipit.config.yaml`** — committed, the production base. Hardcoded
+  defaults plus `${ENV_VAR}` and `${ENV_VAR:-default}` placeholders for
+  anything that varies per environment or is a secret.
+- **`shipit.config.local.yaml`** — gitignored, optional per-developer
+  overrides and local secrets. Merged on top of the base.
 
-# Web UI
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
+The defaults in `shipit.config.yaml` work for local development with the
+docker-compose Neo4j/Redis instances. Override anything you need in your
+local file — see `shipit.config.local.example.yaml` for templates.
 
 ## 2. Start Infrastructure
 

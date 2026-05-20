@@ -39,7 +39,7 @@ export default function SettingsPage() {
           />
           <SettingsRow
             title="Density"
-            description="Comfortable spacing. Compact density is on the Phase 2 roadmap."
+            description="Comfortable spacing. Compact density is on the roadmap."
             control={<Badge variant="neutral">Comfortable</Badge>}
           />
           <SettingsRow

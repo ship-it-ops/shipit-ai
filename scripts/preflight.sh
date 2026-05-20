@@ -89,11 +89,17 @@ fi
 # ── repo state ──────────────────────────────────────────────────────────────
 section "Repo state"
 
-if [ ! -f .env.example ]; then
-  fail ".env.example missing — this file ships with the repo. Did the checkout fail?"
+if [ ! -f shipit.config.yaml ]; then
+  fail "shipit.config.yaml missing — this file ships with the repo. Did the checkout fail?"
   exit 1
 fi
-ok ".env.example present"
+ok "shipit.config.yaml present"
+
+if [ ! -f shipit.config.local.example.yaml ]; then
+  fail "shipit.config.local.example.yaml missing — needed to bootstrap local overrides"
+  exit 1
+fi
+ok "shipit.config.local.example.yaml present"
 
 if [ ! -f config/shipit-schema.yaml ]; then
   fail "config/shipit-schema.yaml missing — required for api-server"
@@ -110,85 +116,15 @@ else
   ok "node_modules present"
 fi
 
-# ── .env file ───────────────────────────────────────────────────────────────
-section ".env"
+# ── shipit.config.local.yaml ────────────────────────────────────────────────
+section "Local config"
 
-PROMPT_USER=0
-if [ ! -f .env ]; then
-  cp .env.example .env
-  ok "Created .env from .env.example"
-  PROMPT_USER=1
+if [ ! -f shipit.config.local.yaml ]; then
+  cp shipit.config.local.example.yaml shipit.config.local.yaml
+  ok "Created shipit.config.local.yaml from the example"
+  info "Personalize your dev identity from the onboarding modal on first load of the web UI (or edit the file directly)."
 else
-  ok ".env exists"
-  # Treat the file as "still on defaults" only when ALL three identity
-  # placeholders are still verbatim from .env.example. Once the user has
-  # personalized any of them, we stop nagging.
-  if grep -qx 'NEXT_PUBLIC_DEV_USER_FIRST_NAME=Dev' .env \
-     && grep -qx 'NEXT_PUBLIC_DEV_USER_LAST_NAME=User' .env \
-     && grep -qx 'NEXT_PUBLIC_DEV_USER_EMAIL=dev@shipit.local' .env; then
-    PROMPT_USER=1
-  fi
-fi
-
-# Make sure the dev-user keys exist at all — older .env files predating the
-# block won't have them. Append from .env.example if any are missing.
-for key in \
-  NEXT_PUBLIC_DEV_USER_FIRST_NAME \
-  NEXT_PUBLIC_DEV_USER_LAST_NAME \
-  NEXT_PUBLIC_DEV_USER_EMAIL \
-  NEXT_PUBLIC_DEV_USER_ROLE \
-  NEXT_PUBLIC_DEV_USER_TEAM \
-  NEXT_PUBLIC_DEV_USER_JOINED_AT \
-  NEXT_PUBLIC_DEV_USER_CAPABILITIES; do
-  if ! grep -q "^${key}=" .env; then
-    line=$(grep "^${key}=" .env.example || true)
-    if [ -n "$line" ]; then
-      printf '%s\n' "$line" >> .env
-      info "Appended missing key ${key} from .env.example"
-      PROMPT_USER=1
-    fi
-  fi
-done
-
-if [ "$PROMPT_USER" -eq 1 ]; then
-  section "Set up your developer info"
-  if [ ! -t 0 ]; then
-    info "Non-interactive shell — keeping the placeholders."
-    info "Edit .env manually to set NEXT_PUBLIC_DEV_USER_FIRST_NAME / LAST_NAME / EMAIL."
-  else
-    echo "  These populate the user menu and profile page. No auth is wired up yet,"
-    echo "  so this is a personal-only customization. Hit Enter to keep a default."
-    echo
-
-    current_first=$(grep '^NEXT_PUBLIC_DEV_USER_FIRST_NAME=' .env | sed 's/^NEXT_PUBLIC_DEV_USER_FIRST_NAME=//')
-    current_last=$(grep '^NEXT_PUBLIC_DEV_USER_LAST_NAME=' .env | sed 's/^NEXT_PUBLIC_DEV_USER_LAST_NAME=//')
-    current_email=$(grep '^NEXT_PUBLIC_DEV_USER_EMAIL=' .env | sed 's/^NEXT_PUBLIC_DEV_USER_EMAIL=//')
-
-    printf "  First name [%s]: " "$current_first"
-    read -r input_first
-    new_first=${input_first:-$current_first}
-
-    printf "  Last name  [%s]: " "$current_last"
-    read -r input_last
-    new_last=${input_last:-$current_last}
-
-    printf "  Email      [%s]: " "$current_email"
-    read -r input_email
-    new_email=${input_email:-$current_email}
-
-    # Use awk for the in-place rewrite — sed's `s///` chokes on `/`, `&`, `\`
-    # in user input, awk just inserts the variables verbatim.
-    tmp=$(mktemp)
-    awk -v fn="$new_first" -v ln="$new_last" -v em="$new_email" '
-      /^NEXT_PUBLIC_DEV_USER_FIRST_NAME=/ { print "NEXT_PUBLIC_DEV_USER_FIRST_NAME=" fn; next }
-      /^NEXT_PUBLIC_DEV_USER_LAST_NAME=/  { print "NEXT_PUBLIC_DEV_USER_LAST_NAME=" ln;  next }
-      /^NEXT_PUBLIC_DEV_USER_EMAIL=/      { print "NEXT_PUBLIC_DEV_USER_EMAIL=" em;      next }
-      { print }
-    ' .env > "$tmp" && mv "$tmp" .env
-    ok ".env updated"
-  fi
-else
-  ok "Dev-user info already personalized"
+  ok "shipit.config.local.yaml exists"
 fi
 
 printf "\n${GREEN}${BOLD}Preflight complete.${RESET}\n"

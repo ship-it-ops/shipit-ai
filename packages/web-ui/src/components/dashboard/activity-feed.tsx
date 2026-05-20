@@ -8,7 +8,7 @@ import {
   type ActivityEvent as TimelineActivityEvent,
   type TimelineEventTone,
 } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { fetchActivity, type ActivityEvent } from '@/lib/api';
 
 const eventTone: Record<ActivityEvent['type'], TimelineEventTone> = {
@@ -18,7 +18,7 @@ const eventTone: Record<ActivityEvent['type'], TimelineEventTone> = {
   connector_added: 'ok',
 };
 
-const eventGlyph: Record<ActivityEvent['type'], string> = {
+const eventGlyph: Record<ActivityEvent['type'], GlyphName> = {
   sync: 'refresh',
   merge: 'graph',
   schema_change: 'schema',

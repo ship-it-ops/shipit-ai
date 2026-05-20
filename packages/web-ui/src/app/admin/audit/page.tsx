@@ -8,7 +8,6 @@ export default function AuditLogPage() {
       title="Audit Log"
       description="Tamper-evident log of every schema change, manual claim override, and merge action — filterable, exportable, and streamable to an external SIEM."
       glyph="file"
-      phase="enterprise"
       features={[
         'Append-only log of schema, claim, merge, and access-control changes.',
         'Filter by actor, entity, action type, and date range.',

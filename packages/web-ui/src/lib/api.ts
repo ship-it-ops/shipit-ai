@@ -1,4 +1,6 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { clientConfig } from './client-config';
+
+const API_URL = clientConfig.api.url;
 
 export interface GraphStats {
   nodeCount: number;
@@ -67,10 +69,14 @@ export interface ActivityEvent {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  // Only advertise a JSON content-type when there's actually a body to encode.
+  // Fastify's JSON parser rejects bodyless POSTs with `Content-Type: application/json`
+  // as 400 "Body cannot be empty when content-type is set to 'application/json'".
+  const headers = new Headers(options?.headers);
+  if (options?.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -245,28 +251,90 @@ export interface SchemaDiff {
     added_properties: string[];
     removed_properties: string[];
     changed_properties: Array<{ name: string; field: string; before: unknown; after: unknown }>;
+    structural_changes: Array<{ field: string; before: unknown; after: unknown }>;
   }>;
 }
 
-export async function fetchSchema(): Promise<ShipItSchema> {
-  return apiFetch<ShipItSchema>('/api/schema');
+export interface MigrationImpact {
+  kind:
+    | 'remove_node_type'
+    | 'remove_property'
+    | 'remove_relationship_type'
+    | 'rel_structural_change'
+    | 'change_unique_key'
+    | 'add_required_property';
+  target: string;
+  property?: string;
+  summary: string;
+  affected: number | null;
+  samples: string[];
+}
+
+export interface MigrationPreview {
+  impacts: MigrationImpact[];
+  skipped: boolean;
+}
+
+/**
+ * Thrown by `saveSchemaYaml` when the server returns 409 — the schema file
+ * was modified between the caller's read and write. `serverHash` lets the
+ * UI present "discard + reload" / "keep editing" without a full refetch.
+ */
+export class SchemaConflictError extends Error {
+  readonly serverHash: string;
+  constructor(message: string, serverHash: string) {
+    super(message);
+    this.name = 'SchemaConflictError';
+    this.serverHash = serverHash;
+  }
+}
+
+/** Parsed `ETag` header value, sans the quoted wrapping. */
+function parseEtag(header: string | null): string | null {
+  if (!header) return null;
+  return header.replace(/^W\//, '').replace(/^"|"$/g, '');
+}
+
+export interface SchemaWithHash {
+  schema: ShipItSchema;
+  hash: string | null;
+}
+
+export async function fetchSchema(): Promise<SchemaWithHash> {
+  const res = await fetch(`${API_URL}/api/schema`);
+  if (!res.ok) throw new Error(`fetchSchema: ${res.status}`);
+  const schema = (await res.json()) as ShipItSchema;
+  return { schema, hash: parseEtag(res.headers.get('ETag')) };
 }
 
 export async function fetchSchemaHistory(): Promise<SchemaSnapshot[]> {
   return apiFetch<SchemaSnapshot[]>('/api/schema/history');
 }
 
-export async function saveSchemaYaml(yaml: string): Promise<ShipItSchema> {
+export async function saveSchemaYaml(yaml: string, ifMatch?: string): Promise<SchemaWithHash> {
+  const headers: Record<string, string> = { 'Content-Type': 'text/yaml' };
+  if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
   const res = await fetch(`${API_URL}/api/schema?actor=web-ui`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'text/yaml' },
+    headers,
     body: yaml,
   });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+      serverHash?: string;
+    };
+    throw new SchemaConflictError(
+      body.error?.message ?? 'Schema was modified by another writer.',
+      body.serverHash ?? '',
+    );
+  }
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(body.error?.message ?? `Save failed: ${res.status}`);
   }
-  return (await res.json()) as ShipItSchema;
+  const schema = (await res.json()) as ShipItSchema;
+  return { schema, hash: parseEtag(res.headers.get('ETag')) };
 }
 
 export async function diffSchemaYaml(yaml: string): Promise<SchemaDiff> {
@@ -282,7 +350,20 @@ export async function diffSchemaYaml(yaml: string): Promise<SchemaDiff> {
   return (await res.json()) as SchemaDiff;
 }
 
-export async function rollbackSchema(version: string): Promise<ShipItSchema> {
+export async function migrationPreview(yaml: string): Promise<MigrationPreview> {
+  const res = await fetch(`${API_URL}/api/schema/migration-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/yaml' },
+    body: yaml,
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Migration preview failed: ${res.status}`);
+  }
+  return (await res.json()) as MigrationPreview;
+}
+
+export async function rollbackSchema(version: string): Promise<SchemaWithHash> {
   const res = await fetch(`${API_URL}/api/schema/rollback?actor=web-ui`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -292,7 +373,8 @@ export async function rollbackSchema(version: string): Promise<ShipItSchema> {
     const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(body.error?.message ?? `Rollback failed: ${res.status}`);
   }
-  return (await res.json()) as ShipItSchema;
+  const schema = (await res.json()) as ShipItSchema;
+  return { schema, hash: parseEtag(res.headers.get('ETag')) };
 }
 
 // -- Team Dashboard ----------------------------------------------------------

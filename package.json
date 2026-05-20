@@ -28,15 +28,18 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}": "prettier --write"
+    "*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}": "prettier --write",
+    "*": "secretlint --maskSecrets"
   },
   "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/node": "^22.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.4",
     "neo4j-driver": "^5.28.3",
     "prettier": "^3.5.0",
     "prettier-plugin-tailwindcss": "^0.8.0",
+    "secretlint": "^13.0.2",
     "tsx": "^4.21.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0",

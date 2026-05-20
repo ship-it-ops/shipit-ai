@@ -11,6 +11,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build-time overrides for shipit.config.yaml ${VAR} placeholders. Anything
+# referenced from frontend.* must be present here or fall back to its
+# YAML-defined default. Backend.* placeholders aren't substituted during the
+# frontend build (see next.config.mjs).
+ARG SHIPIT_API_URL
+ENV SHIPIT_API_URL=${SHIPIT_API_URL}
 RUN pnpm run build
 
 FROM base AS runner

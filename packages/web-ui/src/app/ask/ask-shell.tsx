@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { Banner } from '@ship-it-ui/ui';
+import { IconGlyph } from '@ship-it-ui/icons';
 import {
   AskBar,
   Citation,
@@ -30,6 +32,12 @@ export function AskShell() {
           Ask the knowledge graph about services, owners, deployments, and incidents.
         </p>
       </header>
+
+      <Banner tone="warn" icon={<IconGlyph name="warn" />}>
+        <strong>Under construction.</strong> The Ask experience isn&apos;t wired to a backend yet —
+        the conversation below is a mocked preview of the final shape. Submissions log to the
+        console and don&apos;t hit any model or graph endpoint.
+      </Banner>
 
       <AskBar
         placeholder="Ask anything about your software ecosystem…"

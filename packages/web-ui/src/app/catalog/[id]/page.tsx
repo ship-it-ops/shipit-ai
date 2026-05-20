@@ -11,7 +11,7 @@ import {
   formatRelative,
   Spinner,
 } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useBlastRadius, useGraphData } from '@/lib/hooks/use-graph-data';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
@@ -162,13 +162,13 @@ export default function EntityDetailPage() {
           <span
             aria-hidden
             className={
-              'rounded-base grid h-12 w-12 shrink-0 place-items-center text-[24px] leading-none ' +
+              'rounded-base grid h-12 w-12 shrink-0 place-items-center leading-none ' +
               meta.toneBg +
               ' ' +
               meta.toneClass
             }
           >
-            {meta.glyph}
+            <DynamicIconGlyph name={meta.iconName} size={24} />
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -393,11 +393,15 @@ function RelationGroup({
                 <span
                   aria-hidden
                   className={
-                    'grid h-6 w-6 place-items-center rounded-xs text-[13px] ' +
+                    'grid h-6 w-6 place-items-center rounded-xs ' +
                     (meta ? meta.toneBg + ' ' + meta.toneClass : 'bg-panel-2 text-text-dim')
                   }
                 >
-                  {meta?.glyph ?? '·'}
+                  {meta ? (
+                    <DynamicIconGlyph name={meta.iconName} size={13} />
+                  ) : (
+                    <span className="font-mono text-[10px]">·</span>
+                  )}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-text truncate">{targetName}</span>

@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
+import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
 import { ConnectorManager } from './services/connector-manager.js';
 import { SchemaService } from './services/schema-service.js';
@@ -20,12 +21,23 @@ export interface CreateServerOptions {
   schemaService?: SchemaService;
   connectorManager?: ConnectorManager;
   neo4jService?: Neo4jService;
+  config?: Config;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    config: Config;
+  }
 }
 
 export async function createServer(opts: CreateServerOptions = {}): Promise<FastifyInstance> {
   const server = Fastify({
     logger: opts.logger ?? false,
   });
+
+  if (opts.config) {
+    server.decorate('config', opts.config);
+  }
 
   // Accept plain text bodies for YAML schema endpoints
   server.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {

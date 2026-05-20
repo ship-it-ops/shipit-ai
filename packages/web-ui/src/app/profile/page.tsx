@@ -3,11 +3,11 @@
 import { useRouter } from 'next/navigation';
 import { Avatar, Badge, Button, Card } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { CURRENT_USER } from '@/lib/current-user';
+import { useCurrentUser } from '@/lib/current-user';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const user = CURRENT_USER;
+  const user = useCurrentUser();
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">

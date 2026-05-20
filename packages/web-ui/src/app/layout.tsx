@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
+import '@ship-it-ui/graph-editor/styles.css';
 import './globals.css';
 import { ThemeBootstrap } from '@ship-it-ui/next';
 import { getThemeFromCookies } from '@ship-it-ui/next/server';
@@ -9,6 +10,7 @@ import { Providers } from '@/components/providers';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { GlobalCommandPalette } from '@/components/layout/global-command-palette';
+import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 
 export const metadata: Metadata = {
   title: 'ShipIt-AI',
@@ -33,6 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
           <GlobalCommandPalette />
+          <OnboardingTrigger />
         </Providers>
       </body>
     </html>
