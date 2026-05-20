@@ -9,7 +9,7 @@
 **Tech Stack:** TypeScript 5.x, Node.js 20+, Turborepo, Neo4j 5.x, Redis 7+, BullMQ, Fastify, Next.js 14 (App Router), React 18, Tailwind CSS, shadcn/ui, Cytoscape.js, Vitest, Docker Compose
 
 **Design Document:** `designDocs/ShipIt-AI_Design_Document_v0.3.md`
-**ADRs:** `designDocs/ADRs/ADR-001` through `ADR-012`
+**ADRs:** `docs/adrs/ADR-001` through `ADR-017` (index at `docs/adrs/README.md`)
 
 ---
 

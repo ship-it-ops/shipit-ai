@@ -139,7 +139,7 @@ Open http://localhost:7474 and connect with:
 
 ### Neo4j
 
-- Use Neo4j Enterprise for clustering and high availability (see [ADR-007](../designDocs/ADRs/ADR-007-neo4j-ha-strategy.md))
+- Use Neo4j Enterprise for clustering and high availability (see [ADR-007](adrs/ADR-007-neo4j-ha-strategy.md))
 - Configure APOC plugin for advanced graph operations
 - Set appropriate heap and page cache sizes based on graph size
 - Enable backups (online backup for Enterprise, `neo4j-admin dump` for Community)
@@ -153,7 +153,7 @@ Open http://localhost:7474 and connect with:
 ### Event Bus
 
 - Phase 1 uses BullMQ/Redis (Lite Mode) — suitable for moderate throughput
-- Phase 2 supports Kafka/Redpanda for production scale (see [ADR-004](../designDocs/ADRs/ADR-004-event-bus-strategy.md))
+- Phase 2 supports Kafka/Redpanda for production scale (see [ADR-004](adrs/ADR-004-event-bus-strategy.md))
 - Event retention defaults to 7 days
 
 ### Security
