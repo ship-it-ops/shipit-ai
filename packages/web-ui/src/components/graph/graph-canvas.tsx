@@ -5,50 +5,11 @@ import cytoscape, { type ElementDefinition } from 'cytoscape';
 import {
   GraphCanvas as DSGraphCanvas,
   readThemeTokens,
-  resolveColorReference,
   type GraphCanvasHandle,
-  type ShipItStylesheetBlock,
 } from '@ship-it-ui/cytoscape';
-import { iconData } from '@ship-it-ui/icons';
-import { listEntityTypes } from '@ship-it-ui/shipit';
 import { useTheme } from '@ship-it-ui/ui';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
-
-// `iconToSvgDataUrl` from @ship-it-ui/icons@0.0.6 writes the requested color
-// into the SVG's `fill` attribute, which only colors fills. Most icons in the
-// manifest are Lucide strokes (`fill="none" stroke="currentColor"`) whose
-// `currentColor` resolves against `color`, not `fill` — so they render black
-// regardless of what colour cytoscape passes in. Build the data URL ourselves
-// with `color` set so both strokes and fills inherit the entity-type tint.
-function entityIconDataUrl(name: string, color: string, size = 52): string {
-  const data = iconData[name];
-  const safe = (s: string) => s.replace(/['"<>&]/g, (c) => XML_ESCAPES[c] ?? c);
-  if (data) {
-    const svg =
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' ` +
-      `viewBox='${data.viewBox}' fill='${safe(color)}' color='${safe(color)}'>` +
-      data.body +
-      `</svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-  const text = name.replace(/[<>&"']/g, (c) => XML_ESCAPES[c] ?? c);
-  const svg =
-    `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' ` +
-    `viewBox='0 0 ${size} ${size}' fill='${safe(color)}' color='${safe(color)}'>` +
-    `<text x='${size / 2}' y='${size * 0.65}' text-anchor='middle' ` +
-    `font-family='ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace' ` +
-    `font-size='${Math.round(size * 0.5)}'>${text}</text></svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-const XML_ESCAPES: Record<string, string> = {
-  '<': '&lt;',
-  '>': '&gt;',
-  '&': '&amp;',
-  '"': '&quot;',
-  "'": '&apos;',
-};
 
 interface GraphCanvasProps {
   data: GraphData;
@@ -68,32 +29,6 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     void theme;
     return typeof document === 'undefined' ? null : readThemeTokens();
   }, [theme]);
-
-  // Per-entity-type icon overrides — see the comment on entityIconDataUrl for
-  // the upstream colour bug we're working around. One selector per registered
-  // type; only emitted when we have a palette to resolve `colorVar` against.
-  const iconOverrides = useMemo<ShipItStylesheetBlock[]>(() => {
-    if (!palette) return [];
-    return listEntityTypes().map(([type, meta]) => {
-      const color = resolveColorReference(meta.colorVar, palette);
-      const escapedType = type.replace(/(["\\])/g, '\\$1');
-      return {
-        selector: `node[entityType = "${escapedType}"]`,
-        style: {
-          'background-image': entityIconDataUrl(meta.iconName, color),
-          // Upstream sets background-fit: contain, which scales the icon to
-          // fill the whole node and ignores explicit width/height. Switch to
-          // `none` and pin the painted size so the icon has breathing room
-          // away from the border.
-          'background-fit': 'none',
-          'background-width': '50%',
-          'background-height': '50%',
-          'background-position-x': '50%',
-          'background-position-y': '50%',
-        },
-      };
-    });
-  }, [palette]);
 
   const elements = useMemo<ElementDefinition[]>(() => {
     const nodeIds = new Set(data.nodes.map((n) => n.data.id));
@@ -249,7 +184,6 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         onSelect={(node) => onNodeClick?.(node.id())}
         styleOptions={{
           extra: [
-            ...iconOverrides,
             { selector: '.hidden', style: { display: 'none' } },
             {
               selector: 'edge',

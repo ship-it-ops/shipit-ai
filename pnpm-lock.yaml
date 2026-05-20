@@ -218,23 +218,23 @@ importers:
         specifier: ^5.1.0
         version: 5.2.7
       '@ship-it-ui/cytoscape':
-        specifier: ^0.0.6
-        version: 0.0.6(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/shipit@0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/icons':
-        specifier: ^0.0.6
-        version: 0.0.6(react@19.2.6)
-      '@ship-it-ui/next':
-        specifier: ^0.0.4
-        version: 0.0.4(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/shipit':
         specifier: ^0.0.7
-        version: 0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.0.7(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/icons':
+        specifier: ^0.0.7
+        version: 0.0.7(react@19.2.6)
+      '@ship-it-ui/next':
+        specifier: ^0.0.5
+        version: 0.0.5(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/shipit':
+        specifier: ^0.0.8
+        version: 0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@ship-it-ui/tokens':
         specifier: ^0.0.5
         version: 0.0.5
       '@ship-it-ui/ui':
-        specifier: ^0.0.6
-        version: 0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: ^0.0.7
+        version: 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@tanstack/react-query':
         specifier: ^5.60.0
         version: 5.90.21(react@19.2.6)
@@ -1852,25 +1852,28 @@ packages:
     resolution: {integrity: sha512-9GtWeTb763Ilr/nbRzdFidfZTBtbNEsz/BKrilgqLpKR9EqSWe9eYWDQaLIYb4PddIhwOgHuahRrX2BYATNcLQ==}
     engines: {node: '>=22.0.0'}
 
-  '@ship-it-ui/cytoscape@0.0.6':
-    resolution: {integrity: sha512-QAvK10LmInm/tblgC++YbPJNymP7mZhBWiD+rPWqGrCKlKMjOxvezOe77AiyK28trRZXwxbNo0jL+nWQq4f1tQ==}
+  '@ship-it-ui/cytoscape@0.0.7':
+    resolution: {integrity: sha512-ecXxRtfom2BeWvy9a7jQmbgjoJ4scyOwznyUM801IfuZcN3cP3EaJXKYAAk4q1xmVThB4ySoC1ZpF659Wps5cA==}
     peerDependencies:
-      '@ship-it-ui/icons': 0.0.6
-      '@ship-it-ui/shipit': 0.0.7
-      '@ship-it-ui/ui': 0.0.6
+      '@ship-it-ui/icons': 0.0.7
+      '@ship-it-ui/shipit': 0.0.8
+      '@ship-it-ui/ui': 0.0.7
       cytoscape: ^3.28.0
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@ship-it-ui/icons@0.0.6':
-    resolution: {integrity: sha512-/CeQQE8C4+1GwAa4p9J+lFvKmstC/JeTBPCygB0ewuZTiPAGFYajZgPpgDdnei2z5iqphLWjuR7tb6hQnPw6Ew==}
+  '@ship-it-ui/graph-tokens@0.0.2':
+    resolution: {integrity: sha512-C7MmJrq1z61Q/1GqEsvLbA0+pObuqnf6syvBSJZgSGOenDcg0+hOY2hMTqsHXCxUgktN8ainui5o93emFzjQoQ==}
+
+  '@ship-it-ui/icons@0.0.7':
+    resolution: {integrity: sha512-igT3C3IK3H2tpQLwrODD0f8QibKmx6UYuv1lO/WZrvxhpe8qyUnNcxId+Wg5m8F06+cvgjySlSmEpna3cFfyag==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@ship-it-ui/next@0.0.4':
-    resolution: {integrity: sha512-nW/17wQB5YnI104nV4IUbk2k8vqWJ9G2coPtXYXcFLRBmAIQ5iA7MyJt1P/syME2W3L3EQfbGFwetasGyPWvUw==}
+  '@ship-it-ui/next@0.0.5':
+    resolution: {integrity: sha512-6VPHt0xWT7+9l0bHO93tY5kCT1bWZHg1u/fLtZbLdUQJBu5izGABP7Wv6TphLNZxmhdFjx2m2vuiXzxzNg7GPQ==}
     peerDependencies:
-      '@ship-it-ui/ui': 0.0.6
+      '@ship-it-ui/ui': 0.0.7
       next: ^14.0.0 || ^15.0.0
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -1878,19 +1881,19 @@ packages:
       next:
         optional: true
 
-  '@ship-it-ui/shipit@0.0.7':
-    resolution: {integrity: sha512-IaWOwiyj33tlCbZz36rKNZ+d2NDDl7E7t/dLwhXXM4SQQ0SgeW0h41VpiIkoSJ7yOCp1XzAwoLVlevLNka4eFw==}
+  '@ship-it-ui/shipit@0.0.8':
+    resolution: {integrity: sha512-pDcsGhW0UgY4gzOIkrX0jH4Vsa1a+LfzkYezM6D5qvVSzwLSHHMm5YEw+U91iQGilxJnwOVyPmihjYNTkvoe/Q==}
     peerDependencies:
-      '@ship-it-ui/icons': 0.0.6
-      '@ship-it-ui/ui': 0.0.6
+      '@ship-it-ui/icons': 0.0.7
+      '@ship-it-ui/ui': 0.0.7
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
   '@ship-it-ui/tokens@0.0.5':
     resolution: {integrity: sha512-D+te+JUje751Vq88voI7BW5TMmcz+Fk6fo857GTxeFqS+tiFkjLVioEdN2ShN4hrMow9D8ALbTbxNgNFnoW0EQ==}
 
-  '@ship-it-ui/ui@0.0.6':
-    resolution: {integrity: sha512-TvX3TDUlmxXJ10FFBX5K/P1t5aKJET9/Y9g8R7hdrFv/0HZx0fjKrFUXXCZG9n10aIquOFK1G5opKdpe1WU0hQ==}
+  '@ship-it-ui/ui@0.0.7':
+    resolution: {integrity: sha512-eBq0hyd61KxamUk0kSWZ7w1A6XjMkGqrTEU6ZWugYm/kyTi+SQ3DXeZpSAJCF7flze7o4CWrcndU5aBeTvie/A==}
     peerDependencies:
       '@ship-it-ui/tokens': 0.0.5
       react: ^18.0.0 || ^19.0.0
@@ -6473,37 +6476,40 @@ snapshots:
       ignore: 7.0.5
       picomatch: 4.0.4
 
-  '@ship-it-ui/cytoscape@0.0.6(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/shipit@0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/cytoscape@0.0.7(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@ship-it-ui/icons': 0.0.6(react@19.2.6)
-      '@ship-it-ui/shipit': 0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/ui': 0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/graph-tokens': 0.0.2
+      '@ship-it-ui/icons': 0.0.7(react@19.2.6)
+      '@ship-it-ui/shipit': 0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       cytoscape: 3.33.1
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@ship-it-ui/icons@0.0.6(react@19.2.6)':
+  '@ship-it-ui/graph-tokens@0.0.2': {}
+
+  '@ship-it-ui/icons@0.0.7(react@19.2.6)':
     dependencies:
       react: 19.2.6
 
-  '@ship-it-ui/next@0.0.4(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/next@0.0.5(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@ship-it-ui/ui': 0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     optionalDependencies:
       next: 16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
-  '@ship-it-ui/shipit@0.0.7(@ship-it-ui/icons@0.0.6(react@19.2.6))(@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@ship-it-ui/icons': 0.0.6(react@19.2.6)
-      '@ship-it-ui/ui': 0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/icons': 0.0.7(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
   '@ship-it-ui/tokens@0.0.5': {}
 
-  '@ship-it-ui/ui@0.0.6(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@fontsource-variable/geist': 5.2.9
       '@fontsource-variable/geist-mono': 5.2.8
@@ -6931,6 +6937,22 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 7.3.1(@types/node@22.19.13)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
+
+  '@vitest/mocker@3.2.4(vite@7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2)
+
+  '@vitest/mocker@3.2.4(vite@7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -7583,8 +7605,8 @@ snapshots:
       '@next/eslint-plugin-next': 16.2.6
       eslint: 9.39.4(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.4(jiti@2.7.0))
@@ -7606,7 +7628,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)):
+  eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.7.0)):
     dependencies:
       '@nolyfill/is-core-module': 1.0.39
       debug: 4.4.3
@@ -7617,22 +7639,22 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)):
+  eslint-module-utils@2.12.1(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
       eslint: 9.39.4(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.4(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -7643,7 +7665,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.4(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-module-utils: 2.12.1(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
       hasown: 2.0.2
       is-core-module: 2.16.1
       is-glob: 4.0.3
@@ -9990,7 +10012,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@22.19.13)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
@@ -10032,7 +10054,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@22.19.13)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.4(vite@7.3.1(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4

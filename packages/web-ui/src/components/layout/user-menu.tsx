@@ -10,11 +10,11 @@ import {
   MenuSeparator,
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { CURRENT_USER } from '@/lib/current-user';
+import { useCurrentUser } from '@/lib/current-user';
 
 export function UserMenu() {
   const router = useRouter();
-  const user = CURRENT_USER;
+  const user = useCurrentUser();
 
   return (
     <DropdownMenu>

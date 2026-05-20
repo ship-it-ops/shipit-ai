@@ -119,62 +119,12 @@ fi
 # ── shipit.config.local.yaml ────────────────────────────────────────────────
 section "Local config"
 
-PROMPT_USER=0
 if [ ! -f shipit.config.local.yaml ]; then
   cp shipit.config.local.example.yaml shipit.config.local.yaml
   ok "Created shipit.config.local.yaml from the example"
-  PROMPT_USER=1
+  info "Personalize your dev identity from the onboarding modal on first load of the web UI (or edit the file directly)."
 else
   ok "shipit.config.local.yaml exists"
-  # Treat the file as "still on defaults" when the example identity is
-  # verbatim in the local file. Once any of the three is personalized, stop
-  # nagging.
-  if grep -q '^    firstName: Dev' shipit.config.local.yaml \
-     && grep -q '^    lastName: User' shipit.config.local.yaml \
-     && grep -q '^    email: dev@shipit.local' shipit.config.local.yaml; then
-    PROMPT_USER=1
-  fi
-fi
-
-if [ "$PROMPT_USER" -eq 1 ]; then
-  section "Set up your developer info"
-  if [ ! -t 0 ]; then
-    info "Non-interactive shell — keeping the placeholders."
-    info "Edit shipit.config.local.yaml to set frontend.devUser.{firstName,lastName,email}."
-  else
-    echo "  These populate the user menu and profile page. No auth is wired up yet,"
-    echo "  so this is a personal-only customization. Hit Enter to keep a default."
-    echo
-
-    current_first=$(awk '/^    firstName:/ { sub(/^    firstName: */, ""); print; exit }' shipit.config.local.yaml)
-    current_last=$(awk '/^    lastName:/ { sub(/^    lastName: */, ""); print; exit }' shipit.config.local.yaml)
-    current_email=$(awk '/^    email:/ { sub(/^    email: */, ""); print; exit }' shipit.config.local.yaml)
-
-    printf "  First name [%s]: " "$current_first"
-    read -r input_first
-    new_first=${input_first:-$current_first}
-
-    printf "  Last name  [%s]: " "$current_last"
-    read -r input_last
-    new_last=${input_last:-$current_last}
-
-    printf "  Email      [%s]: " "$current_email"
-    read -r input_email
-    new_email=${input_email:-$current_email}
-
-    # awk in-place rewrite — only touches the first match of each key. The
-    # leading 4-space indent matches the devUser block under frontend:
-    tmp=$(mktemp)
-    awk -v fn="$new_first" -v ln="$new_last" -v em="$new_email" '
-      /^    firstName:/ && !seen_fn { print "    firstName: " fn; seen_fn=1; next }
-      /^    lastName:/  && !seen_ln { print "    lastName: " ln;  seen_ln=1; next }
-      /^    email:/     && !seen_em { print "    email: " em;     seen_em=1; next }
-      { print }
-    ' shipit.config.local.yaml > "$tmp" && mv "$tmp" shipit.config.local.yaml
-    ok "shipit.config.local.yaml updated"
-  fi
-else
-  ok "Dev-user info already personalized"
 fi
 
 printf "\n${GREEN}${BOLD}Preflight complete.${RESET}\n"

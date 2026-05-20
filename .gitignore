@@ -31,3 +31,4 @@ service-account*.json
 # Local secret-scanning artifacts
 .secretlint-cache
 gitleaks-report.json
+ClaudePlans/

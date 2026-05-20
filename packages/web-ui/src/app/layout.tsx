@@ -9,6 +9,7 @@ import { Providers } from '@/components/providers';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { GlobalCommandPalette } from '@/components/layout/global-command-palette';
+import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 
 export const metadata: Metadata = {
   title: 'ShipIt-AI',
@@ -33,6 +34,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
           <GlobalCommandPalette />
+          <OnboardingTrigger />
         </Providers>
       </body>
     </html>
