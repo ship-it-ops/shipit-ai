@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
   parseSchemaFile,
@@ -92,7 +92,17 @@ export class SchemaService {
         // First-time write: there's no previous file to snapshot.
       }
     }
-    await writeFile(this.schemaPath, yamlContent, 'utf-8');
+    // Atomic write: stage to a sibling tmp file then rename. A mid-write
+    // crash leaves the active schema file untouched, so the next boot reads
+    // a valid YAML instead of a half-written one.
+    const tmpPath = `${this.schemaPath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(tmpPath, yamlContent, 'utf-8');
+    try {
+      await rename(tmpPath, this.schemaPath);
+    } catch (err) {
+      await unlink(tmpPath).catch(() => {});
+      throw err;
+    }
     this.schema = validated;
     this.currentHash = sha256(yamlContent);
     return validated;

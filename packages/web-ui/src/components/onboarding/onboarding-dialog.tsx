@@ -15,6 +15,7 @@ import {
 import { IconGlyph } from '@ship-it-ui/icons';
 import { persistDevUserOverride, markOnboardingComplete } from '@/lib/current-user';
 import type { DevUserConfig } from '@/lib/client-config';
+import { EMAIL_RE } from '@/lib/onboarding/dev-user-payload';
 
 const ALL_CAPABILITIES = [
   { id: 'admin', label: 'admin', hint: 'Full read/write to the graph & schema' },
@@ -107,9 +108,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
   }, []);
 
   const identityValid =
-    form.firstName.trim() !== '' &&
-    form.lastName.trim() !== '' &&
-    /^[^\s@]+@[^\s@.]+\.[^\s@]+$/.test(form.email);
+    form.firstName.trim() !== '' && form.lastName.trim() !== '' && EMAIL_RE.test(form.email);
   const profileValid =
     form.role.trim() !== '' && form.team.trim() !== '' && /^\d{4}-\d{2}-\d{2}$/.test(form.joinedAt);
 
@@ -217,7 +216,8 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
   }, [toast, onOpenChange]);
 
   const handleCancel = useCallback(() => {
-    // Cancelling without saving still suppresses the prompt; users can
+    // Suppresses the prompt on future loads. The button label below ("Don't
+    // show again") names this side effect explicitly — users can still
     // re-trigger by clearing shipit:onboarding-complete in localStorage.
     markOnboardingComplete();
     onOpenChange(false);
@@ -318,7 +318,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
       description="Local development onboarding — values are mock-only, saved to your gitignored shipit.config.local.yaml."
       width={720}
       completeLabel={completeLabel}
-      cancelLabel="Skip for now"
+      cancelLabel="Don't show again"
       onCancel={handleCancel}
       onComplete={() => {
         if (saving !== 'idle') return;

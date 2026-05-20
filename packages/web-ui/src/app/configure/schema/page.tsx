@@ -86,8 +86,29 @@ export default function SchemaEditorPage() {
     return out;
   }, [draft, serverSchema]);
 
+  // Relationship changes don't surface in `dirty` (which the NodeTypeList uses
+  // to badge node-type rows) but still need to enable Save. The visual editor's
+  // drag-to-connect is relationship-only, so without this Save would never
+  // light up for that flow.
+  const relationshipsDirty = useMemo(() => {
+    if (!draft || !serverSchema) return false;
+    const draftRels = draft.relationship_types;
+    const serverRels = serverSchema.relationship_types;
+    const draftKeys = Object.keys(draftRels);
+    const serverKeys = Object.keys(serverRels);
+    if (draftKeys.length !== serverKeys.length) return true;
+    for (const name of draftKeys) {
+      const original = serverRels[name];
+      if (!original || JSON.stringify(original) !== JSON.stringify(draftRels[name])) {
+        return true;
+      }
+    }
+    return false;
+  }, [draft, serverSchema]);
+
   const hasChanges =
     dirty.size > 0 ||
+    relationshipsDirty ||
     (draft &&
       serverSchema &&
       Object.keys(draft.node_types).length !== Object.keys(serverSchema.node_types).length);
