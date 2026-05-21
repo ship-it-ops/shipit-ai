@@ -11,6 +11,75 @@ export interface GraphStats {
   nodesByLabel: Record<string, number>;
 }
 
+// ── Connector domain types ────────────────────────────────────────────────
+// Mirror what the API server returns from /api/connectors. Kept separate
+// from `ConnectorInfo` (the card-friendly summary computed via
+// `connectorInfo()`) so the rich form data needed by the wizard/drawer
+// doesn't bleed into the card component, and the card can be updated
+// independently of the API shape.
+
+export interface ConnectorScope {
+  repos: { include: string[]; exclude: string[] };
+  teams: { include: string[]; exclude: string[] };
+  cappedAt: number | null;
+  cappedAcknowledged: boolean;
+}
+
+export interface ConnectorEntities {
+  repository: boolean;
+  team: boolean;
+  pipeline: boolean;
+  codeowners: boolean;
+  environment: boolean;
+  deployment: boolean;
+  branchProtection: boolean;
+  workflowRun: boolean;
+}
+
+export interface ConnectorRun {
+  startedAt: string;
+  durationMs: number;
+  status: 'success' | 'partial' | 'failed';
+  entitiesSynced: number;
+  errors: string[];
+}
+
+// Per-connector App identity. When absent the connector inherits the
+// global App configured via env vars on the API server; when present it
+// overrides field-by-field (e.g. you can change just the private key path
+// while keeping the same App ID).
+export interface ConnectorAppOverride {
+  id?: string;
+  privateKeyPath?: string;
+}
+
+export interface GitHubConnector {
+  id: string;
+  type: 'github';
+  enabled: boolean;
+  name: string;
+  installationId: string;
+  org: string;
+  schedule: string;
+  scope: ConnectorScope;
+  entities: ConnectorEntities;
+  lastRuns: ConnectorRun[];
+  app?: ConnectorAppOverride;
+}
+
+export type Connector = GitHubConnector;
+
+export interface SyncRuntimeStatus {
+  connectorId: string;
+  state: 'idle' | 'running' | 'failed' | 'degraded';
+  startedAt?: string;
+  lastError?: string;
+  rateLimitRemaining?: number;
+}
+
+// Card-friendly summary derived from a `Connector` plus optional live status.
+// The card component reads only these fields — keeping it stable as the
+// underlying shape evolves.
 export interface ConnectorInfo {
   id: string;
   name: string;
@@ -19,6 +88,38 @@ export interface ConnectorInfo {
   lastSync: string | null;
   entityCount: number;
   nextSync: string | null;
+}
+
+export function connectorInfo(c: Connector, runtime?: SyncRuntimeStatus | null): ConnectorInfo {
+  const lastRun = c.lastRuns[0];
+  // Derivation priority: runtime overrides the cold-storage view since it's
+  // the only signal that catches in-flight syncs. Disabled connectors are
+  // always "not_connected" regardless of last-run color.
+  let status: ConnectorInfo['status'];
+  if (!c.enabled) {
+    status = 'not_connected';
+  } else if (runtime?.state === 'failed') {
+    status = 'failed';
+  } else if (runtime?.state === 'degraded') {
+    status = 'degraded';
+  } else if (lastRun?.status === 'failed') {
+    status = 'failed';
+  } else if (lastRun?.status === 'partial') {
+    status = 'degraded';
+  } else if (lastRun?.status === 'success') {
+    status = 'healthy';
+  } else {
+    status = 'not_connected';
+  }
+  return {
+    id: c.id,
+    name: c.name,
+    type: c.type,
+    status,
+    lastSync: lastRun?.startedAt ?? null,
+    entityCount: lastRun?.entitiesSynced ?? 0,
+    nextSync: null,
+  };
 }
 
 export interface SearchResult {
@@ -87,8 +188,212 @@ export async function fetchGraphStats(): Promise<GraphStats> {
   return apiFetch<GraphStats>('/api/graph/stats');
 }
 
-export async function fetchConnectors(): Promise<ConnectorInfo[]> {
-  return apiFetch<ConnectorInfo[]>('/api/connectors');
+export async function fetchConnectors(): Promise<Connector[]> {
+  return apiFetch<Connector[]>('/api/connectors');
+}
+
+export interface ConnectorWithHash {
+  connector: Connector;
+  hash: string | null;
+}
+
+export async function fetchConnector(id: string): Promise<ConnectorWithHash> {
+  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`fetchConnector: ${res.status}`);
+  const connector = (await res.json()) as Connector;
+  return { connector, hash: parseEtag(res.headers.get('ETag')) };
+}
+
+export interface CreateConnectorInput {
+  id: string;
+  type: 'github';
+  name: string;
+  installationId: string;
+  org: string;
+  enabled?: boolean;
+  schedule?: string;
+  scope?: ConnectorScope;
+  entities?: ConnectorEntities;
+  app?: ConnectorAppOverride;
+}
+
+export async function createConnector(input: CreateConnectorInput): Promise<Connector> {
+  const res = await fetch(`${API_URL}/api/connectors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Create failed: ${res.status}`);
+  }
+  return (await res.json()) as Connector;
+}
+
+export interface UpdateConnectorInput {
+  enabled?: boolean;
+  name?: string;
+  schedule?: string;
+  scope?: ConnectorScope;
+  entities?: ConnectorEntities;
+  // `null` clears the override (revert to global App); object replaces it;
+  // omitted leaves the existing value alone.
+  app?: ConnectorAppOverride | null;
+}
+
+export async function patchConnector(
+  id: string,
+  input: UpdateConnectorInput,
+  ifMatch?: string,
+): Promise<ConnectorWithHash> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
+  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify(input),
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+      serverHash?: string;
+    };
+    throw new EtagConflictError(
+      body.error?.message ?? 'Connector was modified by another writer.',
+      body.serverHash ?? '',
+    );
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Update failed: ${res.status}`);
+  }
+  const connector = (await res.json()) as Connector;
+  return { connector, hash: parseEtag(res.headers.get('ETag')) };
+}
+
+export async function deleteConnector(id: string, ifMatch?: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
+  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers,
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+      serverHash?: string;
+    };
+    throw new EtagConflictError(
+      body.error?.message ?? 'Connector was modified by another writer.',
+      body.serverHash ?? '',
+    );
+  }
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Delete failed: ${res.status}`);
+  }
+}
+
+export interface ProbeResult {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  installation?: {
+    id: string;
+    account: string | null;
+    accountType: string | null;
+    repoCount: number;
+  };
+  suggestedOrg?: string;
+  sampleRepos?: Array<{ name: string; private: boolean; archived: boolean }>;
+  // Which App credentials the probe ended up using. `overridden: true` is
+  // the wizard's confirmation that the advanced panel actually took effect.
+  app?: { id: string | null; overridden: boolean };
+}
+
+export interface ProbeInput {
+  installationId: string;
+  suggestedOrg?: string;
+  app?: ConnectorAppOverride;
+}
+
+export async function probeConnector(input: ProbeInput): Promise<ProbeResult> {
+  const res = await fetch(`${API_URL}/api/connectors/probe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  // Probe deliberately returns 200 on ok and 4xx on structured failure so we
+  // can't tell from the status alone; trust the body's `ok` boolean.
+  const body = (await res.json().catch(() => ({}))) as ProbeResult;
+  return body;
+}
+
+export async function fetchConnectorRuns(
+  id: string,
+): Promise<{ connectorId: string; runs: ConnectorRun[] }> {
+  return apiFetch(`/api/connectors/${encodeURIComponent(id)}/runs`);
+}
+
+export async function fetchConnectorStatus(id: string): Promise<SyncRuntimeStatus> {
+  return apiFetch(`/api/connectors/${encodeURIComponent(id)}/status`);
+}
+
+// ── Global GitHub App ─────────────────────────────────────────────────────
+// Wizard reads this on open to decide whether to prompt for a shared App
+// or offer the existing one. Returns null path/id when nothing is set.
+export interface GitHubAppStatus {
+  configured: boolean;
+  id: string | null;
+  privateKeyPath: string | null;
+}
+
+export interface GitHubAppStatusWithHash {
+  status: GitHubAppStatus;
+  hash: string | null;
+}
+
+export async function fetchGitHubAppStatus(): Promise<GitHubAppStatusWithHash> {
+  const res = await fetch(`${API_URL}/api/connectors/github/app`);
+  if (!res.ok) {
+    // 503 means the service isn't wired (no global App config object on
+    // the server) — treat as "not configured" rather than throwing so
+    // the wizard can still drive the user through manual env-var setup.
+    if (res.status === 503) {
+      return { status: { configured: false, id: null, privateKeyPath: null }, hash: null };
+    }
+    throw new Error(`fetchGitHubAppStatus: ${res.status}`);
+  }
+  const status = (await res.json()) as GitHubAppStatus;
+  return { status, hash: parseEtag(res.headers.get('ETag')) };
+}
+
+export async function updateGitHubApp(
+  input: { id: string; privateKeyPath: string },
+  ifMatch?: string,
+): Promise<GitHubAppStatusWithHash> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
+  const res = await fetch(`${API_URL}/api/connectors/github/app`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(input),
+  });
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string };
+      serverHash?: string;
+    };
+    throw new EtagConflictError(
+      body.error?.message ?? 'Global GitHub App was modified by another writer.',
+      body.serverHash ?? '',
+    );
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Update failed: ${res.status}`);
+  }
+  const status = (await res.json()) as GitHubAppStatus;
+  return { status, hash: parseEtag(res.headers.get('ETag')) };
 }
 
 export async function searchEntities(query: string): Promise<SearchResult[]> {
@@ -280,12 +585,25 @@ export interface MigrationPreview {
  * was modified between the caller's read and write. `serverHash` lets the
  * UI present "discard + reload" / "keep editing" without a full refetch.
  */
-export class SchemaConflictError extends Error {
+// Generic ETag mismatch — thrown by any endpoint that uses If-Match
+// optimistic concurrency. Carries the current server hash so the UI can
+// show a "discard local + reload" affordance without an extra GET.
+export class EtagConflictError extends Error {
   readonly serverHash: string;
   constructor(message: string, serverHash: string) {
     super(message);
-    this.name = 'SchemaConflictError';
+    this.name = 'EtagConflictError';
     this.serverHash = serverHash;
+  }
+}
+
+// Kept as a subclass so existing `instanceof SchemaConflictError` checks in
+// the schema editor still work after the rename. New surfaces should throw
+// EtagConflictError directly.
+export class SchemaConflictError extends EtagConflictError {
+  constructor(message: string, serverHash: string) {
+    super(message, serverHash);
+    this.name = 'SchemaConflictError';
   }
 }
 
@@ -511,6 +829,18 @@ export async function splitMerge(mergeId: string): Promise<void> {
 
 export async function fetchReconciliationStats(): Promise<ReconciliationStats> {
   return apiFetch<ReconciliationStats>('/api/reconciliation/stats');
+}
+
+export interface McpServerInfo {
+  authRequired: boolean;
+  transport: 'stdio';
+}
+
+export async function fetchMcpInfo(): Promise<McpServerInfo> {
+  // Only `authRequired` and `transport` are read by the UI — the endpoint
+  // also returns the tool catalog but the page renders that from a static
+  // import to keep first paint zero-network.
+  return apiFetch<McpServerInfo>('/api/mcp/info');
 }
 
 export async function fetchTeams(): Promise<TeamSummary[]> {

@@ -1,6 +1,9 @@
 # Getting Started
 
-This guide walks you through setting up ShipIt-AI for local development.
+This is the 5-minute "just get it running" path. For the full
+development guide — config layering, daily commands, testing, debugging,
+webhooks, and code quality — see
+[local-development.md](./local-development.md).
 
 ## Prerequisites
 
@@ -106,52 +109,55 @@ cd packages/web-ui && pnpm dev
 
 ## 6. Configure the GitHub Connector
 
-ShipIt-AI supports two authentication methods for GitHub:
+ShipIt-AI uses a **GitHub App** to read repositories, teams, members,
+workflows, and CODEOWNERS. One App can serve many orgs (installation
+IDs differ per org) — or you can configure a different App per org for
+blast-radius isolation.
 
-### GitHub App (recommended)
-
-1. Create a GitHub App with read access to repositories, organization members, and actions
-2. Install the app on your organization
-3. Set environment variables:
+1. Create a GitHub App and install it in your org. Full walkthrough:
+   [connectors/github-setup.md](./connectors/github-setup.md).
+2. Set env vars before starting the API server:
 
 ```bash
-GITHUB_APP_ID=123456
-GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-GITHUB_APP_INSTALLATION_ID=789012
-GITHUB_ORG=your-org
+export GITHUB_APP_ID=123456
+export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
+# Optional now / required when the webhook receiver lands in P1:
+export GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
 ```
 
-### Personal Access Token
+3. Open <http://localhost:3000/connectors>, click **Connect GitHub**, and
+   follow the 5-step wizard. The wizard probes the App credentials live
+   against GitHub, lets you pick repo/team scope, and triggers an
+   initial sync on submit.
+
+To wire it up via API instead:
 
 ```bash
-GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-GITHUB_ORG=your-org
-```
+# Validate credentials and list a sample of accessible repos
+curl -X POST http://localhost:3001/api/connectors/probe \
+  -H 'Content-Type: application/json' \
+  -d '{"installationId": "789012"}'
 
-The token needs `repo`, `read:org`, and `actions:read` scopes.
-
-### Register and Sync
-
-```bash
-# Register the connector
+# Create the connector
 curl -X POST http://localhost:3001/api/connectors \
   -H 'Content-Type: application/json' \
   -d '{
-    "id": "github-main",
+    "id": "github-acme",
     "type": "github",
-    "name": "GitHub - My Org",
-    "config": { "org": "your-org" },
+    "name": "Acme Corp",
+    "installationId": "789012",
+    "org": "acme-corp",
     "enabled": true
   }'
 
-# Trigger a full sync
-curl -X POST http://localhost:3001/api/connectors/github-main/sync \
+# Trigger a full sync (the wizard does this automatically)
+curl -X POST http://localhost:3001/api/connectors/github-acme/sync \
   -H 'Content-Type: application/json' \
-  -d '{ "mode": "full" }'
-
-# Check sync status
-curl http://localhost:3001/api/connectors/github-main/status
+  -d '{"mode": "full"}'
 ```
+
+To set up **webhooks for local development** (smee.io or ngrok), see
+[local-development.md §10](./local-development.md#10-webhooks-for-local-development).
 
 ## 7. Verify in Neo4j Browser
 
@@ -217,7 +223,11 @@ Open http://localhost:3000 to view the graph visualization dashboard. The Web UI
 
 ## Next Steps
 
+- [Local Development](local-development.md) — config layering, day-to-day
+  commands, testing, debugging, webhooks for local dev
+- [GitHub setup](connectors/github-setup.md) — full App creation + install
+  runbook (one-time)
 - [Schema Guide](schema-guide.md) — customize node types and resolution strategies
-- [Connectors](connectors.md) — configure connectors or build your own
+- [Connectors](connectors.md) — connector reference + SDK for new sources
 - [MCP Tools](mcp-tools.md) — full tool reference for AI integration
 - [Architecture](architecture.md) — understand the system design

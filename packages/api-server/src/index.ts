@@ -1,14 +1,25 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { findConfigPaths } from '@shipit-ai/shared';
+import { BullMQEventBusClient } from '@shipit-ai/event-bus';
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
 import { SchemaService } from './services/schema-service.js';
+import { ConnectorRegistry } from './services/connector-registry.js';
+import { SyncScheduler } from './services/sync-scheduler.js';
+import { GitHubAppService } from './services/github-app-service.js';
 
 export { createServer } from './server.js';
 export type { CreateServerOptions } from './server.js';
-export { ConnectorManager } from './services/connector-manager.js';
-export type { ConnectorConfig, SyncStatus } from './services/connector-manager.js';
+export { ConnectorRegistry, ConnectorVersionConflictError } from './services/connector-registry.js';
+export type {
+  ConnectorRunner,
+  SyncRuntimeStatus,
+  SyncRuntimeState,
+} from './services/connector-registry.js';
+export { SyncScheduler } from './services/sync-scheduler.js';
+export { GitHubAppService, GitHubAppVersionConflictError } from './services/github-app-service.js';
+export type { GitHubAppStatus } from './services/github-app-service.js';
 export { SchemaService } from './services/schema-service.js';
 export { Neo4jService } from './services/neo4j-service.js';
 export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js';
@@ -27,6 +38,62 @@ async function main() {
   const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
   const schemaService = new SchemaService(schemaPath);
 
+  // Locate the local config file so the registry can write connector edits
+  // back. Falls back to the sibling shipit.config.local.yaml of whatever
+  // base config we loaded.
+  const { localPath } = findConfigPaths();
+  const connectorRegistry = new ConnectorRegistry({
+    localConfigPath: localPath,
+    initial: config.connectors.instances,
+  });
+
+  // GitHubAppService holds a live reference to the same object the
+  // scheduler will receive as `globalApp`, so a PUT to /github/app
+  // propagates without a server restart.
+  const githubAppService = new GitHubAppService({
+    localConfigPath: localPath,
+    appConfig: config.connectors.github.app,
+  });
+
+  // Wire the BullMQ-backed scheduler if we have Redis. Per-connector App
+  // overrides mean the scheduler can still run useful jobs even when the
+  // global App is empty (each connector brings its own credentials). We
+  // start the scheduler as long as Redis is reachable and let per-job
+  // resolution surface APP_NOT_CONFIGURED for connectors that lack both
+  // global and override credentials.
+  const gh = config.connectors.github.app;
+  const hasAnyGitHubConfig =
+    (gh.id && gh.privateKeyPath) ||
+    config.connectors.instances.some(
+      (c) => c.type === 'github' && c.app?.id && c.app?.privateKeyPath,
+    );
+  let scheduler: SyncScheduler | null = null;
+  if (hasAnyGitHubConfig && config.backend.redis.url) {
+    try {
+      const eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
+      scheduler = new SyncScheduler({
+        redisUrl: config.backend.redis.url,
+        registry: connectorRegistry,
+        eventBus,
+        // Pass the live reference, not a snapshot, so a PUT /github/app
+        // update via GitHubAppService is visible to the scheduler's next
+        // job without a process restart.
+        globalApp: gh,
+        concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
+      });
+      // Re-attach the registry to the live runner so create/update/delete
+      // can drive the scheduler.
+      (connectorRegistry as unknown as { runner: SyncScheduler }).runner = scheduler;
+      console.log('SyncScheduler attached to ConnectorRegistry');
+    } catch (err) {
+      // Don't let a broken scheduler take down the API. Operators see a
+      // warning in logs; the UI surfaces sync failures separately.
+      console.warn(
+        `SyncScheduler init failed (continuing with no-op runner): ${(err as Error).message}`,
+      );
+    }
+  }
+
   try {
     await schemaService.loadSchema();
   } catch (err) {
@@ -43,8 +110,15 @@ async function main() {
     logger: true,
     neo4jService,
     schemaService,
+    connectorRegistry,
+    githubAppService,
     config,
   });
+
+  // Start any pre-configured connectors after the server is constructed so
+  // the runner attaches once the rest of the wiring (event bus, etc.) is in
+  // place. Tests typically skip this entirely.
+  await connectorRegistry.startRunner();
 
   try {
     await server.listen({ port: api.port, host: '0.0.0.0' });
@@ -57,6 +131,7 @@ async function main() {
 
   const shutdown = async () => {
     await server.close();
+    if (scheduler) await scheduler.close();
     await neo4jService.close();
     process.exit(0);
   };

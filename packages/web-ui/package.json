@@ -27,6 +27,7 @@
     "@ship-it-ui/cytoscape": "^0.0.7",
     "@ship-it-ui/graph-editor": "^0.0.2",
     "@ship-it-ui/next": "^0.0.5",
+    "@shipit-ai/mcp-server": "workspace:*",
     "@xyflow/react": "^12.3.5",
     "@fontsource-variable/geist": "^5.1.0",
     "@fontsource-variable/geist-mono": "^5.1.0",

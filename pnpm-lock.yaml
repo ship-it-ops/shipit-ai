@@ -53,15 +53,30 @@ importers:
       '@fastify/swagger':
         specifier: ^8.15.0
         version: 8.15.0
+      '@shipit-ai/connector-github':
+        specifier: workspace:*
+        version: link:../connectors/github
+      '@shipit-ai/connector-sdk':
+        specifier: workspace:*
+        version: link:../connector-sdk
       '@shipit-ai/event-bus':
         specifier: workspace:*
         version: link:../event-bus
+      '@shipit-ai/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@shipit-ai/shared':
         specifier: workspace:*
         version: link:../shared
+      bullmq:
+        specifier: ^5.34.0
+        version: 5.70.1
       fastify:
         specifier: ^4.28.0
         version: 4.29.1
+      ioredis:
+        specifier: ^5.4.0
+        version: 5.10.0
       neo4j-driver:
         specifier: ^5.27.0
         version: 5.28.3
@@ -238,6 +253,9 @@ importers:
       '@ship-it-ui/ui':
         specifier: ^0.0.7
         version: 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@shipit-ai/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@tanstack/react-query':
         specifier: ^5.60.0
         version: 5.90.21(react@19.2.6)

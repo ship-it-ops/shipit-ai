@@ -4,6 +4,7 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError } from '../errors.js';
 import type { McpServerConfig } from '../config.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 const WRITE_KEYWORDS = /\b(MERGE|CREATE|DELETE|DETACH|SET|REMOVE|DROP|CALL\s*\{)\b/i;
 const HOP_PATTERN = /\*\d*\.\.(\d+)/g;
@@ -15,7 +16,7 @@ export function registerGraphQuery(
 ): void {
   server.tool(
     'graph_query',
-    'Execute a raw Cypher query against the knowledge graph. Read-only queries only. Subject to guardrails: parameterized queries, timeout, row limit, hop limit.',
+    MCP_TOOL_BY_NAME.graph_query.description,
     {
       query: z.string().describe('Cypher query (read-only, parameterized)'),
       params: z.record(z.unknown()).optional().describe('Query parameters'),

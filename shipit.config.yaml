@@ -37,6 +37,37 @@ backend:
       hopLimit: 6
       queryTimeoutMs: 10000
 
+# ── Connectors ────────────────────────────────────────────────────────────
+# External integrations that populate the knowledge graph. Top-level rather
+# than under backend.* because connectors aren't infra the API server hosts;
+# they're upstream systems ShipIt reaches out to.
+#
+# Per-source defaults (auth identity, rate limits) live under their named
+# blocks (e.g. `connectors.github.*`). The list of configured connector
+# instances lives under `connectors.instances[]` and is normally managed by
+# the UI — not hand-edited here.
+connectors:
+  # GitHub App that backs all per-org github connector instances unless an
+  # instance overrides it. App ID and webhook URL are safe to commit via
+  # env-var placeholders; private key path and webhook secret are env-only
+  # (secretlint will block them if pasted directly).
+  github:
+    app:
+      id: ${GITHUB_APP_ID:-}
+      privateKeyPath: ${GITHUB_APP_PRIVATE_KEY_PATH:-}
+      webhookSecret: ${GITHUB_WEBHOOK_SECRET:-}
+      webhookPublicUrl: ${GITHUB_WEBHOOK_PUBLIC_URL:-http://localhost:3001/api/webhooks/github}
+    rateLimits:
+      # Opt into Octokit If-None-Match conditional requests to stretch the
+      # 5k/hr per-installation budget. Disable if you're debugging fetchers.
+      conditionalRequests: true
+      maxConcurrentSyncs: 3
+
+  # Configured connector instances. Defaults to none on a fresh checkout;
+  # entries are added via the Connector Hub UI which writes them into
+  # shipit.config.local.yaml.
+  instances: []
+
 frontend:
   api:
     url: ${SHIPIT_API_URL:-http://localhost:3001}

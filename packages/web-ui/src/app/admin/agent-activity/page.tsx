@@ -8,7 +8,6 @@ export default function AgentActivityPage() {
       title="Agent Activity"
       description="How AI agents are using the knowledge graph via MCP tools — invocations, hot entities, error patterns, and usage trends."
       glyph="sparkle"
-      phase="phase-3"
       features={[
         'Time-series chart of MCP tool invocations, filterable by tool, agent, and window.',
         'Tabular call log: timestamp, tool, agent, parameters, response time, status.',

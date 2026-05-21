@@ -9,6 +9,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./metadata": {
+      "import": "./dist/tools/metadata.js",
+      "types": "./dist/tools/metadata.d.ts"
     }
   },
   "scripts": {

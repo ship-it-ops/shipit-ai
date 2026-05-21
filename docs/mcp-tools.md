@@ -1,5 +1,7 @@
 # MCP Tools
 
+> **In the app:** Configure → MCP Access (`/configure/mcp`) surfaces the connection snippets and tool catalog in a copy-paste friendly form. This doc is the canonical reference for parameters and response shapes.
+
 ShipIt-AI exposes the knowledge graph to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The MCP server connects directly to Neo4j and provides 8 tools for querying the graph.
 
 ## Connecting to the MCP Server

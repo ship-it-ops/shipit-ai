@@ -26,7 +26,12 @@
     "neo4j-driver": "^5.27.0",
     "yaml": "^2.7.0",
     "@shipit-ai/shared": "workspace:*",
-    "@shipit-ai/event-bus": "workspace:*"
+    "@shipit-ai/mcp-server": "workspace:*",
+    "@shipit-ai/event-bus": "workspace:*",
+    "@shipit-ai/connector-sdk": "workspace:*",
+    "@shipit-ai/connector-github": "workspace:*",
+    "bullmq": "^5.34.0",
+    "ioredis": "^5.4.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

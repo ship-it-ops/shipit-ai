@@ -12,6 +12,8 @@ export { wrapResponse } from './envelope.js';
 export type { McpResponse, McpResponseMeta } from './envelope.js';
 export { McpErrorCode, createError, findSuggestions, levenshteinDistance } from './errors.js';
 export type { McpError } from './errors.js';
+export { MCP_TOOLS, MCP_TOOL_BY_NAME } from './tools/metadata.js';
+export type { McpToolMetadata, McpToolParamSpec } from './tools/metadata.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();

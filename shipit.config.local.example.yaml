@@ -41,3 +41,46 @@ frontend:
   #     workspace: acme
   #   kubernetes:
   #     consoleUrlTemplate: https://argo.acme.com/applications/{namespace}/{name}
+
+# ── GitHub connector instances ────────────────────────────────────────────
+# Most users won't hand-edit this — the Connector Hub at /connectors writes
+# entries here when you add an org via the wizard. Shown below as a
+# reference for what each instance looks like. Note the top-level
+# `connectors:` section: it's a sibling of backend/frontend, not nested
+# inside backend.
+#
+# connectors:
+#   instances:
+#     - id: github-acme
+#       type: github
+#       enabled: true
+#       name: "Acme Corp"
+#       installationId: "12345678"      # numeric id from the App installation URL
+#       org: "acme-corp"
+#       schedule: "*/15 * * * *"        # polling cron, fallback for missed webhooks
+#       scope:
+#         repos:
+#           include: ["**"]
+#           exclude: ["archived/*"]
+#         teams:
+#           include: ["**"]
+#           exclude: []
+#         cappedAt: 100                 # safety cap on initial add; null to lift
+#         cappedAcknowledged: false
+#       entities:
+#         repository: true
+#         team: true
+#         pipeline: true
+#         codeowners: true
+#         environment: false            # P1: requires schema additions
+#         deployment: false
+#         branchProtection: false
+#         workflowRun: false
+#
+#       # Optional: override the global GitHub App for THIS connector only.
+#       # Useful for blast-radius isolation (e.g. separate dev/prod Apps).
+#       # Either field can be omitted — absent fields fall back to the global
+#       # App configured via GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY_PATH.
+#       app:
+#         id: "654321"
+#         privateKeyPath: "/etc/shipit/keys/prod-app.pem"

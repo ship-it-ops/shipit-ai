@@ -3,8 +3,9 @@ import cors from '@fastify/cors';
 import swagger from '@fastify/swagger';
 import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
-import { ConnectorManager } from './services/connector-manager.js';
+import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
+import { GitHubAppService } from './services/github-app-service.js';
 import type { Neo4jService } from './services/neo4j-service.js';
 import healthRoutes from './routes/health.js';
 import connectorRoutes from './routes/connectors.js';
@@ -15,13 +16,19 @@ import claimsRoutes, { conflictsRoutes } from './routes/claims.js';
 import teamsRoutes from './routes/teams.js';
 import reconciliationRoutes from './routes/reconciliation.js';
 import incidentEventsRoutes from './routes/incident-events.js';
+import mcpRoutes from './routes/mcp.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
   schemaService?: SchemaService;
-  connectorManager?: ConnectorManager;
+  connectorRegistry?: ConnectorRegistry;
+  githubAppService?: GitHubAppService;
   neo4jService?: Neo4jService;
   config?: Config;
+  // Path to shipit.config.local.yaml. Used when no registry is supplied so
+  // the server can construct one bound to the right file. Tests can omit
+  // this and rely on the injected registry instead.
+  localConfigPath?: string;
 }
 
 declare module 'fastify' {
@@ -59,9 +66,24 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   server.setErrorHandler(errorHandler);
 
-  // Decorate with services
-  server.decorate('connectorManager', opts.connectorManager ?? new ConnectorManager());
+  // Decorate with services. The registry needs a localConfigPath to write
+  // back to; if neither a registry nor a path is provided (e.g. unit tests
+  // that don't touch persistence), fall back to a throwaway path inside
+  // /tmp so a stray write doesn't clobber the real local file.
+  const registry =
+    opts.connectorRegistry ??
+    new ConnectorRegistry({
+      localConfigPath:
+        opts.localConfigPath ?? `/tmp/shipit-connectors-${process.pid}-${Date.now()}.yaml`,
+      initial: opts.config?.connectors.instances ?? [],
+    });
+  server.decorate('connectorRegistry', registry);
   server.decorate('schemaService', opts.schemaService ?? new SchemaService('./shipit-schema.yaml'));
+  // GitHubAppService is optional — tests that don't touch the global App
+  // routes can skip it, and the routes return 503 if it's not decorated.
+  if (opts.githubAppService) {
+    server.decorate('githubAppService', opts.githubAppService);
+  }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);
   }
@@ -83,6 +105,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // Incident-mode dashboard view log. Doesn't require Neo4j — useful for
   // adoption analytics from day one, even when running the API standalone.
   await server.register(incidentEventsRoutes, { prefix: '/api/incident-events' });
+
+  // MCP server metadata (auth status, tool catalog). Surface for the in-app
+  // /configure/mcp page; also useful for future CLI/plugin discovery.
+  await server.register(mcpRoutes, { prefix: '/api/mcp' });
 
   return server;
 }

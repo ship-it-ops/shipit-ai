@@ -4,11 +4,12 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { generateDependencyChainCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError } from '../errors.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 export function registerDependencyChain(server: McpServer, neo4j: Neo4jClient): void {
   server.tool(
     'dependency_chain',
-    'Find the shortest dependency path between two entities in the knowledge graph.',
+    MCP_TOOL_BY_NAME.dependency_chain.description,
     {
       from: z.string().describe('Source node canonical ID'),
       to: z.string().describe('Target node canonical ID'),

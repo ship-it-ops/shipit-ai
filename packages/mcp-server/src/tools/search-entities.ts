@@ -4,11 +4,12 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { generateSearchEntitiesCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError } from '../errors.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): void {
   server.tool(
     'search_entities',
-    'Search and filter entities in the knowledge graph by label and property values.',
+    MCP_TOOL_BY_NAME.search_entities.description,
     {
       label: z.string().optional().describe('Filter by node label (e.g., "LogicalService")'),
       property_filters: z

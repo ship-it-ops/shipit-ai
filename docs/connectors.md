@@ -73,7 +73,9 @@ const result = await dryRun(connector, config);
 
 ## GitHub Connector
 
-The `@shipit-ai/connector-github` package pulls repositories, teams, people, pipelines, and CODEOWNERS from GitHub.
+The `@shipit-ai/connector-github` package pulls repositories, teams, people, pipelines, and CODEOWNERS from GitHub. As of v0.2 (P0), the connector is **multi-org**: one connector instance per GitHub org, all backed by a single shared GitHub App.
+
+> **Full setup walkthrough lives in [docs/connectors/github-setup.md](./connectors/github-setup.md)** — App creation, permissions, env vars, rotation, troubleshooting. This section is the reference; the setup guide is the runbook.
 
 ### Supported Entity Types
 
@@ -84,32 +86,40 @@ The `@shipit-ai/connector-github` package pulls repositories, teams, people, pip
 | Pipeline   | `Pipeline`         | `BUILT_BY`            |
 | Codeowners | —                  | `CODEOWNER_OF`        |
 
+P1 adds first-class `WorkflowRun`, `Environment`, `Deployment`, plus branch-protection claims on `Repository`.
+
 ### Authentication
 
-#### GitHub App (recommended)
+GitHub App only — PAT support was removed in v0.2. One App is configured globally via env vars and shared across all per-org connector instances:
 
 ```bash
 GITHUB_APP_ID=123456
 GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-GITHUB_APP_INSTALLATION_ID=789012
-GITHUB_ORG=your-org
+GITHUB_WEBHOOK_SECRET=<32-byte-hex>            # P1 webhook verification
+GITHUB_WEBHOOK_PUBLIC_URL=https://...          # P1 webhook delivery target
 ```
 
-Required App permissions:
+The per-org `installationId` lives in the connector instance (in `shipit.config.local.yaml`), not in env. Required App permissions: `Contents: Read`, `Metadata: Read`, `Actions: Read`, `Members: Read`.
 
-- Repository: Read
-- Organization members: Read
-- Actions: Read
-- Contents: Read (for CODEOWNERS files)
+### Per-org App override (optional)
 
-#### Personal Access Token
+By default every connector uses the global App configured via env vars. A connector can override that App on its own — useful for blast-radius isolation (dev App vs prod App) or for orgs that won't share an App:
 
-```bash
-GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-GITHUB_ORG=your-org
+```yaml
+connectors:
+  instances:
+    - id: github-prod
+      type: github
+      org: prod-corp
+      installationId: '55555'
+      # Either or both of these fields can be present; the field that's
+      # absent falls back to the global App's value.
+      app:
+        id: '654321'
+        privateKeyPath: '/etc/shipit/keys/prod-app.pem'
 ```
 
-Required scopes: `repo`, `read:org`, `actions:read`
+The wizard collects this via the "Use a separate GitHub App for this org" advanced panel in step 1. The probe endpoint accepts the same override in its request body so the wizard can validate the credentials before persisting. See [`github-setup.md`](./connectors/github-setup.md) §6b for the full walkthrough.
 
 ### Data Normalization
 
@@ -132,16 +142,25 @@ CODEOWNERS entries create `CODEOWNER_OF` edges from Person or Team nodes to Repo
 ### Registering via API
 
 ```bash
+# Probe credentials first (optional, but the wizard does this)
+curl -X POST http://localhost:3001/api/connectors/probe \
+  -H 'Content-Type: application/json' \
+  -d '{"installationId": "12345678"}'
+
+# Create the connector
 curl -X POST http://localhost:3001/api/connectors \
   -H 'Content-Type: application/json' \
   -d '{
-    "id": "github-main",
+    "id": "github-acme",
     "type": "github",
-    "name": "GitHub - My Org",
-    "config": { "org": "your-org" },
+    "name": "Acme Corp",
+    "installationId": "12345678",
+    "org": "acme-corp",
     "enabled": true
   }'
 ```
+
+Subsequent PATCH/DELETE require `If-Match: "<etag>"` to avoid clobbering concurrent edits — same ETag pattern as `/api/schema` ([ADR-016](./adrs/ADR-016-optimistic-concurrency-for-editable-config.md)).
 
 ### Triggering a Sync
 

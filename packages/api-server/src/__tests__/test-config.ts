@@ -29,6 +29,18 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
         kubernetes: { consoleUrlTemplate: null },
       },
     },
+    connectors: {
+      github: {
+        app: {
+          id: '',
+          privateKeyPath: '',
+          webhookSecret: '',
+          webhookPublicUrl: 'http://localhost:3001/api/webhooks/github',
+        },
+        rateLimits: { conditionalRequests: true, maxConcurrentSyncs: 3 },
+      },
+      instances: [],
+    },
     ...overrides,
   };
 }

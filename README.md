@@ -82,7 +82,7 @@ pnpm turbo build
 pnpm turbo test
 ```
 
-See [docs/getting-started.md](docs/getting-started.md) for the full setup guide including GitHub connector configuration, demo data seeding, and MCP integration.
+See [docs/getting-started.md](docs/getting-started.md) for the 5-minute quick-start, or [docs/local-development.md](docs/local-development.md) for the full day-to-day development guide (config layering, testing, webhooks-for-local-dev, debugging, code quality).
 
 ## Project Structure
 
@@ -175,15 +175,20 @@ See [docs/connectors.md](docs/connectors.md) for setup guides and the custom con
 
 ## Development
 
-| Command                   | Description                 |
-| ------------------------- | --------------------------- |
-| `pnpm turbo build`        | Build all packages          |
-| `pnpm turbo test`         | Run all tests (221 tests)   |
-| `pnpm turbo test --force` | Run tests bypassing cache   |
-| `pnpm turbo dev`          | Watch mode for all packages |
-| `pnpm turbo lint`         | Lint all packages           |
-| `pnpm turbo typecheck`    | Type-check all packages     |
-| `pnpm turbo clean`        | Clean all build artifacts   |
+Full guide: [docs/local-development.md](docs/local-development.md).
+
+| Command                   | Description                         |
+| ------------------------- | ----------------------------------- |
+| `pnpm start:all`          | Boot infra + every dev server       |
+| `pnpm start:backend`      | Infra + api-server + core-writer    |
+| `pnpm start:frontend`     | Web UI only                         |
+| `pnpm turbo build`        | Build all packages                  |
+| `pnpm turbo test`         | Run all tests                       |
+| `pnpm turbo test --force` | Run tests bypassing the Turbo cache |
+| `pnpm turbo dev`          | Watch mode for all packages         |
+| `pnpm turbo lint`         | Lint all packages                   |
+| `pnpm turbo typecheck`    | Type-check all packages             |
+| `pnpm turbo clean`        | Clean all build artifacts           |
 
 ## Docker Deployment
 

@@ -69,5 +69,19 @@ export { DEFAULT_SCHEMA } from './schema/defaults.js';
 export { computeEffectiveConfidence } from './utils/confidence.js';
 
 // Config
-export { loadConfig, findConfigPaths, configSchema } from './config/index.js';
-export type { Config, LoadConfigOptions, ConfigPaths } from './config/index.js';
+export {
+  loadConfig,
+  findConfigPaths,
+  configSchema,
+  connectorInstanceSchema,
+  resolveAppCredentials,
+} from './config/index.js';
+export type {
+  Config,
+  LoadConfigOptions,
+  ConfigPaths,
+  ConnectorInstanceConfig,
+  GitHubConnectorConfig,
+  ResolvedAppCredentials,
+  AppLike,
+} from './config/index.js';
