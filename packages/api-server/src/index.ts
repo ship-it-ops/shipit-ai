@@ -8,6 +8,7 @@ import { SchemaService } from './services/schema-service.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
+import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
 
 export { createServer } from './server.js';
 export type { CreateServerOptions } from './server.js';
@@ -20,6 +21,11 @@ export type {
 export { SyncScheduler } from './services/sync-scheduler.js';
 export { GitHubAppService, GitHubAppVersionConflictError } from './services/github-app-service.js';
 export type { GitHubAppStatus } from './services/github-app-service.js';
+export { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+export type {
+  ManifestServiceOptions,
+  ConversionResult,
+} from './services/github-app-manifest-service.js';
 export { SchemaService } from './services/schema-service.js';
 export { Neo4jService } from './services/neo4j-service.js';
 export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js';
@@ -53,6 +59,18 @@ async function main() {
   const githubAppService = new GitHubAppService({
     localConfigPath: localPath,
     appConfig: config.connectors.github.app,
+  });
+
+  // Manifest service handles the "Create App from template" flow.
+  // Template lives in the repo at config/github-app-manifest.json;
+  // the manifest endpoint substitutes hook/redirect URLs at request
+  // time so each instance points at its own ingress.
+  const manifestTemplatePath = resolve(configDir, 'config/github-app-manifest.json');
+  const githubAppManifestService = new GitHubAppManifestService({
+    templatePath: manifestTemplatePath,
+    appService: githubAppService,
+    // Local-dev default; container deploys override.
+    keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
   });
 
   // Wire the BullMQ-backed scheduler if we have Redis. Per-connector App
@@ -112,6 +130,7 @@ async function main() {
     schemaService,
     connectorRegistry,
     githubAppService,
+    githubAppManifestService,
     config,
   });
 

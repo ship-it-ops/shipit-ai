@@ -15,12 +15,14 @@ import {
   GitHubAppVersionConflictError,
   type GitHubAppService,
 } from '../services/github-app-service.js';
+import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
 import type { Config } from '@shipit-ai/shared';
 
 declare module 'fastify' {
   interface FastifyInstance {
     connectorRegistry: ConnectorRegistry;
     githubAppService?: GitHubAppService;
+    githubAppManifestService?: GitHubAppManifestService;
   }
 }
 
@@ -90,6 +92,160 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     reply.header('ETag', `"${svc.getHash()}"`);
     return svc.status();
   });
+
+  // GET /api/connectors/github/manifest — dynamic App manifest with this
+  // instance's webhook URL + callback URL substituted in. The wizard
+  // posts this URL as `manifest_url=...` to github.com so the user lands
+  // on a pre-filled "Create GitHub App" page with all permissions/events
+  // and OUR webhook URL already configured.
+  //
+  // Public — contains zero secrets, just a schema describing what the
+  // App should look like. The `state` query string is the CSRF token
+  // that GitHub will echo back on the callback for verification.
+  server.get<{ Querystring: { state?: string } }>('/github/manifest', async (request, reply) => {
+    const svc = server.githubAppManifestService;
+    const appSvc = server.githubAppService;
+    if (!svc || !appSvc) {
+      return reply.status(503).send({
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'GitHub App manifest service is not configured on this server.',
+        },
+      });
+    }
+    // Build the redirect URL from the API's own base. The webhook URL
+    // comes from the saved config (`webhookPublicUrl`) — it's the
+    // ingress for GitHub→ShipIt webhooks, which is the user's
+    // responsibility to make publicly reachable.
+    const cfg = (server as unknown as { config?: Config }).config;
+    const webhookUrl =
+      cfg?.connectors.github.app.webhookPublicUrl ?? 'http://localhost:3001/api/webhooks/github';
+    // We accept the redirect URL relative to whatever the caller
+    // declares — the wizard tells us its origin in the state query so
+    // a deployed UI on a different host than the API still works.
+    // Default to the API's own host for local-dev convenience.
+    const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
+    const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
+    const redirectUrl = `${proto}://${host}/api/connectors/github/app-manifest-callback`;
+
+    const manifest = svc.buildManifest({ webhookUrl, redirectUrl });
+    // Cache-Control: short — the URLs can change at runtime if the
+    // admin updates `webhookPublicUrl`. 30s is enough for one user's
+    // round-trip without serving stale data after a config change.
+    reply.header('Cache-Control', 'private, max-age=30');
+    return manifest;
+  });
+
+  // POST /api/connectors/github/manifest/state — issue a CSRF state
+  // token for the manifest round-trip. The wizard calls this just
+  // before redirecting the user to GitHub.
+  server.post('/github/manifest/state', async (_request, reply) => {
+    const svc = server.githubAppManifestService;
+    if (!svc) {
+      return reply.status(503).send({
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'GitHub App manifest service is not configured on this server.',
+        },
+      });
+    }
+    const token = svc.issueState();
+    return { state: token };
+  });
+
+  // GET /api/connectors/github/app-manifest-callback — the URL GitHub
+  // redirects to after the user creates the App from our manifest.
+  // Exchanges the one-time `code` for the App's credentials (App ID +
+  // PEM + webhook secret), writes the PEM to disk, persists via
+  // GitHubAppService, then redirects the user back to /connectors so
+  // the wizard can resume.
+  //
+  // Returns HTML rather than JSON because GitHub navigates the user's
+  // browser to this URL — they'll see whatever we render.
+  server.get<{ Querystring: { code?: string; state?: string } }>(
+    '/github/app-manifest-callback',
+    async (request, reply) => {
+      const svc = server.githubAppManifestService;
+      if (!svc) {
+        return reply
+          .status(503)
+          .type('text/html')
+          .send(
+            renderCallbackHtml({
+              ok: false,
+              heading: 'GitHub App manifest service unavailable',
+              body: 'This ShipIt instance is not configured to receive the GitHub App manifest callback. Contact the operator.',
+            }),
+          );
+      }
+
+      const { code, state } = request.query;
+      if (!code) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderCallbackHtml({
+              ok: false,
+              heading: 'Missing code',
+              body: 'GitHub did not return a code on the callback. Re-run the wizard from /connectors.',
+            }),
+          );
+      }
+      if (!svc.consumeState(state)) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderCallbackHtml({
+              ok: false,
+              heading: 'Invalid or expired state token',
+              body: "The CSRF state token didn't match what we issued, or it expired (tokens last 15 minutes). Re-run the wizard.",
+            }),
+          );
+      }
+
+      try {
+        const result = await svc.exchangeAndPersist(code);
+        // Compose the post-success page. Surface the PEM path, webhook
+        // secret file, and install URL so the user has everything they
+        // need to finish wiring up webhook delivery + close the loop.
+        return reply.type('text/html').send(
+          renderCallbackHtml({
+            ok: true,
+            heading: `App "${escapeHtml(result.appName)}" created`,
+            body: `
+              <p>The shared GitHub App is now configured. Your wizard can continue.</p>
+              <dl>
+                <dt>App ID</dt><dd><code>${escapeHtml(result.appId)}</code></dd>
+                <dt>Private key</dt><dd><code>${escapeHtml(result.privateKeyPath)}</code></dd>
+                <dt>Webhook secret</dt><dd><code>${escapeHtml(result.webhookSecretPath)}</code></dd>
+              </dl>
+              <p>
+                Wire the webhook secret into your environment:<br/>
+                <code>export GITHUB_WEBHOOK_SECRET=$(cat ${escapeHtml(result.webhookSecretPath)})</code><br/>
+                Then install the App on your org from
+                <a href="${escapeHtml(result.installUrl)}/installations/new" target="_blank" rel="noreferrer">GitHub</a>.
+              </p>
+              <p><a href="/connectors?from=app-manifest">Return to ShipIt-AI →</a></p>
+            `,
+          }),
+        );
+      } catch (err) {
+        request.log.error({ err }, 'manifest exchange failed');
+        return reply
+          .status(502)
+          .type('text/html')
+          .send(
+            renderCallbackHtml({
+              ok: false,
+              heading: 'Exchange failed',
+              body: `GitHub couldn't be reached or returned an error: <code>${escapeHtml((err as Error).message)}</code>. Re-run the wizard.`,
+            }),
+          );
+      }
+    },
+  );
 
   // PUT /api/connectors/github/app — set/update the shared App. Writes
   // `connectors.github.app.id` + `connectors.github.app.privateKeyPath`
@@ -390,5 +546,36 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     return { connectorId: c.id, runs: c.lastRuns ?? [] };
   });
 };
+
+// ── HTML helpers for the manifest callback ─────────────────────────────
+// GitHub navigates the browser to the callback URL, so we render HTML
+// rather than JSON. Kept inline (not a templating engine) because the
+// page is small and one-shot — adding a templater here would be overkill.
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderCallbackHtml(args: { ok: boolean; heading: string; body: string }): string {
+  const tone = args.ok ? '#0ea05c' : '#c63838';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>ShipIt-AI · GitHub App</title>
+    <style>
+      body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0e1116; color: #e8eaed; padding: 48px 24px; }
+      .card { max-width: 640px; margin: 0 auto; background: #151a21; border: 1px solid #232a33; border-radius: 12px; padding: 32px; }
+      h1 { font-size: 18px; margin: 0 0 16px; color: ${tone}; }
+      a { color: #4ea1ff; }
+      code { background: #0a0d12; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 13px; margin: 16px 0; }
+      dt { color: #9ba3ad; font-family: ui-monospace, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; align-self: center; }
+      dd { margin: 0; word-break: break-all; }
+      p { color: #cbd2d9; }
+    </style>
+  </head><body><div class="card"><h1>${escapeHtml(args.heading)}</h1>${args.body}</div></body></html>`;
+}
 
 export default connectorRoutes;

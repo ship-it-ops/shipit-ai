@@ -48,6 +48,7 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
+  buildManifestRedirectUrl,
   type ConnectorAppOverride,
   type ConnectorEntities,
   type ConnectorScope,
@@ -55,11 +56,13 @@ import {
 } from '@/lib/api';
 import {
   useCreateConnector,
+  useFetchManifestState,
   useGitHubAppStatus,
   useProbeConnector,
   useTriggerSync,
   useUpdateGitHubApp,
 } from '@/lib/hooks/use-connectors';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface AddGitHubConnectorWizardProps {
   open: boolean;
@@ -109,12 +112,21 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   const create = useCreateConnector();
   const triggerSync = useTriggerSync();
   const updateGlobalApp = useUpdateGitHubApp();
+  const fetchManifest = useFetchManifestState();
+  const queryClient = useQueryClient();
   // Only fetch the App status while the dialog is open — avoids a 503
   // request on every page mount when the GitHubAppService isn't wired
   // (e.g. tests, environments without a config).
   const appStatusQuery = useGitHubAppStatus();
   const appStatus = open ? appStatusQuery.data?.status : undefined;
   const appStatusHash = open ? appStatusQuery.data?.hash : null;
+
+  // Tracks whether the user has opened the manifest flow in another tab.
+  // While true, we poll the global-App status so the wizard auto-detects
+  // when the callback finishes persisting the new App.
+  const [manifestPending, setManifestPending] = useState(false);
+  // Optional org for the App's owner — empty means "personal account".
+  const [manifestOwner, setManifestOwner] = useState('');
 
   const [installationId, setInstallationId] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
@@ -191,6 +203,33 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     }
   }, [probeResult, org, connectorId, name]);
 
+  // While the manifest flow is pending (user clicked "Create from
+  // template", popup is somewhere with their attention), poll the
+  // app-status query so the wizard auto-detects when the callback
+  // finishes persisting. Two seconds is responsive without being chatty.
+  // Stops as soon as `configured` flips to true.
+  useEffect(() => {
+    if (!manifestPending || !open) return;
+    const handle = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['github-app-status'] });
+    }, 2000);
+    return () => clearInterval(handle);
+  }, [manifestPending, open, queryClient]);
+
+  // Clear pending once the global App is configured. Whatever event
+  // triggered the persist (manifest callback, manual PUT in another
+  // tab, etc.) we trust the status — pending was just a hint.
+  useEffect(() => {
+    if (manifestPending && appStatus?.configured) {
+      setManifestPending(false);
+      toast({
+        variant: 'ok',
+        title: 'GitHub App configured',
+        description: `Using App ${appStatus.id}. You can continue the wizard.`,
+      });
+    }
+  }, [manifestPending, appStatus, toast]);
+
   const installationValid = useMemo(() => looksLikeId(installationId), [installationId]);
   const probeOk = probeResult?.ok === true;
   const orgValid = !!org.trim();
@@ -208,6 +247,30 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     // per-org
     return looksLikeId(overrideAppId) && overrideKeyPath.trim().length > 0;
   }, [mode, globalConfigured, sharedAppId, sharedKeyPath, overrideAppId, overrideKeyPath]);
+
+  // Kick off the App manifest flow. Mints a state token from the API,
+  // builds the github.com URL, opens it in a new tab so the user can
+  // come back to the wizard tab after creating the App.
+  const handleCreateFromTemplate = async () => {
+    try {
+      const { state } = await fetchManifest.mutateAsync();
+      const url = buildManifestRedirectUrl({
+        state,
+        ownerOrg: manifestOwner.trim() || undefined,
+      });
+      // noopener+noreferrer keeps the new tab from accessing the wizard's
+      // window via `opener` — defense in depth, GitHub itself is fine
+      // but the browser pop-up chain isn't always trustworthy.
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setManifestPending(true);
+    } catch (err) {
+      toast({
+        variant: 'err',
+        title: 'Could not start manifest flow',
+        description: (err as Error).message,
+      });
+    }
+  };
 
   const handleProbe = async () => {
     if (!installationValid) return;
@@ -312,18 +375,84 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
               </div>
             ) : (
               mode === 'shared' && (
-                <SharedAppFields
-                  appId={sharedAppId}
-                  keyPath={sharedKeyPath}
-                  onAppId={(v) => {
-                    setSharedAppId(v);
-                    setProbeResult(null);
-                  }}
-                  onKeyPath={(v) => {
-                    setSharedKeyPath(v);
-                    setProbeResult(null);
-                  }}
-                />
+                <>
+                  {/* Recommended path: create the App from our template
+                      via GitHub's manifest flow. Pre-fills permissions,
+                      events, webhook URL — user just clicks Create on
+                      GitHub's side and comes back to a fully-wired App. */}
+                  <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3">
+                    <div className="text-text text-[12px] font-medium">
+                      Create the App from our template{' '}
+                      <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
+                        Recommended
+                      </span>
+                    </div>
+                    <p className="text-text-muted text-[12px]">
+                      We'll send you to GitHub with the permissions, events, and webhook URL already
+                      filled in. After you click Create on GitHub, this wizard auto- detects the new
+                      App and you can keep going.
+                    </p>
+                    <Field
+                      label="App owner"
+                      hint="Org login (e.g. acme-corp). Leave blank to create the App on your personal account."
+                    >
+                      {(p) => (
+                        <Input
+                          {...p}
+                          placeholder="acme-corp (optional)"
+                          value={manifestOwner}
+                          onChange={(e) => setManifestOwner(e.target.value)}
+                          disabled={manifestPending}
+                        />
+                      )}
+                    </Field>
+                    <Button
+                      onClick={handleCreateFromTemplate}
+                      disabled={fetchManifest.isPending || manifestPending}
+                    >
+                      {manifestPending ? (
+                        <>
+                          <Spinner size="sm" /> Waiting for GitHub…
+                        </>
+                      ) : fetchManifest.isPending ? (
+                        <>
+                          <Spinner size="sm" /> Starting…
+                        </>
+                      ) : (
+                        'Create App on GitHub'
+                      )}
+                    </Button>
+                    {manifestPending && (
+                      <p className="text-text-muted text-[11px]">
+                        A new tab is open at github.com. Complete the create flow there; this page
+                        will refresh automatically once the App is configured.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Manual path: collapsible, for users who already
+                      have an App created (or who can't use the manifest
+                      flow because the org locks who can create Apps). */}
+                  <details className="border-border bg-panel-2 rounded border">
+                    <summary className="text-text-muted cursor-pointer px-3 py-2 text-[12px]">
+                      I already have a GitHub App — paste credentials manually
+                    </summary>
+                    <div className="px-3 pb-3">
+                      <SharedAppFields
+                        appId={sharedAppId}
+                        keyPath={sharedKeyPath}
+                        onAppId={(v) => {
+                          setSharedAppId(v);
+                          setProbeResult(null);
+                        }}
+                        onKeyPath={(v) => {
+                          setSharedKeyPath(v);
+                          setProbeResult(null);
+                        }}
+                      />
+                    </div>
+                  </details>
+                </>
               )
             )}
           </AppModeCard>

@@ -339,19 +339,38 @@ pnpm --filter @shipit-ai/api-server exec node -e \
 ## 9. Connectors
 
 The Connector Hub at <http://localhost:3000/connectors> is the primary UI
-for adding/managing connectors. For the **GitHub** connector specifically:
+for adding/managing connectors. For the **GitHub** connector, the easiest
+path is the **manifest flow** — the wizard creates the App for you via
+GitHub's manifest endpoint with all permissions pre-filled.
 
-1. Create a GitHub App (one-time setup) — see
-   [connectors/github-setup.md](./connectors/github-setup.md).
-2. Set env vars on the `api-server` process:
+**Recommended (manifest flow):**
+
+1. Open `/connectors`, click **Add connector** → **GitHub**.
+2. In step 1 (App), keep the default **Use one shared App for all my orgs**.
+3. Optionally set an "App owner" org; leave blank for personal account.
+4. Click **Create App on GitHub** — new tab, click Create on GitHub's side.
+5. ShipIt-AI's callback writes the PEM to `~/.shipit/keys/github-app-<id>.pem`
+   (override the directory with `SHIPIT_GITHUB_APP_KEY_DIR=…`), persists the
+   App ID + path into `connectors.github.app.*`, and shows you the
+   webhook-secret file path.
+6. `export GITHUB_WEBHOOK_SECRET=$(cat ~/.shipit/keys/github-app-<id>.webhook-secret)`,
+   restart `pnpm start:backend`, return to the wizard, paste the
+   Installation ID, finish.
+
+**Manual (if you already have an App):**
+
+1. Set env vars on the `api-server` process:
    ```bash
    export GITHUB_APP_ID=12345
    export GITHUB_APP_PRIVATE_KEY_PATH=$HOME/.shipit/github-app.pem
    export GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
    ```
-3. Restart `pnpm start:backend` so the values flow into the scheduler.
-4. Open `/connectors`, click **Connect GitHub**, paste an Installation ID,
-   and follow the wizard.
+2. Restart `pnpm start:backend` so the values flow into the scheduler.
+3. Open `/connectors` → wizard step 1 → expand "I already have a GitHub App
+   — paste credentials manually". The rest of the wizard runs unchanged.
+
+Full walkthrough for both paths:
+[connectors/github-setup.md](./connectors/github-setup.md).
 
 To use a **separate App per org** (e.g. dev-app for dev orgs, prod-app for
 prod orgs), expand the "Use a separate GitHub App for this org" panel in

@@ -1,6 +1,12 @@
+import {
+  createServer as createHttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { loadConfig } from './config.js';
-import { createNeo4jClient } from './neo4j-client.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { loadConfig, type McpServerConfig } from './config.js';
+import { createNeo4jClient, type Neo4jClient } from './neo4j-client.js';
 import { createMcpServer } from './server.js';
 
 export { createMcpServer } from './server.js';
@@ -15,13 +21,94 @@ export type { McpError } from './errors.js';
 export { MCP_TOOLS, MCP_TOOL_BY_NAME } from './tools/metadata.js';
 export type { McpToolMetadata, McpToolParamSpec } from './tools/metadata.js';
 
+const DEFAULT_HTTP_PORT = 3002;
+const MCP_PATH = '/mcp';
+
+async function startStdio(neo4j: Neo4jClient, config: McpServerConfig): Promise<void> {
+  const server = createMcpServer(neo4j, config);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: number): Promise<void> {
+  // Stateless mode: one transport + one server reused across requests. The
+  // graph tools have no per-session state, so sharing avoids the cost of
+  // re-registering all 8 tools on every request.
+  const server = createMcpServer(neo4j, config);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  await server.connect(transport);
+
+  const httpServer = createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
+    // Permissive CORS — the MCP server is read-only and the auth boundary
+    // (when it lands in Stage 2) will be the Authorization header, not origin.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, mcp-session-id, mcp-protocol-version, last-event-id',
+    );
+    res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id, mcp-protocol-version');
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204).end();
+      return;
+    }
+
+    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+
+    if (url.pathname === '/health') {
+      res.setHeader('Content-Type', 'application/json');
+      res.writeHead(200).end(JSON.stringify({ status: 'ok', transport: 'http' }));
+      return;
+    }
+
+    if (url.pathname !== MCP_PATH) {
+      res.writeHead(404).end('Not found');
+      return;
+    }
+
+    try {
+      // Body parsing: for POSTs the transport expects pre-parsed JSON.
+      // GET/DELETE pass through without a body.
+      const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
+      await transport.handleRequest(req, res, body);
+    } catch (err) {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: String(err) } }));
+      }
+    }
+  });
+
+  await new Promise<void>((resolve) => httpServer.listen(port, resolve));
+  // Log to stderr so it doesn't pollute any tooling that pipes stdout.
+  console.error(`shipit-ai MCP server listening on http://localhost:${port}${MCP_PATH}`);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(chunk as Buffer);
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (text.length === 0) return undefined;
+  return JSON.parse(text);
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
   const neo4j = createNeo4jClient(config.neo4jUri, config.neo4jUser, config.neo4jPassword);
-  const server = createMcpServer(neo4j, config);
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const transport = (process.env.MCP_TRANSPORT ?? 'http').toLowerCase();
+  if (transport !== 'http' && transport !== 'stdio') {
+    throw new Error(`Unknown MCP_TRANSPORT '${transport}'. Expected 'http' or 'stdio'.`);
+  }
+
+  if (transport === 'stdio') {
+    await startStdio(neo4j, config);
+  } else {
+    const port = parsePort(process.env.MCP_HTTP_PORT) ?? DEFAULT_HTTP_PORT;
+    await startHttp(neo4j, config, port);
+  }
 
   process.on('SIGINT', async () => {
     await neo4j.close();
@@ -29,8 +116,20 @@ async function main(): Promise<void> {
   });
 }
 
+function parsePort(value: string | undefined): number | null {
+  if (!value) return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0 || n > 65535) {
+    throw new Error(`Invalid MCP_HTTP_PORT '${value}' — must be an integer in 1..65535`);
+  }
+  return n;
+}
+
 // Only run main when executed directly (not imported)
 const isMainModule = process.argv[1]?.endsWith('index.js');
 if (isMainModule) {
-  main().catch(console.error);
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }

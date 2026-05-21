@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-20 | Total notes: 10
+Last updated: 2026-05-21 | Total notes: 14
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -15,6 +15,8 @@ Last updated: 2026-05-20 | Total notes: 10
 - [top-level-connectors-config-section](decisions/top-level-connectors-config-section.md) | decision | active | core | 2026-05-20 | connectors live at root not under backend
 - [per-org-github-app-override](decisions/per-org-github-app-override.md) | decision | active | core | 2026-05-20 | per-instance App overrides global App field-by-field
 - [etag-optimistic-concurrency-for-editable-config](decisions/etag-optimistic-concurrency-for-editable-config.md) | decision | active | core | 2026-05-20 | ETag pattern shared across schema, registry, app services
+- [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
+- [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 
 ## Patterns
 
@@ -24,6 +26,7 @@ Last updated: 2026-05-20 | Total notes: 10
 ## Plans
 
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
+- [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 
 ## Open Questions
 
@@ -33,3 +36,4 @@ Last updated: 2026-05-20 | Total notes: 10
 ## Scars
 
 - [web-ui-cannot-import-mcp-server-root](scars/web-ui-cannot-import-mcp-server-root.md) | scar | active | core | 2026-05-20 | mcp-server root export drags shared into bundle
+- [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files

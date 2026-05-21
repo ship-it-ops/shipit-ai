@@ -367,6 +367,39 @@ export async function fetchGitHubAppStatus(): Promise<GitHubAppStatusWithHash> {
   return { status, hash: parseEtag(res.headers.get('ETag')) };
 }
 
+// ── GitHub App manifest flow ──────────────────────────────────────────────
+// Issues a one-time CSRF state token, then the UI redirects the user to
+// github.com/.../settings/apps/new?manifest_url=…&state=… so they can
+// create the App from our spec. GitHub redirects back to our callback,
+// which exchanges the code for credentials and persists the App.
+
+export async function fetchManifestState(): Promise<{ state: string }> {
+  const res = await fetch(`${API_URL}/api/connectors/github/manifest/state`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`fetchManifestState: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as { state: string };
+}
+
+// Build the github.com URL the user is sent to. The `manifest_url` query
+// param is read by GitHub server-side — it must be the API server's
+// public URL, not the web UI's. The browser only navigates; GitHub does
+// the fetch. We construct the URL from `clientConfig.api.url` which the
+// web UI already has access to.
+export function buildManifestRedirectUrl(args: { state: string; ownerOrg?: string }): string {
+  const manifestUrl = `${API_URL}/api/connectors/github/manifest`;
+  const base = args.ownerOrg?.trim()
+    ? `https://github.com/organizations/${encodeURIComponent(args.ownerOrg.trim())}/settings/apps/new`
+    : 'https://github.com/settings/apps/new';
+  const qs = new URLSearchParams({
+    manifest_url: manifestUrl,
+    state: args.state,
+  });
+  return `${base}?${qs.toString()}`;
+}
+
 export async function updateGitHubApp(
   input: { id: string; privateKeyPath: string },
   ifMatch?: string,

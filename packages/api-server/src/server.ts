@@ -6,6 +6,7 @@ import { errorHandler } from './middleware/error-handler.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
+import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
 import type { Neo4jService } from './services/neo4j-service.js';
 import healthRoutes from './routes/health.js';
 import connectorRoutes from './routes/connectors.js';
@@ -23,6 +24,7 @@ export interface CreateServerOptions {
   schemaService?: SchemaService;
   connectorRegistry?: ConnectorRegistry;
   githubAppService?: GitHubAppService;
+  githubAppManifestService?: GitHubAppManifestService;
   neo4jService?: Neo4jService;
   config?: Config;
   // Path to shipit.config.local.yaml. Used when no registry is supplied so
@@ -83,6 +85,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // routes can skip it, and the routes return 503 if it's not decorated.
   if (opts.githubAppService) {
     server.decorate('githubAppService', opts.githubAppService);
+  }
+  // Manifest service is also optional. Requires githubAppService to be
+  // present (it persists via that service), so callers must wire both
+  // together — see api-server/src/index.ts for the production bootstrap.
+  if (opts.githubAppManifestService) {
+    server.decorate('githubAppManifestService', opts.githubAppManifestService);
   }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);

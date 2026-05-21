@@ -90,7 +90,12 @@ P1 adds first-class `WorkflowRun`, `Environment`, `Deployment`, plus branch-prot
 
 ### Authentication
 
-GitHub App only — PAT support was removed in v0.2. One App is configured globally via env vars and shared across all per-org connector instances:
+GitHub App only — PAT support was removed in v0.2. Setup has two paths:
+
+- **Manifest flow** _(recommended)_: the Connector Hub wizard creates the App via GitHub's [App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest) endpoint. All permissions/events/webhook URL pre-filled. PEM is written to `~/.shipit/keys/github-app-<id>.pem` (override with `SHIPIT_GITHUB_APP_KEY_DIR`), App ID + path are persisted to `connectors.github.app.*`. Full walkthrough: [`github-setup.md` §0](./connectors/github-setup.md#0-manifest-flow-recommended).
+- **Manual**: create the App yourself, set `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY_PATH` env vars before starting the API server. Full walkthrough: [`github-setup.md` §2](./connectors/github-setup.md).
+
+One App is configured globally via env vars and shared across all per-org connector instances:
 
 ```bash
 GITHUB_APP_ID=123456

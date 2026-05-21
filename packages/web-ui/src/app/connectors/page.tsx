@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { ConnectorCard } from '@/components/connectors/connector-card';
@@ -14,6 +15,7 @@ import { useConnectors } from '@/lib/hooks/use-connectors';
 
 export default function ConnectorHubPage() {
   const { data: connectors = [] } = useConnectors();
+  const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Two-stage entry: picker → type-specific wizard. `activeWizard` holds
   // the picked type (currently only 'github' resolves to a real flow);
@@ -21,6 +23,16 @@ export default function ConnectorHubPage() {
   // the picker, so a cancelled wizard doesn't bounce back to selection.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeWizard, setActiveWizard] = useState<ConnectorTypeId | null>(null);
+
+  // Auto-open the GitHub wizard when the user lands here after the App
+  // manifest callback — `?from=app-manifest` is the breadcrumb the
+  // callback page sets. The wizard's polling picks up the now-configured
+  // global App on the first refresh.
+  useEffect(() => {
+    if (searchParams.get('from') === 'app-manifest') {
+      setActiveWizard('github');
+    }
+  }, [searchParams]);
 
   const handlePick = (type: ConnectorTypeId) => {
     // The picker disables non-available types, so this is reached only

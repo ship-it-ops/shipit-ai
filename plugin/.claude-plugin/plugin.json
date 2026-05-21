@@ -1,0 +1,6 @@
+{
+  "name": "shipit-ai",
+  "description": "Connect Claude Code to the ShipIt-AI knowledge graph. Registers the MCP server and ships skills that teach agents how to use the 8 graph tools effectively.",
+  "version": "0.1.0",
+  "author": "ship-it-ops"
+}

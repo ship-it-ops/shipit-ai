@@ -82,11 +82,19 @@ Sequenced because each step gates the next.
 
 ## Status
 
-Not started. Stage 1 (`/configure/mcp`, tool metadata seam, `/api/mcp/info`)
-is shipped and verified — typecheck + tests green across web-ui, api-server,
-and mcp-server.
+- **2b (Streamable HTTP transport) shipped early on 2026-05-21** to unblock
+  the Claude Code plugin (`plugin/.mcp.json`) — the plugin now connects via
+  HTTP at `http://localhost:3002/mcp` rather than spawning the server over
+  stdio. Stateless mode, single transport, smoke-tested with a real
+  `initialize` call. See `packages/mcp-server/src/index.ts` `startHttp()`.
+- **2a (apiKeySecret enforcement)**, **2c (token mint/list/revoke)**, and
+  **2d (Settings → API Keys UI)** not started. Until they ship, the HTTP
+  endpoint is unauthenticated — fine for `localhost` only.
+- Stage 1 (`/configure/mcp`, tool metadata seam, `/api/mcp/info`) is shipped
+  and verified — typecheck + tests green across web-ui, api-server, and
+  mcp-server.
 
-Token ownership in Stage 2 piggybacks on `useCurrentUser()` (the dev-user
+Token ownership in 2c piggybacks on `useCurrentUser()` (the dev-user
 override) until real auth lands. That's a known seam, not a blocker.
 
 ## Related

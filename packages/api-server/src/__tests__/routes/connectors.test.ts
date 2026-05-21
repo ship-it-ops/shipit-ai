@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
 import { ConnectorRegistry } from '../../services/connector-registry.js';
 import { GitHubAppService } from '../../services/github-app-service.js';
+import { GitHubAppManifestService } from '../../services/github-app-manifest-service.js';
 import { makeTestConfig } from '../test-config.js';
 
 // One server, one registry, fresh per top-level describe so the ETag-flow
@@ -395,5 +396,203 @@ describe('Global GitHub App endpoint', () => {
     const res = await cleanServer.inject({ method: 'GET', url: '/api/connectors/github/app' });
     expect(res.statusCode).toBe(503);
     await cleanServer.close();
+  });
+});
+
+// GitHub App manifest flow. Covers the dynamic manifest endpoint, the
+// state-token CSRF handshake, and the callback exchange. The exchange
+// network call is mocked so the suite stays hermetic.
+describe('GitHub App manifest flow', () => {
+  let server: FastifyInstance;
+  let tmpDir: string;
+  let keyDir: string;
+  let appService: GitHubAppService;
+  let manifestService: GitHubAppManifestService;
+  // Captured per-test so individual tests can override the response.
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-manifest-'));
+    keyDir = join(tmpDir, 'keys');
+    // Write a minimal manifest template into the tmpdir so the service
+    // doesn't depend on the repo's real one.
+    const tmplPath = join(tmpDir, 'manifest.json');
+    writeFileSync(
+      tmplPath,
+      JSON.stringify({
+        name: 'ShipIt-AI Test',
+        url: 'https://example.invalid',
+        default_permissions: { contents: 'read' },
+        default_events: ['push'],
+        hook_attributes: { url: 'PLACEHOLDER', active: true },
+        redirect_url: 'PLACEHOLDER',
+      }),
+      'utf-8',
+    );
+
+    const config = makeTestConfig();
+    // Set a webhookPublicUrl so the manifest endpoint has a non-default
+    // value to substitute — proves the substitution is reading config,
+    // not hardcoding.
+    config.connectors.github.app.webhookPublicUrl = 'https://example.test/hooks';
+
+    const registry = new ConnectorRegistry({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      initial: [],
+    });
+    appService = new GitHubAppService({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      appConfig: config.connectors.github.app,
+    });
+    fetchMock = vi.fn();
+    manifestService = new GitHubAppManifestService({
+      templatePath: tmplPath,
+      appService,
+      keyDir,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    server = await createServer({
+      connectorRegistry: registry,
+      githubAppService: appService,
+      githubAppManifestService: manifestService,
+      config,
+    });
+    await server.ready();
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GET /manifest substitutes hook URL and redirect URL from config + request', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest',
+      headers: { host: 'shipit.local:3001', 'x-forwarded-proto': 'https' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.hook_attributes.url).toBe('https://example.test/hooks');
+    expect(body.redirect_url).toBe(
+      'https://shipit.local:3001/api/connectors/github/app-manifest-callback',
+    );
+    // Static fields from the template flow through untouched.
+    expect(body.name).toBe('ShipIt-AI Test');
+    expect(body.default_permissions).toEqual({ contents: 'read' });
+  });
+
+  it('POST /manifest/state issues a fresh token each call', async () => {
+    const a = await server.inject({ method: 'POST', url: '/api/connectors/github/manifest/state' });
+    const b = await server.inject({ method: 'POST', url: '/api/connectors/github/manifest/state' });
+    expect(a.statusCode).toBe(200);
+    expect(b.statusCode).toBe(200);
+    expect(a.json().state).toMatch(/^[a-f0-9]{48}$/);
+    expect(b.json().state).toMatch(/^[a-f0-9]{48}$/);
+    expect(a.json().state).not.toBe(b.json().state);
+  });
+
+  it('callback rejects missing code', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/app-manifest-callback?state=abc',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.body).toContain('Missing code');
+  });
+
+  it('callback rejects unknown state token', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/app-manifest-callback?code=xyz&state=neverissued',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('Invalid or expired state token');
+  });
+
+  it('callback exchanges code, writes PEM with 0600, persists App', async () => {
+    // Issue a state via the real endpoint so the manifest service holds
+    // it in memory the same way it would for a real flow.
+    const stateRes = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/github/manifest/state',
+    });
+    const state = stateRes.json().state as string;
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: 4242,
+          name: 'ShipIt-AI Test',
+          html_url: 'https://github.com/apps/shipit-ai-test',
+          pem: '-----BEGIN RSA PRIVATE KEY-----\nDUMMY\n-----END RSA PRIVATE KEY-----\n',
+          webhook_secret: 'whsec_dummy',
+          client_id: 'Iv1.dummy',
+          client_secret: 'dummysecret',
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const res = await server.inject({
+      method: 'GET',
+      url: `/api/connectors/github/app-manifest-callback?code=goodcode&state=${state}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('App &quot;ShipIt-AI Test&quot; created');
+
+    // PEM file landed at the expected path with strict perms.
+    const expectedKey = join(keyDir, 'github-app-4242.pem');
+    const pemContents = readFileSync(expectedKey, 'utf-8');
+    expect(pemContents).toContain('BEGIN RSA PRIVATE KEY');
+    expect(statSync(expectedKey).mode & 0o777).toBe(0o600);
+
+    // Webhook secret sidecar.
+    const secretPath = join(keyDir, 'github-app-4242.webhook-secret');
+    expect(readFileSync(secretPath, 'utf-8').trim()).toBe('whsec_dummy');
+    expect(statSync(secretPath).mode & 0o777).toBe(0o600);
+
+    // GitHubAppService picked it up — the global config now points at
+    // the freshly-written key.
+    const status = appService.status();
+    expect(status.configured).toBe(true);
+    expect(status.id).toBe('4242');
+    expect(status.privateKeyPath).toBe(expectedKey);
+  });
+
+  it('state token is single-use', async () => {
+    const stateRes = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/github/manifest/state',
+    });
+    const state = stateRes.json().state as string;
+
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: 1,
+          name: 'X',
+          html_url: 'https://github.com/apps/x',
+          pem: '-----BEGIN RSA PRIVATE KEY-----\nA\n-----END RSA PRIVATE KEY-----\n',
+          webhook_secret: 's',
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const first = await server.inject({
+      method: 'GET',
+      url: `/api/connectors/github/app-manifest-callback?code=c1&state=${state}`,
+    });
+    expect(first.statusCode).toBe(200);
+
+    // Second attempt with the same state should be rejected — proves
+    // the state was consumed and not just stored.
+    const second = await server.inject({
+      method: 'GET',
+      url: `/api/connectors/github/app-manifest-callback?code=c2&state=${state}`,
+    });
+    expect(second.statusCode).toBe(400);
+    expect(second.body).toContain('Invalid or expired state token');
   });
 });

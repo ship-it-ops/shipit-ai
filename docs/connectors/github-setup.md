@@ -8,16 +8,45 @@ ShipIt-AI uses a **GitHub App** to read repositories, teams, members, workflows,
 and CODEOWNERS from each org you want to map. One App can be installed in many
 orgs; each install becomes one connector instance in ShipIt-AI.
 
+There are **two ways to set up the App**:
+
+| Path                              | When to use                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Manifest flow** _(recommended)_ | The Connector Hub wizard creates the App on your behalf via GitHub's [App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest) flow. All permissions/events/webhook URL pre-filled. One click on GitHub's side, then the wizard auto-detects and configures the App. Skip to §0 below. |
+| **Manual**                        | You already have an App, you can't create Apps on your account (rare), or you're scripting the setup. The original step-by-step walkthrough starts at §1.                                                                                                                                                                                 |
+
 This guide walks an org admin through:
 
-1. Pre-requisites
-2. Creating the GitHub App
+0. **Manifest flow (recommended) — Connector Hub does it for you**
+1. Pre-requisites _(manual path)_
+2. Creating the GitHub App _(manual path)_
 3. Installing it in your orgs
-4. Generating a private key
+4. Generating a private key _(manual path)_
 5. Setting environment variables on the API server
 6. (Optional in P0 / required in P1) Setting up webhook delivery for dev
 7. Adding the connector in the ShipIt-AI UI
 8. Rotation and uninstall
+
+## 0. Manifest flow (recommended)
+
+If you have a running ShipIt-AI instance and your browser can reach it:
+
+1. Start ShipIt-AI normally (`pnpm start:all` or whichever start command you use).
+2. Open <http://localhost:3000/connectors> and click **Add connector** → **GitHub**.
+3. On step 1 (App), leave the default **Use one shared App for all my orgs** selected.
+4. Optionally enter your **App owner** org (e.g. `acme-corp`). Leave blank to create the App on your personal GitHub account; you can transfer it to an org later.
+5. Click **Create App on GitHub**. A new tab opens at github.com with a pre-filled "Register GitHub App" form. All the permissions and events ShipIt-AI needs are already checked.
+6. Click **Create GitHub App** at the bottom. GitHub redirects you back to a ShipIt-AI page that confirms the App ID, private key file path, and webhook secret file path.
+7. Set the webhook secret env var per the instructions on that page:
+   ```bash
+   export GITHUB_WEBHOOK_SECRET=$(cat ~/.shipit/keys/github-app-<id>.webhook-secret)
+   ```
+   Restart the API server so it picks up the env var.
+8. Click **Return to ShipIt-AI**. The wizard you left open has auto-detected the new App. Click **Next**, paste your installation ID (you'll get this when you install the App on a specific org — see §3 below), then finish the wizard.
+
+You're done. Skip to §3 for the install step. The wizard handles §5 (private key + App ID) automatically; you only need to wire the webhook secret per step 7 above.
+
+> **Where the manifest writes the key**: by default, `~/.shipit/keys/github-app-<id>.pem` with `chmod 600`. Override the directory with `SHIPIT_GITHUB_APP_KEY_DIR=/some/path` before starting the API server (useful in containers — mount a tmpfs or secrets volume there).
 
 ## 1. Pre-requisites
 
