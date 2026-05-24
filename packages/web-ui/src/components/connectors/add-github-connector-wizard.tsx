@@ -49,13 +49,17 @@ import {
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
   buildManifestLaunchUrl,
+  fetchPendingInstanceApp,
+  GitHubAppNotConfiguredError,
   type ConnectorAppOverride,
   type ConnectorEntities,
   type ConnectorScope,
+  type GitHubAppInstallation,
   type ProbeResult,
 } from '@/lib/api';
 import {
   useCreateConnector,
+  useGitHubAppInstallations,
   useGitHubAppStatus,
   useProbeConnector,
   useTriggerSync,
@@ -121,10 +125,22 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
 
   // Tracks whether the user has opened the manifest flow in another tab.
   // While true, we poll the global-App status so the wizard auto-detects
-  // when the callback finishes persisting the new App.
+  // when the callback finishes persisting the new App. Used by the
+  // shared card (target=global).
   const [manifestPending, setManifestPending] = useState(false);
-  // Optional org for the App's owner — empty means "personal account".
+  // Owner org for the manifest "Create App" button. Optional for the
+  // shared path (empty → personal account), required for the per-org
+  // path (the App is scoped to this org).
   const [manifestOwner, setManifestOwner] = useState('');
+
+  // Per-org manifest flow state. The wizard generates `perOrgNonce`
+  // when the user clicks "Create App on GitHub" in the per-org card;
+  // it's threaded through the launch URL so the manifest callback
+  // can stash credentials keyed by it. While `perOrgPending` is true,
+  // a polling effect calls /manifest/pending-instance/:nonce until
+  // the credentials arrive (or the user cancels).
+  const [perOrgPending, setPerOrgPending] = useState(false);
+  const [perOrgNonce, setPerOrgNonce] = useState<string | null>(null);
 
   const [installationId, setInstallationId] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
@@ -134,11 +150,15 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   const [scope, setScope] = useState<ConnectorScope>(DEFAULT_SCOPE);
   const [entities, setEntities] = useState<ConnectorEntities>(DEFAULT_ENTITIES);
 
-  // App-identity state. `mode` is 'shared' by default — the recommended
-  // path for most teams. `sharedAppId`/`sharedKeyPath` are populated only
-  // when the user is configuring the global App for the first time;
-  // `overrideAppId`/`overrideKeyPath` are populated only in per-org mode.
-  const [mode, setMode] = useState<AppMode>('shared');
+  // App-identity state. `mode` defaults to 'per-org' because GitHub Apps
+  // created via our manifest are private ("Only on this account") and
+  // can only be installed in the account that owns them. Sharing one App
+  // across multiple orgs requires marking it public on GitHub, which
+  // most teams reject (the App becomes discoverable on github.com/apps/
+  // and anyone can install it). Per-org keeps each App private and
+  // contained — the trade-off is one App to maintain per org. The
+  // shared path stays available for users who do want a public App.
+  const [mode, setMode] = useState<AppMode>('per-org');
   const [sharedAppId, setSharedAppId] = useState('');
   const [sharedKeyPath, setSharedKeyPath] = useState('');
   const [overrideAppId, setOverrideAppId] = useState('');
@@ -177,11 +197,15 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     setName('');
     setScope(DEFAULT_SCOPE);
     setEntities(DEFAULT_ENTITIES);
-    setMode('shared');
+    setMode('per-org');
     setSharedAppId('');
     setSharedKeyPath('');
     setOverrideAppId('');
     setOverrideKeyPath('');
+    setManifestOwner('');
+    setManifestPending(false);
+    setPerOrgPending(false);
+    setPerOrgNonce(null);
     probe.reset();
     create.reset();
     updateGlobalApp.reset();
@@ -240,7 +264,27 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   }, [manifestPending, appStatus, toast]);
 
   const installationValid = useMemo(() => looksLikeId(installationId), [installationId]);
-  const probeOk = probeResult?.ok === true;
+
+  // Installations picker — only useful when a shared App is already
+  // configured on the server, because we authenticate as that App's JWT
+  // to call `/app/installations`. In per-org mode (the user is bringing
+  // their own App PEM inline) we don't have the App keys server-side
+  // yet, so the picker can't help — they fall back to manual entry.
+  const pickerEligible = mode === 'shared' && globalConfigured;
+  const installationsQuery = useGitHubAppInstallations({
+    enabled: open && pickerEligible,
+  });
+
+  // Cross-reference the picked installation against the picker's data
+  // to detect when the user picked one that's already wired to another
+  // connector. Blocks Next so we don't create a duplicate.
+  const pickedInstallation = useMemo<GitHubAppInstallation | undefined>(
+    () => installationsQuery.data?.installations.find((i) => String(i.id) === installationId),
+    [installationsQuery.data, installationId],
+  );
+  const duplicateConnectorId = pickedInstallation?.usedByConnectorId ?? null;
+
+  const probeOk = probeResult?.ok === true && !duplicateConnectorId;
   const orgValid = !!org.trim();
   const idValid = connectorId.trim().length > 0 && /^[a-z0-9-]+$/.test(connectorId);
   const nameValid = name.trim().length > 0;
@@ -277,9 +321,69 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     setManifestPending(true);
   };
 
-  const handleProbe = async () => {
-    if (!installationValid) return;
-    const result = await probe.mutateAsync({ installationId, app: effectiveOverride });
+  // Per-org variant of the manifest flow. Generates a wizard-side
+  // nonce, opens the launch URL with target=instance, and arms the
+  // polling effect below — when the callback stashes credentials in
+  // the pending-instance map, the next poll claims them and fills the
+  // override fields. The user never has to copy-paste anything.
+  const handleCreateInstanceApp = () => {
+    const owner = manifestOwner.trim();
+    if (!owner) return;
+    const nonce =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const url = buildManifestLaunchUrl({
+      ownerOrg: owner,
+      target: 'instance',
+      nonce,
+    });
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setPerOrgNonce(nonce);
+    setPerOrgPending(true);
+  };
+
+  // Poll for pending-instance credentials. 2-second cadence matches the
+  // global-App polling under the shared flow. Stops when credentials
+  // arrive, the user cancels, or the dialog closes.
+  useEffect(() => {
+    if (!perOrgPending || !perOrgNonce || !open) return;
+    let cancelled = false;
+    const handle = setInterval(() => {
+      void (async () => {
+        try {
+          const creds = await fetchPendingInstanceApp(perOrgNonce);
+          if (cancelled || !creds) return;
+          setOverrideAppId(creds.appId);
+          setOverrideKeyPath(creds.privateKeyPath);
+          setPerOrgPending(false);
+          setPerOrgNonce(null);
+          setProbeResult(null);
+          toast({
+            variant: 'ok',
+            title: 'GitHub App created',
+            description: `App ${creds.appName} (id ${creds.appId}) credentials attached. Continue the wizard.`,
+          });
+        } catch {
+          // Network blip — keep polling. The TTL on the pending entry
+          // is 15 minutes; the user can cancel via the link below.
+        }
+      })();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [perOrgPending, perOrgNonce, open, toast]);
+
+  // Accepts an explicit id so the installation picker can fire the probe
+  // in the same tick as `setInstallationId` — React state updates haven't
+  // applied yet at the call site, so reading `installationId` from state
+  // would race against the click handler.
+  const handleProbe = async (idOverride?: string) => {
+    const id = idOverride ?? installationId;
+    if (!looksLikeId(id)) return;
+    const result = await probe.mutateAsync({ installationId: id, app: effectiveOverride });
     setProbeResult(result);
   };
 
@@ -356,20 +460,134 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
             >
               GitHub App
             </a>
-            . Most teams use one shared App for all their orgs — pick the second option only if you
-            need blast-radius isolation between orgs (e.g. dev vs prod).
+            . The recommended path is one App per org — each App stays private to its owner account,
+            which is GitHub&apos;s default ("Only on this account"). The shared path needs you to
+            make the App <strong>public</strong> in GitHub so it can be installed on accounts you
+            don&apos;t own.
           </Banner>
+
+          <AppModeCard
+            selected={mode === 'per-org'}
+            title="One App for this org"
+            recommended
+            description={
+              globalConfigured
+                ? 'Create or paste credentials for a dedicated App scoped to this org. The App stays private ("Only on this account") and the override is stored on this connector only.'
+                : 'Create or paste credentials for a GitHub App that lives in this org. Recommended — the App stays private ("Only on this account") and a leaked key only reads this one org.'
+            }
+            onSelect={() => setMode('per-org')}
+          >
+            {mode === 'per-org' && (
+              <>
+                {/* Per-org manifest flow: same one-click create as
+                    shared, but the callback stashes credentials in a
+                    per-instance pending slot keyed by `perOrgNonce`
+                    instead of writing to the global App slot. The
+                    polling effect above watches that slot and fills
+                    the override fields below when the callback fires. */}
+                <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3">
+                  <div className="text-text text-[12px] font-medium">
+                    Create the App in this org{' '}
+                    <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
+                      Recommended
+                    </span>
+                  </div>
+                  <p className="text-text-muted text-[12px]">
+                    Opens GitHub with a pre-filled "Register GitHub App" form scoped to your org.
+                    The App stays private ("Only on this account"). After you click Create on
+                    GitHub, the wizard auto-fills the App ID and private- key path below.
+                  </p>
+                  <Field
+                    label="Org login"
+                    required
+                    hint="GitHub org login — the slug after github.com/, e.g. `acme-corp`. The org must already exist and you must be an admin."
+                  >
+                    {(p) => (
+                      <Input
+                        {...p}
+                        placeholder="acme-corp"
+                        value={manifestOwner}
+                        onChange={(e) => setManifestOwner(e.target.value)}
+                        disabled={perOrgPending}
+                      />
+                    )}
+                  </Field>
+                  <p className="text-text-muted text-[11px]">
+                    Will open:{' '}
+                    <code className="text-text">
+                      {manifestOwner.trim()
+                        ? `github.com/organizations/${manifestOwner.trim()}/settings/apps/new`
+                        : '— enter an org login first —'}
+                    </code>
+                  </p>
+                  <Button
+                    onClick={handleCreateInstanceApp}
+                    disabled={!manifestOwner.trim() || perOrgPending}
+                  >
+                    {perOrgPending ? (
+                      <>
+                        <Spinner size="sm" /> Waiting for GitHub…
+                      </>
+                    ) : (
+                      'Create App on GitHub'
+                    )}
+                  </Button>
+                  {perOrgPending && (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-text-muted text-[11px]">
+                        A new tab is open at github.com. Complete the create flow there — this page
+                        polls every 2 s and auto-fills credentials below when ready.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPerOrgPending(false);
+                          setPerOrgNonce(null);
+                        }}
+                        className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Manual paste fallback: collapsed because the manifest
+                    path is the recommended one. Stays visible for users
+                    who already have an App or for recovery if the
+                    callback failed to stash credentials. */}
+                <details className="border-border bg-panel-2 rounded border">
+                  <summary className="text-text-muted cursor-pointer px-3 py-2 text-[12px]">
+                    I already have an App — paste credentials manually
+                  </summary>
+                  <div className="px-3 pb-3">
+                    <SharedAppFields
+                      appId={overrideAppId}
+                      keyPath={overrideKeyPath}
+                      onAppId={(v) => {
+                        setOverrideAppId(v);
+                        setProbeResult(null);
+                      }}
+                      onKeyPath={(v) => {
+                        setOverrideKeyPath(v);
+                        setProbeResult(null);
+                      }}
+                    />
+                  </div>
+                </details>
+              </>
+            )}
+          </AppModeCard>
 
           <AppModeCard
             selected={mode === 'shared'}
             title={
-              globalConfigured ? 'Use the shared GitHub App' : 'Use one shared App for all my orgs'
+              globalConfigured ? 'Use the shared GitHub App' : 'Use one shared App across orgs'
             }
-            recommended
             description={
               globalConfigured
-                ? 'This connector will use the App already configured on the server.'
-                : 'You’ll set this up once — future connectors can reuse the same App without re-entering credentials.'
+                ? 'This connector will use the App already configured on the server. Requires the App to be marked public in GitHub.'
+                : 'One App, installed in many orgs. Saves setup work but requires you to mark the App public in GitHub so it can be installed on accounts you don’t own — the App becomes discoverable on github.com/apps/<slug>.'
             }
             onSelect={() => setMode('shared')}
           >
@@ -496,31 +714,16 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
             )}
           </AppModeCard>
 
-          <AppModeCard
-            selected={mode === 'per-org'}
-            title="Use a separate App for this org"
-            description={
-              globalConfigured
-                ? 'Override the shared App with a dedicated one. The override is stored on this connector only.'
-                : 'Skip configuring a shared App — use these credentials for this org only.'
-            }
-            onSelect={() => setMode('per-org')}
-          >
-            {mode === 'per-org' && (
-              <SharedAppFields
-                appId={overrideAppId}
-                keyPath={overrideKeyPath}
-                onAppId={(v) => {
-                  setOverrideAppId(v);
-                  setProbeResult(null);
-                }}
-                onKeyPath={(v) => {
-                  setOverrideKeyPath(v);
-                  setProbeResult(null);
-                }}
-              />
-            )}
-          </AppModeCard>
+          {mode === 'shared' && (
+            <Banner tone="warn">
+              <strong>Reminder:</strong> sharing one App across orgs requires marking it{' '}
+              <strong>public</strong> in GitHub (App settings → "Where can this GitHub App be
+              installed?" → <em>Any account</em>). Public Apps are listed on{' '}
+              <code>github.com/apps/&lt;slug&gt;</code> and anyone with the link can install them on
+              their own accounts. If that&apos;s not acceptable, switch back to{' '}
+              <strong>One App for this org</strong>.
+            </Banner>
+          )}
         </div>
       ),
     },
@@ -528,72 +731,50 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       id: 'connect',
       label: 'Connect',
       // Advances only after a successful probe — proves credentials work
-      // before the user spends time on org/scope decisions.
+      // before the user spends time on org/scope decisions. The duplicate
+      // guard inside `probeOk` also blocks here so two connector instances
+      // can't claim the same installation.
       canAdvance: () => probeOk,
       content: (
         <div className="flex flex-col gap-3">
-          <Field
-            label="Installation ID"
-            required
-            hint="Numeric ID for THIS org's install of the App. One installation = one connector instance."
-          >
-            {(p) => (
-              <Input
-                {...p}
-                placeholder="12345678"
-                value={installationId}
-                onChange={(e) => {
-                  setInstallationId(e.target.value);
-                  setProbeResult(null);
-                }}
-              />
-            )}
-          </Field>
-          {/* Two paths: first-time install (just click Install on the
-              App's page, the resulting URL contains the ID) and recovery
-              (find a previously-installed App via Settings → Configure).
-              The latter is easy to miss — GitHub doesn't surface the
-              installation ID on any single App-overview page. */}
-          <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3 text-[12px]">
-            <div className="text-text font-medium">Where to find it</div>
-            <div className="text-text-muted">
-              <strong className="text-text">If you haven't installed the App yet:</strong> go to{' '}
-              <code>github.com/apps/&lt;your-app-name&gt;/installations/new</code>, pick the org or
-              user, click <strong>Install</strong>. The URL after install ends in the numeric ID.
-            </div>
-            <div className="text-text-muted">
-              <strong className="text-text">If the App is already installed:</strong> the easiest
-              way back to the ID is via the <strong>Configure</strong> link.
-              <ul className="mt-1 ml-4 list-disc">
-                <li>
-                  <em>Personal install</em>: github.com → your profile menu →{' '}
-                  <strong>Settings</strong> → <strong>Applications</strong> (sidebar) →{' '}
-                  <strong>Installed GitHub Apps</strong> tab → click <strong>Configure</strong> next
-                  to your App.
-                </li>
-                <li>
-                  <em>Org install</em>: the org's page → <strong>Settings</strong> →{' '}
-                  <strong>Third-party Access</strong> → <strong>GitHub Apps</strong> → click{' '}
-                  <strong>Configure</strong> next to your App.
-                </li>
-              </ul>
-              Either way, the URL becomes <code>.../settings/installations/&lt;ID&gt;</code> — the
-              trailing number is what you paste here.
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            onClick={handleProbe}
-            disabled={!installationValid || !appStepValid || probe.isPending}
-          >
-            {probe.isPending ? (
-              <>
-                <Spinner size="sm" /> Testing…
-              </>
-            ) : (
-              'Test connection'
-            )}
-          </Button>
+          {pickerEligible ? (
+            <InstallationPicker
+              query={installationsQuery}
+              selectedId={installationId}
+              onSelect={(inst) => {
+                const id = String(inst.id);
+                setInstallationId(id);
+                setProbeResult(null);
+                // Probe immediately — saves the user a "Test connection"
+                // click since the picker selection already implies intent.
+                void handleProbe(id);
+              }}
+            />
+          ) : (
+            <ManualInstallationEntry
+              value={installationId}
+              onChange={(v) => {
+                setInstallationId(v);
+                setProbeResult(null);
+              }}
+              onTest={() => void handleProbe()}
+              testing={probe.isPending}
+              disabled={!installationValid || !appStepValid}
+              // In per-org mode, link the user to the App they're about
+              // to override (the URL we'd use otherwise comes from the
+              // installations endpoint, which isn't queried in this mode).
+              installUrl={null}
+            />
+          )}
+
+          {duplicateConnectorId && (
+            <Banner tone="warn">
+              This installation is already connected to <code>{duplicateConnectorId}</code>. Each
+              installation can back only one connector — pick a different org or remove the existing
+              connector first.
+            </Banner>
+          )}
+
           {probeResult && !probeResult.ok && (
             <Banner tone="err">
               <strong>{probeResult.code ?? 'PROBE_FAILED'}:</strong>{' '}
@@ -620,6 +801,31 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                 </div>
               )}
             </Banner>
+          )}
+
+          {/* Advanced fallback: keeps the manual ID flow accessible from
+              the picker view too. Required for users whose picker call
+              fails (network, GitHub rate limits) and for any edge case
+              where the listed installations don't include the target. */}
+          {pickerEligible && (
+            <details className="border-border bg-panel-2 rounded border">
+              <summary className="text-text-muted cursor-pointer px-3 py-2 text-[12px]">
+                I don&apos;t see my org — paste an installation ID manually
+              </summary>
+              <div className="px-3 pb-3">
+                <ManualInstallationEntry
+                  value={installationId}
+                  onChange={(v) => {
+                    setInstallationId(v);
+                    setProbeResult(null);
+                  }}
+                  onTest={() => void handleProbe()}
+                  testing={probe.isPending}
+                  disabled={!installationValid || !appStepValid}
+                  installUrl={installationsQuery.data?.installUrl ?? null}
+                />
+              </div>
+            </details>
           )}
         </div>
       ),
@@ -936,6 +1142,198 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
         {label}
       </span>
       <span className="text-text font-mono">{value}</span>
+    </div>
+  );
+}
+
+// Picks an org from the App's actual installations. The previous "paste
+// an installation ID" textbox was the #1 source of "I tested against the
+// wrong org" confusion — the user pasted org A's ID into a wizard meant
+// for org B because there was no way to enumerate installations.
+function InstallationPicker({
+  query,
+  selectedId,
+  onSelect,
+}: {
+  query: ReturnType<typeof useGitHubAppInstallations>;
+  selectedId: string;
+  onSelect: (inst: GitHubAppInstallation) => void;
+}) {
+  const data = query.data;
+  const notConfigured = query.error instanceof GitHubAppNotConfiguredError;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col">
+          <div className="text-text text-[13px] font-medium">Pick the org to connect</div>
+          <div className="text-text-muted text-[11px]">
+            One installation = one connector instance.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void query.refetch()}
+            disabled={query.isFetching}
+            className="text-text-muted hover:text-text text-[11px] underline disabled:opacity-50"
+          >
+            {query.isFetching ? 'Refreshing…' : 'Refresh'}
+          </button>
+          {data?.installUrl && (
+            <a
+              href={data.installUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="border-border-strong text-text hover:bg-panel-2 rounded-xs border px-2 py-1 text-[12px]"
+            >
+              Install in another org ↗
+            </a>
+          )}
+        </div>
+      </div>
+
+      {query.isLoading && (
+        <div className="text-text-muted flex items-center gap-2 text-[12px]">
+          <Spinner size="sm" /> Loading installations…
+        </div>
+      )}
+
+      {query.isError && !notConfigured && (
+        <Banner tone="err">
+          Could not list App installations: {(query.error as Error).message}. Use the manual entry
+          below.
+        </Banner>
+      )}
+
+      {data && data.installations.length === 0 && (
+        <Banner tone="warn">
+          <strong>{data.appName || 'The App'}</strong> isn&apos;t installed in any organization yet.
+          Click <strong>Install in another org</strong> above to add it where you want to sync —
+          when the install completes and you return to this tab, the list refreshes automatically.
+        </Banner>
+      )}
+
+      {data?.installations.map((inst) => {
+        const used = inst.usedByConnectorId !== null;
+        const selected = String(inst.id) === selectedId;
+        return (
+          <button
+            key={inst.id}
+            type="button"
+            onClick={() => onSelect(inst)}
+            aria-pressed={selected}
+            className={
+              'border-border bg-panel hover:bg-panel-2 focus-visible:ring-accent-dim ' +
+              'flex items-center gap-3 rounded-md border px-3 py-2 text-left outline-none ' +
+              'transition-colors focus-visible:ring-[3px] ' +
+              (selected ? 'border-accent bg-accent-dim/40 hover:bg-accent-dim/40' : '') +
+              (used && !selected ? ' opacity-70' : '')
+            }
+          >
+            {inst.account.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={inst.account.avatarUrl}
+                alt=""
+                width={32}
+                height={32}
+                className="h-8 w-8 shrink-0 rounded-md"
+              />
+            ) : (
+              <span className="bg-panel-2 grid h-8 w-8 shrink-0 place-items-center rounded-md">
+                <IconGlyph name="github" size={16} />
+              </span>
+            )}
+            <div className="flex flex-1 flex-col">
+              <span className="text-text text-[13px] font-medium">{inst.account.login}</span>
+              <span className="text-text-muted text-[11px]">
+                {inst.account.type} · ID {inst.id} ·{' '}
+                {inst.repositorySelection === 'all' ? 'All repos' : 'Selected repos'}
+              </span>
+            </div>
+            {used && (
+              <span className="text-text-muted bg-panel-2 rounded px-2 py-0.5 font-mono text-[10px] tracking-[1.2px] uppercase">
+                Used by {inst.usedByConnectorId}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Manual installation-ID entry — the path the wizard used exclusively
+// before the picker existed. Still required for per-org override mode
+// (no global App keys server-side → can't list installations) and as a
+// fallback when the picker call fails or omits the target org.
+function ManualInstallationEntry({
+  value,
+  onChange,
+  onTest,
+  testing,
+  disabled,
+  installUrl,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onTest: () => void;
+  testing: boolean;
+  disabled: boolean;
+  installUrl: string | null;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <Field
+        label="Installation ID"
+        required
+        hint="Numeric ID for THIS org's install of the App. One installation = one connector instance."
+      >
+        {(p) => (
+          <Input
+            {...p}
+            placeholder="12345678"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3 text-[12px]">
+        <div className="text-text font-medium">Where to find it</div>
+        <div className="text-text-muted">
+          <strong className="text-text">If you haven&apos;t installed the App yet:</strong>{' '}
+          {installUrl ? (
+            <>
+              open{' '}
+              <a href={installUrl} target="_blank" rel="noreferrer" className="text-text underline">
+                the App&apos;s install page
+              </a>
+            </>
+          ) : (
+            <>
+              go to <code>github.com/apps/&lt;your-app-name&gt;/installations/new</code>
+            </>
+          )}
+          , pick the org or user, click <strong>Install</strong>. The URL after install ends in the
+          numeric ID.
+        </div>
+        <div className="text-text-muted">
+          <strong className="text-text">If the App is already installed:</strong> the easiest way
+          back to the ID is via the <strong>Configure</strong> link in GitHub&apos;s App settings —
+          the URL becomes <code>.../settings/installations/&lt;ID&gt;</code>, and the trailing
+          number is what you paste here.
+        </div>
+      </div>
+      <Button variant="outline" onClick={onTest} disabled={disabled || testing}>
+        {testing ? (
+          <>
+            <Spinner size="sm" /> Testing…
+          </>
+        ) : (
+          'Test connection'
+        )}
+      </Button>
     </div>
   );
 }

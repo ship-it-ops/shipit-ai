@@ -8,6 +8,7 @@ import {
   fetchConnectors,
   fetchConnectorRuns,
   fetchConnectorStatus,
+  fetchGitHubAppInstallations,
   fetchGitHubAppStatus,
   patchConnector,
   probeConnector,
@@ -136,5 +137,23 @@ export function useUpdateGitHubApp() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['github-app-status'] });
     },
+  });
+}
+
+// Installations of the shared GitHub App across orgs/accounts. Drives
+// the wizard's Connect-step picker — the user clicks an org instead of
+// pasting an installation ID. refetchOnWindowFocus is intentional: when
+// the user adds the App to a new org in a separate tab, returning to
+// the wizard tab auto-refreshes the list and the new org appears.
+export function useGitHubAppInstallations(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['github-app-installations'],
+    queryFn: fetchGitHubAppInstallations,
+    enabled: options.enabled ?? true,
+    refetchOnWindowFocus: true,
+    // Each call hits GitHub; keep the data fresh for 10s so back-to-back
+    // step transitions don't refetch needlessly.
+    staleTime: 10_000,
+    retry: false,
   });
 }

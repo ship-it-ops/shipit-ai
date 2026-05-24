@@ -61,10 +61,41 @@ The static template lives at `config/github-app-manifest.json`. The dynamic JSON
 - The Hosted SaaS tier ([saas-tier-shared-github-app](../plans/saas-tier-shared-github-app.md)) ships → the manifest flow stays as the path customers use _to_ the hosted control plane, but the conversion happens server-side on ship-it-ops infra instead of the customer's instance.
 - User OAuth lands ("Sign in with GitHub") → the conversion's `client_id` and `client_secret` outputs (which we currently discard) become useful and need a storage path.
 
+## Update 2026-05-24 — target-routing extension (per-org manifest flow)
+
+The launch endpoint now accepts `?target=global|instance` and (for
+`target=instance`) a `&nonce=<uuid>` the wizard supplies. The state
+token records both, and the callback routes the exchange result based
+on `target`:
+
+- `target=global` (default): existing behavior — `GitHubAppService.update()`
+  writes credentials to `connectors.github.app.*`. Used by the shared
+  card.
+- `target=instance`: write the PEM + webhook-secret sidecar to disk as
+  usual but DO NOT touch the global App slot. Stash credentials in an
+  in-memory `pendingInstance: Map<nonce, {appId, privateKeyPath, ...}>`
+  with the same 15-minute TTL as the state map.
+
+A new endpoint `GET /api/connectors/github/manifest/pending-instance/:nonce`
+returns + clears the pending entry (single-use). The wizard's per-org
+card generates a nonce client-side, threads it through the launch URL,
+and polls every 2 s while the user is in the GitHub tab. When the
+callback fires, the next poll claims the credentials and fills the
+`overrideAppId` + `overrideKeyPath` fields on the connector instance.
+
+This lets the per-org card offer the same one-click "Create App on
+GitHub" UX as the shared card, without ever writing to the global slot
+the user explicitly opted out of by picking per-org mode.
+
+The success page copy is also tailored: `target=instance` says "your
+wizard tab will fill these fields automatically — switch back" rather
+than "the shared GitHub App is now configured."
+
 ## Related
 
 - [github-connector-architecture-v1](./github-connector-architecture-v1.md) — auth model the manifest flow plugs into
-- [per-org-github-app-override](./per-org-github-app-override.md) — manifest flow targets the _global_ App; per-org overrides remain manual today
+- [per-org-github-app-override](./per-org-github-app-override.md) — per-org credentials live on the connector instance; the manifest flow can now target either slot
+- [per-org-github-app-is-default-not-shared](./per-org-github-app-is-default-not-shared.md) — why per-org is the wizard's recommended default and why the manifest flow had to learn about that
 - [live-reference-for-hot-reload](../patterns/live-reference-for-hot-reload.md) — why the callback can mutate `connectors.github.app.*` and have the scheduler pick it up without restart
 - [etag-optimistic-concurrency-for-editable-config](./etag-optimistic-concurrency-for-editable-config.md) — manifest callback deliberately bypasses If-Match (destructive overwrite is the intent)
 - [saas-tier-shared-github-app](../plans/saas-tier-shared-github-app.md) — future state where ship-it-ops owns the App centrally

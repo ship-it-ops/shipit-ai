@@ -399,11 +399,95 @@ export async function fetchGitHubAppStatus(): Promise<GitHubAppStatusWithHash> {
 // implementation that tried `manifest_url=...` produced an empty App-
 // creation form because GitHub silently ignored the param.
 
-export function buildManifestLaunchUrl(args: { ownerOrg?: string }): string {
+export function buildManifestLaunchUrl(args: {
+  ownerOrg?: string;
+  // 'global' writes credentials to connectors.github.app.* (shared App).
+  // 'instance' stashes them in a pending-instance slot keyed by `nonce`
+  // for the wizard's per-org card to claim and attach to a connector
+  // instance's `app` override. Default is global to preserve back-compat
+  // with the existing shared-mode flow.
+  target?: 'global' | 'instance';
+  nonce?: string;
+}): string {
   const qs = new URLSearchParams();
   if (args.ownerOrg?.trim()) qs.set('owner', args.ownerOrg.trim());
+  if (args.target === 'instance') {
+    qs.set('target', 'instance');
+    if (args.nonce) qs.set('nonce', args.nonce);
+  }
   const query = qs.toString();
   return `${API_URL}/api/connectors/github/manifest/launch${query ? `?${query}` : ''}`;
+}
+
+// Wizard's per-org card polls this with its nonce while the user is in
+// the GitHub tab. 404 = not ready yet (keep polling); 200 = creds
+// stashed by the manifest callback, ready to claim. Single-use on the
+// server side — once claimed the wizard owns the credentials.
+export interface PendingInstanceApp {
+  appId: string;
+  appName: string;
+  installUrl: string;
+  privateKeyPath: string;
+  webhookSecretPath: string;
+}
+
+export async function fetchPendingInstanceApp(nonce: string): Promise<PendingInstanceApp | null> {
+  const res = await fetch(
+    `${API_URL}/api/connectors/github/manifest/pending-instance/${encodeURIComponent(nonce)}`,
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`fetchPendingInstanceApp failed: ${res.status}`);
+  }
+  return (await res.json()) as PendingInstanceApp;
+}
+
+// ── GitHub App installations picker ─────────────────────────────────────
+// Powers the wizard's Connect step: rather than asking the user to paste
+// an installation ID found by hand in GitHub's UI, the wizard renders
+// the list returned here and lets them click an org. `usedByConnectorId`
+// flags installations already wired to a connector so the picker can
+// show a "Already used by X" pill and block duplicate creation.
+
+export interface GitHubAppInstallation {
+  id: number;
+  account: {
+    login: string;
+    type: 'User' | 'Organization';
+    avatarUrl: string;
+  };
+  targetType: 'User' | 'Organization';
+  repositorySelection: 'all' | 'selected';
+  usedByConnectorId: string | null;
+}
+
+export interface GitHubAppInstallationsResponse {
+  appSlug: string;
+  appName: string;
+  installUrl: string;
+  installations: GitHubAppInstallation[];
+}
+
+export class GitHubAppNotConfiguredError extends Error {
+  constructor() {
+    super('No global GitHub App is configured yet.');
+    this.name = 'GitHubAppNotConfiguredError';
+  }
+}
+
+export async function fetchGitHubAppInstallations(): Promise<GitHubAppInstallationsResponse> {
+  const res = await fetch(`${API_URL}/api/connectors/github/installations`);
+  if (res.status === 404) {
+    // App not configured yet — first-run state. Caller (the wizard) maps
+    // this to the "create an App first" copy on Step 1 rather than to a
+    // generic error banner.
+    throw new GitHubAppNotConfiguredError();
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `fetchGitHubAppInstallations failed: ${res.status}`);
+  }
+  return (await res.json()) as GitHubAppInstallationsResponse;
 }
 
 export async function updateGitHubApp(

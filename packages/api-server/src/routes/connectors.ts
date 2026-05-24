@@ -5,7 +5,7 @@
 // live GitHub API without writing anything.
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
-import { authenticateGitHubApp } from '@shipit-ai/connector-github';
+import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { resolveAppCredentials } from '@shipit-ai/shared';
 import {
   ConnectorVersionConflictError,
@@ -106,6 +106,112 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     return svc.status();
   });
 
+  // GET /api/connectors/github/installations — list every org/account the
+  // shared App is installed in, plus the install URL for adding a new one.
+  // The wizard's Connect step renders these as a picker so users don't
+  // have to hunt for an installation ID in GitHub's UI (the #1 source of
+  // "I picked the wrong org" confusion before this endpoint existed).
+  //
+  // Cross-references existing connector instances so each installation is
+  // tagged with `usedByConnectorId` — the wizard surfaces this as an
+  // "Already used by X" pill and a duplicate guard on the picker.
+  //
+  // Auth: app-JWT-only (no installation context) — required for the
+  // `/app` and `/app/installations` endpoints, which authenticate as the
+  // App itself rather than as one of its installations.
+  server.get('/github/installations', async (request, reply) => {
+    const appSvc = server.githubAppService;
+    if (!appSvc) {
+      return reply.status(503).send({
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'GitHub App service is not configured on this server.',
+        },
+      });
+    }
+    const appStatus = appSvc.status();
+    if (!appStatus.configured || !appStatus.id || !appStatus.privateKeyPath) {
+      return reply.status(404).send({
+        error: {
+          code: 'NO_APP_CONFIGURED',
+          message:
+            'No global GitHub App is configured yet. Complete the App step of the wizard first.',
+        },
+      });
+    }
+    let privateKey: string;
+    try {
+      privateKey = readFileSync(appStatus.privateKeyPath, 'utf-8');
+    } catch (err) {
+      return reply.status(400).send({
+        error: {
+          code: 'PRIVATE_KEY_UNREADABLE',
+          message: `Failed to read App private key at ${appStatus.privateKeyPath}: ${(err as Error).message}`,
+        },
+      });
+    }
+
+    const octokit = createAppJWTOctokit({ appId: appStatus.id, privateKey });
+    try {
+      const [appResp, instResp] = await Promise.all([
+        octokit.rest.apps.getAuthenticated(),
+        octokit.rest.apps.listInstallations({ per_page: 100 }),
+      ]);
+      const app = appResp.data;
+      const installs = instResp.data;
+      // Map installationId → connectorId for the "Already used by" pill.
+      // installationId is stored as a string on connector instances; cast
+      // GitHub's numeric id to string for the lookup.
+      const usedBy = new Map<string, string>();
+      for (const c of registry.list()) {
+        if (c.installationId) usedBy.set(c.installationId, c.id);
+      }
+      // Always use the slug-based PUBLIC install URL — appending
+      // /installations/new to html_url breaks for org-owned Apps because
+      // html_url is the App's settings page within the owner org
+      // (`/organizations/<org>/settings/apps/<slug>`), and GitHub redirects
+      // `/installations/new` on that URL to the EXISTING installation in
+      // that same org instead of showing the account picker. The public
+      // `/apps/<slug>/installations/new` form always shows the picker so
+      // the user can install into any org they admin.
+      const slug = app?.slug ?? '';
+      const installUrl = slug
+        ? `https://github.com/apps/${slug}/installations/new`
+        : `${app?.html_url ?? 'https://github.com'}/installations/new`;
+      return reply.send({
+        appSlug: slug,
+        appName: app?.name ?? '',
+        installUrl,
+        installations: installs.map((inst) => {
+          const account = inst.account as {
+            login?: string;
+            type?: string;
+            avatar_url?: string;
+          } | null;
+          const accountType = account?.type === 'User' ? 'User' : 'Organization';
+          return {
+            id: inst.id,
+            account: {
+              login: account?.login ?? 'unknown',
+              type: accountType as 'User' | 'Organization',
+              avatarUrl: account?.avatar_url ?? '',
+            },
+            targetType: (inst.target_type as 'User' | 'Organization') ?? accountType,
+            repositorySelection: (inst.repository_selection as 'all' | 'selected') ?? 'selected',
+            usedByConnectorId: usedBy.get(String(inst.id)) ?? null,
+          };
+        }),
+      });
+    } catch (err) {
+      request.log.error({ err }, 'installations: GitHub API failed');
+      const upstreamStatus = (err as { status?: number }).status;
+      const code = upstreamStatus === 401 ? 'BAD_PRIVATE_KEY' : 'GITHUB_API_ERROR';
+      return reply.status(502).send({
+        error: { code, message: (err as Error).message },
+      });
+    }
+  });
+
   // GET /api/connectors/github/manifest — JSON manifest spec, primarily
   // for inspection ("what does the wizard send to GitHub?"). NOT what
   // gets sent to GitHub — see /manifest/launch below for the actual
@@ -151,7 +257,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // Wizard's "Create App on GitHub" button just does
   // `window.open(this URL, '_blank')` — same-origin, no popup-blocker
   // issues, no async state token roundtrip needed in the click handler.
-  server.get<{ Querystring: { owner?: string } }>(
+  server.get<{ Querystring: { owner?: string; target?: string; nonce?: string } }>(
     '/github/manifest/launch',
     async (request, reply) => {
       const svc = server.githubAppManifestService;
@@ -170,7 +276,27 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
 
       const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
       const built = svc.buildManifest({ webhookUrl, redirectUrl });
-      const state = svc.issueState();
+      // Per-org card passes `target=instance&nonce=<uuid>` so the
+      // callback knows NOT to write credentials to the global slot
+      // (which would surprise users who picked per-org explicitly).
+      // Default is 'global' to preserve the existing shared-mode flow.
+      const target = request.query.target === 'instance' ? 'instance' : 'global';
+      const nonce = target === 'instance' ? (request.query.nonce ?? '').trim() : undefined;
+      // Nonce validation is loose — wizard generates a UUID, but we don't
+      // require any particular shape, just non-empty and reasonably
+      // bounded so an attacker can't blow up the pendingInstance map.
+      if (target === 'instance' && (!nonce || nonce.length < 8 || nonce.length > 128)) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderLaunchErrorHtml(
+              'Missing nonce',
+              'Target=instance launches require a nonce (8-128 chars) so the wizard can claim the credentials. Refresh the wizard and retry.',
+            ),
+          );
+      }
+      const state = svc.issueState({ target, nonce });
 
       // Owner: empty → personal account, otherwise the org login slug.
       // We validate softly (loose pattern) so a totally bogus value
@@ -245,7 +371,8 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
             }),
           );
       }
-      if (!svc.consumeState(state)) {
+      const stateInfo = svc.consumeState(state);
+      if (!stateInfo) {
         return reply
           .status(400)
           .type('text/html')
@@ -259,16 +386,28 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       }
 
       try {
-        const result = await svc.exchangeAndPersist(code);
+        const result = await svc.exchangeAndPersist(code, {
+          target: stateInfo.target,
+          nonce: stateInfo.nonce,
+        });
         // Compose the post-success page. Surface the PEM path, webhook
         // secret file, and install URL so the user has everything they
         // need to finish wiring up webhook delivery + close the loop.
+        // The body copy differs slightly between targets: for the
+        // global path the user needs to come back to the wizard which
+        // is polling app-status; for the instance path the wizard is
+        // polling the pending-instance endpoint with its nonce and
+        // will auto-fill the override fields when it sees the result.
+        const continueCopy =
+          stateInfo.target === 'instance'
+            ? `<p>Your wizard tab is polling for these credentials and will fill them into the per-org override fields automatically — switch back to it now.</p>`
+            : `<p>The shared GitHub App is now configured. Your wizard can continue.</p>`;
         return reply.type('text/html').send(
           renderCallbackHtml({
             ok: true,
             heading: `App "${escapeHtml(result.appName)}" created`,
             body: `
-              <p>The shared GitHub App is now configured. Your wizard can continue.</p>
+              ${continueCopy}
               <dl>
                 <dt>App ID</dt><dd><code>${escapeHtml(result.appId)}</code></dd>
                 <dt>Private key</dt><dd><code>${escapeHtml(result.privateKeyPath)}</code></dd>
@@ -297,6 +436,39 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
             }),
           );
       }
+    },
+  );
+
+  // GET /api/connectors/github/manifest/pending-instance/:nonce —
+  // claim credentials stashed by a target='instance' manifest callback.
+  // The wizard generates a nonce client-side, threads it through the
+  // launch URL, and polls this endpoint while the user is in the
+  // GitHub tab. When credentials are returned (200), the wizard fills
+  // the per-org `overrideAppId` + `overrideKeyPath` fields and clears
+  // the polling state. Single-use: a second GET for the same nonce
+  // returns 404.
+  server.get<{ Params: { nonce: string } }>(
+    '/github/manifest/pending-instance/:nonce',
+    async (request, reply) => {
+      const svc = server.githubAppManifestService;
+      if (!svc) {
+        return reply.status(503).send({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitHub App manifest service is not configured on this server.',
+          },
+        });
+      }
+      const claimed = svc.consumePendingInstance(request.params.nonce);
+      if (!claimed) {
+        // 404 is the polling signal — wizard keeps polling until
+        // either credentials arrive or it gives up (timeout). Not an
+        // error condition.
+        return reply.status(404).send({
+          error: { code: 'NOT_READY', message: 'No pending credentials for this nonce yet.' },
+        });
+      }
+      return reply.send(claimed);
     },
   );
 

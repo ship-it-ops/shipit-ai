@@ -67,8 +67,24 @@ export interface ConversionResult {
   webhookSecretPath: string;
 }
 
-// In-memory state token store. Map<token, { createdAt }>. 15-minute TTL.
+// In-memory state token store. Map<token, { createdAt, target, nonce? }>.
+// 15-minute TTL applies to both stores. `target` chooses where the
+// callback writes the credentials:
+//   - 'global':   GitHubAppService.update() → connectors.github.app.* (today's behavior)
+//   - 'instance': stash in pendingInstanceMap so the wizard can claim
+//                 them and attach to a connector instance's `app` override
 const STATE_TTL_MS = 15 * 60 * 1000;
+const PENDING_TTL_MS = 15 * 60 * 1000;
+
+export type ManifestTarget = 'global' | 'instance';
+
+export interface PendingInstanceApp {
+  appId: string;
+  appName: string;
+  privateKeyPath: string;
+  webhookSecretPath: string;
+  installUrl: string;
+}
 
 export class GitHubAppManifestService {
   private templatePath: string;
@@ -76,7 +92,14 @@ export class GitHubAppManifestService {
   private keyDir: string;
   private conversionEndpoint: (code: string) => string;
   private fetchImpl: typeof fetch;
-  private states = new Map<string, { createdAt: number }>();
+  private states = new Map<string, { createdAt: number; target: ManifestTarget; nonce?: string }>();
+  // Keyed by the client-supplied `nonce` (uuid). The wizard generates
+  // the nonce, hands it to the launch URL, the manifest service round-
+  // trips it through the state token, and the callback stashes the
+  // exchange result here when target='instance'. The wizard polls
+  // GET /manifest/pending-instance/:nonce to claim the credentials.
+  // Single-use: claimed → deleted.
+  private pendingInstance = new Map<string, { createdAt: number; result: PendingInstanceApp }>();
 
   constructor(opts: ManifestServiceOptions) {
     this.templatePath = opts.templatePath;
@@ -137,29 +160,63 @@ export class GitHubAppManifestService {
   // App" page; GitHub echoes it back on the callback so we can verify
   // the round-trip wasn't tampered with. One-time-use — consumed on
   // callback validation.
-  issueState(): string {
+  //
+  // `target` decides where the callback writes credentials — defaults
+  // to 'global' for back-compat with the original shared-App flow. The
+  // optional `nonce` (a wizard-generated UUID for target='instance') is
+  // echoed back via consumeState so the callback can stash credentials
+  // in the pending map under a key the wizard knows.
+  issueState(opts: { target?: ManifestTarget; nonce?: string } = {}): string {
     this.gc();
     const token = randomBytes(24).toString('hex');
-    this.states.set(token, { createdAt: Date.now() });
+    this.states.set(token, {
+      createdAt: Date.now(),
+      target: opts.target ?? 'global',
+      nonce: opts.nonce,
+    });
     return token;
   }
 
-  // Returns true if the state was issued by us and hasn't expired.
-  // Consumes the state — re-validating the same token returns false.
-  consumeState(token: string | undefined): boolean {
-    if (!token) return false;
+  // Validates + consumes a state token. Returns `null` if unknown or
+  // expired; otherwise returns the recorded target/nonce so the callback
+  // can route the exchange result correctly.
+  consumeState(token: string | undefined): { target: ManifestTarget; nonce?: string } | null {
+    if (!token) return null;
     this.gc();
     const entry = this.states.get(token);
-    if (!entry) return false;
+    if (!entry) return null;
     this.states.delete(token);
-    return true;
+    return { target: entry.target, nonce: entry.nonce };
+  }
+
+  // Claim credentials stashed by a target='instance' exchange. The
+  // wizard polls this with its nonce; returns the credentials exactly
+  // once. After the wizard reads them they're gone — the wizard then
+  // attaches them to the connector instance it creates.
+  consumePendingInstance(nonce: string | undefined): PendingInstanceApp | null {
+    if (!nonce) return null;
+    this.gc();
+    const entry = this.pendingInstance.get(nonce);
+    if (!entry) return null;
+    this.pendingInstance.delete(nonce);
+    return entry.result;
   }
 
   // Exchange the one-time `code` GitHub sent on the callback for the
-  // App's credentials, write the PEM to disk, persist via GitHubAppService.
+  // App's credentials, write the PEM to disk, and persist depending on
+  // `target`:
+  //   - 'global'   → GitHubAppService.update() writes connectors.github.app.*
+  //   - 'instance' → stash in pendingInstance map; the wizard polls
+  //                  /pending-instance/:nonce to claim and attach to
+  //                  the connector instance's `app` override.
+  //
   // The conversion code is single-use and expires within ~60 seconds —
   // network blips here just mean the user re-runs the flow.
-  async exchangeAndPersist(code: string): Promise<ConversionResult> {
+  async exchangeAndPersist(
+    code: string,
+    opts: { target?: ManifestTarget; nonce?: string } = {},
+  ): Promise<ConversionResult> {
+    const target: ManifestTarget = opts.target ?? 'global';
     const url = this.conversionEndpoint(code);
     const res = await this.fetchImpl(url, {
       method: 'POST',
@@ -180,6 +237,7 @@ export class GitHubAppManifestService {
     const payload = (await res.json()) as {
       id?: number | string;
       name?: string;
+      slug?: string;
       html_url?: string;
       pem?: string;
       webhook_secret?: string | null;
@@ -210,27 +268,66 @@ export class GitHubAppManifestService {
     writeFileSync(secretPath, webhookSecret + '\n', { encoding: 'utf-8', mode: 0o600 });
     chmodSync(secretPath, 0o600);
 
-    // Persist via the existing service so the in-memory config + the
-    // YAML stay in sync (and the scheduler picks up the new credentials
-    // on its next poll). No ETag — manifest flow is a destructive
-    // overwrite by design.
-    await this.appService.update({ id: appId, privateKeyPath: keyPath }, undefined);
+    const appName = payload.name ?? `App ${appId}`;
+    // BASE URL — the callback HTML appends "/installations/new". Use
+    // the slug-based public form so org-owned Apps don't get redirected
+    // by GitHub to the App's settings-within-the-owner-org page
+    // (which then redirects /installations/new to the existing
+    // installation in that org, defeating the "install in a new org"
+    // CTA). See the GET /installations route for the same fix.
+    const installUrl = payload.slug
+      ? `https://github.com/apps/${payload.slug}`
+      : (payload.html_url ?? `https://github.com/apps/${payload.name ?? ''}`);
+
+    if (target === 'global') {
+      // Persist via the existing service so the in-memory config + the
+      // YAML stay in sync (and the scheduler picks up the new credentials
+      // on its next poll). No ETag — manifest flow is a destructive
+      // overwrite by design.
+      await this.appService.update({ id: appId, privateKeyPath: keyPath }, undefined);
+    } else {
+      // Per-org / per-instance target: never touch the global App slot.
+      // Stash the credentials so the wizard's create flow can attach
+      // them to the connector instance's `app` override field. Keyed by
+      // the wizard-supplied nonce; without it the credentials would be
+      // unclaimable (the App still exists on GitHub — the user can
+      // recover by switching to the manual-paste flow with the appId
+      // and keyPath from the success page).
+      if (opts.nonce) {
+        this.pendingInstance.set(opts.nonce, {
+          createdAt: Date.now(),
+          result: {
+            appId,
+            appName,
+            privateKeyPath: keyPath,
+            webhookSecretPath: secretPath,
+            installUrl,
+          },
+        });
+      }
+    }
 
     return {
       appId,
-      appName: payload.name ?? `App ${appId}`,
-      installUrl: payload.html_url ?? `https://github.com/apps/${payload.name ?? ''}`,
+      appName,
+      installUrl,
       privateKeyPath: keyPath,
       webhookSecretPath: secretPath,
     };
   }
 
-  // Drop expired state tokens. Called opportunistically — bounded by
-  // the rate at which states are issued/consumed; no separate timer.
+  // Drop expired state tokens AND unclaimed pending-instance entries.
+  // Called opportunistically — bounded by the rate at which states are
+  // issued/consumed; no separate timer.
   private gc(): void {
-    const cutoff = Date.now() - STATE_TTL_MS;
+    const now = Date.now();
+    const stateCutoff = now - STATE_TTL_MS;
     for (const [token, entry] of this.states) {
-      if (entry.createdAt < cutoff) this.states.delete(token);
+      if (entry.createdAt < stateCutoff) this.states.delete(token);
+    }
+    const pendingCutoff = now - PENDING_TTL_MS;
+    for (const [nonce, entry] of this.pendingInstance) {
+      if (entry.createdAt < pendingCutoff) this.pendingInstance.delete(nonce);
     }
   }
 }

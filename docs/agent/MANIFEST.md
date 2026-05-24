@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-24 | Total notes: 21
+Last updated: 2026-05-24 | Total notes: 23
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -27,6 +27,8 @@ Last updated: 2026-05-24 | Total notes: 21
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
 - [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-05-24 | pnpm.overrides + direct bumps; dismiss Fastify v5-only alerts
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
+- [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
+- [per-org-github-app-is-default-not-shared](decisions/per-org-github-app-is-default-not-shared.md) | decision | active | core | 2026-05-24 | wizard defaults to per-org App; shared needs public App on GitHub
 
 ## Patterns
 
