@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseDocument } from 'yaml';
-import type { ConnectorInstanceConfig, GitHubConnectorConfig } from '@shipit-ai/shared';
+import type { ConnectorInstanceConfig, GitHubConnectorConfig, LastRun } from '@shipit-ai/shared';
 import { connectorInstanceSchema } from '@shipit-ai/shared';
+import { InMemoryConnectorRunStore, type ConnectorRunStore } from './connector-run-store.js';
 
 // ── ETag conflict ─────────────────────────────────────────────────────────
 // Mirrors SchemaVersionConflictError so the routes can map both to HTTP 409
@@ -83,6 +84,10 @@ export interface ConnectorRegistryOptions {
   localConfigPath: string;
   initial: ConnectorInstanceConfig[];
   runner?: ConnectorRunner;
+  // Where run history lives. Defaults to an in-memory store so unit tests
+  // can construct a registry without Redis. Production wiring in
+  // packages/api-server/src/index.ts supplies a RedisConnectorRunStore.
+  runStore?: ConnectorRunStore;
 }
 
 // Canonical-JSON serialization for hashing. JSON.stringify with sorted keys
@@ -129,13 +134,27 @@ export class ConnectorRegistry {
   private localConfigPath: string;
   private connectors = new Map<string, ConnectorInstanceConfig>();
   private runner: ConnectorRunner;
+  private runStore: ConnectorRunStore;
 
   constructor(opts: ConnectorRegistryOptions) {
     this.localConfigPath = opts.localConfigPath;
     this.runner = opts.runner ?? new NoopRunner();
+    this.runStore = opts.runStore ?? new InMemoryConnectorRunStore();
     for (const c of opts.initial) {
-      this.connectors.set(c.id, c);
+      // Strip lastRuns from any legacy YAML that still carries it — runs
+      // live in `runStore` now (Redis in prod, in-memory in tests). Keeping
+      // them on the in-memory config object would re-emit them on the next
+      // persist() round trip, undoing the migration.
+      this.connectors.set(c.id, { ...c, lastRuns: [] });
     }
+  }
+
+  // Exposed so callers (routes, scheduler) can read run history without
+  // reaching into private state. Always returns the same instance the
+  // registry uses internally so writes via recordRun + reads here are
+  // guaranteed consistent.
+  getRunStore(): ConnectorRunStore {
+    return this.runStore;
   }
 
   // Bootstraps the runner for already-loaded connectors. Called once after
@@ -266,6 +285,10 @@ export class ConnectorRegistry {
     this.connectors.delete(id);
     await this.persist();
     await this.runner.stop(id);
+    // Drop the connector's run history; otherwise a future connector
+    // with the same id would inherit stale telemetry from a different
+    // installation.
+    await this.runStore.clear(id);
   }
 
   async triggerSync(id: string, mode: 'full' | 'incremental' = 'full'): Promise<SyncRuntimeStatus> {
@@ -278,25 +301,32 @@ export class ConnectorRegistry {
     return this.runner.getStatus(id);
   }
 
-  // Appends a run summary to the connector's history (cap at 20, newest
-  // first), then persists. Called by the runner when a sync run finishes so
-  // the UI's /runs tab and YAML stay in sync.
-  async recordRun(id: string, run: GitHubConnectorConfig['lastRuns'][number]): Promise<void> {
-    const existing = this.get(id);
-    const lastRuns = [run, ...(existing.lastRuns ?? [])].slice(0, 20);
-    const next = parseConnectorInstance({ ...existing, lastRuns });
-    this.connectors.set(id, next);
-    await this.persist();
+  // Appends a run summary to the connector's history. The history lives in
+  // the run store (Redis in prod, in-memory in tests) — NOT in the
+  // shipit.config.local.yaml that holds user-edited configuration. See
+  // docs/agent/decisions/connector-run-storage-redis-not-yaml.md for the
+  // rationale; the short version is "every poll wrote to YAML, which is
+  // operational telemetry stomping on user-edited config".
+  async recordRun(id: string, run: LastRun): Promise<void> {
+    this.get(id); // 404 if the connector vanished mid-run
+    await this.runStore.recordRun(id, run);
   }
 
   // ── Persistence ───────────────────────────────────────────────────────
   // Round-trip through yaml's Document API so comments and unrelated keys
   // survive untouched. Atomic via tempfile + rename so a mid-write crash
   // leaves the active file readable.
+  //
+  // `lastRuns` is intentionally stripped from the serialized output — run
+  // history is operational state owned by the run store, not user-edited
+  // configuration. Emitting it here would (a) re-introduce the write
+  // contention this refactor solved, and (b) leak operational telemetry
+  // into a file users version-control and hand-edit.
   private async persist(): Promise<void> {
     const raw = existsSync(this.localConfigPath) ? readFileSync(this.localConfigPath, 'utf-8') : '';
     const doc = raw.trim() ? parseDocument(raw) : parseDocument('');
-    doc.setIn(['connectors', 'instances'], this.list());
+    const instancesForYaml = this.list().map(({ lastRuns: _ignored, ...rest }) => rest);
+    doc.setIn(['connectors', 'instances'], instancesForYaml);
     const next = String(doc);
     const tmp = join(
       dirname(this.localConfigPath),

@@ -1,0 +1,85 @@
+name: Feature request
+description: Propose a new capability, UI improvement, or workflow change.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. We weigh feature requests against scope, maintenance cost, and the broader roadmap.
+        If you're requesting **a new data-source connector** (Jira, GitLab, Linear, etc.), please use the "Connector request" template instead — it asks the specific questions we need to scope connector work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the *outcome* you want. Don't jump straight to a proposed solution — the why matters more than the how.
+      placeholder: |
+        I want to see at a glance which services in my org haven't been deployed in the last 30 days, so I can prioritize cleanup.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Optional. If you have an idea for how this should work, sketch it. UI mockups, API shapes, or example queries all welcome.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: What workarounds exist today, and why aren't they sufficient?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface would this touch?
+      multiple: true
+      options:
+        - Web UI (graph explorer, dashboard, schema editor, etc.)
+        - API server endpoints
+        - MCP tools (for Claude / agent integration)
+        - Connector — a new data source (use connector_request.yml instead if so)
+        - Connector — improvements to an existing one
+        - Core writer / ingest pipeline
+        - Schema or canonical-id model
+        - CLI / scripts
+        - Docs / examples
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: Urgency
+      description: Honest self-assessment. We use this to triage, not to gatekeep.
+      options:
+        - Nice to have — would use it if it shipped
+        - Important — would meaningfully improve my workflow
+        - Blocking — I can't adopt ShipIt-AI without this
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Org size, use case, links to similar features in other tools, anything else that helps us understand the request.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checklist
+      options:
+        - label: I searched [open issues](https://github.com/ship-it-ops/ShipIt-AI/issues) and [discussions](https://github.com/ship-it-ops/ShipIt-AI/discussions) and didn't find a duplicate.
+          required: true
+        - label: I've described the *problem*, not just a solution.
+          required: true

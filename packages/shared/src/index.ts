@@ -82,6 +82,7 @@ export type {
   ConfigPaths,
   ConnectorInstanceConfig,
   GitHubConnectorConfig,
+  LastRun,
   ResolvedAppCredentials,
   AppLike,
 } from './config/index.js';

@@ -1,0 +1,52 @@
+# CODEOWNERS — auto-request review for matching paths. Patterns follow
+# the .gitignore syntax; last matching rule wins. See:
+#   https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+#
+# Maintainers: keep the "default" rule above all path-specific rules so
+# unowned files still page someone.
+
+# ── Default owner for everything not matched below ──────────────────────
+*                                       @Mohamed-E
+
+# ── Repo-wide governance & security-sensitive files ─────────────────────
+# Anything that controls how the project gets built, deployed, or
+# secured needs an admin's eyes.
+/.github/                               @Mohamed-E @ship-it-ops/admins
+/.github/workflows/                     @Mohamed-E @ship-it-ops/admins
+/.github/CODEOWNERS                     @Mohamed-E @ship-it-ops/admins
+/.github/dependabot.yml                 @Mohamed-E @ship-it-ops/admins
+/SECURITY.md                            @Mohamed-E @ship-it-ops/admins
+/.husky/                                @Mohamed-E @ship-it-ops/admins
+/.secretlintrc.json                     @Mohamed-E @ship-it-ops/admins
+/package.json                           @Mohamed-E @ship-it-ops/admins
+/pnpm-lock.yaml                         @Mohamed-E @ship-it-ops/admins
+/turbo.json                             @Mohamed-E @ship-it-ops/admins
+
+# ── Backend services ────────────────────────────────────────────────────
+/packages/api-server/                   @Mohamed-E
+/packages/core-writer/                  @Mohamed-E
+/packages/event-bus/                    @Mohamed-E
+/packages/mcp-server/                   @Mohamed-E
+/packages/shared/                       @Mohamed-E
+
+# ── Connectors ──────────────────────────────────────────────────────────
+/packages/connectors/                   @Mohamed-E
+/packages/connector-sdk/                @Mohamed-E
+
+# ── Frontend ────────────────────────────────────────────────────────────
+/packages/web-ui/                       @Mohamed-E
+
+# ── Operational config (touches running infra in dev + docker compose) ──
+/docker/                                @Mohamed-E @ship-it-ops/admins
+/scripts/                               @Mohamed-E @ship-it-ops/admins
+/config/                                @Mohamed-E @ship-it-ops/admins
+/shipit.config.yaml                     @Mohamed-E @ship-it-ops/admins
+
+# ── Agent context (knowledge for future AI agents) ──────────────────────
+# Lower bar: anyone with push can edit, but keep the owner on the hook
+# so a stray edit to a decision/scar surfaces in review.
+/docs/agent/                            @Mohamed-E
+
+# ── Documentation ───────────────────────────────────────────────────────
+/docs/                                  @Mohamed-E
+/README.md                              @Mohamed-E

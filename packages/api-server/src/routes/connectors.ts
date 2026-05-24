@@ -69,10 +69,23 @@ interface ProbeBody {
 
 const connectorRoutes: FastifyPluginAsync = async (server) => {
   const registry = server.connectorRegistry;
+  // Run history is hydrated server-side so the API contract stays the
+  // same as before the YAML→Redis migration — clients still see
+  // `lastRuns` populated on connector responses, but the data comes
+  // from the run store, not from the YAML in-memory copy (which is now
+  // always empty).
+  const runStore = registry.getRunStore();
 
-  // GET /api/connectors — list. No collection-level ETag; per-instance
-  // ETags are returned on item GETs which is what the UI actually needs.
-  server.get('/', async () => registry.list());
+  // GET /api/connectors — list. Pipelines one Redis LRANGE per connector
+  // (batched via listManyLatest) so 10 connectors cost one round trip,
+  // not 10. No collection-level ETag; per-instance ETags are returned on
+  // item GETs which is what the UI actually needs.
+  server.get('/', async () => {
+    const connectors = registry.list();
+    const ids = connectors.map((c) => c.id);
+    const runsById = await runStore.listManyLatest(ids);
+    return connectors.map((c) => ({ ...c, lastRuns: runsById[c.id] ?? [] }));
+  });
 
   // ── Global GitHub App ────────────────────────────────────────────────
   // GET /api/connectors/github/app — current status. Used by the wizard
@@ -485,10 +498,14 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   });
 
   // GET /api/connectors/:id — detail with ETag header for subsequent PATCH.
+  // ETag is computed on the *configuration* shape only — lastRuns now
+  // lives in Redis and would flap on every poll, defeating optimistic
+  // concurrency on the user-edited fields if it were part of the hash.
   server.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const c = registry.get(request.params.id);
     reply.header('ETag', `"${registry.getHash(c.id)}"`);
-    return c;
+    const lastRuns = await runStore.listRuns(c.id);
+    return { ...c, lastRuns };
   });
 
   // PATCH /api/connectors/:id — partial update. If-Match required when the
@@ -513,7 +530,11 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           ifMatch,
         );
         reply.header('ETag', `"${registry.getHash(updated.id)}"`);
-        return updated;
+        // Hydrate lastRuns from the run store so PATCH responses match
+        // the shape GET returns; otherwise the UI's local cache would
+        // briefly show empty run history after every edit.
+        const lastRuns = await runStore.listRuns(updated.id);
+        return { ...updated, lastRuns };
       } catch (err) {
         if (err instanceof ConnectorVersionConflictError) {
           return reply.status(409).send({
@@ -581,9 +602,13 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   });
 
   // GET /api/connectors/:id/runs — persisted run history (last 20).
+  // Reads straight from the run store; the registry just confirms the
+  // connector exists (404 otherwise) so a request for a deleted id
+  // returns the right status code instead of an empty array.
   server.get<{ Params: { id: string } }>('/:id/runs', async (request) => {
     const c = registry.get(request.params.id);
-    return { connectorId: c.id, runs: c.lastRuns ?? [] };
+    const runs = await runStore.listRuns(c.id);
+    return { connectorId: c.id, runs };
   });
 };
 

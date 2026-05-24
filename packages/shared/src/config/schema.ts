@@ -50,7 +50,7 @@ const githubEntitiesSchema = z
     workflowRun: false,
   });
 
-const lastRunSchema = z.object({
+export const lastRunSchema = z.object({
   startedAt: z.string(),
   durationMs: z.number().int().nonnegative(),
   // 'success' | 'partial' | 'failed' — broader than ShipIt's internal sync
@@ -104,6 +104,7 @@ const githubConnectorSchema = z.object({
 });
 
 export type GitHubConnectorConfig = z.infer<typeof githubConnectorSchema>;
+export type LastRun = z.infer<typeof lastRunSchema>;
 
 // Discriminated union — add new connector kinds here as they're built. The
 // `type` literal must be unique per kind so Zod can pick the right schema.

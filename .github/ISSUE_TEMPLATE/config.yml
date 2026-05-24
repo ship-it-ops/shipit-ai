@@ -1,0 +1,14 @@
+# Disable bare "Open a blank issue" — funnel users through the structured
+# templates below so triage gets the info it needs the first time.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Documentation
+    url: https://github.com/ship-it-ops/ShipIt-AI/tree/main/docs
+    about: Setup guides, connector configuration, and architecture decisions.
+  - name: Security vulnerability
+    url: https://github.com/ship-it-ops/ShipIt-AI/security/advisories/new
+    about: Report security issues privately via GitHub Security Advisories — please do NOT open a public issue.
+  - name: Question or discussion
+    url: https://github.com/ship-it-ops/ShipIt-AI/discussions
+    about: Ask a how-to question or float an idea before filing a feature request.

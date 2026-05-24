@@ -1,4 +1,5 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
+import { Redis } from 'ioredis';
 import { findConfigPaths } from '@shipit-ai/shared';
 import { BullMQEventBusClient } from '@shipit-ai/event-bus';
 import { loadConfig } from './config.js';
@@ -6,6 +7,11 @@ import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
 import { SchemaService } from './services/schema-service.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
+import {
+  InMemoryConnectorRunStore,
+  RedisConnectorRunStore,
+  type ConnectorRunStore,
+} from './services/connector-run-store.js';
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
@@ -18,6 +24,11 @@ export type {
   SyncRuntimeStatus,
   SyncRuntimeState,
 } from './services/connector-registry.js';
+export {
+  InMemoryConnectorRunStore,
+  RedisConnectorRunStore,
+} from './services/connector-run-store.js';
+export type { ConnectorRunStore } from './services/connector-run-store.js';
 export { SyncScheduler } from './services/sync-scheduler.js';
 export { GitHubAppService, GitHubAppVersionConflictError } from './services/github-app-service.js';
 export type { GitHubAppStatus } from './services/github-app-service.js';
@@ -48,9 +59,31 @@ async function main() {
   // back. Falls back to the sibling shipit.config.local.yaml of whatever
   // base config we loaded.
   const { localPath } = findConfigPaths();
+
+  // Run history is operational state, not configuration — it lives in
+  // Redis (capped LIST per connector) instead of being re-serialized into
+  // shipit.config.local.yaml on every poll. The registry accepts an
+  // in-memory fallback so the api-server still boots cleanly when Redis
+  // is unreachable; in that mode the /runs endpoint just shows whatever
+  // accumulated since process start, and operators see the same Redis
+  // warning the scheduler logs.
+  let runStoreRedis: Redis | null = null;
+  let runStore: ConnectorRunStore;
+  if (config.backend.redis.url) {
+    runStoreRedis = new Redis(config.backend.redis.url, { maxRetriesPerRequest: null });
+    runStore = new RedisConnectorRunStore(runStoreRedis);
+    console.log('ConnectorRunStore using Redis at', config.backend.redis.url);
+  } else {
+    runStore = new InMemoryConnectorRunStore();
+    console.warn(
+      'No Redis URL configured — connector run history will not persist across restarts.',
+    );
+  }
+
   const connectorRegistry = new ConnectorRegistry({
     localConfigPath: localPath,
     initial: config.connectors.instances,
+    runStore,
   });
 
   // GitHubAppService holds a live reference to the same object the
@@ -159,6 +192,7 @@ async function main() {
   const shutdown = async () => {
     await server.close();
     if (scheduler) await scheduler.close();
+    if (runStoreRedis) runStoreRedis.disconnect();
     await neo4jService.close();
     process.exit(0);
   };

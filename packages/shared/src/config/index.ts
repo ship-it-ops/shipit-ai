@@ -7,6 +7,7 @@ export type {
   Config,
   ConnectorInstanceConfig,
   GitHubConnectorConfig,
+  LastRun,
   ResolvedAppCredentials,
   AppLike,
 } from './schema.js';

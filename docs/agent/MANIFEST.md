@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-24 | Total notes: 20
+Last updated: 2026-05-24 | Total notes: 21
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -26,6 +26,7 @@ Last updated: 2026-05-24 | Total notes: 20
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
 - [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-05-24 | pnpm.overrides + direct bumps; dismiss Fastify v5-only alerts
+- [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 
 ## Patterns
 
