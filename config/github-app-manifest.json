@@ -10,7 +10,8 @@
     "actions": "read",
     "deployments": "read",
     "administration": "read",
-    "members": "read"
+    "members": "read",
+    "pull_requests": "read"
   },
   "default_events": [
     "push",

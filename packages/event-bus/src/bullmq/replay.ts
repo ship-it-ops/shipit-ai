@@ -42,7 +42,9 @@ export class EventBusReplay {
           name: 'event',
           data: envelope,
           opts: {
-            jobId: `replay:${envelope.idempotency_key}`,
+            // BullMQ 5 forbids `:` in custom job IDs (see producer.ts).
+            // The replay prefix uses `~` for the same reason.
+            jobId: `replay~${envelope.idempotency_key}`,
             removeOnComplete: true,
             removeOnFail: false,
           },

@@ -4,7 +4,7 @@
 // clobbering each other. The probe endpoint validates credentials against the
 // live GitHub API without writing anything.
 import { readFileSync } from 'node:fs';
-import type { FastifyPluginAsync } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp } from '@shipit-ai/connector-github';
 import { resolveAppCredentials } from '@shipit-ai/shared';
 import {
@@ -93,16 +93,12 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     return svc.status();
   });
 
-  // GET /api/connectors/github/manifest — dynamic App manifest with this
-  // instance's webhook URL + callback URL substituted in. The wizard
-  // posts this URL as `manifest_url=...` to github.com so the user lands
-  // on a pre-filled "Create GitHub App" page with all permissions/events
-  // and OUR webhook URL already configured.
-  //
-  // Public — contains zero secrets, just a schema describing what the
-  // App should look like. The `state` query string is the CSRF token
-  // that GitHub will echo back on the callback for verification.
-  server.get<{ Querystring: { state?: string } }>('/github/manifest', async (request, reply) => {
+  // GET /api/connectors/github/manifest — JSON manifest spec, primarily
+  // for inspection ("what does the wizard send to GitHub?"). NOT what
+  // gets sent to GitHub — see /manifest/launch below for the actual
+  // submission path. This endpoint just lets a curious admin curl the
+  // manifest and audit the permissions/events the wizard will request.
+  server.get('/github/manifest', async (request, reply) => {
     const svc = server.githubAppManifestService;
     const appSvc = server.githubAppService;
     if (!svc || !appSvc) {
@@ -113,45 +109,89 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         },
       });
     }
-    // Build the redirect URL from the API's own base. The webhook URL
-    // comes from the saved config (`webhookPublicUrl`) — it's the
-    // ingress for GitHub→ShipIt webhooks, which is the user's
-    // responsibility to make publicly reachable.
-    const cfg = (server as unknown as { config?: Config }).config;
-    const webhookUrl =
-      cfg?.connectors.github.app.webhookPublicUrl ?? 'http://localhost:3001/api/webhooks/github';
-    // We accept the redirect URL relative to whatever the caller
-    // declares — the wizard tells us its origin in the state query so
-    // a deployed UI on a different host than the API still works.
-    // Default to the API's own host for local-dev convenience.
-    const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
-    const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
-    const redirectUrl = `${proto}://${host}/api/connectors/github/app-manifest-callback`;
-
-    const manifest = svc.buildManifest({ webhookUrl, redirectUrl });
-    // Cache-Control: short — the URLs can change at runtime if the
-    // admin updates `webhookPublicUrl`. 30s is enough for one user's
-    // round-trip without serving stale data after a config change.
+    const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
+    const result = svc.buildManifest({ webhookUrl, redirectUrl });
     reply.header('Cache-Control', 'private, max-age=30');
-    return manifest;
+    // For the JSON debug view, return the manifest + a sibling
+    // `_warnings` array so curl users see why hook_attributes is absent.
+    if (result.webhookOmitted) {
+      return {
+        ...result.manifest,
+        _warnings: {
+          webhookOmitted: true,
+          reason: result.webhookOmissionReason,
+        },
+      };
+    }
+    return result.manifest;
   });
 
-  // POST /api/connectors/github/manifest/state — issue a CSRF state
-  // token for the manifest round-trip. The wizard calls this just
-  // before redirecting the user to GitHub.
-  server.post('/github/manifest/state', async (_request, reply) => {
-    const svc = server.githubAppManifestService;
-    if (!svc) {
-      return reply.status(503).send({
-        error: {
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'GitHub App manifest service is not configured on this server.',
-        },
-      });
-    }
-    const token = svc.issueState();
-    return { state: token };
-  });
+  // GET /api/connectors/github/manifest/launch?owner=<org-or-blank> —
+  // The real entry point. Returns an HTML page with an auto-submitting
+  // <form method="POST" action="https://github.com/.../settings/apps/new
+  // ?state=..."> whose body carries the manifest JSON in a `manifest`
+  // field. The browser POSTs to GitHub, GitHub renders the App-creation
+  // page with EVERY field pre-filled (this is the part our previous
+  // manifest_url= query-string approach got wrong — GitHub never reads
+  // that param; it requires a form POST).
+  //
+  // Wizard's "Create App on GitHub" button just does
+  // `window.open(this URL, '_blank')` — same-origin, no popup-blocker
+  // issues, no async state token roundtrip needed in the click handler.
+  server.get<{ Querystring: { owner?: string } }>(
+    '/github/manifest/launch',
+    async (request, reply) => {
+      const svc = server.githubAppManifestService;
+      const appSvc = server.githubAppService;
+      if (!svc || !appSvc) {
+        return reply
+          .status(503)
+          .type('text/html')
+          .send(
+            renderLaunchErrorHtml(
+              'GitHub App manifest service unavailable',
+              'This ShipIt instance is not configured for the manifest flow. Use the manual setup path instead.',
+            ),
+          );
+      }
+
+      const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
+      const built = svc.buildManifest({ webhookUrl, redirectUrl });
+      const state = svc.issueState();
+
+      // Owner: empty → personal account, otherwise the org login slug.
+      // We validate softly (loose pattern) so a totally bogus value
+      // shows up as a 404 on GitHub's side rather than a 500 here.
+      const owner = (request.query.owner ?? '').trim();
+      const ownerOk = owner === '' || /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner);
+      if (!ownerOk) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderLaunchErrorHtml(
+              'Invalid owner',
+              `"${escapeHtml(owner)}" doesn't look like a GitHub org login. Org logins use letters, digits, and dashes; max 39 chars.`,
+            ),
+          );
+      }
+      const actionUrl =
+        owner === ''
+          ? `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`
+          : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/apps/new?state=${encodeURIComponent(state)}`;
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.type('text/html').send(
+        renderLaunchHtml({
+          actionUrl,
+          manifest: built.manifest,
+          webhookOmitted: built.webhookOmitted,
+          webhookOmissionReason: built.webhookOmissionReason,
+          webhookUrl,
+        }),
+      );
+    },
+  );
 
   // GET /api/connectors/github/app-manifest-callback — the URL GitHub
   // redirects to after the user creates the App from our manifest.
@@ -559,6 +599,106 @@ function escapeHtml(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Compute the manifest's webhook + redirect URLs from runtime config and
+// the incoming request. Webhook URL is the saved `webhookPublicUrl`;
+// redirect URL falls out of the request's host (respecting reverse-proxy
+// headers) so a deployment behind an ingress with TLS termination still
+// produces the right callback URL.
+function manifestUrlsFromRequest(
+  server: FastifyInstance,
+  request: FastifyRequest,
+): { webhookUrl: string; redirectUrl: string } {
+  const cfg = (server as unknown as { config?: Config }).config;
+  const webhookUrl =
+    cfg?.connectors.github.app.webhookPublicUrl ?? 'http://localhost:3001/api/webhooks/github';
+  const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
+  const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
+  const redirectUrl = `${proto}://${host}/api/connectors/github/app-manifest-callback`;
+  return { webhookUrl, redirectUrl };
+}
+
+// HTML wrapper for the auto-submitting manifest form. Same-origin, served
+// from the API; the inline script POSTs to github.com on load. We escape
+// the manifest JSON the JavaScript-safe way (not just HTML-escape) to
+// avoid breaking out of the string literal — </script> in a value would
+// otherwise terminate the script block early.
+function renderLaunchHtml(args: {
+  actionUrl: string;
+  manifest: unknown;
+  webhookOmitted: boolean;
+  webhookOmissionReason?: string;
+  webhookUrl: string;
+}): string {
+  // JSON.stringify on a value followed by safe substitution of `</` is
+  // the standard guard against embedded close-script-tags in JSON.
+  const manifestJson = JSON.stringify(args.manifest).replace(/<\//g, '<\\/');
+  // When the webhook URL isn't publicly reachable, hold the auto-submit
+  // and show the user a yellow banner explaining what's happening. They
+  // either proceed without webhook config (button → submit) or close the
+  // tab, set GITHUB_WEBHOOK_PUBLIC_URL to a smee channel, and retry.
+  const holdSubmit = args.webhookOmitted;
+  const warningHtml = args.webhookOmitted
+    ? `<div class="warn">
+        <strong>Webhooks and event subscriptions will be skipped.</strong>
+        <p>Your configured webhook URL — <code>${escapeHtml(args.webhookUrl)}</code> — ${escapeHtml(args.webhookOmissionReason ?? '')}. GitHub rejects webhook URLs it can't reach from the public internet, and it also rejects event subscriptions without a valid webhook URL.</p>
+        <p>The App will be created with the correct permissions (Repository, Members, etc.), but <strong>no event subscriptions and no webhook URL</strong>. After creation you can add both via GitHub's App settings once you have a public webhook URL — or close this tab now, set <code>GITHUB_WEBHOOK_PUBLIC_URL</code> to a smee.io / ngrok / public ingress URL, restart the API server, and re-run the wizard for the full one-click experience.</p>
+        <button type="button" id="continue-btn">Continue to GitHub (permissions only)</button>
+      </div>`
+    : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>ShipIt-AI · Launching GitHub</title>
+    <style>
+      body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0e1116; color: #e8eaed; padding: 48px 24px; }
+      .card { max-width: 560px; margin: 0 auto; background: #151a21; border: 1px solid #232a33; border-radius: 12px; padding: 32px; text-align: center; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      p { color: #9ba3ad; font-size: 13px; }
+      .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #4ea1ff; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -3px; margin-right: 8px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      noscript { color: #ffb454; }
+      form { margin-top: 16px; }
+      button { background: #4ea1ff; color: #061018; border: 0; padding: 10px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; }
+      .warn { text-align: left; background: #2a1f0a; border: 1px solid #6b4a07; color: #f4d57a; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+      .warn p { color: #d6c08d; margin: 8px 0; }
+      .warn strong { color: #ffd87a; }
+      code { background: #0a0d12; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #cbd2d9; }
+    </style>
+  </head><body><div class="card">
+    ${warningHtml}
+    ${holdSubmit ? '' : '<h1><span class="spinner"></span>Opening GitHub…</h1><p>Sending the App manifest to github.com. You\'ll see the App-creation page with all permissions and events pre-filled.</p>'}
+    <form id="manifest-form" method="POST" action="${escapeHtml(args.actionUrl)}">
+      <input type="hidden" name="manifest" />
+      <noscript>
+        <p>This page normally submits automatically. JavaScript is disabled — click below to continue:</p>
+        <button type="submit">Continue to GitHub</button>
+      </noscript>
+    </form>
+    <script>
+      var manifest = ${manifestJson};
+      var form = document.getElementById('manifest-form');
+      form.elements['manifest'].value = JSON.stringify(manifest);
+      var holdSubmit = ${holdSubmit ? 'true' : 'false'};
+      if (holdSubmit) {
+        // User explicitly chose to proceed without webhook configured.
+        // The continue button submits the form when clicked.
+        var btn = document.getElementById('continue-btn');
+        if (btn) btn.addEventListener('click', function () { form.submit(); });
+      } else {
+        form.submit();
+      }
+    </script>
+  </div></body></html>`;
+}
+
+function renderLaunchErrorHtml(heading: string, body: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>ShipIt-AI · Manifest error</title>
+    <style>
+      body { font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0e1116; color: #e8eaed; padding: 48px 24px; }
+      .card { max-width: 480px; margin: 0 auto; background: #151a21; border: 1px solid #232a33; border-radius: 12px; padding: 32px; }
+      h1 { font-size: 16px; margin: 0 0 12px; color: #c63838; }
+      p { color: #cbd2d9; font-size: 13px; }
+    </style>
+  </head><body><div class="card"><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(body)}</p></div></body></html>`;
 }
 
 function renderCallbackHtml(args: { ok: boolean; heading: string; body: string }): string {

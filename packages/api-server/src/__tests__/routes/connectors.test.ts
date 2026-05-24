@@ -464,7 +464,24 @@ describe('GitHub App manifest flow', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('GET /manifest substitutes hook URL and redirect URL from config + request', async () => {
+  // Pulls the `state=` value out of the launch endpoint's HTML form action.
+  // Mirrors how the wizard implicitly receives the state: the user's
+  // browser hits /launch and the embedded form already carries the state
+  // that the callback will validate.
+  async function issueStateViaLaunch(owner?: string): Promise<string> {
+    const url = owner
+      ? `/api/connectors/github/manifest/launch?owner=${encodeURIComponent(owner)}`
+      : '/api/connectors/github/manifest/launch';
+    const res = await server.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(200);
+    const match = res.body.match(/action="[^"]*state=([a-f0-9]+)"/);
+    expect(match, 'launch HTML must contain action="…state=…"').toBeTruthy();
+    return match![1];
+  }
+
+  it('GET /manifest returns inspectable JSON with hook + redirect URLs', async () => {
+    // Debug-only endpoint; not the path GitHub actually consumes. Useful
+    // for an admin to curl and audit the manifest the wizard sends.
     const res = await server.inject({
       method: 'GET',
       url: '/api/connectors/github/manifest',
@@ -481,14 +498,132 @@ describe('GitHub App manifest flow', () => {
     expect(body.default_permissions).toEqual({ contents: 'read' });
   });
 
-  it('POST /manifest/state issues a fresh token each call', async () => {
-    const a = await server.inject({ method: 'POST', url: '/api/connectors/github/manifest/state' });
-    const b = await server.inject({ method: 'POST', url: '/api/connectors/github/manifest/state' });
-    expect(a.statusCode).toBe(200);
-    expect(b.statusCode).toBe(200);
-    expect(a.json().state).toMatch(/^[a-f0-9]{48}$/);
-    expect(b.json().state).toMatch(/^[a-f0-9]{48}$/);
-    expect(a.json().state).not.toBe(b.json().state);
+  it('GET /manifest/launch returns auto-submitting HTML form posting to github.com', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest/launch',
+      headers: { host: 'shipit.local:3001' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    // Personal-account URL when owner not specified.
+    expect(res.body).toMatch(
+      /action="https:\/\/github\.com\/settings\/apps\/new\?state=[a-f0-9]+"/,
+    );
+    // Form is POST and uses the documented field name.
+    expect(res.body).toMatch(/method="POST"/);
+    expect(res.body).toMatch(/name="manifest"/);
+    // Auto-submit happens via script — without this the page wouldn't
+    // submit and the user would be stuck on our launch URL.
+    expect(res.body).toContain('form.submit()');
+  });
+
+  it('GET /manifest/launch routes to org URL when owner is supplied', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest/launch?owner=acme-corp',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatch(
+      /action="https:\/\/github\.com\/organizations\/acme-corp\/settings\/apps\/new\?state=[a-f0-9]+"/,
+    );
+  });
+
+  it('GET /manifest/launch rejects malformed owner values', async () => {
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest/launch?owner=not%20a%20valid%20login',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('Invalid owner');
+  });
+
+  it('GET /manifest strips hook_attributes AND default_events together when webhook URL is localhost', async () => {
+    // GitHub rejects "events subscribed without a valid hook URL" as
+    // "Hook url cannot be blank". The service must therefore drop both
+    // when the webhook URL is non-public — they're a coupled pair.
+    // Rebuild the server with a localhost webhook URL to exercise that
+    // branch.
+    const localConfig = makeTestConfig();
+    localConfig.connectors.github.app.webhookPublicUrl =
+      'http://localhost:3001/api/webhooks/github';
+    const localAppService = new GitHubAppService({
+      localConfigPath: join(tmpDir, 'localhost.local.yaml'),
+      appConfig: localConfig.connectors.github.app,
+    });
+    const localManifestService = new GitHubAppManifestService({
+      templatePath: join(tmpDir, 'manifest.json'),
+      appService: localAppService,
+      keyDir,
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+    const localServer = await createServer({
+      connectorRegistry: new ConnectorRegistry({
+        localConfigPath: join(tmpDir, 'localhost.local.yaml'),
+        initial: [],
+      }),
+      githubAppService: localAppService,
+      githubAppManifestService: localManifestService,
+      config: localConfig,
+    });
+    await localServer.ready();
+
+    const res = await localServer.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.hook_attributes).toBeUndefined();
+    // Events must also be gone — otherwise GitHub returns
+    // "Hook url cannot be blank" / "Hook is invalid".
+    expect(body.default_events).toBeUndefined();
+    // Permissions still flow through; the App is creatable, just
+    // without webhook + events wired.
+    expect(body.default_permissions).toBeDefined();
+    expect(body._warnings?.webhookOmitted).toBe(true);
+    expect(body._warnings?.reason).toContain('localhost');
+    await localServer.close();
+  });
+
+  it('GET /manifest/launch shows a warning banner and holds auto-submit when webhook is localhost', async () => {
+    const localConfig = makeTestConfig();
+    localConfig.connectors.github.app.webhookPublicUrl =
+      'http://127.0.0.1:3001/api/webhooks/github';
+    const localAppService = new GitHubAppService({
+      localConfigPath: join(tmpDir, 'lh.yaml'),
+      appConfig: localConfig.connectors.github.app,
+    });
+    const localManifestService = new GitHubAppManifestService({
+      templatePath: join(tmpDir, 'manifest.json'),
+      appService: localAppService,
+      keyDir,
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+    const localServer = await createServer({
+      connectorRegistry: new ConnectorRegistry({
+        localConfigPath: join(tmpDir, 'lh.yaml'),
+        initial: [],
+      }),
+      githubAppService: localAppService,
+      githubAppManifestService: localManifestService,
+      config: localConfig,
+    });
+    await localServer.ready();
+
+    const res = await localServer.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest/launch',
+    });
+    expect(res.statusCode).toBe(200);
+    // The warning copy + the held-back script behaviour together prove
+    // the user gets a chance to opt out rather than being silently
+    // bounced to GitHub with a broken manifest.
+    expect(res.body).toContain('Webhooks and event subscriptions will be skipped');
+    expect(res.body).toContain('127.0.0.1');
+    expect(res.body).toContain('var holdSubmit = true');
+    expect(res.body).toContain('continue-btn');
+    await localServer.close();
   });
 
   it('callback rejects missing code', async () => {
@@ -511,13 +646,10 @@ describe('GitHub App manifest flow', () => {
   });
 
   it('callback exchanges code, writes PEM with 0600, persists App', async () => {
-    // Issue a state via the real endpoint so the manifest service holds
-    // it in memory the same way it would for a real flow.
-    const stateRes = await server.inject({
-      method: 'POST',
-      url: '/api/connectors/github/manifest/state',
-    });
-    const state = stateRes.json().state as string;
+    // State is now issued as a side-effect of the launch endpoint —
+    // mirrors the real flow where the user's browser fetches /launch
+    // and GitHub later echoes the state back on the callback.
+    const state = await issueStateViaLaunch();
 
     fetchMock.mockResolvedValueOnce(
       new Response(
@@ -561,11 +693,7 @@ describe('GitHub App manifest flow', () => {
   });
 
   it('state token is single-use', async () => {
-    const stateRes = await server.inject({
-      method: 'POST',
-      url: '/api/connectors/github/manifest/state',
-    });
-    const state = stateRes.json().state as string;
+    const state = await issueStateViaLaunch();
 
     fetchMock.mockResolvedValue(
       new Response(

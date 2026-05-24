@@ -73,34 +73,38 @@ async function main() {
     keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
   });
 
-  // Wire the BullMQ-backed scheduler if we have Redis. Per-connector App
-  // overrides mean the scheduler can still run useful jobs even when the
-  // global App is empty (each connector brings its own credentials). We
-  // start the scheduler as long as Redis is reachable and let per-job
-  // resolution surface APP_NOT_CONFIGURED for connectors that lack both
-  // global and override credentials.
+  // Wire the BullMQ-backed scheduler whenever Redis is reachable.
+  //
+  // Earlier versions of this block gated scheduler attachment on having
+  // an App configured at boot (`GITHUB_APP_ID` + key path). That created
+  // a silent footgun: users who configured the App at runtime via the
+  // manifest flow would end up with the registry's default NoopRunner
+  // still attached. Their `triggerSync` calls returned an idle status
+  // without running anything; the card showed "disconnected" forever.
+  //
+  // The scheduler's constructor doesn't read keys upfront — it resolves
+  // App credentials per job via `resolveAppCredentials(connector, this.globalApp)`,
+  // and `globalApp` is a live reference so a later `PUT /github/app`
+  // updates the value the scheduler sees on the next job. Safe to attach
+  // eagerly: jobs that fire before any App is configured record a
+  // friendly APP_NOT_CONFIGURED error and the user sees the actual
+  // diagnostic rather than a phantom "disconnected" state.
   const gh = config.connectors.github.app;
-  const hasAnyGitHubConfig =
-    (gh.id && gh.privateKeyPath) ||
-    config.connectors.instances.some(
-      (c) => c.type === 'github' && c.app?.id && c.app?.privateKeyPath,
-    );
   let scheduler: SyncScheduler | null = null;
-  if (hasAnyGitHubConfig && config.backend.redis.url) {
+  if (config.backend.redis.url) {
     try {
       const eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
       scheduler = new SyncScheduler({
         redisUrl: config.backend.redis.url,
         registry: connectorRegistry,
         eventBus,
-        // Pass the live reference, not a snapshot, so a PUT /github/app
-        // update via GitHubAppService is visible to the scheduler's next
-        // job without a process restart.
+        // Live reference, not a snapshot — see live-reference-for-hot-reload
+        // in docs/agent/patterns/.
         globalApp: gh,
         concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
       });
-      // Re-attach the registry to the live runner so create/update/delete
-      // can drive the scheduler.
+      // Replace the registry's NoopRunner with the live scheduler so
+      // future create/update/delete drives BullMQ jobs.
       (connectorRegistry as unknown as { runner: SyncScheduler }).runner = scheduler;
       console.log('SyncScheduler attached to ConnectorRegistry');
     } catch (err) {
@@ -110,6 +114,10 @@ async function main() {
         `SyncScheduler init failed (continuing with no-op runner): ${(err as Error).message}`,
       );
     }
+  } else {
+    console.warn(
+      'No Redis URL configured — connectors will accept CRUD writes but syncs will not run. Set backend.redis.url to enable.',
+    );
   }
 
   try {

@@ -9,7 +9,6 @@ import {
   fetchConnectorRuns,
   fetchConnectorStatus,
   fetchGitHubAppStatus,
-  fetchManifestState,
   patchConnector,
   probeConnector,
   triggerSync,
@@ -127,12 +126,6 @@ export function useGitHubAppStatus() {
     // invalidate explicitly in that mutation's onSuccess.
     staleTime: Infinity,
   });
-}
-
-// Wizard's manifest flow uses this to mint a CSRF token, then redirects
-// the user to GitHub. Mutation hook for the "fire on click" semantics.
-export function useFetchManifestState() {
-  return useMutation({ mutationFn: fetchManifestState });
 }
 
 export function useUpdateGitHubApp() {

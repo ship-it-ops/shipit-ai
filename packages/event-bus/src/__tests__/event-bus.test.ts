@@ -126,20 +126,24 @@ describe('resolveConfig', () => {
 
 // ── Idempotency key tests ─────────────────────────────────────────────
 describe('buildIdempotencyKey', () => {
-  it('formats key as {connectorId}:{nodeId}:{eventVersion}', () => {
+  it('formats key as {connectorId}~{nodeId}~{eventVersion} with all colons replaced', () => {
+    // BullMQ 5 forbids `:` in custom job IDs, so the lone colon in the
+    // `shipit:` scheme gets rewritten to `~`; the `//` slashes survive.
     const node = makeNode({
       id: 'shipit://LogicalService/github/payments-api',
       _event_version: 42,
     });
     const key = buildIdempotencyKey('github-acme', node);
-    expect(key).toBe('github-acme:shipit://LogicalService/github/payments-api:42');
+    expect(key).toBe('github-acme~shipit~//LogicalService/github/payments-api~42');
+    expect(key).not.toContain(':');
   });
 
   it('handles ISO 8601 event version', () => {
     const node = makeNode({ _event_version: '2026-02-28T12:00:00Z' });
     const key = buildIdempotencyKey('k8s-prod', node);
-    expect(key).toContain('k8s-prod:');
-    expect(key).toContain(':2026-02-28T12:00:00Z');
+    expect(key).toContain('k8s-prod~');
+    expect(key).toContain('~2026-02-28T12~00~00Z');
+    expect(key).not.toContain(':');
   });
 });
 
@@ -158,7 +162,7 @@ describe('EventBusProducer', () => {
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
     expect(jobs[0].name).toBe('event');
-    expect(jobs[0].opts.jobId).toBe('github-acme:shipit://LogicalService/github/payments-api:1');
+    expect(jobs[0].opts.jobId).toBe('github-acme~shipit~//LogicalService/github/payments-api~1');
     expect(jobs[0].data.connector_id).toBe('github-acme');
     expect(jobs[0].data.payload).toEqual(entity);
     expect(jobs[0].opts.removeOnComplete).toBe(true);
@@ -174,8 +178,8 @@ describe('EventBusProducer', () => {
 
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(2);
-    expect(jobs[0].opts.jobId).toContain('svc-a:1');
-    expect(jobs[1].opts.jobId).toContain('svc-b:2');
+    expect(jobs[0].opts.jobId).toContain('svc-a~1');
+    expect(jobs[1].opts.jobId).toContain('svc-b~2');
   });
 
   it('writes events to Redis Stream', async () => {
@@ -215,7 +219,7 @@ describe('EventBusConsumer', () => {
       id: 'test-uuid',
       timestamp: '2026-02-28T00:00:00Z',
       connector_id: 'github-acme',
-      idempotency_key: 'github-acme:node:1',
+      idempotency_key: 'github-acme~node~1',
       payload: makeEntity(),
     };
 
@@ -251,7 +255,7 @@ describe('EventBusReplay', () => {
       id: 'replay-uuid',
       timestamp: '2026-02-28T00:00:00Z',
       connector_id: 'github-acme',
-      idempotency_key: 'github-acme:node:1',
+      idempotency_key: 'github-acme~node~1',
       payload: makeEntity(),
     };
 
@@ -271,7 +275,7 @@ describe('EventBusReplay', () => {
     expect(mockAddBulk).toHaveBeenCalledOnce();
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
-    expect(jobs[0].opts.jobId).toBe('replay:github-acme:node:1');
+    expect(jobs[0].opts.jobId).toBe('replay~github-acme~node~1');
     expect(jobs[0].data).toEqual(envelope);
 
     await replay.close();

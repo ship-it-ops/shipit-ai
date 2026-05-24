@@ -48,6 +48,8 @@ You're done. Skip to §3 for the install step. The wizard handles §5 (private k
 
 > **Where the manifest writes the key**: by default, `~/.shipit/keys/github-app-<id>.pem` with `chmod 600`. Override the directory with `SHIPIT_GITHUB_APP_KEY_DIR=/some/path` before starting the API server (useful in containers — mount a tmpfs or secrets volume there).
 
+> **Localhost webhooks**: GitHub rejects webhook URLs that aren't publicly reachable. If `GITHUB_WEBHOOK_PUBLIC_URL` is unset (or points at `localhost`/`127.0.0.1`/private IPs), the manifest service drops `hook_attributes` from the spec and the launch page shows a yellow warning — you can either proceed (the App is created without webhook config; you wire it up later via GitHub's App settings) or close the tab, set `GITHUB_WEBHOOK_PUBLIC_URL` to a smee.io channel or ngrok URL, restart the API server, and re-run the wizard. The latter gets you the full one-click experience.
+
 ## 1. Pre-requisites
 
 - **GitHub org admin role** (or you have to ask one).
@@ -87,6 +89,23 @@ you want ShipIt-AI to map:
    `https://github.com/organizations/<org>/settings/installations/<INSTALLATION_ID>`.
    Save the numeric `INSTALLATION_ID` somewhere — you'll paste it into the
    wizard.
+
+> **Lost the URL? How to get back to the installation ID later.**
+> If you navigated away before copying the ID, GitHub doesn't show it on
+> the App's main settings page. To find it again:
+>
+> - **For a personal-account install**: GitHub → your profile menu →
+>   **Settings** → **Applications** (left sidebar) → **Installed GitHub
+>   Apps** tab → find your App → click **Configure**. The URL becomes
+>   `https://github.com/settings/installations/<INSTALLATION_ID>`.
+> - **For an org install**: GitHub → the org's page → **Settings** (top
+>   nav) → **Third-party Access** (left sidebar) → **GitHub Apps** →
+>   click **Configure** next to your App. The URL becomes
+>   `https://github.com/organizations/<org>/settings/installations/<INSTALLATION_ID>`.
+>
+> Either way, the trailing number in the URL is the installation ID.
+> Also available via API: `GET https://api.github.com/app/installations`
+> (authenticated as the App) returns the full list.
 
 ## 4. Generate a private key
 

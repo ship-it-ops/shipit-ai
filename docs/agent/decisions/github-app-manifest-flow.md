@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-21
-updated: 2026-05-21
+updated: 2026-05-22
 author: claude-opus-4-7
 tags: [github, manifest, onboarding, secrets]
 importance: core
@@ -26,10 +26,20 @@ Picked #3.
 
 The Connector Hub wizard offers two paths in step 1:
 
-- **Recommended path: manifest flow.** Wizard mints a CSRF state, opens github.com/.../settings/apps/new in a new tab with `manifest_url=<our-instance>/api/connectors/github/manifest&state=<token>`. The user clicks Create on GitHub's side. GitHub redirects to `/api/connectors/github/app-manifest-callback?code=…&state=…`. The callback exchanges the code via `POST /app-manifests/{code}/conversions`, receives `{ id, pem, webhook_secret, … }`, writes the PEM to `~/.shipit/keys/github-app-<id>.pem` (chmod 600), persists via `GitHubAppService.update()`. User returns to the wizard which polls and auto-detects the new App.
+- **Recommended path: manifest flow** (POST form, not URL parameter). Wizard's "Create App on GitHub" button opens `/api/connectors/github/manifest/launch?owner=<org>` in a new tab. That same-origin endpoint returns an HTML page containing `<form method="POST" action="https://github.com/.../settings/apps/new?state=<token>"><input name="manifest" value="<json>"></form>` plus a script that submits it. The browser POSTs to GitHub; GitHub renders a pre-filled App-creation page (permissions + events + webhook URL all set). User clicks Create. GitHub redirects to `/api/connectors/github/app-manifest-callback?code=…&state=…`. The callback exchanges the code via `POST /app-manifests/{code}/conversions`, receives `{ id, pem, webhook_secret, … }`, writes the PEM to `~/.shipit/keys/github-app-<id>.pem` (chmod 600), persists via `GitHubAppService.update()`. The wizard polls `useGitHubAppStatus` while the manifest tab is open and auto-detects the new App on return.
 - **Manual path: collapsed `<details>` block** with the existing App ID / private-key-path fields. For users who already have an App or can't create one via manifest (rare).
 
-The static template lives at `config/github-app-manifest.json`. The dynamic endpoint at `GET /api/connectors/github/manifest` substitutes `hook_attributes.url` and `redirect_url` per-instance from runtime config.
+The static template lives at `config/github-app-manifest.json`. The dynamic JSON endpoint at `GET /api/connectors/github/manifest` returns the substituted manifest for inspection (curl-friendly), but is not what the wizard hands to GitHub — that's the role of `GET /api/connectors/github/manifest/launch`, which returns the auto-submitting HTML form.
+
+**Why a server-rendered form, not a client-side cross-origin POST**: GitHub's manifest mechanism requires a POST form whose action is `github.com/.../settings/apps/new?state=...` and whose body carries the manifest as a `manifest` field. The wizard's "Create App on GitHub" click can't fetch state asynchronously and then submit a cross-origin form in a new tab — popup blockers and async-after-user-gesture rules make that fragile. The launch endpoint is the cleanest solution: same-origin URL → reliable `window.open` → server-issued state baked into the form action → auto-submit on page load.
+
+**Trap to avoid**: an earlier draft tried to pass `manifest_url=<json-endpoint>&state=<token>` as query parameters to github.com. GitHub silently ignored the unknown `manifest_url` param and rendered an empty App-creation form — there is no GitHub-side fetch of `manifest_url`. The only supported transport is the POST form body. Anyone reading our manifest service who's tempted to "simplify" back to a GET URL: don't.
+
+**Three traps GitHub validates on the manifest server-side** (discovered when the POST form mechanism finally worked):
+
+1. **Webhook URL must be publicly reachable** — `localhost`, `127.0.0.1`, `::1`, and RFC-1918 private ranges produce _"Hook url is not supported because it isn't reachable over the public Internet"_. The manifest service omits `hook_attributes` entirely when the configured `webhookPublicUrl` looks non-public. See `checkWebhookUrlPublic()` in `github-app-manifest-service.ts`.
+2. **`default_events` and `hook_attributes` are a coupled pair** — sending events without a valid hook URL fails with _"Hook url cannot be blank"_ / _"Hook is invalid"_. The service must strip BOTH together when the webhook URL is non-public; sending events alone is illegal. The launch HTML's warning explains this to the user; they proceed with permissions-only (events + webhook configured later via GitHub's App settings) or back out and set `GITHUB_WEBHOOK_PUBLIC_URL`.
+3. **`default_events` must align with `default_permissions`** — subscribing to `pull_request` requires `pull_requests: read`. GitHub returns _"Default events are not supported by permissions: pull_request"_ if you skip the matching permission. Same coupling applies to every event/permission pair. The static template at `config/github-app-manifest.json` is the single place to keep them in sync; whenever a new event is added there, audit the docs to find the matching permission.
 
 ## Alternatives Considered
 
@@ -40,7 +50,7 @@ The static template lives at `config/github-app-manifest.json`. The dynamic endp
 ## Consequences
 
 - **Two new services**: `GitHubAppManifestService` (state tokens, template substitution, code exchange, PEM writer). Builds on `GitHubAppService` for persistence so the in-memory + YAML stay in sync via the live-reference pattern.
-- **Two new HTTP endpoints**: `GET /api/connectors/github/manifest` (public, no secrets), `GET /api/connectors/github/app-manifest-callback` (returns HTML since GitHub navigates the user's browser).
+- **Three new HTTP endpoints**: `GET /api/connectors/github/manifest` (JSON, debug-only), `GET /api/connectors/github/manifest/launch` (auto-submitting HTML form — the actual entry point the wizard opens), `GET /api/connectors/github/app-manifest-callback` (returns HTML since GitHub navigates the user's browser).
 - **PEM storage policy locked in**: written to `${SHIPIT_GITHUB_APP_KEY_DIR:-~/.shipit/keys}/github-app-{id}.pem` with `chmod 600`. The webhook secret returned by GitHub goes to a sidecar `.webhook-secret` file (also `chmod 600`) — we don't auto-set `GITHUB_WEBHOOK_SECRET` env var because that would require process-replacement, so the success page tells the user `export GITHUB_WEBHOOK_SECRET=$(cat …)`.
 - **State token CSRF**: 24-byte hex token, 15-minute TTL, in-memory `Map`, single-use. Process restart loses pending states — user just re-clicks.
 - **GitHub's conversion code is single-use and expires in ~60s** — user has to come straight back from the GitHub redirect. Network blips here just mean re-running the wizard.

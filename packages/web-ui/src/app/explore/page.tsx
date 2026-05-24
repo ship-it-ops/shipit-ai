@@ -18,7 +18,7 @@ import { useGraphStore } from '@/stores/graph-store';
 import { useInitialGraphData } from '@/lib/hooks/use-graph-data';
 
 export default function GraphExplorerPage() {
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(true);
   const { selectedNode, setSelectedNode, cyInstance } = useGraphStore();
 
   const { data: graphData } = useInitialGraphData();

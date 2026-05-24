@@ -39,12 +39,18 @@ Boot wiring lives in `packages/api-server/src/index.ts`:
 
 ```ts
 const connectorRegistry = new ConnectorRegistry({ localConfigPath, initial });
-// Default runner = Noop. Production swap happens only if we have credentials + Redis.
-if (hasAnyGitHubConfig && config.backend.redis.url) {
+// Default runner = Noop. Production swap happens whenever Redis is
+// reachable — including when no App is configured yet. The scheduler
+// resolves credentials per-job via the live `globalApp` reference, so
+// adding credentials at runtime (manifest flow, manual env-var set,
+// per-connector override) "just works" without restart.
+if (config.backend.redis.url) {
   const scheduler = new SyncScheduler({ /* … */, globalApp: gh });
   (connectorRegistry as unknown as { runner: SyncScheduler }).runner = scheduler;
 }
 ```
+
+> **Previously**: the gate also required `hasAnyGitHubConfig` (App ID + key path either globally or on at least one connector). That broke the manifest flow's UX: users who configured the App via wizard at runtime kept the NoopRunner, so their first sync silently no-op'd and the card showed "disconnected" forever. The gate was removed once the scheduler stopped reading keys at construction.
 
 The cast is intentional — the field is private to discourage outside mutation; only the boot code reaches past the wrapper to swap. Don't soften the access modifier; the cast advertises that this is an exception.
 

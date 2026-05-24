@@ -1,11 +1,17 @@
 # Agent Context
 
-Last updated: 2026-05-21 | Total notes: 14
+Last updated: 2026-05-22 | Total notes: 18
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
   Format: - [slug] | type | status | importance | YYYY-MM-DD | 8-word summary
 -->
+
+## Status (in-flight)
+
+<!-- always-read at session start -->
+
+- [handoff-github-connector-wizard-mid-flow](status/handoff-github-connector-wizard-mid-flow.md) | status | active | core | 2026-05-22 | mid-flow: user verifying scheduler-attach fix end-to-end
 
 ## Decisions
 
@@ -17,11 +23,13 @@ Last updated: 2026-05-21 | Total notes: 14
 - [etag-optimistic-concurrency-for-editable-config](decisions/etag-optimistic-concurrency-for-editable-config.md) | decision | active | core | 2026-05-20 | ETag pattern shared across schema, registry, app services
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
+- [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
 
 ## Patterns
 
 - [connector-runner-injection](patterns/connector-runner-injection.md) | pattern | active | standard | 2026-05-20 | registry holds ConnectorRunner; scheduler is production swap
 - [live-reference-for-hot-reload](patterns/live-reference-for-hot-reload.md) | pattern | active | standard | 2026-05-20 | shared object refs propagate updates without restart
+- [internal-node-label-underscore-prefix](patterns/internal-node-label-underscore-prefix.md) | pattern | active | core | 2026-05-22 | exclude `_`-prefixed labels from user-facing graph queries
 
 ## Plans
 
@@ -36,4 +44,6 @@ Last updated: 2026-05-21 | Total notes: 14
 ## Scars
 
 - [web-ui-cannot-import-mcp-server-root](scars/web-ui-cannot-import-mcp-server-root.md) | scar | active | core | 2026-05-20 | mcp-server root export drags shared into bundle
+- [github-app-manifest-is-post-not-get](scars/github-app-manifest-is-post-not-get.md) | scar | active | core | 2026-05-22 | GitHub App manifest requires POST form not manifest_url GET
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files
+- [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs

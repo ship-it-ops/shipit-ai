@@ -92,19 +92,45 @@ export class GitHubAppManifestService {
     this.fetchImpl = opts.fetchImpl ?? fetch;
   }
 
-  // Return the manifest JSON the UI will hand to GitHub via `manifest_url`.
-  // Webhook URL + redirect URL are filled from runtime config so each
-  // ShipIt instance points at its own ingress.
-  buildManifest(args: { webhookUrl: string; redirectUrl: string }): RawManifest {
+  // Return the manifest JSON the launch endpoint POSTs to GitHub. Webhook
+  // URL + redirect URL are filled from runtime config so each ShipIt
+  // instance points at its own ingress.
+  //
+  // When the webhook URL isn't publicly reachable (localhost, 127.0.0.1,
+  // ::1, private RFC-1918 ranges), `hook_attributes` is omitted. GitHub
+  // rejects the entire manifest with "Hook url is not supported because
+  // it isn't reachable over the public Internet" if we send a localhost
+  // URL, so we'd rather create the App without a webhook and let the
+  // operator configure it later via the App settings (or by setting
+  // GITHUB_WEBHOOK_PUBLIC_URL to a smee channel and re-running).
+  buildManifest(args: { webhookUrl: string; redirectUrl: string }): {
+    manifest: RawManifest;
+    webhookOmitted: boolean;
+    webhookOmissionReason?: string;
+  } {
     const template = JSON.parse(readFileSync(this.templatePath, 'utf-8')) as RawManifest;
     // The `$comment` field is informational only — strip it before
     // GitHub sees the manifest; GitHub treats unknown fields as no-ops
     // but the comment confuses anyone reading the live manifest URL.
     const out: RawManifest = { ...template };
     delete (out as Record<string, unknown>).$comment;
-    out.hook_attributes = { url: args.webhookUrl, active: true };
     out.redirect_url = args.redirectUrl;
-    return out;
+
+    const reason = checkWebhookUrlPublic(args.webhookUrl);
+    if (reason) {
+      // GitHub treats `default_events` and `hook_attributes` as a
+      // coupled pair: subscribing to any event without a valid webhook
+      // URL fails with "Hook url cannot be blank". Strip both together
+      // so the App is created with permissions only — the operator
+      // can add events + webhook URL via GitHub's App-settings UI
+      // (or by setting GITHUB_WEBHOOK_PUBLIC_URL to a public ingress
+      // and re-running the wizard).
+      delete (out as Record<string, unknown>).hook_attributes;
+      delete (out as Record<string, unknown>).default_events;
+      return { manifest: out, webhookOmitted: true, webhookOmissionReason: reason };
+    }
+    out.hook_attributes = { url: args.webhookUrl, active: true };
+    return { manifest: out, webhookOmitted: false };
   }
 
   // Issue a fresh state token. The UI sends this to GitHub's "Create
@@ -207,6 +233,41 @@ export class GitHubAppManifestService {
       if (entry.createdAt < cutoff) this.states.delete(token);
     }
   }
+}
+
+// Return a human-readable reason if the given URL would be rejected by
+// GitHub as a webhook target (not publicly reachable). Returns null when
+// the URL looks public enough that we can include it in the manifest.
+//
+// This isn't perfectly accurate — a hostname could resolve to a public
+// IP that's actually internal — but it catches the common local-dev
+// cases (localhost / 127.x / 192.168.x / 10.x / 172.16-31.x / ::1) that
+// hard-fail GitHub's manifest validator. Borderline cases get sent to
+// GitHub; if GitHub rejects, the user sees the error directly.
+export function checkWebhookUrlPublic(rawUrl: string): string | null {
+  if (!rawUrl || !rawUrl.trim()) return 'no webhook URL configured';
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return 'webhook URL is not a valid URL';
+  }
+  const host = url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) {
+    return 'webhook URL points at localhost';
+  }
+  if (host === '127.0.0.1' || host.startsWith('127.')) return 'webhook URL is loopback (127.x)';
+  if (host === '::1') return 'webhook URL is IPv6 loopback (::1)';
+  if (host === '0.0.0.0') return 'webhook URL is the wildcard 0.0.0.0';
+  // RFC1918 private ranges — GitHub can't reach these from the internet.
+  if (host.startsWith('10.')) return 'webhook URL is in the private 10.x range';
+  if (host.startsWith('192.168.')) return 'webhook URL is in the private 192.168.x range';
+  const m172 = host.match(/^172\.(\d+)\./);
+  if (m172) {
+    const second = Number(m172[1]);
+    if (second >= 16 && second <= 31) return 'webhook URL is in the private 172.16/12 range';
+  }
+  return null;
 }
 
 // Re-exported for tests that need to bypass the JS-host's `fs` boundary

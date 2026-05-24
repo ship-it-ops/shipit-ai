@@ -43,12 +43,16 @@ export interface SyncSchedulerOptions {
   // with APP_NOT_CONFIGURED.
   globalApp: AppLike;
   concurrency?: number;
-  // Where to attach. Defaults to "shipit:sync:github" so multi-instance
+  // Where to attach. Defaults to "shipit-sync-github" so multi-instance
   // setups can override (e.g. per environment) without colliding.
+  //
+  // BullMQ 5 forbids `:` in queue names — it reserves the colon for its
+  // internal key scheme (`bull:<queue>:<key>`) and `new Queue(...)` throws
+  // synchronously if you try. We hyphenate; do not reintroduce colons.
   queueName?: string;
 }
 
-const DEFAULT_QUEUE = 'shipit:sync:github';
+const DEFAULT_QUEUE = 'shipit-sync-github';
 
 // Parse a redis:// URL into the host/port/password shape that bullmq's
 // ConnectionOptions expects. Avoids handing bullmq an ioredis instance,

@@ -92,12 +92,23 @@ export interface ConnectorInfo {
 
 export function connectorInfo(c: Connector, runtime?: SyncRuntimeStatus | null): ConnectorInfo {
   const lastRun = c.lastRuns[0];
-  // Derivation priority: runtime overrides the cold-storage view since it's
-  // the only signal that catches in-flight syncs. Disabled connectors are
-  // always "not_connected" regardless of last-run color.
+  // Derivation priority:
+  //   1. Disabled → not_connected (always, regardless of any other signal).
+  //   2. Runtime state — overrides cold storage because it catches in-
+  //      flight syncs (`running`) and post-sync degraded/failed states
+  //      that haven't been written to lastRuns yet.
+  //   3. Latest run outcome — cold but durable across restarts.
+  //   4. Fallback for enabled connectors with no runs yet: show as
+  //      degraded (visually "syncing") rather than not_connected. A
+  //      freshly-created connector with an in-flight or pending sync
+  //      shouldn't appear "disconnected" — that label is reserved for
+  //      explicitly-disabled connectors.
   let status: ConnectorInfo['status'];
   if (!c.enabled) {
     status = 'not_connected';
+  } else if (runtime?.state === 'running') {
+    // Maps to the DS `syncing` chip via the card's statusMap.
+    status = 'degraded';
   } else if (runtime?.state === 'failed') {
     status = 'failed';
   } else if (runtime?.state === 'degraded') {
@@ -109,7 +120,11 @@ export function connectorInfo(c: Connector, runtime?: SyncRuntimeStatus | null):
   } else if (lastRun?.status === 'success') {
     status = 'healthy';
   } else {
-    status = 'not_connected';
+    // Enabled, no runtime signal, no runs recorded yet — the freshly-
+    // created or freshly-queued state. Show as syncing (degraded) so
+    // the user sees forward motion rather than a "disconnected" label
+    // that suggests they have to do something.
+    status = 'degraded';
   }
   return {
     id: c.id,
@@ -368,36 +383,27 @@ export async function fetchGitHubAppStatus(): Promise<GitHubAppStatusWithHash> {
 }
 
 // ── GitHub App manifest flow ──────────────────────────────────────────────
-// Issues a one-time CSRF state token, then the UI redirects the user to
-// github.com/.../settings/apps/new?manifest_url=…&state=… so they can
-// create the App from our spec. GitHub redirects back to our callback,
-// which exchanges the code for credentials and persists the App.
+// The flow has three URLs:
+//   1. /api/connectors/github/manifest/launch — same-origin HTML page
+//      the wizard opens in a new tab. The page contains an auto-
+//      submitting form that POSTs the manifest JSON to github.com. The
+//      server mints + embeds the state token in the form's action URL.
+//   2. github.com/.../settings/apps/new — GitHub renders a pre-filled
+//      App-creation page from the POSTed manifest. User clicks Create.
+//   3. /api/connectors/github/app-manifest-callback — GitHub redirects
+//      the user here with `code` + `state`. We exchange the code for
+//      credentials and persist.
+//
+// GitHub does NOT support a `manifest_url=` query param that it would
+// fetch — only a POST form transports the manifest body. The earlier
+// implementation that tried `manifest_url=...` produced an empty App-
+// creation form because GitHub silently ignored the param.
 
-export async function fetchManifestState(): Promise<{ state: string }> {
-  const res = await fetch(`${API_URL}/api/connectors/github/manifest/state`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    throw new Error(`fetchManifestState: ${res.status} ${res.statusText}`);
-  }
-  return (await res.json()) as { state: string };
-}
-
-// Build the github.com URL the user is sent to. The `manifest_url` query
-// param is read by GitHub server-side — it must be the API server's
-// public URL, not the web UI's. The browser only navigates; GitHub does
-// the fetch. We construct the URL from `clientConfig.api.url` which the
-// web UI already has access to.
-export function buildManifestRedirectUrl(args: { state: string; ownerOrg?: string }): string {
-  const manifestUrl = `${API_URL}/api/connectors/github/manifest`;
-  const base = args.ownerOrg?.trim()
-    ? `https://github.com/organizations/${encodeURIComponent(args.ownerOrg.trim())}/settings/apps/new`
-    : 'https://github.com/settings/apps/new';
-  const qs = new URLSearchParams({
-    manifest_url: manifestUrl,
-    state: args.state,
-  });
-  return `${base}?${qs.toString()}`;
+export function buildManifestLaunchUrl(args: { ownerOrg?: string }): string {
+  const qs = new URLSearchParams();
+  if (args.ownerOrg?.trim()) qs.set('owner', args.ownerOrg.trim());
+  const query = qs.toString();
+  return `${API_URL}/api/connectors/github/manifest/launch${query ? `?${query}` : ''}`;
 }
 
 export async function updateGitHubApp(

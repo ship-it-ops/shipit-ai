@@ -48,7 +48,7 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
-  buildManifestRedirectUrl,
+  buildManifestLaunchUrl,
   type ConnectorAppOverride,
   type ConnectorEntities,
   type ConnectorScope,
@@ -56,7 +56,6 @@ import {
 } from '@/lib/api';
 import {
   useCreateConnector,
-  useFetchManifestState,
   useGitHubAppStatus,
   useProbeConnector,
   useTriggerSync,
@@ -112,7 +111,6 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   const create = useCreateConnector();
   const triggerSync = useTriggerSync();
   const updateGlobalApp = useUpdateGitHubApp();
-  const fetchManifest = useFetchManifestState();
   const queryClient = useQueryClient();
   // Only fetch the App status while the dialog is open — avoids a 503
   // request on every page mount when the GitHubAppService isn't wired
@@ -194,6 +192,17 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     onOpenChange(next);
   };
 
+  // Defensive: reset transient pending state whenever the dialog opens
+  // fresh. The dialog's parent component does call reset() on close, but
+  // if a hydration error or React-fast-refresh caused the component to
+  // hold state across mounts, this is the seatbelt. Cheap to run.
+  useEffect(() => {
+    if (open) {
+      setManifestPending(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // Auto-populate id and name once the probe gives us an org.
   useEffect(() => {
     if (probeResult?.ok && probeResult.suggestedOrg && !org) {
@@ -248,28 +257,24 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     return looksLikeId(overrideAppId) && overrideKeyPath.trim().length > 0;
   }, [mode, globalConfigured, sharedAppId, sharedKeyPath, overrideAppId, overrideKeyPath]);
 
-  // Kick off the App manifest flow. Mints a state token from the API,
-  // builds the github.com URL, opens it in a new tab so the user can
-  // come back to the wizard tab after creating the App.
-  const handleCreateFromTemplate = async () => {
-    try {
-      const { state } = await fetchManifest.mutateAsync();
-      const url = buildManifestRedirectUrl({
-        state,
-        ownerOrg: manifestOwner.trim() || undefined,
-      });
-      // noopener+noreferrer keeps the new tab from accessing the wizard's
-      // window via `opener` — defense in depth, GitHub itself is fine
-      // but the browser pop-up chain isn't always trustworthy.
-      window.open(url, '_blank', 'noopener,noreferrer');
-      setManifestPending(true);
-    } catch (err) {
-      toast({
-        variant: 'err',
-        title: 'Could not start manifest flow',
-        description: (err as Error).message,
-      });
-    }
+  // Kick off the App manifest flow.
+  //
+  // GitHub's manifest mechanism requires an HTML form POST whose body
+  // carries the manifest JSON — there is no `manifest_url` query param
+  // that GitHub fetches (the earlier implementation got that wrong and
+  // produced an empty App-creation form). The server hosts an HTML page
+  // at /api/connectors/github/manifest/launch that contains the auto-
+  // submitting form; we just open that URL in a new tab. Same-origin
+  // means no popup-blocker issues and no async work inside the click.
+  const handleCreateFromTemplate = () => {
+    const url = buildManifestLaunchUrl({
+      ownerOrg: manifestOwner.trim() || undefined,
+    });
+    // noopener+noreferrer keeps the new tab from accessing the wizard's
+    // window via `opener` — defense in depth, github.com is trustworthy
+    // but the launch page → github.com chain is two navigations.
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setManifestPending(true);
   };
 
   const handleProbe = async () => {
@@ -393,40 +398,74 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                       App and you can keep going.
                     </p>
                     <Field
-                      label="App owner"
-                      hint="Org login (e.g. acme-corp). Leave blank to create the App on your personal account."
+                      label="Owner organization (optional)"
+                      hint="GitHub org LOGIN — the slug after github.com/, e.g. `acme-corp`. The org must already exist. Leave blank to create the App under your personal GitHub account; you can transfer it to an org from GitHub later."
                     >
                       {(p) => (
                         <Input
                           {...p}
-                          placeholder="acme-corp (optional)"
+                          placeholder="acme-corp"
                           value={manifestOwner}
                           onChange={(e) => setManifestOwner(e.target.value)}
                           disabled={manifestPending}
                         />
                       )}
                     </Field>
-                    <Button
-                      onClick={handleCreateFromTemplate}
-                      disabled={fetchManifest.isPending || manifestPending}
-                    >
+                    {/* Live preview of the destination URL. Removes any
+                        ambiguity about where the user is about to land —
+                        the previous "App owner" label was guessed-at and
+                        sent users to nonexistent org URLs. */}
+                    <p className="text-text-muted text-[11px]">
+                      Will open:{' '}
+                      <code className="text-text">
+                        {manifestOwner.trim()
+                          ? `github.com/organizations/${manifestOwner.trim()}/settings/apps/new`
+                          : 'github.com/settings/apps/new'}
+                      </code>
+                      {manifestOwner.trim() && (
+                        <>
+                          {' '}
+                          —{' '}
+                          <a
+                            href={`https://github.com/${encodeURIComponent(manifestOwner.trim())}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline"
+                          >
+                            verify the org exists
+                          </a>{' '}
+                          before clicking Create.
+                        </>
+                      )}
+                    </p>
+                    <Button onClick={handleCreateFromTemplate} disabled={manifestPending}>
                       {manifestPending ? (
                         <>
                           <Spinner size="sm" /> Waiting for GitHub…
-                        </>
-                      ) : fetchManifest.isPending ? (
-                        <>
-                          <Spinner size="sm" /> Starting…
                         </>
                       ) : (
                         'Create App on GitHub'
                       )}
                     </Button>
                     {manifestPending && (
-                      <p className="text-text-muted text-[11px]">
-                        A new tab is open at github.com. Complete the create flow there; this page
-                        will refresh automatically once the App is configured.
-                      </p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-text-muted text-[11px]">
+                          A new tab is open at github.com. Complete the create flow there; this page
+                          will refresh automatically once the App is configured.
+                        </p>
+                        {/* Explicit escape hatch — if the user closed the
+                            GitHub tab without finishing (wrong org URL,
+                            changed their mind, etc.) they need a way out
+                            of "Waiting…" that doesn't require closing the
+                            whole wizard. */}
+                        <button
+                          type="button"
+                          onClick={() => setManifestPending(false)}
+                          className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -496,7 +535,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
           <Field
             label="Installation ID"
             required
-            hint="Numeric ID from the App's installation URL (e.g. 12345678). One per org."
+            hint="Numeric ID for THIS org's install of the App. One installation = one connector instance."
           >
             {(p) => (
               <Input
@@ -510,10 +549,38 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
               />
             )}
           </Field>
-          <p className="text-text-muted text-[12px]">
-            Find this in GitHub → App settings → Install App → the install URL ends in the numeric
-            ID. If you haven't installed the App in this org yet, do that first.
-          </p>
+          {/* Two paths: first-time install (just click Install on the
+              App's page, the resulting URL contains the ID) and recovery
+              (find a previously-installed App via Settings → Configure).
+              The latter is easy to miss — GitHub doesn't surface the
+              installation ID on any single App-overview page. */}
+          <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3 text-[12px]">
+            <div className="text-text font-medium">Where to find it</div>
+            <div className="text-text-muted">
+              <strong className="text-text">If you haven't installed the App yet:</strong> go to{' '}
+              <code>github.com/apps/&lt;your-app-name&gt;/installations/new</code>, pick the org or
+              user, click <strong>Install</strong>. The URL after install ends in the numeric ID.
+            </div>
+            <div className="text-text-muted">
+              <strong className="text-text">If the App is already installed:</strong> the easiest
+              way back to the ID is via the <strong>Configure</strong> link.
+              <ul className="mt-1 ml-4 list-disc">
+                <li>
+                  <em>Personal install</em>: github.com → your profile menu →{' '}
+                  <strong>Settings</strong> → <strong>Applications</strong> (sidebar) →{' '}
+                  <strong>Installed GitHub Apps</strong> tab → click <strong>Configure</strong> next
+                  to your App.
+                </li>
+                <li>
+                  <em>Org install</em>: the org's page → <strong>Settings</strong> →{' '}
+                  <strong>Third-party Access</strong> → <strong>GitHub Apps</strong> → click{' '}
+                  <strong>Configure</strong> next to your App.
+                </li>
+              </ul>
+              Either way, the URL becomes <code>.../settings/installations/&lt;ID&gt;</code> — the
+              trailing number is what you paste here.
+            </div>
+          </div>
           <Button
             variant="outline"
             onClick={handleProbe}
@@ -751,38 +818,55 @@ function AppModeCard({
   onSelect: () => void;
   children?: ReactNode;
 }) {
-  // Clickable card acts as a radio. Native <input type=radio> would be
-  // accessible but visually fights the rest of the wizard; this preserves
-  // keyboard interaction via Enter/Space because the outer is a <button>.
+  // The card is a <div>, not a <button>, because its `children` slot
+  // routinely contains interactive elements (buttons, inputs, details
+  // expanders) and nesting buttons inside a button is invalid HTML —
+  // React's hydration check will scream and Firefox/Safari render the
+  // tree inconsistently.
+  //
+  // Selection happens via the header button at the top (radio dot +
+  // title). The card visually changes background/border based on
+  // `selected`, but only the header captures the click. The children
+  // area sits as a sibling, free to host its own widgets.
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
+    <div
+      role="radiogroup"
+      aria-checked={selected}
       className={
-        'border-border bg-panel hover:border-border-strong flex flex-col gap-2 rounded-md border p-3 text-left outline-none ' +
-        'focus-visible:ring-accent-dim focus-visible:ring-[3px] ' +
+        'border-border bg-panel rounded-md border p-3 outline-none ' +
         (selected ? 'border-accent bg-accent-dim/40' : '')
       }
     >
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className={
-            'inline-block h-3 w-3 rounded-full border ' +
-            (selected ? 'border-accent bg-accent' : 'border-border-strong')
-          }
-        />
-        <span className="text-text text-[14px] font-medium">{title}</span>
-        {recommended && (
-          <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
-            Recommended
-          </span>
-        )}
-      </div>
-      <p className="text-text-muted text-[12px]">{description}</p>
-      {children && <div className="flex flex-col gap-2 pt-1">{children}</div>}
-    </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className={
+          'group flex w-full flex-col gap-2 text-left outline-none ' +
+          'focus-visible:ring-accent-dim focus-visible:ring-[3px]'
+        }
+      >
+        <span className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={
+              'inline-block h-3 w-3 shrink-0 rounded-full border ' +
+              (selected
+                ? 'border-accent bg-accent'
+                : 'border-border-strong group-hover:border-border-strong')
+            }
+          />
+          <span className="text-text text-[14px] font-medium">{title}</span>
+          {recommended && (
+            <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
+              Recommended
+            </span>
+          )}
+        </span>
+        <span className="text-text-muted block text-[12px]">{description}</span>
+      </button>
+      {children && <div className="flex flex-col gap-2 pt-3">{children}</div>}
+    </div>
   );
 }
 
