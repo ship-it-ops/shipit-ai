@@ -24,7 +24,7 @@
     "@fastify/cors": "^9.0.0",
     "@fastify/swagger": "^8.15.0",
     "neo4j-driver": "^5.27.0",
-    "yaml": "^2.7.0",
+    "yaml": "^2.8.3",
     "@shipit-ai/shared": "workspace:*",
     "@shipit-ai/mcp-server": "workspace:*",
     "@shipit-ai/event-bus": "workspace:*",

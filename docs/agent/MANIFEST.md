@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-22 | Total notes: 18
+Last updated: 2026-05-24 | Total notes: 20
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -12,6 +12,7 @@ Last updated: 2026-05-22 | Total notes: 18
 <!-- always-read at session start -->
 
 - [handoff-github-connector-wizard-mid-flow](status/handoff-github-connector-wizard-mid-flow.md) | status | active | core | 2026-05-22 | mid-flow: user verifying scheduler-attach fix end-to-end
+- [dependabot-resolution-pending-push-and-dismissals](status/dependabot-resolution-pending-push-and-dismissals.md) | status | active | standard | 2026-05-24 | upgrades land locally; commit + Fastify alert dismissals pending
 
 ## Decisions
 
@@ -24,6 +25,7 @@ Last updated: 2026-05-22 | Total notes: 18
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
+- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-05-24 | pnpm.overrides + direct bumps; dismiss Fastify v5-only alerts
 
 ## Patterns
 
