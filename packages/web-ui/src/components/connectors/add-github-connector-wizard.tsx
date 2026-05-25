@@ -461,9 +461,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
               GitHub App
             </a>
             . The recommended path is one App per org — each App stays private to its owner account,
-            which is GitHub&apos;s default ("Only on this account"). The shared path needs you to
-            make the App <strong>public</strong> in GitHub so it can be installed on accounts you
-            don&apos;t own.
+            which is GitHub&apos;s default (&ldquo;Only on this account&rdquo;). The shared path
+            needs you to make the App <strong>public</strong> in GitHub so it can be installed on
+            accounts you don&apos;t own.
           </Banner>
 
           <AppModeCard
@@ -493,9 +493,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                     </span>
                   </div>
                   <p className="text-text-muted text-[12px]">
-                    Opens GitHub with a pre-filled "Register GitHub App" form scoped to your org.
-                    The App stays private ("Only on this account"). After you click Create on
-                    GitHub, the wizard auto-fills the App ID and private- key path below.
+                    Opens GitHub with a pre-filled &ldquo;Register GitHub App&rdquo; form scoped to
+                    your org. The App stays private (&ldquo;Only on this account&rdquo;). After you
+                    click Create on GitHub, the wizard auto-fills the App ID and private- key path
+                    below.
                   </p>
                   <Field
                     label="Org login"
@@ -611,9 +612,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                       </span>
                     </div>
                     <p className="text-text-muted text-[12px]">
-                      We'll send you to GitHub with the permissions, events, and webhook URL already
-                      filled in. After you click Create on GitHub, this wizard auto- detects the new
-                      App and you can keep going.
+                      We&apos;ll send you to GitHub with the permissions, events, and webhook URL
+                      already filled in. After you click Create on GitHub, this wizard auto- detects
+                      the new App and you can keep going.
                     </p>
                     <Field
                       label="Owner organization (optional)"
@@ -717,8 +718,8 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
           {mode === 'shared' && (
             <Banner tone="warn">
               <strong>Reminder:</strong> sharing one App across orgs requires marking it{' '}
-              <strong>public</strong> in GitHub (App settings → "Where can this GitHub App be
-              installed?" → <em>Any account</em>). Public Apps are listed on{' '}
+              <strong>public</strong> in GitHub (App settings → &ldquo;Where can this GitHub App be
+              installed?&rdquo; → <em>Any account</em>). Public Apps are listed on{' '}
               <code>github.com/apps/&lt;slug&gt;</code> and anyone with the link can install them on
               their own accounts. If that&apos;s not acceptable, switch back to{' '}
               <strong>One App for this org</strong>.
@@ -870,7 +871,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
           <ConfigureSection title="Repo scope">
             <Banner tone="warn">
               Initial sync is capped at the first <strong>{scope.cappedAt ?? '∞'}</strong>{' '}
-              repositories. Uncheck the cap below to remove it after you've reviewed scope.
+              repositories. Uncheck the cap below to remove it after you&apos;ve reviewed scope.
             </Banner>
             <Field
               label="Include patterns"

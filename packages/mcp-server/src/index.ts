@@ -72,9 +72,23 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
       const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
       await transport.handleRequest(req, res, body);
     } catch (err) {
+      // Log the full error (including stack) server-side; never echo
+      // err.toString() or err.stack back to the caller — CodeQL flags
+      // it as information exposure (js/stack-trace-exposure) and it
+      // can leak internal paths, dep versions, secrets that landed in
+      // an error message, etc. Surface a generic message + log the
+      // detail so operators can correlate by timestamp.
+      console.error('mcp request failed:', err);
       if (!res.headersSent) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: String(err) } }));
+        res.end(
+          JSON.stringify({
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Internal error processing MCP request. See server logs for details.',
+            },
+          }),
+        );
       }
     }
   });

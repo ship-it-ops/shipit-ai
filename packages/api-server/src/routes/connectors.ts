@@ -4,9 +4,32 @@
 // clobbering each other. The probe endpoint validates credentials against the
 // live GitHub API without writing anything.
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve as resolvePath, sep } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { resolveAppCredentials } from '@shipit-ai/shared';
+
+// Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
+// body (so the wizard's per-org override panel can validate creds
+// without persisting). Without this allowlist, an attacker could pass
+// `app.privateKeyPath: '/etc/passwd'` and have the server read + echo
+// any file readable by the API process (CodeQL js/path-injection).
+//
+// The allowed directory is the same one the manifest service writes
+// PEMs into — env-overridable for container deployments. Both the
+// candidate and the allowed prefix are absolute-resolved so symlinks
+// and `..` segments can't escape.
+function getAllowedKeyDir(): string {
+  return resolvePath(process.env.SHIPIT_GITHUB_APP_KEY_DIR ?? `${homedir()}/.shipit/keys`);
+}
+
+function isAllowedKeyPath(candidate: string): boolean {
+  if (!candidate) return false;
+  const allowed = getAllowedKeyDir();
+  const resolved = resolvePath(candidate);
+  return resolved === allowed || resolved.startsWith(allowed + sep);
+}
 import {
   ConnectorVersionConflictError,
   type ConnectorRegistry,
@@ -560,114 +583,145 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // transient Octokit, hits the installation endpoint, lists a handful of
   // repos. Returns structured failure codes so the wizard can map each to a
   // user-actionable message instead of dumping a stack trace.
-  server.post<{ Body: ProbeBody }>('/probe', async (request, reply) => {
-    const { installationId, suggestedOrg } = request.body ?? ({} as ProbeBody);
-    if (!installationId) {
-      return reply.status(400).send({
-        ok: false,
-        code: 'VALIDATION_ERROR',
-        message: 'installationId is required',
-      });
-    }
-
-    const cfg = (server as unknown as { config?: Config }).config;
-    const globalApp = cfg?.connectors.github.app ?? { id: '', privateKeyPath: '' };
-    // Probe resolution: the request's `app` field overrides the global one
-    // field-by-field. Lets the wizard's advanced panel test a per-org App
-    // without leaving the create flow.
-    const resolved = resolveAppCredentials({ app: request.body?.app }, globalApp);
-    if (!resolved.id || !resolved.privateKeyPath) {
-      return reply.status(400).send({
-        ok: false,
-        code: 'APP_NOT_CONFIGURED',
-        message: resolved.overridden
-          ? 'The override App is missing id or privateKeyPath. Both fields are required when overriding.'
-          : 'GitHub App is not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_PATH ' +
-            'in your environment, or supply an override `app` in this request.',
-      });
-    }
-
-    let privateKey: string;
-    try {
-      privateKey = readFileSync(resolved.privateKeyPath, 'utf-8');
-    } catch (err) {
-      return reply.status(400).send({
-        ok: false,
-        code: 'PRIVATE_KEY_UNREADABLE',
-        message: `Failed to read App private key at ${resolved.privateKeyPath}: ${(err as Error).message}`,
-      });
-    }
-
-    // Reuse the connector's own auth helper so we don't drift between probe
-    // and live sync. It returns a per-installation Octokit ready for the
-    // discovery calls below.
-    const { auth, octokit } = await authenticateGitHubApp({
-      appId: resolved.id,
-      privateKey,
-      installationId,
-    });
-    if (!auth.success || !octokit) {
-      return reply.status(400).send({
-        ok: false,
-        code: 'AUTH_FAILED',
-        message: auth.error ?? 'GitHub App authentication failed',
-      });
-    }
-
-    try {
-      // The installation account name doubles as the default org hint for
-      // the wizard's "pick org" step when the caller didn't supply one.
-      const inst = await octokit.rest.apps.getInstallation({
-        installation_id: Number(installationId),
-      });
-      const account = inst.data.account as { login?: string; type?: string } | null;
-      const org = suggestedOrg ?? account?.login ?? '';
-
-      let sampleRepos: Array<{ name: string; private: boolean; archived: boolean }> = [];
-      let repoCount = 0;
-      try {
-        const repos = await octokit.rest.apps.listReposAccessibleToInstallation({ per_page: 5 });
-        repoCount = repos.data.total_count;
-        sampleRepos = repos.data.repositories.map(
-          (r: { name: string; private: boolean; archived?: boolean }) => ({
-            name: r.name,
-            private: r.private,
-            archived: r.archived ?? false,
-          }),
-        );
-      } catch (err) {
-        // Probe still succeeds — auth worked, we just couldn't enumerate
-        // repos. Surface as a warning rather than a hard fail.
-        request.log.warn({ err }, 'probe: listReposAccessibleToInstallation failed');
+  //
+  // Per-route rate limit (tighter than the global default): probe hits the
+  // filesystem (private key) AND the GitHub API per call — an unbounded
+  // loop would chew through Octokit's per-IP budget and our FS handles.
+  // 30 req/min/IP is plenty for a human filling out the wizard.
+  server.post<{ Body: ProbeBody }>(
+    '/probe',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const { installationId, suggestedOrg } = request.body ?? ({} as ProbeBody);
+      if (!installationId) {
+        return reply.status(400).send({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: 'installationId is required',
+        });
       }
 
-      return reply.send({
-        ok: true,
-        installation: {
-          id: installationId,
-          account: account?.login ?? null,
-          accountType: account?.type ?? null,
-          repoCount,
-        },
-        suggestedOrg: org,
-        sampleRepos,
-        // Echo back which App credentials were used so the wizard's
-        // "Advanced" panel can confirm an override actually took effect.
-        app: { id: resolved.id, overridden: resolved.overridden },
+      const cfg = (server as unknown as { config?: Config }).config;
+      const globalApp = cfg?.connectors.github.app ?? { id: '', privateKeyPath: '' };
+      // Probe resolution: the request's `app` field overrides the global one
+      // field-by-field. Lets the wizard's advanced panel test a per-org App
+      // without leaving the create flow.
+      const resolved = resolveAppCredentials({ app: request.body?.app }, globalApp);
+      if (!resolved.id || !resolved.privateKeyPath) {
+        return reply.status(400).send({
+          ok: false,
+          code: 'APP_NOT_CONFIGURED',
+          message: resolved.overridden
+            ? 'The override App is missing id or privateKeyPath. Both fields are required when overriding.'
+            : 'GitHub App is not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_PATH ' +
+              'in your environment, or supply an override `app` in this request.',
+        });
+      }
+
+      // Only constrain paths supplied via the request body. The global App
+      // path comes from server config (operator-controlled) — operators
+      // can legitimately point at /etc/shipit/keys/… or other absolute
+      // paths, and locking that down would be a config break.
+      const userSuppliedKeyPath = request.body?.app?.privateKeyPath;
+      if (userSuppliedKeyPath && !isAllowedKeyPath(userSuppliedKeyPath)) {
+        return reply.status(400).send({
+          ok: false,
+          code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+          message:
+            'privateKeyPath must point inside the configured keys directory ' +
+            '(SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys).',
+        });
+      }
+
+      let privateKey: string;
+      try {
+        privateKey = readFileSync(resolved.privateKeyPath, 'utf-8');
+      } catch (err) {
+        // Log details server-side; the response intentionally omits the
+        // path + raw error message so a probe failure doesn't echo
+        // operator filesystem layout to the caller.
+        request.log.warn(
+          { err, path: resolved.privateKeyPath },
+          'probe: failed to read App private key',
+        );
+        return reply.status(400).send({
+          ok: false,
+          code: 'PRIVATE_KEY_UNREADABLE',
+          message: 'Failed to read App private key. Check the API server logs for details.',
+        });
+      }
+
+      // Reuse the connector's own auth helper so we don't drift between probe
+      // and live sync. It returns a per-installation Octokit ready for the
+      // discovery calls below.
+      const { auth, octokit } = await authenticateGitHubApp({
+        appId: resolved.id,
+        privateKey,
+        installationId,
       });
-    } catch (err) {
-      const status = (err as { status?: number }).status;
-      let code: string = 'PROBE_FAILED';
-      if (status === 401) code = 'BAD_PRIVATE_KEY';
-      else if (status === 403) code = 'INSUFFICIENT_PERMISSIONS';
-      else if (status === 404) code = 'INSTALLATION_NOT_FOUND';
-      return reply.status(status === 404 ? 404 : 400).send({
-        ok: false,
-        code,
-        message: (err as Error).message,
-      });
-    }
-  });
+      if (!auth.success || !octokit) {
+        return reply.status(400).send({
+          ok: false,
+          code: 'AUTH_FAILED',
+          message: auth.error ?? 'GitHub App authentication failed',
+        });
+      }
+
+      try {
+        // The installation account name doubles as the default org hint for
+        // the wizard's "pick org" step when the caller didn't supply one.
+        const inst = await octokit.rest.apps.getInstallation({
+          installation_id: Number(installationId),
+        });
+        const account = inst.data.account as { login?: string; type?: string } | null;
+        const org = suggestedOrg ?? account?.login ?? '';
+
+        let sampleRepos: Array<{ name: string; private: boolean; archived: boolean }> = [];
+        let repoCount = 0;
+        try {
+          const repos = await octokit.rest.apps.listReposAccessibleToInstallation({ per_page: 5 });
+          repoCount = repos.data.total_count;
+          sampleRepos = repos.data.repositories.map(
+            (r: { name: string; private: boolean; archived?: boolean }) => ({
+              name: r.name,
+              private: r.private,
+              archived: r.archived ?? false,
+            }),
+          );
+        } catch (err) {
+          // Probe still succeeds — auth worked, we just couldn't enumerate
+          // repos. Surface as a warning rather than a hard fail.
+          request.log.warn({ err }, 'probe: listReposAccessibleToInstallation failed');
+        }
+
+        return reply.send({
+          ok: true,
+          installation: {
+            id: installationId,
+            account: account?.login ?? null,
+            accountType: account?.type ?? null,
+            repoCount,
+          },
+          suggestedOrg: org,
+          sampleRepos,
+          // Echo back which App credentials were used so the wizard's
+          // "Advanced" panel can confirm an override actually took effect.
+          app: { id: resolved.id, overridden: resolved.overridden },
+        });
+      } catch (err) {
+        const status = (err as { status?: number }).status;
+        let code: string = 'PROBE_FAILED';
+        if (status === 401) code = 'BAD_PRIVATE_KEY';
+        else if (status === 403) code = 'INSUFFICIENT_PERMISSIONS';
+        else if (status === 404) code = 'INSTALLATION_NOT_FOUND';
+        return reply.status(status === 404 ? 404 : 400).send({
+          ok: false,
+          code,
+          message: (err as Error).message,
+        });
+      }
+    },
+  );
 
   // GET /api/connectors/:id — detail with ETag header for subsequent PATCH.
   // ETag is computed on the *configuration* shape only — lastRuns now

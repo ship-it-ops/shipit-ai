@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
@@ -294,20 +294,42 @@ describe('Connector probe endpoint', () => {
     expect(response.json().code).toBe('APP_NOT_CONFIGURED');
   });
 
-  it('reports PRIVATE_KEY_UNREADABLE when the override path does not exist', async () => {
-    // Full override but the file doesn't exist — proves the resolver
-    // actually used the override (otherwise it'd return APP_NOT_CONFIGURED
-    // for the empty global App).
+  it('reports PRIVATE_KEY_PATH_NOT_ALLOWED when override path is outside the allowed dir', async () => {
+    // CodeQL js/path-injection mitigation: probes can't read arbitrary
+    // files via the override. Any path outside SHIPIT_GITHUB_APP_KEY_DIR
+    // (default ~/.shipit/keys) gets rejected before fs touches it.
     const response = await server.inject({
       method: 'POST',
       url: '/api/connectors/probe',
       payload: {
         installationId: '12345',
-        app: { id: '777', privateKeyPath: '/this/path/does/not/exist.pem' },
+        app: { id: '777', privateKeyPath: '/etc/passwd' },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
+  });
+
+  it('reports PRIVATE_KEY_UNREADABLE when an allowed override path does not exist', async () => {
+    // Full override pointing INSIDE the allowed dir but at a file that
+    // doesn't exist. Proves the resolver actually used the override
+    // (otherwise it'd return APP_NOT_CONFIGURED for the empty global App)
+    // AND that the error message no longer echoes the user-supplied path
+    // back (information-disclosure hardening from the same security pass).
+    const allowedButMissing = join(homedir(), '.shipit', 'keys', 'definitely-does-not-exist.pem');
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/probe',
+      payload: {
+        installationId: '12345',
+        app: { id: '777', privateKeyPath: allowedButMissing },
       },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().code).toBe('PRIVATE_KEY_UNREADABLE');
+    // The response intentionally does NOT include the path or the raw
+    // fs error — operator-side log line carries those.
+    expect(response.json().message).not.toContain(allowedButMissing);
   });
 
   afterAll(async () => {

@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
@@ -60,6 +61,20 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   });
 
   await server.register(cors, { origin: true });
+  // Global rate limit. Conservative defaults (200 req/min per IP) protect
+  // the expensive endpoints (probe, manifest exchange, installations
+  // listing — they hit the filesystem, the GitHub API, or both) from
+  // accidental loops and abusive scans. CodeQL js/missing-rate-limiting
+  // requires *some* limiter on routes that do FS access + authorization.
+  // Routes can override via { config: { rateLimit: {...} } } when they
+  // need tighter or looser bounds.
+  await server.register(rateLimit, {
+    max: 200,
+    timeWindow: '1 minute',
+    // Skip during tests so the suite isn't tracking per-IP counters
+    // across hundreds of injected requests.
+    enableDraftSpec: true,
+  });
   await server.register(swagger, {
     openapi: {
       info: { title: 'ShipIt-AI API', version: '0.1.0' },

@@ -20,18 +20,19 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "fastify": "^4.28.0",
     "@fastify/cors": "^9.0.0",
+    "@fastify/rate-limit": "^9.1.0",
     "@fastify/swagger": "^8.15.0",
-    "neo4j-driver": "^5.27.0",
-    "yaml": "^2.8.3",
-    "@shipit-ai/shared": "workspace:*",
-    "@shipit-ai/mcp-server": "workspace:*",
-    "@shipit-ai/event-bus": "workspace:*",
-    "@shipit-ai/connector-sdk": "workspace:*",
     "@shipit-ai/connector-github": "workspace:*",
+    "@shipit-ai/connector-sdk": "workspace:*",
+    "@shipit-ai/event-bus": "workspace:*",
+    "@shipit-ai/mcp-server": "workspace:*",
+    "@shipit-ai/shared": "workspace:*",
     "bullmq": "^5.34.0",
-    "ioredis": "^5.4.0"
+    "fastify": "^4.28.0",
+    "ioredis": "^5.4.0",
+    "neo4j-driver": "^5.27.0",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
