@@ -628,23 +628,31 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         });
       }
 
-      // Path sanitization for CodeQL js/path-injection. Gate on
-      // `resolved.overridden` so global App paths (operator-controlled
-      // server config) keep their freedom — they can legitimately point
-      // at /etc/shipit/keys/… or other absolute paths. Override paths
-      // come from request body and MUST live inside the configured keys
-      // directory. The check happens on `resolved.privateKeyPath` (the
-      // same variable that flows into readFileSync below) so the taint
-      // tracker sees the sanitizer guarding the sink.
-      const keyPath: string = resolved.privateKeyPath;
-      if (resolved.overridden && !isAllowedKeyPath(keyPath)) {
-        return reply.status(400).send({
-          ok: false,
-          code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
-          message:
-            'privateKeyPath must point inside the configured keys directory ' +
-            '(SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys).',
-        });
+      // Path sanitization for CodeQL js/path-injection. Branch by source
+      // so the taint tracker can see two distinct flows:
+      //   - User-supplied path → MUST pass the allowlist before any FS use.
+      //   - Global config path → operator-controlled, never request-tainted.
+      // Previous attempts gated on `resolved.overridden`, but the resolver
+      // is opaque to CodeQL — the analyzer can't prove user data only
+      // reaches readFileSync via the sanitized branch. Explicit branching
+      // here makes the sanitizer visibly guard the sole tainted path.
+      const userKeyPath = request.body?.app?.privateKeyPath?.trim();
+      let keyPath: string;
+      if (userKeyPath) {
+        if (!isAllowedKeyPath(userKeyPath)) {
+          return reply.status(400).send({
+            ok: false,
+            code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+            message:
+              'privateKeyPath must point inside the configured keys directory ' +
+              '(SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys).',
+          });
+        }
+        keyPath = userKeyPath;
+      } else {
+        // No user override — fall back to the operator-controlled global
+        // App config. Not request-tainted, so no allowlist required.
+        keyPath = globalApp.privateKeyPath;
       }
 
       let privateKey: string;
