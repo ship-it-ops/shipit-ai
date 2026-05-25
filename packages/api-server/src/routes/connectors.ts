@@ -142,98 +142,108 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // Auth: app-JWT-only (no installation context) — required for the
   // `/app` and `/app/installations` endpoints, which authenticate as the
   // App itself rather than as one of its installations.
-  server.get('/github/installations', async (request, reply) => {
-    const appSvc = server.githubAppService;
-    if (!appSvc) {
-      return reply.status(503).send({
-        error: {
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'GitHub App service is not configured on this server.',
-        },
-      });
-    }
-    const appStatus = appSvc.status();
-    if (!appStatus.configured || !appStatus.id || !appStatus.privateKeyPath) {
-      return reply.status(404).send({
-        error: {
-          code: 'NO_APP_CONFIGURED',
-          message:
-            'No global GitHub App is configured yet. Complete the App step of the wizard first.',
-        },
-      });
-    }
-    let privateKey: string;
-    try {
-      privateKey = readFileSync(appStatus.privateKeyPath, 'utf-8');
-    } catch (err) {
-      return reply.status(400).send({
-        error: {
-          code: 'PRIVATE_KEY_UNREADABLE',
-          message: `Failed to read App private key at ${appStatus.privateKeyPath}: ${(err as Error).message}`,
-        },
-      });
-    }
-
-    const octokit = createAppJWTOctokit({ appId: appStatus.id, privateKey });
-    try {
-      const [appResp, instResp] = await Promise.all([
-        octokit.rest.apps.getAuthenticated(),
-        octokit.rest.apps.listInstallations({ per_page: 100 }),
-      ]);
-      const app = appResp.data;
-      const installs = instResp.data;
-      // Map installationId → connectorId for the "Already used by" pill.
-      // installationId is stored as a string on connector instances; cast
-      // GitHub's numeric id to string for the lookup.
-      const usedBy = new Map<string, string>();
-      for (const c of registry.list()) {
-        if (c.installationId) usedBy.set(c.installationId, c.id);
+  //
+  // Per-route rate limit (tighter than the global default): the handler
+  // reads the App private key off disk and calls two GitHub endpoints
+  // per request. 30/min/IP is plenty for the wizard's auto-refresh
+  // cadence and prevents the route from being used as a probe of the
+  // operator's filesystem or as a GitHub-API amplifier.
+  server.get(
+    '/github/installations',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const appSvc = server.githubAppService;
+      if (!appSvc) {
+        return reply.status(503).send({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitHub App service is not configured on this server.',
+          },
+        });
       }
-      // Always use the slug-based PUBLIC install URL — appending
-      // /installations/new to html_url breaks for org-owned Apps because
-      // html_url is the App's settings page within the owner org
-      // (`/organizations/<org>/settings/apps/<slug>`), and GitHub redirects
-      // `/installations/new` on that URL to the EXISTING installation in
-      // that same org instead of showing the account picker. The public
-      // `/apps/<slug>/installations/new` form always shows the picker so
-      // the user can install into any org they admin.
-      const slug = app?.slug ?? '';
-      const installUrl = slug
-        ? `https://github.com/apps/${slug}/installations/new`
-        : `${app?.html_url ?? 'https://github.com'}/installations/new`;
-      return reply.send({
-        appSlug: slug,
-        appName: app?.name ?? '',
-        installUrl,
-        installations: installs.map((inst) => {
-          const account = inst.account as {
-            login?: string;
-            type?: string;
-            avatar_url?: string;
-          } | null;
-          const accountType = account?.type === 'User' ? 'User' : 'Organization';
-          return {
-            id: inst.id,
-            account: {
-              login: account?.login ?? 'unknown',
-              type: accountType as 'User' | 'Organization',
-              avatarUrl: account?.avatar_url ?? '',
-            },
-            targetType: (inst.target_type as 'User' | 'Organization') ?? accountType,
-            repositorySelection: (inst.repository_selection as 'all' | 'selected') ?? 'selected',
-            usedByConnectorId: usedBy.get(String(inst.id)) ?? null,
-          };
-        }),
-      });
-    } catch (err) {
-      request.log.error({ err }, 'installations: GitHub API failed');
-      const upstreamStatus = (err as { status?: number }).status;
-      const code = upstreamStatus === 401 ? 'BAD_PRIVATE_KEY' : 'GITHUB_API_ERROR';
-      return reply.status(502).send({
-        error: { code, message: (err as Error).message },
-      });
-    }
-  });
+      const appStatus = appSvc.status();
+      if (!appStatus.configured || !appStatus.id || !appStatus.privateKeyPath) {
+        return reply.status(404).send({
+          error: {
+            code: 'NO_APP_CONFIGURED',
+            message:
+              'No global GitHub App is configured yet. Complete the App step of the wizard first.',
+          },
+        });
+      }
+      let privateKey: string;
+      try {
+        privateKey = readFileSync(appStatus.privateKeyPath, 'utf-8');
+      } catch (err) {
+        return reply.status(400).send({
+          error: {
+            code: 'PRIVATE_KEY_UNREADABLE',
+            message: `Failed to read App private key at ${appStatus.privateKeyPath}: ${(err as Error).message}`,
+          },
+        });
+      }
+
+      const octokit = createAppJWTOctokit({ appId: appStatus.id, privateKey });
+      try {
+        const [appResp, instResp] = await Promise.all([
+          octokit.rest.apps.getAuthenticated(),
+          octokit.rest.apps.listInstallations({ per_page: 100 }),
+        ]);
+        const app = appResp.data;
+        const installs = instResp.data;
+        // Map installationId → connectorId for the "Already used by" pill.
+        // installationId is stored as a string on connector instances; cast
+        // GitHub's numeric id to string for the lookup.
+        const usedBy = new Map<string, string>();
+        for (const c of registry.list()) {
+          if (c.installationId) usedBy.set(c.installationId, c.id);
+        }
+        // Always use the slug-based PUBLIC install URL — appending
+        // /installations/new to html_url breaks for org-owned Apps because
+        // html_url is the App's settings page within the owner org
+        // (`/organizations/<org>/settings/apps/<slug>`), and GitHub redirects
+        // `/installations/new` on that URL to the EXISTING installation in
+        // that same org instead of showing the account picker. The public
+        // `/apps/<slug>/installations/new` form always shows the picker so
+        // the user can install into any org they admin.
+        const slug = app?.slug ?? '';
+        const installUrl = slug
+          ? `https://github.com/apps/${slug}/installations/new`
+          : `${app?.html_url ?? 'https://github.com'}/installations/new`;
+        return reply.send({
+          appSlug: slug,
+          appName: app?.name ?? '',
+          installUrl,
+          installations: installs.map((inst) => {
+            const account = inst.account as {
+              login?: string;
+              type?: string;
+              avatar_url?: string;
+            } | null;
+            const accountType = account?.type === 'User' ? 'User' : 'Organization';
+            return {
+              id: inst.id,
+              account: {
+                login: account?.login ?? 'unknown',
+                type: accountType as 'User' | 'Organization',
+                avatarUrl: account?.avatar_url ?? '',
+              },
+              targetType: (inst.target_type as 'User' | 'Organization') ?? accountType,
+              repositorySelection: (inst.repository_selection as 'all' | 'selected') ?? 'selected',
+              usedByConnectorId: usedBy.get(String(inst.id)) ?? null,
+            };
+          }),
+        });
+      } catch (err) {
+        request.log.error({ err }, 'installations: GitHub API failed');
+        const upstreamStatus = (err as { status?: number }).status;
+        const code = upstreamStatus === 401 ? 'BAD_PRIVATE_KEY' : 'GITHUB_API_ERROR';
+        return reply.status(502).send({
+          error: { code, message: (err as Error).message },
+        });
+      }
+    },
+  );
 
   // GET /api/connectors/github/manifest — JSON manifest spec, primarily
   // for inspection ("what does the wizard send to GitHub?"). NOT what
@@ -618,12 +628,16 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         });
       }
 
-      // Only constrain paths supplied via the request body. The global App
-      // path comes from server config (operator-controlled) — operators
-      // can legitimately point at /etc/shipit/keys/… or other absolute
-      // paths, and locking that down would be a config break.
-      const userSuppliedKeyPath = request.body?.app?.privateKeyPath;
-      if (userSuppliedKeyPath && !isAllowedKeyPath(userSuppliedKeyPath)) {
+      // Path sanitization for CodeQL js/path-injection. Gate on
+      // `resolved.overridden` so global App paths (operator-controlled
+      // server config) keep their freedom — they can legitimately point
+      // at /etc/shipit/keys/… or other absolute paths. Override paths
+      // come from request body and MUST live inside the configured keys
+      // directory. The check happens on `resolved.privateKeyPath` (the
+      // same variable that flows into readFileSync below) so the taint
+      // tracker sees the sanitizer guarding the sink.
+      const keyPath: string = resolved.privateKeyPath;
+      if (resolved.overridden && !isAllowedKeyPath(keyPath)) {
         return reply.status(400).send({
           ok: false,
           code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
@@ -635,15 +649,12 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
 
       let privateKey: string;
       try {
-        privateKey = readFileSync(resolved.privateKeyPath, 'utf-8');
+        privateKey = readFileSync(keyPath, 'utf-8');
       } catch (err) {
         // Log details server-side; the response intentionally omits the
         // path + raw error message so a probe failure doesn't echo
         // operator filesystem layout to the caller.
-        request.log.warn(
-          { err, path: resolved.privateKeyPath },
-          'probe: failed to read App private key',
-        );
+        request.log.warn({ err, path: keyPath }, 'probe: failed to read App private key');
         return reply.status(400).send({
           ok: false,
           code: 'PRIVATE_KEY_UNREADABLE',
