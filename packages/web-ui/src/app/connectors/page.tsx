@@ -59,7 +59,12 @@ export default function ConnectorHubPage() {
       {connectors.length === 0 ? (
         <EmptyConnectorsHint />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // Auto-fill grid with a hard size cap so cards stop growing on
+        // wide monitors — extra width just packs more cards per row
+        // instead of inflating each tile. 180px floor keeps the 4:5
+        // tile readable (logo + 2-line name still fit); 220px ceiling
+        // prevents the cells from ballooning past the design intent.
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,220px))] gap-4">
           {connectors.map((connector) => (
             <ConnectorCard
               key={connector.id}
