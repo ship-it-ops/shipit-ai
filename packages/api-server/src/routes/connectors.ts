@@ -5,7 +5,7 @@
 // live GitHub API without writing anything.
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve as resolvePath, sep } from 'node:path';
+import { basename, join, resolve as resolvePath } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { resolveAppCredentials } from '@shipit-ai/shared';
@@ -17,18 +17,26 @@ import { resolveAppCredentials } from '@shipit-ai/shared';
 // any file readable by the API process (CodeQL js/path-injection).
 //
 // The allowed directory is the same one the manifest service writes
-// PEMs into — env-overridable for container deployments. Both the
-// candidate and the allowed prefix are absolute-resolved so symlinks
-// and `..` segments can't escape.
+// PEMs into — env-overridable for container deployments.
 function getAllowedKeyDir(): string {
   return resolvePath(process.env.SHIPIT_GITHUB_APP_KEY_DIR ?? `${homedir()}/.shipit/keys`);
 }
 
-function isAllowedKeyPath(candidate: string): boolean {
-  if (!candidate) return false;
+// Sanitize a user-supplied PEM path → safe absolute path inside the
+// allowed dir, or null if the input would escape it. Returns a path
+// RECONSTRUCTED from trusted parts (`getAllowedKeyDir()` + `basename()`)
+// rather than echoing the raw user input back into the FS call. This is
+// the CodeQL-recognized js/path-injection sanitizer shape: `basename()`
+// strips directory components, and `join()` over a trusted base ensures
+// the resulting path can't escape the dir. We round-trip the user's raw
+// input through resolve() and require it to equal our reconstruction —
+// that pins the file to the exact <allowedDir>/<basename> location,
+// rejecting any traversal attempt and any path outside the dir.
+function sanitizeKeyPath(candidate: string): string | null {
+  if (!candidate) return null;
   const allowed = getAllowedKeyDir();
-  const resolved = resolvePath(candidate);
-  return resolved === allowed || resolved.startsWith(allowed + sep);
+  const safe = join(allowed, basename(candidate));
+  return resolvePath(candidate) === safe ? safe : null;
 }
 import {
   ConnectorVersionConflictError,
@@ -630,25 +638,31 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
 
       // Path sanitization for CodeQL js/path-injection. Branch by source
       // so the taint tracker can see two distinct flows:
-      //   - User-supplied path → MUST pass the allowlist before any FS use.
-      //   - Global config path → operator-controlled, never request-tainted.
-      // Previous attempts gated on `resolved.overridden`, but the resolver
-      // is opaque to CodeQL — the analyzer can't prove user data only
-      // reaches readFileSync via the sanitized branch. Explicit branching
-      // here makes the sanitizer visibly guard the sole tainted path.
+      //   - User-supplied path → run through sanitizeKeyPath() so the
+      //     value passed to readFileSync is RECONSTRUCTED from a trusted
+      //     base dir + basename(userInput). basename() is a recognized
+      //     sanitizer; the round-trip-equality check rejects anything
+      //     outside the allowed dir.
+      //   - Global config path → operator-controlled, never request-
+      //     tainted, so it bypasses sanitization.
+      // Previous attempts used a `startsWith` guard on the user value and
+      // passed the RAW input to readFileSync — CodeQL kept flagging that
+      // because the sink received tainted data even after the predicate.
       const userKeyPath = request.body?.app?.privateKeyPath?.trim();
       let keyPath: string;
       if (userKeyPath) {
-        if (!isAllowedKeyPath(userKeyPath)) {
+        const sanitized = sanitizeKeyPath(userKeyPath);
+        if (!sanitized) {
           return reply.status(400).send({
             ok: false,
             code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
             message:
-              'privateKeyPath must point inside the configured keys directory ' +
-              '(SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys).',
+              'privateKeyPath must point at a file directly inside the configured keys ' +
+              'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). ' +
+              'Subdirectories and paths outside it are not allowed.',
           });
         }
-        keyPath = userKeyPath;
+        keyPath = sanitized;
       } else {
         // No user override — fall back to the operator-controlled global
         // App config. Not request-tainted, so no allowlist required.
