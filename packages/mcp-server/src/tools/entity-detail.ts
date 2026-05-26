@@ -4,11 +4,12 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { generateEntityDetailCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError, findSuggestions } from '../errors.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): void {
   server.tool(
     'entity_detail',
-    'Get detailed information about a single entity in the knowledge graph, including properties, claims, and neighbors.',
+    MCP_TOOL_BY_NAME.entity_detail.description,
     {
       entity: z.string().describe('Entity canonical ID'),
       include_claims: z

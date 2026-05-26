@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation';
 import { type MouseEvent } from 'react';
+import Image from 'next/image';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar as DSSidebar, NavItem, NavSection } from '@ship-it-ui/ui';
 import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
@@ -12,7 +13,7 @@ interface NavLink {
   label: string;
   href: string;
   glyph: GlyphName;
-  /** Optional trailing badge — e.g., 'P2' for Phase 2, 'EE' for Enterprise. */
+  /** Optional trailing badge — e.g., 'P2' for Phase 2. */
   badge?: string;
 }
 
@@ -45,6 +46,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Connector Hub', href: '/connectors', glyph: 'bolt' },
       { label: 'Schema Editor', href: '/configure/schema', glyph: 'schema' },
+      { label: 'MCP Access', href: '/configure/mcp', glyph: 'sparkle' },
     ],
   },
   {
@@ -62,9 +64,9 @@ const navGroups: NavGroup[] = [
   {
     label: 'Admin',
     items: [
-      { label: 'Audit Log', href: '/admin/audit', glyph: 'file', badge: 'EE' },
-      { label: 'Access Control', href: '/admin/access', glyph: 'settings', badge: 'EE' },
-      { label: 'Agent Activity', href: '/admin/agent-activity', glyph: 'sparkle', badge: 'P3' },
+      { label: 'Audit Log', href: '/admin/audit', glyph: 'file' },
+      { label: 'Access Control', href: '/admin/access', glyph: 'settings' },
+      { label: 'Agent Activity', href: '/admin/agent-activity', glyph: 'sparkle' },
     ],
   },
 ];
@@ -215,9 +217,14 @@ function BrandHeader({ collapsed }: { collapsed: boolean }) {
           : 'border-border flex items-center gap-2 border-b pb-3'
       }
     >
-      <span className="bg-accent text-on-accent grid h-8 w-8 shrink-0 place-items-center rounded-md text-[14px] font-semibold">
-        S
-      </span>
+      <Image
+        src="/ShipItLogo.png"
+        alt="ShipIt-AI"
+        width={32}
+        height={32}
+        priority
+        className="h-8 w-8 shrink-0 rounded-md object-cover"
+      />
       {!collapsed && (
         <span className="text-text text-[14px] font-semibold tracking-tight">ShipIt-AI</span>
       )}

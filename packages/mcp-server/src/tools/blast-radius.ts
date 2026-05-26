@@ -4,6 +4,7 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { generateBlastRadiusCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError, findSuggestions } from '../errors.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 export interface BlastRadiusResult {
   affected_nodes: Array<{
@@ -30,7 +31,7 @@ export interface BlastRadiusResult {
 export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void {
   server.tool(
     'blast_radius',
-    'Analyze downstream/upstream impact of a node in the knowledge graph. Returns affected nodes, paths, and summary statistics.',
+    MCP_TOOL_BY_NAME.blast_radius.description,
     {
       node: z
         .string()

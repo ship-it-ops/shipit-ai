@@ -204,6 +204,58 @@ describe('ConnectorHarness', () => {
     await harness.runSync('full');
     expect(harness.syncState).toBe(SyncState.IDLE);
   });
+
+  // The scheduler used to detect auth failures by string-matching error
+  // messages — "auth failed" / "unauthorized" / "forbidden" — which mis-
+  // classified non-auth `forbidden` errors. The harness now reports auth
+  // state via a structured boolean so the scheduler can branch cleanly.
+  it('sets authFailed=true when authenticate() returns success: false', async () => {
+    connector.authenticate = vi.fn().mockResolvedValue({
+      success: false,
+      error: 'token expired',
+    });
+    const result = await harness.runSync('full');
+    expect(result.authFailed).toBe(true);
+    expect(result.status).toBe('failed');
+  });
+
+  it('sets authFailed=true when a per-entity fetch throws an HTTP 401', async () => {
+    connector.fetch = vi.fn().mockImplementation(async () => {
+      const err = Object.assign(new Error('Bad credentials'), { status: 401 });
+      throw err;
+    });
+    const result = await harness.runSync('full');
+    expect(result.authFailed).toBe(true);
+    expect(result.status).toBe('failed');
+  });
+
+  it('sets authFailed=true when a per-entity fetch throws an HTTP 403', async () => {
+    connector.fetch = vi.fn().mockImplementation(async () => {
+      const err = Object.assign(new Error('Forbidden'), { status: 403 });
+      throw err;
+    });
+    const result = await harness.runSync('full');
+    expect(result.authFailed).toBe(true);
+  });
+
+  it('leaves authFailed=false for non-auth fetch errors (e.g. transient 500)', async () => {
+    connector.fetch = vi.fn().mockImplementation(async () => {
+      const err = Object.assign(new Error('Upstream timeout'), { status: 500 });
+      throw err;
+    });
+    const result = await harness.runSync('full');
+    // Truthy check: harness sets the field to `false` rather than omits
+    // it, so the consumer can rely on `result.authFailed === true`.
+    expect(result.authFailed).toBeFalsy();
+  });
+
+  it('leaves authFailed=false on successful sync', async () => {
+    const result = await harness.runSync('full');
+    expect(result.status).toBe('success');
+    // Pin the explicit `false` rather than just falsy, so any future
+    // refactor that drops the field from the success branch is caught.
+    expect(result.authFailed).toBe(false);
+  });
 });
 
 describe('dryRun', () => {

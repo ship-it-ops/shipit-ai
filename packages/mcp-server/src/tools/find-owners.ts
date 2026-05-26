@@ -4,11 +4,12 @@ import type { Neo4jClient } from '../neo4j-client.js';
 import { generateFindOwnersCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError, findSuggestions } from '../errors.js';
+import { MCP_TOOL_BY_NAME } from './metadata.js';
 
 export function registerFindOwners(server: McpServer, neo4j: Neo4jClient): void {
   server.tool(
     'find_owners',
-    'Find owners, code owners, and on-call personnel for an entity. Traverses OWNS, CODEOWNER_OF, MEMBER_OF, and ON_CALL_FOR relationships.',
+    MCP_TOOL_BY_NAME.find_owners.description,
     {
       entity: z.string().describe('Entity canonical ID'),
       include_chain: z

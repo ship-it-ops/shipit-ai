@@ -1,0 +1,35 @@
+name: Documentation issue
+description: Something in the README, setup guide, or in-repo docs is wrong, missing, or confusing.
+title: '[Docs]: '
+labels: ['documentation']
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where is the documentation?
+      description: File path, URL, or section heading.
+      placeholder: "e.g. docs/connectors/github-setup.md §3, or the 'Quick start' section of README.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or unclear?
+      description: Be specific. Quote the line, describe what you expected to find, or paste the command that didn't work as documented.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix (optional)
+      description: A sentence, a corrected paragraph, or a link to the right answer. Anything helps.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checklist
+      options:
+        - label: I checked that this isn't already fixed on `main`.
+          required: true

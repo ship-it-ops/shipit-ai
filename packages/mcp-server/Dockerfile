@@ -12,4 +12,5 @@ WORKDIR /app
 COPY --from=builder /app/packages/mcp-server/dist ./dist
 COPY --from=builder /app/packages/mcp-server/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
+EXPOSE 3002
 CMD ["node", "dist/index.js"]

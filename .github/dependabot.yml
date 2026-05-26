@@ -1,0 +1,87 @@
+# Dependabot keeps the monorepo's pnpm lockfile and GitHub Actions versions
+# fresh, opening PRs against `main`. The complementary
+# `pnpm.overrides` block in the root package.json handles vulnerable
+# transitives that Dependabot can't reach directly — see
+# docs/agent/decisions/dependabot-resolution-strategy.md.
+version: 2
+updates:
+  - package-ecosystem: npm
+    # pnpm workspaces resolve through the single root `pnpm-lock.yaml`,
+    # so one entry covers all packages/*. Don't add per-package directories
+    # unless we move off pnpm workspaces.
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+      include: scope
+
+    # Group low-risk bumps so 40 separate PRs don't show up after a
+    # quiet week. Security advisories always open as standalone PRs
+    # regardless of grouping.
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-patches:
+        dependency-type: production
+        update-types:
+          - patch
+      types:
+        patterns:
+          - '@types/*'
+    # Skip ecosystems / pins we manage by hand — Fastify v4→v5 is a
+    # tracked manual migration, not an automatic bump.
+    ignore:
+      - dependency-name: fastify
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: chore(ci)
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    # docker/docker-compose.yml pins Neo4j + Redis images; keep them
+    # current so a stale image CVE doesn't blindside us.
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: chore(docker)
+      include: scope

@@ -1,0 +1,126 @@
+name: Connector request
+description: Request a new data-source connector (Jira, GitLab, Linear, PagerDuty, etc.) or a major capability addition to an existing one.
+title: '[Connector]: '
+labels: ['enhancement', 'connector']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Connector requests are scoped separately from generic feature requests because they touch the canonical-ID model, the event bus, and the writer pipeline.
+        The more concretely you can describe the source and what you want surfaced in the graph, the easier it is to scope.
+
+  - type: input
+    id: source
+    attributes:
+      label: Data source
+      description: What system should the connector pull from?
+      placeholder: 'e.g. Jira Cloud, GitLab self-managed, PagerDuty, Linear, OpsGenie'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment shape
+      options:
+        - Hosted SaaS only
+        - Self-hosted only
+        - Both (one connector should handle each)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: entities
+    attributes:
+      label: Which entities should land in the graph?
+      description: Map to ShipIt-AI's canonical model where you can — Repository, Service, Person, Team, Pipeline, Deployment, Environment, BranchProtection, etc. New entity types are fine; flag them explicitly.
+      placeholder: |
+        - Issue (new entity type)
+        - Person (link to existing Person nodes via email)
+        - Project (new entity type, owns Issues, owned by Team)
+    validations:
+      required: true
+
+  - type: textarea
+    id: relationships
+    attributes:
+      label: What relationships should the connector emit?
+      description: Edges between the entities above, and from those entities into existing graph nodes (Repository, Service, Team, etc.).
+      placeholder: |
+        - (Issue)-[:ASSIGNED_TO]->(Person)
+        - (Issue)-[:BLOCKS]->(Issue)
+        - (Issue)-[:LINKED_TO]->(Repository) via the GitHub link field
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication model
+      multiple: true
+      options:
+        - OAuth app (per-user)
+        - OAuth app (per-org / service account)
+        - API token (long-lived, per-user)
+        - API token (long-lived, per-workspace)
+        - JWT / app credentials (à la GitHub App)
+        - Webhook-only (no polling)
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cadence
+    attributes:
+      label: Expected sync cadence
+      options:
+        - Webhook-driven (near-real-time)
+        - Poll every few minutes
+        - Hourly poll
+        - Daily / nightly bulk pull
+        - Mixed (webhook for hot events, periodic poll for reconciliation)
+    validations:
+      required: true
+
+  - type: input
+    id: volume
+    attributes:
+      label: Rough volume
+      description: How many entities of each type at the high end? Helps us reason about rate limits and batch size.
+      placeholder: 'e.g. ~5,000 issues, ~50 projects, ~200 people'
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: What questions would you ask the graph once this lands?
+      description: Concrete AI/MCP queries or blast-radius scenarios. This drives which fields the connector needs to surface.
+      placeholder: |
+        - "Which open Jira issues are tagged with services owned by the platform team?"
+        - "Which deployments in the last 24h linked back to a Jira ticket with priority P1?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior_art
+    attributes:
+      label: Prior art / API docs
+      description: Links to the source's API reference, existing third-party integrations, or similar connectors elsewhere.
+
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Are you offering to help?
+      options:
+        - label: I'd be willing to test a beta version of the connector against my workspace.
+        - label: I'd be willing to contribute code (PR) for the connector.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checklist
+      options:
+        - label: I searched [open issues](https://github.com/ship-it-ops/ShipIt-AI/issues) for an existing connector request for this source.
+          required: true
+        - label: I've read [docs/connectors.md](https://github.com/ship-it-ops/ShipIt-AI/blob/main/docs/connectors.md) and understand the canonical-ID model.
+          required: false

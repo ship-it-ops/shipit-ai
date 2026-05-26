@@ -10,6 +10,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Default permissions for every job. CodeQL (`actions/missing-workflow-permissions`)
+# requires an explicit block; without it GitHub falls back to the org default which
+# may grant `contents: write`. Lint/typecheck/test/build/docker only need to read
+# the repo. The `claude-review` job below overrides this with the wider scope it
+# needs (pull-requests/issues/id-token write) — per-job blocks take precedence.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint

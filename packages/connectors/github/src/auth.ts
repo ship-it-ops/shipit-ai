@@ -8,8 +8,28 @@ export interface GitHubAppCredentials {
   installationId: string;
 }
 
+export interface GitHubAppJWTCredentials {
+  appId: string;
+  privateKey: string;
+}
+
 export interface GitHubPATCredentials {
   token: string;
+}
+
+// App-JWT-only Octokit, no installation context. Use this for endpoints
+// that authenticate as the App itself rather than an installation —
+// notably `GET /app` (getAuthenticated) and `GET /app/installations`
+// (listInstallations). For data-fetching against a specific org, use
+// authenticateGitHubApp instead, which mints an installation token.
+export function createAppJWTOctokit(credentials: GitHubAppJWTCredentials): Octokit {
+  return new Octokit({
+    authStrategy: createAppAuth,
+    auth: {
+      appId: credentials.appId,
+      privateKey: credentials.privateKey,
+    },
+  });
 }
 
 export async function authenticateGitHubApp(

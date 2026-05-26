@@ -77,10 +77,10 @@ export default function SettingsPage() {
             tone="accent"
             icon={<IconGlyph name="bolt" size={22} />}
             title="No personal access tokens yet"
-            description="Tokens authenticate AI agents and external scripts against the MCP server. Available once the Access Control feature lands."
+            description="Per-user tokens for authenticating AI agents against the MCP server are on the roadmap. Until then, see MCP Access for connection info and the shared-secret option."
             action={
-              <Button variant="outline" icon={<IconGlyph name="add" />} disabled>
-                Create token
+              <Button variant="outline" asChild icon={<IconGlyph name="sparkle" />}>
+                <a href="/configure/mcp">Open MCP Access</a>
               </Button>
             }
           />

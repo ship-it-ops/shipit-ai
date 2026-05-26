@@ -33,6 +33,11 @@ export class ConnectorHarness {
     const startTime = Date.now();
     let entitiesSynced = 0;
     const errors: string[] = [];
+    // Set when the connector's authenticate() fails OR when a per-entity
+    // fetch raises an error carrying an HTTP 401/403 status. Returned on
+    // the SyncResult so the scheduler can pick `degraded` (sticky auth
+    // failure) without pattern-matching on error message text.
+    let authFailed = false;
 
     try {
       this.stateMachine.transition(SyncState.SYNCING);
@@ -45,6 +50,7 @@ export class ConnectorHarness {
           entities_synced: 0,
           errors: [auth.error ?? 'Authentication failed'],
           duration_ms: Date.now() - startTime,
+          authFailed: true,
         };
       }
 
@@ -70,6 +76,15 @@ export class ConnectorHarness {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           errors.push(`Error syncing ${entityType}: ${message}`);
+          // Detect auth failure on a per-entity fetch (e.g. a token
+          // revoked mid-sync). Octokit + most HTTP clients attach the
+          // upstream status code on the error; sniff for 401/403 only.
+          const status =
+            (err as { status?: number; statusCode?: number }).status ??
+            (err as { status?: number; statusCode?: number }).statusCode;
+          if (status === 401 || status === 403) {
+            authFailed = true;
+          }
         }
       }
 
@@ -82,6 +97,7 @@ export class ConnectorHarness {
           entities_synced: entitiesSynced,
           errors,
           duration_ms: Date.now() - startTime,
+          authFailed,
         };
       }
 
@@ -92,15 +108,21 @@ export class ConnectorHarness {
           entities_synced: 0,
           errors,
           duration_ms: Date.now() - startTime,
+          authFailed,
         };
       }
 
       this.stateMachine.transition(SyncState.IDLE);
+      // Explicit `authFailed: false` rather than omitting the field so the
+      // SyncResult shape is the same on every code path. Lets the scheduler
+      // and any downstream log/metric pipeline check `result.authFailed`
+      // without special-casing `undefined`.
       return {
         status: 'success',
         entities_synced: entitiesSynced,
         errors: [],
         duration_ms: Date.now() - startTime,
+        authFailed: false,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -109,11 +131,19 @@ export class ConnectorHarness {
         this.stateMachine.transition(SyncState.FAILED);
       }
 
+      const status =
+        (err as { status?: number; statusCode?: number }).status ??
+        (err as { status?: number; statusCode?: number }).statusCode;
+      if (status === 401 || status === 403) {
+        authFailed = true;
+      }
+
       return {
         status: 'failed',
         entities_synced: entitiesSynced,
         errors: [message, ...errors],
         duration_ms: Date.now() - startTime,
+        authFailed,
       };
     }
   }

@@ -33,6 +33,14 @@ export interface NeighborhoodResult {
  */
 const MAX_BLAST_RADIUS_NODES = 200;
 
+// Labels beginning with `_` are core-writer bookkeeping (`_LinkingKey`,
+// `_IdempotencyLog`) — they have no canonical `id` property and no
+// `name`, so leaking them into the graph explorer crashes Cytoscape with
+// `Can not create element with invalid string ID '`. They also don't
+// belong in dashboard counts. Every user-facing graph query filters them
+// out via this predicate.
+const EXCLUDE_INTERNAL_LABELS = "NONE(l IN labels(n) WHERE l STARTS WITH '_')";
+
 /**
  * Project `_last_synced_age_seconds` onto a node's properties. Computed
  * server-side because corporate-laptop clock skew is real and breaks any
@@ -71,8 +79,13 @@ export class Neo4jService {
   }
 
   async getGraphStats(): Promise<GraphStats> {
+    // `db.labels()` returns every label including the `_LinkingKey` /
+    // `_IdempotencyLog` housekeeping ones. Strip them at the application
+    // layer so the dashboard's "node count" matches what users see in the
+    // explorer; the internal nodes still count toward Neo4j's storage but
+    // not toward the user-facing graph.
     const nodeCountsResult = await this.runQuery(
-      'CALL db.labels() YIELD label RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count',
+      "CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count",
     );
     const edgeCountsResult = await this.runQuery(
       'CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count',
@@ -272,7 +285,7 @@ export class Neo4jService {
 
   async getOverview(limit: number = 100): Promise<NeighborhoodResult> {
     const nodeRecords = await this.runQuery(
-      'MATCH (n) RETURN n, labels(n) AS labels LIMIT $limit',
+      `MATCH (n) WHERE ${EXCLUDE_INTERNAL_LABELS} RETURN n, labels(n) AS labels LIMIT $limit`,
       { limit: neo4j.int(limit) },
     );
 
@@ -335,7 +348,10 @@ export class Neo4jService {
   }): Promise<Neo4jRecord[]> {
     const { label, q, filters = {}, limit = 25, sortBy } = opts;
     const nodeLabel = label ? `:${label}` : '';
-    const whereClause: string[] = ['coalesce(n._deleted, false) = false'];
+    // Always exclude the writer's internal `_LinkingKey` / `_IdempotencyLog`
+    // nodes — they don't have a user-facing `name` or canonical `id` and
+    // would otherwise contaminate the global command palette.
+    const whereClause: string[] = ['coalesce(n._deleted, false) = false', EXCLUDE_INTERNAL_LABELS];
     const params: Record<string, unknown> = { limit: neo4j.int(limit) };
 
     if (q && q.trim()) {

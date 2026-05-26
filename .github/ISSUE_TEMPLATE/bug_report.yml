@@ -1,0 +1,121 @@
+name: Bug report
+description: Something works incorrectly, throws an unexpected error, or stops working.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more concrete you can be,
+        the faster we can fix it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: One paragraph describing the bug. What were you doing, what did you expect, what happened instead?
+      placeholder: |
+        I clicked "Sync now" on the GitHub connector card, expected the run to start within a few seconds.
+        Instead the card stayed on "syncing" indefinitely and the Runs tab stayed empty.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Include exact CLI commands, URLs, or UI clicks.
+      placeholder: |
+        1. `pnpm start:backend`
+        2. Open http://localhost:3000/connectors
+        3. Add a GitHub connector via the wizard
+        4. Click "Sync now" in the drawer
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages, stack traces, screenshots, or links to terminal output.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface is affected?
+      multiple: true
+      options:
+        - Web UI (Next.js)
+        - API server (Fastify)
+        - Core writer (Neo4j ingest)
+        - MCP server / Claude integration
+        - Connector — GitHub
+        - Connector — Kubernetes
+        - Connector — Other
+        - Schema editor
+        - Graph explorer / overview
+        - Docs / examples
+        - Install / setup scripts
+        - Something else (describe in "What happened?")
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: ShipIt-AI version or commit SHA
+      description: Run `git rev-parse HEAD` if you're on a checkout, or paste the released version.
+      placeholder: 'e.g. b5aeaef or v0.1.0'
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node --version`.
+      placeholder: 'v22.x or v24.x'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Windows / WSL
+        - Other / multiple
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: API server stdout, browser console errors, `pnpm test` failures, etc. Will be rendered as a code block — no need to wrap in triple-backticks.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit checklist
+      options:
+        - label: I searched [open issues](https://github.com/ship-it-ops/ShipIt-AI/issues) and didn't find a duplicate.
+          required: true
+        - label: I'm running the latest `main` (or I've noted my version above).
+          required: true
+        - label: This is NOT a security vulnerability (those go through [Security Advisories](https://github.com/ship-it-ops/ShipIt-AI/security/advisories/new) instead).
+          required: true

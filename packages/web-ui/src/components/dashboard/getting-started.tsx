@@ -7,7 +7,12 @@ import { useConnectors } from '@/lib/hooks/use-connectors';
 export function GettingStarted() {
   const router = useRouter();
   const { data: connectors = [] } = useConnectors();
-  const connectedCount = connectors.filter((c) => c.status !== 'not_connected').length;
+  // After the multi-org rewrite, a connector's "connected" state is derived
+  // from `enabled` plus the last run's outcome (a successful run means it's
+  // healthy). Anything enabled with a non-failed last run counts.
+  const connectedCount = connectors.filter(
+    (c) => c.enabled && c.lastRuns[0]?.status !== 'failed',
+  ).length;
 
   if (connectedCount >= 3) return null;
 

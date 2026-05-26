@@ -7,7 +7,13 @@ import type { ResolvedConfig } from '../config.js';
 const EVENT_LOG_STREAM = 'shipit-event-log';
 
 function buildIdempotencyKey(connectorId: string, node: CanonicalNode): string {
-  return `${connectorId}:${node.id}:${node._event_version}`;
+  // BullMQ 5 rejects `:` in custom job IDs — it reserves the colon for
+  // its internal `bull:<queue>:<key>` keyspace and `Queue.addBulk` throws
+  // synchronously if any opts.jobId contains one. Canonical IDs use the
+  // `shipit://...` URI scheme so the natural format would carry several
+  // colons per entity. We substitute `~` globally; the key is opaque to
+  // downstream consumers (used only for dedup + replay correlation).
+  return `${connectorId}:${node.id}:${node._event_version}`.replace(/:/g, '~');
 }
 
 function buildEnvelopes(entities: CanonicalEntity[], connectorId: string): EventEnvelope[] {

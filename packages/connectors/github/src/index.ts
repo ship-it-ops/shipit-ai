@@ -1,6 +1,10 @@
 export { GitHubConnector } from './connector.js';
-export { authenticateGitHubApp, authenticatePAT } from './auth.js';
-export type { GitHubAppCredentials, GitHubPATCredentials } from './auth.js';
+export { authenticateGitHubApp, authenticatePAT, createAppJWTOctokit } from './auth.js';
+export type {
+  GitHubAppCredentials,
+  GitHubAppJWTCredentials,
+  GitHubPATCredentials,
+} from './auth.js';
 export { fetchRepositories } from './fetchers/repositories.js';
 export type { GitHubRepo } from './fetchers/repositories.js';
 export { fetchTeams } from './fetchers/teams.js';

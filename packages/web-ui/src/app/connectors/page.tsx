@@ -1,20 +1,48 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { ConnectorCard } from '@/components/connectors/connector-card';
-import { ConnectorDetail } from '@/components/connectors/connector-detail';
-import { AddConnectorDialog } from '@/components/connectors/add-connector-dialog';
-import { useConnectors, useTriggerSync } from '@/lib/hooks/use-connectors';
+import { ConnectorDetailDrawer } from '@/components/connectors/connector-detail-drawer';
+import {
+  AddConnectorPicker,
+  type ConnectorTypeId,
+} from '@/components/connectors/add-connector-picker';
+import { AddGitHubConnectorWizard } from '@/components/connectors/add-github-connector-wizard';
+import { useConnectors } from '@/lib/hooks/use-connectors';
 
 export default function ConnectorHubPage() {
   const { data: connectors = [] } = useConnectors();
-  const syncMutation = useTriggerSync();
+  const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  // Two-stage entry: picker → type-specific wizard. `activeWizard` holds
+  // the picked type (currently only 'github' resolves to a real flow);
+  // setting it to null returns to "no dialog open" rather than reopening
+  // the picker, so a cancelled wizard doesn't bounce back to selection.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [activeWizard, setActiveWizard] = useState<ConnectorTypeId | null>(null);
 
-  const selectedConnector = connectors.find((c) => c.id === selectedId);
+  // Auto-open the GitHub wizard when the user lands here after the App
+  // manifest callback — `?from=app-manifest` is the breadcrumb the
+  // callback page sets. The wizard's polling picks up the now-configured
+  // global App on the first refresh.
+  useEffect(() => {
+    if (searchParams.get('from') === 'app-manifest') {
+      setActiveWizard('github');
+    }
+  }, [searchParams]);
+
+  const handlePick = (type: ConnectorTypeId) => {
+    // The picker disables non-available types, so this is reached only
+    // for connectors that have a wizard. Belt-and-suspenders guard so a
+    // future enum addition can't silently no-op.
+    if (type === 'github') {
+      setPickerOpen(false);
+      setActiveWizard('github');
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -23,7 +51,7 @@ export default function ConnectorHubPage() {
           <h1 className="text-text text-[22px] font-semibold tracking-tight">Connector Hub</h1>
           <p className="text-text-muted text-[13px]">Manage your data source integrations</p>
         </div>
-        <Button icon={<IconGlyph name="add" />} onClick={() => setAddDialogOpen(true)}>
+        <Button icon={<IconGlyph name="add" />} onClick={() => setPickerOpen(true)}>
           Add connector
         </Button>
       </header>
@@ -31,7 +59,12 @@ export default function ConnectorHubPage() {
       {connectors.length === 0 ? (
         <EmptyConnectorsHint />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // Auto-fill grid with a hard size cap so cards stop growing on
+        // wide monitors — extra width just packs more cards per row
+        // instead of inflating each tile. 180px floor keeps the 4:5
+        // tile readable (logo + 2-line name still fit); 220px ceiling
+        // prevents the cells from ballooning past the design intent.
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,220px))] gap-4">
           {connectors.map((connector) => (
             <ConnectorCard
               key={connector.id}
@@ -42,22 +75,21 @@ export default function ConnectorHubPage() {
         </div>
       )}
 
-      {selectedConnector && (
-        <ConnectorDetail
-          connector={selectedConnector}
-          onClose={() => setSelectedId(null)}
-          onSync={() => syncMutation.mutate(selectedConnector.id)}
-        />
+      {selectedId && (
+        <ConnectorDetailDrawer connectorId={selectedId} onClose={() => setSelectedId(null)} />
       )}
 
-      <AddConnectorDialog open={addDialogOpen} onOpenChange={setAddDialogOpen} />
+      <AddConnectorPicker open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePick} />
+      <AddGitHubConnectorWizard
+        open={activeWizard === 'github'}
+        onOpenChange={(open) => {
+          if (!open) setActiveWizard(null);
+        }}
+      />
     </div>
   );
 }
 
-// The "Add connector" button sits in the header's top-right. The hint nudges
-// toward that corner with an up-right arrow so the user's eye lands on the
-// only primary action on the page.
 function EmptyConnectorsHint() {
   return (
     <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
@@ -68,8 +100,9 @@ function EmptyConnectorsHint() {
         </span>
       </div>
       <p className="text-text-muted max-w-sm text-[12px]">
-        Connectors pull data from GitHub, Kubernetes, Datadog, and other tools into your knowledge
-        graph. Start with whichever owns the most of your service catalog.
+        Connectors pull data from external systems — GitHub, Kubernetes, Datadog, and more — into
+        your knowledge graph. GitHub is available today; the others are on the roadmap. Pick a
+        source from the dialog above to get started.
       </p>
     </div>
   );

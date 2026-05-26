@@ -15,7 +15,7 @@
     "setup": "bash scripts/setup.sh",
     "preflight": "bash scripts/preflight.sh",
     "start:infra": "bash scripts/preflight.sh && bash scripts/infra.sh",
-    "start:backend": "bash scripts/preflight.sh && bash scripts/infra.sh && bash scripts/maybe-seed.sh && turbo dev --filter=@shipit-ai/api-server --filter=@shipit-ai/core-writer",
+    "start:backend": "bash scripts/preflight.sh && bash scripts/infra.sh && bash scripts/maybe-seed.sh && turbo dev --filter=@shipit-ai/api-server --filter=@shipit-ai/core-writer --filter=@shipit-ai/mcp-server",
     "start:frontend": "bash scripts/preflight.sh && turbo dev --filter=@shipit-ai/web-ui",
     "start:mcp": "bash scripts/preflight.sh && turbo dev --filter=@shipit-ai/mcp-server",
     "start:all": "bash scripts/preflight.sh && bash scripts/infra.sh && bash scripts/maybe-seed.sh && turbo dev",
@@ -41,7 +41,7 @@
     "prettier-plugin-tailwindcss": "^0.8.0",
     "secretlint": "^13.0.2",
     "tsx": "^4.21.0",
-    "turbo": "^2.4.0",
+    "turbo": "^2.9.14",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
@@ -59,6 +59,24 @@
       "allowedVersions": {
         "@ship-it-ui/next>next": "16"
       }
+    },
+    "overrides": {
+      "hono": "^4.12.18",
+      "@hono/node-server": "^1.19.13",
+      "express-rate-limit": "^8.2.2",
+      "fast-uri": "^3.1.2",
+      "vite": "^7.3.2",
+      "picomatch": "^4.0.4",
+      "flatted": "^3.4.2",
+      "path-to-regexp": "^8.4.0",
+      "brace-expansion@1": "^1.1.13",
+      "brace-expansion@5": "^5.0.6",
+      "qs": "^6.15.2",
+      "ip-address": "^10.1.1",
+      "postcss": "^8.5.10",
+      "yaml": "^2.8.3",
+      "ws": "^8.20.1",
+      "uuid": "^11.1.1"
     }
   }
 }
