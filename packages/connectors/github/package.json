@@ -20,7 +20,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@octokit/rest": "^21.0.0",
+    "@octokit/rest": "^22.0.1",
     "@octokit/auth-app": "^7.1.0",
     "@shipit-ai/connector-sdk": "workspace:*",
     "@shipit-ai/shared": "workspace:*"
