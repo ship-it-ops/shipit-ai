@@ -251,32 +251,32 @@ importers:
   packages/web-ui:
     dependencies:
       '@fontsource-variable/geist':
-        specifier: ^5.1.0
-        version: 5.2.8
+        specifier: ^5.2.9
+        version: 5.2.9
       '@fontsource-variable/geist-mono':
-        specifier: ^5.1.0
-        version: 5.2.7
+        specifier: ^5.2.8
+        version: 5.2.8
       '@ship-it-ui/cytoscape':
-        specifier: ^0.0.7
-        version: 0.0.7(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/graph-editor':
-        specifier: ^0.0.2
-        version: 0.0.2(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/icons':
-        specifier: ^0.0.7
-        version: 0.0.7(react@19.2.6)
-      '@ship-it-ui/next':
-        specifier: ^0.0.5
-        version: 0.0.5(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/shipit':
         specifier: ^0.0.8
-        version: 0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/shipit@0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.4)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/graph-editor':
+        specifier: ^0.0.3
+        version: 0.0.3(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/shipit@0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/icons':
+        specifier: ^0.0.8
+        version: 0.0.8(react@19.2.6)
+      '@ship-it-ui/next':
+        specifier: ^0.0.6
+        version: 0.0.6(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/shipit':
+        specifier: ^0.0.9
+        version: 0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@ship-it-ui/tokens':
-        specifier: ^0.0.5
-        version: 0.0.5
+        specifier: ^0.0.6
+        version: 0.0.6
       '@ship-it-ui/ui':
-        specifier: ^0.0.7
-        version: 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        specifier: ^0.0.8
+        version: 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@shipit-ai/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
@@ -287,8 +287,8 @@ importers:
         specifier: ^12.3.5
         version: 12.10.2(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       cytoscape:
-        specifier: ^3.30.0
-        version: 3.33.1
+        specifier: ^3.33.4
+        version: 3.33.4
       lucide-react:
         specifier: ^0.460.0
         version: 0.460.0(react@19.2.6)
@@ -305,8 +305,8 @@ importers:
         specifier: ^2.8.3
         version: 2.9.0
       zustand:
-        specifier: ^5.0.0
-        version: 5.0.11(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
+        specifier: ^5.0.13
+        version: 5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.3.0
@@ -385,6 +385,10 @@ packages:
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
     engines: {node: '>=6.9.0'}
 
+  '@babel/code-frame@7.29.7':
+    resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
+    engines: {node: '>=6.9.0'}
+
   '@babel/compat-data@7.29.3':
     resolution: {integrity: sha512-LIVqM46zQWZhj17qA8wb4nW/ixr2y1Nw+r1etiAWgRM6U1IqP+LNhL1yg440jYZR72jCWcWbLWzIosH+uP1fqg==}
     engines: {node: '>=6.9.0'}
@@ -427,6 +431,10 @@ packages:
     resolution: {integrity: sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q==}
     engines: {node: '>=6.9.0'}
 
+  '@babel/helper-validator-identifier@7.29.7':
+    resolution: {integrity: sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==}
+    engines: {node: '>=6.9.0'}
+
   '@babel/helper-validator-option@7.27.1':
     resolution: {integrity: sha512-YvjJow9FxbhFFKDSuFnVCe2WxXk1zWc22fFePVNEaWJEu8IrZVlda6N0uHwzZrUM1il7NC9Mlp4MaJYbYd9JSg==}
     engines: {node: '>=6.9.0'}
@@ -454,6 +462,10 @@ packages:
 
   '@babel/runtime@7.29.2':
     resolution: {integrity: sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
     engines: {node: '>=6.9.0'}
 
   '@babel/template@7.28.6':
@@ -897,14 +909,8 @@ packages:
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
 
-  '@fontsource-variable/geist-mono@5.2.7':
-    resolution: {integrity: sha512-ZKlZ5sjtalb2TwXKs400mAGDlt/+2ENLNySPx0wTz3bP3mWARCsUW+rpxzZc7e05d2qGch70pItt3K4qttbIYA==}
-
   '@fontsource-variable/geist-mono@5.2.8':
     resolution: {integrity: sha512-KI5bj+hkkRiHttYHmccotUZ80ZuZyai+RwI1d7UId0clkx/jXxlo8qYK8j54WzmpBjtMoEMPyllV7faDcj+6RA==}
-
-  '@fontsource-variable/geist@5.2.8':
-    resolution: {integrity: sha512-cJ6m9e+8MQ5dCYJsLylfZrgBh6KkG4bOLckB35Tr9J/EqdkEM6QllH5PxqP1dhTvFup+HtMRPuz9xOjxXJggxw==}
 
   '@fontsource-variable/geist@5.2.9':
     resolution: {integrity: sha512-TP+QSBG3wxKGPE33CbMy/L0Nu3qvJ6Fy81Yc4LnQ95xH+i+cfEp8fyU8/kfV14YwszxIFPhnoMTbjL71waVpyQ==}
@@ -1337,6 +1343,19 @@ packages:
   '@radix-ui/primitive@1.1.3':
     resolution: {integrity: sha512-JTF99U/6XIjCBo0wqkU5sK10glYe27MRRsfwoiq5zzOEZLHU3A3KCMa5X/azekYRCJ0HlwI0crAXS/5dEHTzDg==}
 
+  '@radix-ui/react-accordion@1.2.12':
+    resolution: {integrity: sha512-T4nygeh9YE9dLRPhAHSeOZi7HBXo+0kYIPJXayZfvWOWA0+n3dESrZbjfDPUABkUNym6Hd+f2IR113To8D2GPA==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
   '@radix-ui/react-alert-dialog@1.1.15':
     resolution: {integrity: sha512-oTVLkEw5GpdRe29BqJ0LSDFWI3qu0vR1M0mUkOQWDIUnY/QIkLpgDMWuKxP94c2NAC2LGcgVhG1ImF3jkZ5wXw==}
     peerDependencies:
@@ -1378,6 +1397,19 @@ packages:
 
   '@radix-ui/react-checkbox@1.3.3':
     resolution: {integrity: sha512-wBbpv+NQftHDdG86Qc0pIyXk5IR3tM8Vd0nWLKDcX8nNn4nXFOFwsKuqw2okA/1D/mpaAkmuyndrPJTYDNZtFw==}
+    peerDependencies:
+      '@types/react': '*'
+      '@types/react-dom': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+      react-dom: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      '@types/react-dom':
+        optional: true
+
+  '@radix-ui/react-collapsible@1.1.12':
+    resolution: {integrity: sha512-Uu+mSh4agx2ib1uIGPP4/CKNULyajb3p92LsVXmH2EHVMTfZWpll88XJ0j4W0z3f8NK1eYl1+Mf/szHPmcHzyA==}
     peerDependencies:
       '@types/react': '*'
       '@types/react-dom': '*'
@@ -2069,37 +2101,37 @@ packages:
     resolution: {integrity: sha512-9GtWeTb763Ilr/nbRzdFidfZTBtbNEsz/BKrilgqLpKR9EqSWe9eYWDQaLIYb4PddIhwOgHuahRrX2BYATNcLQ==}
     engines: {node: '>=22.0.0'}
 
-  '@ship-it-ui/cytoscape@0.0.7':
-    resolution: {integrity: sha512-ecXxRtfom2BeWvy9a7jQmbgjoJ4scyOwznyUM801IfuZcN3cP3EaJXKYAAk4q1xmVThB4ySoC1ZpF659Wps5cA==}
+  '@ship-it-ui/cytoscape@0.0.8':
+    resolution: {integrity: sha512-abFMWyyYLrccEvFpe2X4CgUovr1tODndDeS0DIRs+lPR6qf9HeFlVTqc49fNROzKAT2ZkeNASKeZSCIavqJwBQ==}
     peerDependencies:
-      '@ship-it-ui/icons': 0.0.7
-      '@ship-it-ui/shipit': 0.0.8
-      '@ship-it-ui/ui': 0.0.7
+      '@ship-it-ui/icons': 0.0.8
+      '@ship-it-ui/shipit': 0.0.9
+      '@ship-it-ui/ui': 0.0.8
       cytoscape: ^3.28.0
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@ship-it-ui/graph-editor@0.0.2':
-    resolution: {integrity: sha512-RphbMmkMvoDA3XPeZU4kYoYuGmof5pffdiEgOPN2bLVhDe27iJOJUZ1RQnfQoDAJbvv6syfGA8zplkuk4u9U2g==}
+  '@ship-it-ui/graph-editor@0.0.3':
+    resolution: {integrity: sha512-awkIBBdvNXc1dTrF8LxaCOghS6XX+OeHf3dHnyujwVrlsChZD+PrTveKBhE+YXf7Eh6VDj1t5JtkEQYaAJTFoA==}
     peerDependencies:
-      '@ship-it-ui/icons': 0.0.7
-      '@ship-it-ui/shipit': 0.0.8
-      '@ship-it-ui/ui': 0.0.7
+      '@ship-it-ui/icons': 0.0.8
+      '@ship-it-ui/shipit': 0.0.9
+      '@ship-it-ui/ui': 0.0.8
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
   '@ship-it-ui/graph-tokens@0.0.2':
     resolution: {integrity: sha512-C7MmJrq1z61Q/1GqEsvLbA0+pObuqnf6syvBSJZgSGOenDcg0+hOY2hMTqsHXCxUgktN8ainui5o93emFzjQoQ==}
 
-  '@ship-it-ui/icons@0.0.7':
-    resolution: {integrity: sha512-igT3C3IK3H2tpQLwrODD0f8QibKmx6UYuv1lO/WZrvxhpe8qyUnNcxId+Wg5m8F06+cvgjySlSmEpna3cFfyag==}
+  '@ship-it-ui/icons@0.0.8':
+    resolution: {integrity: sha512-9VXqiGeu1qW/BfI2QMPHIXQ1ZJB/6OpCrNxQSvWftY1DSSDg8lYN+nf4ZXMq5QfaTKq+1EGFiNCKprKwouiStw==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@ship-it-ui/next@0.0.5':
-    resolution: {integrity: sha512-6VPHt0xWT7+9l0bHO93tY5kCT1bWZHg1u/fLtZbLdUQJBu5izGABP7Wv6TphLNZxmhdFjx2m2vuiXzxzNg7GPQ==}
+  '@ship-it-ui/next@0.0.6':
+    resolution: {integrity: sha512-FMosuxi8P03MXjT+iCMbWiQxq+tmae25f2x6NBQT5hljwhaBCB/wY14pkMK8EPnFcbKpE++bU2S4BJ5xrX/46A==}
     peerDependencies:
-      '@ship-it-ui/ui': 0.0.7
+      '@ship-it-ui/ui': 0.0.8
       next: ^14.0.0 || ^15.0.0
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -2107,21 +2139,22 @@ packages:
       next:
         optional: true
 
-  '@ship-it-ui/shipit@0.0.8':
-    resolution: {integrity: sha512-pDcsGhW0UgY4gzOIkrX0jH4Vsa1a+LfzkYezM6D5qvVSzwLSHHMm5YEw+U91iQGilxJnwOVyPmihjYNTkvoe/Q==}
+  '@ship-it-ui/shipit@0.0.9':
+    resolution: {integrity: sha512-OC5WXA4RszGWuUopTvlaOXGKXQvF5jXRaX2Lp+GP7GwURzsfMfGUTUMAX76GRvFbwPNCJHEvG3CP9SzcotKNgg==}
     peerDependencies:
-      '@ship-it-ui/icons': 0.0.7
-      '@ship-it-ui/ui': 0.0.7
+      '@ship-it-ui/icons': 0.0.8
+      '@ship-it-ui/ui': 0.0.8
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@ship-it-ui/tokens@0.0.5':
-    resolution: {integrity: sha512-D+te+JUje751Vq88voI7BW5TMmcz+Fk6fo857GTxeFqS+tiFkjLVioEdN2ShN4hrMow9D8ALbTbxNgNFnoW0EQ==}
+  '@ship-it-ui/tokens@0.0.6':
+    resolution: {integrity: sha512-zgLVwTXe2F1rBzsdGUeMe8trTxGcKo0bR0RZW0EldvCahwE53O4HTPLdXC/JgOQtFTM/c5/eTPdOXqnb4HFqpw==}
 
-  '@ship-it-ui/ui@0.0.7':
-    resolution: {integrity: sha512-eBq0hyd61KxamUk0kSWZ7w1A6XjMkGqrTEU6ZWugYm/kyTi+SQ3DXeZpSAJCF7flze7o4CWrcndU5aBeTvie/A==}
+  '@ship-it-ui/ui@0.0.8':
+    resolution: {integrity: sha512-/tEgsjvSxYkfDhMYbt/jI/idgnCkQThC+4Zz+UW28POHzdux8SFV0mYpKyga2yjxcNrzT6fP9IX/VdhDCb/zcA==}
     peerDependencies:
-      '@ship-it-ui/tokens': 0.0.5
+      '@ship-it-ui/icons': 0.0.8
+      '@ship-it-ui/tokens': 0.0.6
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
@@ -2958,8 +2991,8 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
-  cytoscape@3.33.1:
-    resolution: {integrity: sha512-iJc4TwyANnOGR1OmWhsS9ayRS3s+XQ185FmuHObThD+5AeJCakAAbWv8KimMTt08xCCLNgneQwFp+JRJOr9qGQ==}
+  cytoscape@3.33.4:
+    resolution: {integrity: sha512-HIN5Pmd9MrX9BkV7tDwnOcEJCSFvCpc8X97h3f508J6I5FsqAY65wKOCvgH2CuP42CaahWaz4tuh32SOOIH7ww==}
     engines: {node: '>=0.10'}
 
   d3-color@3.1.0:
@@ -5274,8 +5307,8 @@ packages:
       react:
         optional: true
 
-  zustand@5.0.11:
-    resolution: {integrity: sha512-fdZY+dk7zn/vbWNCYmzZULHRrss0jx5pPFiOuMZ/5HJN6Yv3u+1Wswy/4MpZEkEGhtNH+pwxZB8OKgUBPzYAGg==}
+  zustand@5.0.13:
+    resolution: {integrity: sha512-efI2tVaVQPqtOh114loML/Z80Y4NP3yc+Ff0fYiZJPauNeWZeIp/bRFD7I9bfmCOYBh/PHxlglQ9+wvlwnPikQ==}
     engines: {node: '>=12.20.0'}
     peerDependencies:
       '@types/react': '>=18.0.0'
@@ -5315,6 +5348,12 @@ snapshots:
   '@babel/code-frame@7.29.0':
     dependencies:
       '@babel/helper-validator-identifier': 7.28.5
+      js-tokens: 4.0.0
+      picocolors: 1.1.1
+
+  '@babel/code-frame@7.29.7':
+    dependencies:
+      '@babel/helper-validator-identifier': 7.29.7
       js-tokens: 4.0.0
       picocolors: 1.1.1
 
@@ -5380,6 +5419,8 @@ snapshots:
 
   '@babel/helper-validator-identifier@7.28.5': {}
 
+  '@babel/helper-validator-identifier@7.29.7': {}
+
   '@babel/helper-validator-option@7.27.1': {}
 
   '@babel/helpers@7.29.2':
@@ -5402,6 +5443,8 @@ snapshots:
       '@babel/helper-plugin-utils': 7.28.6
 
   '@babel/runtime@7.29.2': {}
+
+  '@babel/runtime@7.29.7': {}
 
   '@babel/template@7.28.6':
     dependencies:
@@ -5725,11 +5768,7 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
-  '@fontsource-variable/geist-mono@5.2.7': {}
-
   '@fontsource-variable/geist-mono@5.2.8': {}
-
-  '@fontsource-variable/geist@5.2.8': {}
 
   '@fontsource-variable/geist@5.2.9': {}
 
@@ -6118,6 +6157,23 @@ snapshots:
 
   '@radix-ui/primitive@1.1.3': {}
 
+  '@radix-ui/react-accordion@1.2.12(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@radix-ui/primitive': 1.1.3
+      '@radix-ui/react-collapsible': 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-collection': 1.1.7(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-context': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-direction': 1.1.1(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-id': 1.1.1(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+    optionalDependencies:
+      '@types/react': 19.2.15
+      '@types/react-dom': 19.2.3(@types/react@19.2.15)
+
   '@radix-ui/react-alert-dialog@1.1.15(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@radix-ui/primitive': 1.1.3
@@ -6164,6 +6220,22 @@ snapshots:
       '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/react-use-previous': 1.1.1(@types/react@19.2.15)(react@19.2.6)
       '@radix-ui/react-use-size': 1.1.1(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+    optionalDependencies:
+      '@types/react': 19.2.15
+      '@types/react-dom': 19.2.3(@types/react@19.2.15)
+
+  '@radix-ui/react-collapsible@1.1.12(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@radix-ui/primitive': 1.1.3
+      '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-context': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-id': 1.1.1(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-presence': 1.1.5(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-use-layout-effect': 1.1.1(@types/react@19.2.15)(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     optionalDependencies:
@@ -6863,22 +6935,22 @@ snapshots:
       ignore: 7.0.5
       picomatch: 4.0.4
 
-  '@ship-it-ui/cytoscape@0.0.7(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.1)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/cytoscape@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/shipit@0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(cytoscape@3.33.4)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@ship-it-ui/graph-tokens': 0.0.2
-      '@ship-it-ui/icons': 0.0.7(react@19.2.6)
-      '@ship-it-ui/shipit': 0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      cytoscape: 3.33.1
+      '@ship-it-ui/icons': 0.0.8(react@19.2.6)
+      '@ship-it-ui/shipit': 0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      cytoscape: 3.33.4
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@ship-it-ui/graph-editor@0.0.2(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/graph-editor@0.0.3(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/shipit@0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@ship-it-ui/graph-tokens': 0.0.2
-      '@ship-it-ui/icons': 0.0.7(react@19.2.6)
-      '@ship-it-ui/shipit': 0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/icons': 0.0.8(react@19.2.6)
+      '@ship-it-ui/shipit': 0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@xyflow/react': 12.10.2(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
@@ -6888,31 +6960,32 @@ snapshots:
 
   '@ship-it-ui/graph-tokens@0.0.2': {}
 
-  '@ship-it-ui/icons@0.0.7(react@19.2.6)':
+  '@ship-it-ui/icons@0.0.8(react@19.2.6)':
     dependencies:
       react: 19.2.6
 
-  '@ship-it-ui/next@0.0.5(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/next@0.0.6(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
     optionalDependencies:
       next: 16.2.6(@babel/core@7.29.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
-  '@ship-it-ui/shipit@0.0.8(@ship-it-ui/icons@0.0.7(react@19.2.6))(@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/shipit@0.0.9(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@ship-it-ui/icons': 0.0.7(react@19.2.6)
-      '@ship-it-ui/ui': 0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@ship-it-ui/icons': 0.0.8(react@19.2.6)
+      '@ship-it-ui/ui': 0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@ship-it-ui/tokens@0.0.5': {}
+  '@ship-it-ui/tokens@0.0.6': {}
 
-  '@ship-it-ui/ui@0.0.7(@ship-it-ui/tokens@0.0.5)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@ship-it-ui/ui@0.0.8(@ship-it-ui/icons@0.0.8(react@19.2.6))(@ship-it-ui/tokens@0.0.6)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@fontsource-variable/geist': 5.2.9
       '@fontsource-variable/geist-mono': 5.2.8
+      '@radix-ui/react-accordion': 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-alert-dialog': 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-avatar': 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-checkbox': 1.3.3(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -6932,7 +7005,8 @@ snapshots:
       '@radix-ui/react-tabs': 1.1.13(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-toast': 1.2.15(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@radix-ui/react-tooltip': 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@ship-it-ui/tokens': 0.0.5
+      '@ship-it-ui/icons': 0.0.8(react@19.2.6)
+      '@ship-it-ui/tokens': 0.0.6
       class-variance-authority: 0.7.1
       clsx: 2.1.1
       react: 19.2.6
@@ -7024,8 +7098,8 @@ snapshots:
 
   '@testing-library/dom@10.4.1':
     dependencies:
-      '@babel/code-frame': 7.29.0
-      '@babel/runtime': 7.29.2
+      '@babel/code-frame': 7.29.7
+      '@babel/runtime': 7.29.7
       '@types/aria-query': 5.0.4
       aria-query: 5.3.0
       dom-accessibility-api: 0.5.16
@@ -7138,7 +7212,7 @@ snapshots:
 
   '@types/cytoscape@3.31.0':
     dependencies:
-      cytoscape: 3.33.1
+      cytoscape: 3.33.4
 
   '@types/d3-color@3.1.3': {}
 
@@ -7375,6 +7449,14 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       vite: 7.3.3(@types/node@22.19.13)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0)
+
+  '@vitest/mocker@3.2.4(vite@7.3.3(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 7.3.3(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -7799,7 +7881,7 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  cytoscape@3.33.1: {}
+  cytoscape@3.33.4: {}
 
   d3-color@3.1.0: {}
 
@@ -8116,7 +8198,7 @@ snapshots:
       eslint: 9.39.4(jiti@2.7.0)
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react: 7.37.5(eslint@9.39.4(jiti@2.7.0))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.4(jiti@2.7.0))
@@ -8149,7 +8231,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0))
     transitivePeerDependencies:
       - supports-color
 
@@ -8164,7 +8246,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)))(eslint@9.39.4(jiti@2.7.0)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.59.3(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.4(jiti@2.7.0)):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -10365,7 +10447,7 @@ snapshots:
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.4
-      '@vitest/mocker': 3.2.4(vite@7.3.3(@types/node@22.19.13)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0))
+      '@vitest/mocker': 3.2.4(vite@7.3.3(@types/node@24.11.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0))
       '@vitest/pretty-format': 3.2.4
       '@vitest/runner': 3.2.4
       '@vitest/snapshot': 3.2.4
@@ -10522,7 +10604,7 @@ snapshots:
       '@types/react': 19.2.15
       react: 19.2.6
 
-  zustand@5.0.11(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)):
+  zustand@5.0.13(@types/react@19.2.15)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6)):
     optionalDependencies:
       '@types/react': 19.2.15
       react: 19.2.6
