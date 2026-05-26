@@ -93,4 +93,114 @@ describe('ConnectorRegistry — persist() write serialization', () => {
     expect(byId['gh-base'].name).toBe('Base (renamed)');
     expect(byId['gh-base'].enabled).toBe(false);
   });
+
+  // Same pattern but with a remove() racing concurrent create()s. The
+  // wizard's "delete + immediately add a replacement" flow lands on this
+  // codepath; without serialization a remove() that reads stale state
+  // before the creates persist could resurrect the removed connector.
+  it('serializes remove() racing concurrent create() calls', async () => {
+    const registry = new ConnectorRegistry({ localConfigPath: yamlPath, initial: [] });
+
+    // Seed a connector we'll remove.
+    await registry.create({
+      id: 'gh-doomed',
+      type: 'github',
+      name: 'Doomed',
+      installationId: '1',
+      org: 'doomed-org',
+    });
+
+    await Promise.all([
+      registry.create({
+        id: 'gh-add-a',
+        type: 'github',
+        name: 'Add A',
+        installationId: '2',
+        org: 'add-a-org',
+      }),
+      registry.remove('gh-doomed', undefined),
+      registry.create({
+        id: 'gh-add-b',
+        type: 'github',
+        name: 'Add B',
+        installationId: '3',
+        org: 'add-b-org',
+      }),
+    ]);
+
+    const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<{ id: string }> };
+    };
+    const ids = yaml.connectors.instances.map((c) => c.id).sort();
+    // gh-doomed must not survive; both new connectors must land.
+    expect(ids).toEqual(['gh-add-a', 'gh-add-b']);
+  });
+
+  // The persistChain absorbs rejections (`.catch(() => {})`) so a single
+  // failed write can't poison the chain and block every subsequent
+  // persist(). We can't make persist() itself throw without monkey-patching
+  // internals, so the proof is indirect: trigger a failure path the
+  // registry surfaces synchronously (duplicate id → 409), then confirm a
+  // follow-up valid create still completes and lands in YAML.
+  it('absorbs a rejected create() so the persistChain keeps draining', async () => {
+    const registry = new ConnectorRegistry({ localConfigPath: yamlPath, initial: [] });
+
+    await registry.create({
+      id: 'gh-original',
+      type: 'github',
+      name: 'Original',
+      installationId: '1',
+      org: 'org-1',
+    });
+
+    // Duplicate id → registry rejects before persist(); even so, in flight
+    // promises around it should not bring the chain down. Mix valid +
+    // rejecting calls in the same Promise.all and assert the valid ones
+    // still land.
+    const results = await Promise.allSettled([
+      registry.create({
+        id: 'gh-original',
+        type: 'github',
+        name: 'Duplicate (should reject)',
+        installationId: '99',
+        org: 'org-dup',
+      }),
+      registry.create({
+        id: 'gh-after-failure',
+        type: 'github',
+        name: 'After failure',
+        installationId: '2',
+        org: 'org-2',
+      }),
+    ]);
+
+    expect(results[0].status).toBe('rejected');
+    expect(results[1].status).toBe('fulfilled');
+
+    // The second create's effect must reach YAML — proving the chain
+    // didn't lock up on the rejection.
+    const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<{ id: string }> };
+    };
+    const ids = yaml.connectors.instances.map((c) => c.id).sort();
+    expect(ids).toEqual(['gh-after-failure', 'gh-original']);
+
+    // And a fresh create *after* the failure has also fully drained still
+    // works — guards against a "first failure poisons future calls" bug.
+    await registry.create({
+      id: 'gh-fresh',
+      type: 'github',
+      name: 'Fresh',
+      installationId: '3',
+      org: 'org-3',
+    });
+    const yaml2 = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<{ id: string }> };
+    };
+    expect(yaml2.connectors.instances.map((c) => c.id).sort()).toEqual([
+      'gh-after-failure',
+      'gh-fresh',
+      'gh-original',
+    ]);
+  });
 });

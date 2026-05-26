@@ -42,6 +42,13 @@ function isAllowedKeyPath(candidate: string): boolean {
   if (!candidate) return false;
   return resolvePath(candidate) === join(getAllowedKeyDir(), basename(candidate));
 }
+
+// User-facing message body for the path-not-allowed 400. Centralised so the
+// probe and admin-write paths return identical guidance.
+const PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE =
+  'privateKeyPath must point at a file directly inside the configured keys ' +
+  'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). ' +
+  'Subdirectories and paths outside it are not allowed.';
 import {
   ConnectorVersionConflictError,
   type ConnectorRegistry,
@@ -549,6 +556,20 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           },
         });
       }
+      // Defense-in-depth: even though this endpoint is admin-only in
+      // practice, persisting an arbitrary filesystem path into YAML lets a
+      // misconfigured server (or compromised admin session) point the
+      // scheduler at any file readable by the API process. Pin the path
+      // to the same allowed directory the probe and manifest service use.
+      const userKeyPath = request.body?.privateKeyPath?.trim();
+      if (userKeyPath && !isAllowedKeyPath(userKeyPath)) {
+        return reply.status(400).send({
+          error: {
+            code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+            message: PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE,
+          },
+        });
+      }
       const ifMatch = parseIfMatch(request.headers['if-match']);
       try {
         const updated = await svc.update(request.body ?? ({} as never), ifMatch);
@@ -586,6 +607,19 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'installationId and org are required for github connectors',
+        },
+      });
+    }
+    // Defense-in-depth: per-connector App overrides land in YAML and are
+    // read by the scheduler at sync time. Pin the override path to the
+    // allowed key dir so an admin write can't aim the runtime at an
+    // arbitrary file (same allowlist the probe and PUT /github/app use).
+    const createOverridePath = body.app?.privateKeyPath?.trim();
+    if (createOverridePath && !isAllowedKeyPath(createOverridePath)) {
+      return reply.status(400).send({
+        error: {
+          code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+          message: PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE,
         },
       });
     }
@@ -800,6 +834,19 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.patch<{ Params: { id: string }; Body: UpdateConnectorBody }>(
     '/:id',
     async (request, reply) => {
+      // Same allowlist guard as POST /. PATCH bodies may set `app: null`
+      // to clear an override, so we only validate when a path is actually
+      // supplied (non-null, non-empty after trim).
+      const patchOverridePath =
+        request.body?.app !== null ? request.body?.app?.privateKeyPath?.trim() : undefined;
+      if (patchOverridePath && !isAllowedKeyPath(patchOverridePath)) {
+        return reply.status(400).send({
+          error: {
+            code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+            message: PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE,
+          },
+        });
+      }
       const ifMatch = parseIfMatch(request.headers['if-match']);
       try {
         const updated = await registry.update(
@@ -1011,6 +1058,18 @@ function renderLaunchErrorHtml(heading: string, body: string): string {
   </head><body><div class="card"><h1>${escapeHtml(heading)}</h1><p>${escapeHtml(body)}</p></div></body></html>`;
 }
 
+/**
+ * Renders the post-manifest callback page shown to users after GitHub
+ * redirects back from App creation.
+ *
+ * SECURITY: `args.body` is interpolated into the rendered HTML **verbatim**
+ * — callers are responsible for HTML-escaping any user-controlled or
+ * remote-API-sourced values before passing them here. `args.heading` is
+ * escaped internally because it's always a fixed-vocabulary string in
+ * current call sites. If you need to render an unsafe `body`, wrap each
+ * substitution with `escapeHtml(...)` at the call site, not here, so the
+ * unsafe boundary stays explicit and greppable.
+ */
 function renderCallbackHtml(args: { ok: boolean; heading: string; body: string }): string {
   const tone = args.ok ? '#0ea05c' : '#c63838';
   return `<!doctype html><html><head><meta charset="utf-8"><title>ShipIt-AI · GitHub App</title>

@@ -23,6 +23,20 @@ export type { McpToolMetadata, McpToolParamSpec } from './tools/metadata.js';
 
 const DEFAULT_HTTP_PORT = 3002;
 const MCP_PATH = '/mcp';
+// Hard cap on POST body size. Real MCP JSON-RPC envelopes are <10 KB in
+// practice; the server also serves `Access-Control-Allow-Origin: *` so a
+// cross-origin page can drive an upload here. Bounding the buffer prevents
+// memory amplification (CodeQL js/resource-exhaustion). 1 MB is comfortable
+// headroom for any realistic tool argument payload.
+const MAX_BODY_BYTES = 1_000_000;
+
+class PayloadTooLargeError extends Error {
+  readonly statusCode = 413;
+  constructor(public readonly limitBytes: number) {
+    super(`Request body exceeds ${limitBytes}-byte limit`);
+    this.name = 'PayloadTooLargeError';
+  }
+}
 
 async function startStdio(neo4j: Neo4jClient, config: McpServerConfig): Promise<void> {
   const server = createMcpServer(neo4j, config);
@@ -72,6 +86,23 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
       const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
       await transport.handleRequest(req, res, body);
     } catch (err) {
+      // Body-cap exceedance: respond 413 with a generic message before
+      // anything else so a noisy/malicious client can't drive memory
+      // amplification by retrying past the limit.
+      if (err instanceof PayloadTooLargeError) {
+        if (!res.headersSent) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                code: 'PAYLOAD_TOO_LARGE',
+                message: `Request body exceeds the ${err.limitBytes}-byte limit.`,
+              },
+            }),
+          );
+        }
+        return;
+      }
       // Log the full error (including stack) server-side; never echo
       // err.toString() or err.stack back to the caller — CodeQL flags
       // it as information exposure (js/stack-trace-exposure) and it
@@ -98,10 +129,23 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
   console.error(`shipit-ai MCP server listening on http://localhost:${port}${MCP_PATH}`);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+// Exported for tests; the production transport never calls it directly.
+export async function readJsonBody(
+  req: IncomingMessage,
+  limitBytes: number = MAX_BODY_BYTES,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let received = 0;
   for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
+    const buf = chunk as Buffer;
+    received += buf.length;
+    if (received > limitBytes) {
+      // Stop reading immediately. `destroy()` aborts the socket so the
+      // sender can't keep streaming bytes we'd buffer and then discard.
+      req.destroy();
+      throw new PayloadTooLargeError(limitBytes);
+    }
+    chunks.push(buf);
   }
   const text = Buffer.concat(chunks).toString('utf8');
   if (text.length === 0) return undefined;

@@ -252,7 +252,9 @@ describe('ConnectorHarness', () => {
   it('leaves authFailed=false on successful sync', async () => {
     const result = await harness.runSync('full');
     expect(result.status).toBe('success');
-    expect(result.authFailed).toBeFalsy();
+    // Pin the explicit `false` rather than just falsy, so any future
+    // refactor that drops the field from the success branch is caught.
+    expect(result.authFailed).toBe(false);
   });
 });
 

@@ -81,6 +81,12 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(response.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
   });
 
+  // Routes reject privateKeyPath that resolves outside the allowed keys
+  // directory (defense-in-depth — same allowlist the probe uses). Use a
+  // path inside `~/.shipit/keys` for happy-path tests; the file doesn't
+  // need to exist because CRUD never reads it, only persists the string.
+  const allowedOverridePath = join(homedir(), '.shipit', 'keys', 'override-test.pem');
+
   it('POST /api/connectors persists an App override when supplied', async () => {
     // Use a different id so we don't collide with the previous test.
     const response = await server.inject({
@@ -89,15 +95,31 @@ describe('Connector routes (CRUD + ETag)', () => {
       payload: {
         ...validPayload,
         id: 'github-test-override',
-        app: { id: '999999', privateKeyPath: '/etc/shipit/dev-app.pem' },
+        app: { id: '999999', privateKeyPath: allowedOverridePath },
       },
     });
     expect(response.statusCode).toBe(201);
     const body = response.json();
-    expect(body.app).toEqual({ id: '999999', privateKeyPath: '/etc/shipit/dev-app.pem' });
+    expect(body.app).toEqual({ id: '999999', privateKeyPath: allowedOverridePath });
 
     // Clean up so the rest of the suite sees a single connector.
     await server.inject({ method: 'DELETE', url: '/api/connectors/github-test-override' });
+  });
+
+  it('POST /api/connectors rejects override paths outside the allowed dir', async () => {
+    // Defense-in-depth guard mirrors the probe — an admin write must not
+    // be able to point the scheduler at /etc/passwd or similar.
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: {
+        ...validPayload,
+        id: 'github-bad-path',
+        app: { id: '999999', privateKeyPath: '/etc/passwd' },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
   });
 
   it('PATCH /api/connectors/:id with app:null clears the override', async () => {
@@ -108,11 +130,11 @@ describe('Connector routes (CRUD + ETag)', () => {
       payload: {
         ...validPayload,
         id: 'github-clear-test',
-        app: { id: '777', privateKeyPath: '/tmp/foo.pem' },
+        app: { id: '777', privateKeyPath: allowedOverridePath },
       },
     });
     const get = await server.inject({ method: 'GET', url: '/api/connectors/github-clear-test' });
-    expect(get.json().app).toEqual({ id: '777', privateKeyPath: '/tmp/foo.pem' });
+    expect(get.json().app).toEqual({ id: '777', privateKeyPath: allowedOverridePath });
 
     const etag = get.headers.etag as string;
     const cleared = await server.inject({
@@ -125,6 +147,28 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(cleared.json().app).toBeUndefined();
 
     await server.inject({ method: 'DELETE', url: '/api/connectors/github-clear-test' });
+  });
+
+  it('PATCH /api/connectors/:id rejects an override path outside the allowed dir', async () => {
+    // Seed a connector to PATCH against.
+    await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { ...validPayload, id: 'github-patch-bad' },
+    });
+    const get = await server.inject({ method: 'GET', url: '/api/connectors/github-patch-bad' });
+    const etag = get.headers.etag as string;
+
+    const res = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-patch-bad',
+      headers: { 'if-match': etag },
+      payload: { app: { id: '777', privateKeyPath: '/etc/passwd' } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
+
+    await server.inject({ method: 'DELETE', url: '/api/connectors/github-patch-bad' });
   });
 
   it('POST /api/connectors returns 400 without required fields', async () => {
@@ -374,6 +418,12 @@ describe('Global GitHub App endpoint', () => {
     expect(res.headers.etag).toMatch(/^"[a-f0-9]{64}"$/);
   });
 
+  // PUT /github/app pins privateKeyPath to the allowed keys dir, same
+  // allowlist the probe + per-connector overrides use. Tests use a path
+  // inside ~/.shipit/keys — the file doesn't need to exist because the
+  // route only persists the string, never reads it.
+  const allowedAppPath = join(homedir(), '.shipit', 'keys', 'global-app-test.pem');
+
   it('PUT persists the global App and writes YAML', async () => {
     const get = await server.inject({ method: 'GET', url: '/api/connectors/github/app' });
     const etag = get.headers.etag as string;
@@ -382,19 +432,19 @@ describe('Global GitHub App endpoint', () => {
       method: 'PUT',
       url: '/api/connectors/github/app',
       headers: { 'if-match': etag },
-      payload: { id: '12345', privateKeyPath: '/etc/shipit/keys/app.pem' },
+      payload: { id: '12345', privateKeyPath: allowedAppPath },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.configured).toBe(true);
     expect(body.id).toBe('12345');
-    expect(body.privateKeyPath).toBe('/etc/shipit/keys/app.pem');
+    expect(body.privateKeyPath).toBe(allowedAppPath);
 
     // Verify it landed in YAML. The file was missing before — the
     // service must create it from scratch.
     const written = readFileSync(join(tmpDir, 'shipit.config.local.yaml'), 'utf-8');
     expect(written).toMatch(/id:\s*['"]?12345/);
-    expect(written).toContain('/etc/shipit/keys/app.pem');
+    expect(written).toContain(allowedAppPath);
   });
 
   it('PUT returns 400 when fields are missing', async () => {
@@ -406,12 +456,25 @@ describe('Global GitHub App endpoint', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('PUT rejects privateKeyPath outside the allowed dir', async () => {
+    const get = await server.inject({ method: 'GET', url: '/api/connectors/github/app' });
+    const etag = get.headers.etag as string;
+    const res = await server.inject({
+      method: 'PUT',
+      url: '/api/connectors/github/app',
+      headers: { 'if-match': etag },
+      payload: { id: '12345', privateKeyPath: '/etc/passwd' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
+  });
+
   it('PUT returns 409 on stale If-Match', async () => {
     const res = await server.inject({
       method: 'PUT',
       url: '/api/connectors/github/app',
       headers: { 'if-match': '"deadbeef"' },
-      payload: { id: '12345', privateKeyPath: '/etc/shipit/keys/app.pem' },
+      payload: { id: '12345', privateKeyPath: allowedAppPath },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('VERSION_CONFLICT');

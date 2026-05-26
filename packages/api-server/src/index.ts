@@ -122,6 +122,18 @@ async function main() {
   // eagerly: jobs that fire before any App is configured record a
   // friendly APP_NOT_CONFIGURED error and the user sees the actual
   // diagnostic rather than a phantom "disconnected" state.
+  // LIVE REFERENCE — must stay aliased to the same object the
+  // GitHubAppService mutates on PUT /github/app. The scheduler reads
+  // `globalApp.id` / `globalApp.privateKeyPath` on every job, so a write
+  // from the wizard or manifest flow propagates without restart. Two
+  // footguns that silently break this:
+  //   - Spreading `{...config.connectors.github.app}` here would copy the
+  //     object and freeze the scheduler at boot-time values.
+  //   - `Object.freeze(config.connectors.github.app)` anywhere in the
+  //     pipeline would make GitHubAppService.update()'s in-place mutation
+  //     throw silently (strict mode) or no-op (sloppy).
+  // See docs/agent/patterns/live-reference-for-hot-reload.md and ADR
+  // `per-org-github-app-override` for the broader pattern.
   const gh = config.connectors.github.app;
   let scheduler: SyncScheduler | null = null;
   if (config.backend.redis.url) {

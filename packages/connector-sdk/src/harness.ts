@@ -113,11 +113,16 @@ export class ConnectorHarness {
       }
 
       this.stateMachine.transition(SyncState.IDLE);
+      // Explicit `authFailed: false` rather than omitting the field so the
+      // SyncResult shape is the same on every code path. Lets the scheduler
+      // and any downstream log/metric pipeline check `result.authFailed`
+      // without special-casing `undefined`.
       return {
         status: 'success',
         entities_synced: entitiesSynced,
         errors: [],
         duration_ms: Date.now() - startTime,
+        authFailed: false,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
