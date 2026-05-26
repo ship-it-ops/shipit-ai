@@ -30,6 +30,15 @@ export interface SyncResult {
   entities_synced: number;
   errors: string[];
   duration_ms: number;
+  /**
+   * True when the connector's `authenticate()` returned `success: false`
+   * OR a per-entity fetch threw an HTTP 401/403. Lets the scheduler
+   * classify auth failures as `degraded` (sticky — won't fix itself on
+   * the next tick) without string-matching error messages, which mis-
+   * classifies legitimate non-auth `forbidden` errors like
+   * "forbidden: repository is archived".
+   */
+  authFailed?: boolean;
 }
 
 export interface WebhookEvent {

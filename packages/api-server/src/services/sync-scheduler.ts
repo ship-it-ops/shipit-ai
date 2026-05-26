@@ -289,14 +289,11 @@ export class SyncScheduler implements ConnectorRunner {
 
     // 401/403 are sticky — surface as "degraded" so the UI flags the
     // connector instead of letting the next polling tick repeat the
-    // failure silently. Auth.success === false manifests as a single error
-    // string in result.errors when GitHubConnector.authenticate fails.
-    const authFailed = result.errors.some(
-      (e) =>
-        e.toLowerCase().includes('auth failed') ||
-        e.toLowerCase().includes('unauthorized') ||
-        e.toLowerCase().includes('forbidden'),
-    );
+    // failure silently. The harness reports auth state via a structured
+    // boolean on SyncResult; the previous string-match heuristic
+    // misclassified legitimate non-auth `forbidden` errors (e.g.
+    // "forbidden: repository is archived").
+    const authFailed = result.authFailed === true;
 
     this.statuses.set(connectorId, {
       connectorId,

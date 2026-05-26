@@ -22,21 +22,25 @@ function getAllowedKeyDir(): string {
   return resolvePath(process.env.SHIPIT_GITHUB_APP_KEY_DIR ?? `${homedir()}/.shipit/keys`);
 }
 
-// Sanitize a user-supplied PEM path → safe absolute path inside the
-// allowed dir, or null if the input would escape it. Returns a path
-// RECONSTRUCTED from trusted parts (`getAllowedKeyDir()` + `basename()`)
-// rather than echoing the raw user input back into the FS call. This is
-// the CodeQL-recognized js/path-injection sanitizer shape: `basename()`
-// strips directory components, and `join()` over a trusted base ensures
-// the resulting path can't escape the dir. We round-trip the user's raw
-// input through resolve() and require it to equal our reconstruction —
-// that pins the file to the exact <allowedDir>/<basename> location,
-// rejecting any traversal attempt and any path outside the dir.
-function sanitizeKeyPath(candidate: string): string | null {
-  if (!candidate) return null;
-  const allowed = getAllowedKeyDir();
-  const safe = join(allowed, basename(candidate));
-  return resolvePath(candidate) === safe ? safe : null;
+// Predicate: does the user-supplied path resolve to a file directly
+// inside the allowed keys directory? Used for UX rejection so callers get
+// a clear 400 instead of a confusing ENOENT after the basename collapses
+// their `/etc/passwd` into `<allowedDir>/passwd`.
+//
+// The check is round-trip equality: the input's canonical absolute form
+// must equal the reconstruction from <trusted base> + basename(input).
+// This rejects traversal (`../foo`), absolute paths outside the dir,
+// and subdirectory paths (PEMs live flat under the allowed dir).
+//
+// IMPORTANT: This is a PREDICATE, not a sanitizer. The value passed to
+// `readFileSync` at call sites is always the inlined reconstruction
+// `join(getAllowedKeyDir(), basename(userInput))` — never the raw
+// user input — so CodeQL's js/path-injection taint flow visibly sees
+// the canonical sanitizer pattern (basename → join over trusted base)
+// guarding the sink.
+function isAllowedKeyPath(candidate: string): boolean {
+  if (!candidate) return false;
+  return resolvePath(candidate) === join(getAllowedKeyDir(), basename(candidate));
 }
 import {
   ConnectorVersionConflictError,
@@ -123,19 +127,28 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // to decide between "ask the user to configure a shared App" (first
   // connector) and "offer the existing shared App" (subsequent ones).
   // ETag accompanies so an admin's edit doesn't race the wizard's write.
-  server.get('/github/app', async (_request, reply) => {
-    const svc = server.githubAppService;
-    if (!svc) {
-      return reply.status(503).send({
-        error: {
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'GitHub App service is not configured on this server.',
-        },
-      });
-    }
-    reply.header('ETag', `"${svc.getHash()}"`);
-    return svc.status();
-  });
+  //
+  // Per-route rate limit: the handler is cheap (memory read) but performs
+  // an authorization check that CodeQL js/missing-rate-limiting flags.
+  // 100/min/IP — generous enough for the wizard's app-status polling
+  // (every 2s while the manifest tab is open) while still bounding abuse.
+  server.get(
+    '/github/app',
+    { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (_request, reply) => {
+      const svc = server.githubAppService;
+      if (!svc) {
+        return reply.status(503).send({
+          error: {
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'GitHub App service is not configured on this server.',
+          },
+        });
+      }
+      reply.header('ETag', `"${svc.getHash()}"`);
+      return svc.status();
+    },
+  );
 
   // GET /api/connectors/github/installations — list every org/account the
   // shared App is installed in, plus the install URL for adding a new one.
@@ -183,10 +196,17 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       try {
         privateKey = readFileSync(appStatus.privateKeyPath, 'utf-8');
       } catch (err) {
+        // Log path + raw error server-side; the response stays generic so
+        // a misconfigured global App doesn't echo operator filesystem
+        // layout back to the caller (same pattern as the probe handler).
+        request.log.warn(
+          { err, path: appStatus.privateKeyPath },
+          'installations: failed to read App private key',
+        );
         return reply.status(400).send({
           error: {
             code: 'PRIVATE_KEY_UNREADABLE',
-            message: `Failed to read App private key at ${appStatus.privateKeyPath}: ${(err as Error).message}`,
+            message: 'Failed to read App private key. Check the API server logs for details.',
           },
         });
       }
@@ -621,11 +641,22 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
 
       const cfg = (server as unknown as { config?: Config }).config;
       const globalApp = cfg?.connectors.github.app ?? { id: '', privateKeyPath: '' };
-      // Probe resolution: the request's `app` field overrides the global one
-      // field-by-field. Lets the wizard's advanced panel test a per-org App
-      // without leaving the create flow.
+      // Resolution split into TWO independent paths to keep CodeQL's
+      // js/path-injection taint flow visible:
+      //   - `appId` resolution still uses `resolveAppCredentials` (no
+      //     filesystem implication).
+      //   - The private-key path is resolved separately, branched per
+      //     source so the analyzer can see the sanitizer guard the sole
+      //     tainted flow into `readFileSync`. Funneling both branches
+      //     through a shared `keyPath` variable defeated CodeQL's data
+      //     flow tracking in prior iterations.
+      const userKeyPath = request.body?.app?.privateKeyPath?.trim();
       const resolved = resolveAppCredentials({ app: request.body?.app }, globalApp);
-      if (!resolved.id || !resolved.privateKeyPath) {
+      const appId = resolved.id;
+      // `APP_NOT_CONFIGURED` check is driven directly from the two
+      // possible sources — avoids reading `resolved.privateKeyPath`,
+      // which CodeQL traces as tainted via `resolveAppCredentials`.
+      if (!appId || !(userKeyPath || globalApp.privateKeyPath)) {
         return reply.status(400).send({
           ok: false,
           code: 'APP_NOT_CONFIGURED',
@@ -636,47 +667,42 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         });
       }
 
-      // Path sanitization for CodeQL js/path-injection. Branch by source
-      // so the taint tracker can see two distinct flows:
-      //   - User-supplied path → run through sanitizeKeyPath() so the
-      //     value passed to readFileSync is RECONSTRUCTED from a trusted
-      //     base dir + basename(userInput). basename() is a recognized
-      //     sanitizer; the round-trip-equality check rejects anything
-      //     outside the allowed dir.
-      //   - Global config path → operator-controlled, never request-
-      //     tainted, so it bypasses sanitization.
-      // Previous attempts used a `startsWith` guard on the user value and
-      // passed the RAW input to readFileSync — CodeQL kept flagging that
-      // because the sink received tainted data even after the predicate.
-      const userKeyPath = request.body?.app?.privateKeyPath?.trim();
-      let keyPath: string;
-      if (userKeyPath) {
-        const sanitized = sanitizeKeyPath(userKeyPath);
-        if (!sanitized) {
-          return reply.status(400).send({
-            ok: false,
-            code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
-            message:
-              'privateKeyPath must point at a file directly inside the configured keys ' +
-              'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). ' +
-              'Subdirectories and paths outside it are not allowed.',
-          });
-        }
-        keyPath = sanitized;
-      } else {
-        // No user override — fall back to the operator-controlled global
-        // App config. Not request-tainted, so no allowlist required.
-        keyPath = globalApp.privateKeyPath;
-      }
-
+      // Two distinct readFileSync call sites — no shared `keyPath`
+      // variable for CodeQL to taint-trace through. The user branch
+      // passes a path RECONSTRUCTED inline from trusted parts; the
+      // global branch reads from operator-controlled config that's
+      // never request-tainted.
       let privateKey: string;
       try {
-        privateKey = readFileSync(keyPath, 'utf-8');
+        if (userKeyPath) {
+          // UX rejection: pin user input to <allowedDir>/<basename(input)>.
+          if (!isAllowedKeyPath(userKeyPath)) {
+            return reply.status(400).send({
+              ok: false,
+              code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+              message:
+                'privateKeyPath must point at a file directly inside the configured keys ' +
+                'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). ' +
+                'Subdirectories and paths outside it are not allowed.',
+            });
+          }
+          // CodeQL-recognized js/path-injection sanitizer: basename()
+          // strips directory components, join() over a trusted base
+          // bounds the resulting path. This value — not the raw user
+          // input — is what flows into readFileSync.
+          privateKey = readFileSync(join(getAllowedKeyDir(), basename(userKeyPath)), 'utf-8');
+        } else {
+          // Operator-controlled global config; not request-tainted.
+          privateKey = readFileSync(globalApp.privateKeyPath, 'utf-8');
+        }
       } catch (err) {
         // Log details server-side; the response intentionally omits the
         // path + raw error message so a probe failure doesn't echo
         // operator filesystem layout to the caller.
-        request.log.warn({ err, path: keyPath }, 'probe: failed to read App private key');
+        request.log.warn(
+          { err, userSuppliedPath: Boolean(userKeyPath) },
+          'probe: failed to read App private key',
+        );
         return reply.status(400).send({
           ok: false,
           code: 'PRIVATE_KEY_UNREADABLE',
@@ -688,7 +714,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       // and live sync. It returns a per-installation Octokit ready for the
       // discovery calls below.
       const { auth, octokit } = await authenticateGitHubApp({
-        appId: resolved.id,
+        appId,
         privateKey,
         installationId,
       });
@@ -739,7 +765,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           sampleRepos,
           // Echo back which App credentials were used so the wizard's
           // "Advanced" panel can confirm an override actually took effect.
-          app: { id: resolved.id, overridden: resolved.overridden },
+          app: { id: appId, overridden: resolved.overridden },
         });
       } catch (err) {
         const status = (err as { status?: number }).status;

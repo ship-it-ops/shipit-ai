@@ -138,7 +138,7 @@ async function main() {
       });
       // Replace the registry's NoopRunner with the live scheduler so
       // future create/update/delete drives BullMQ jobs.
-      (connectorRegistry as unknown as { runner: SyncScheduler }).runner = scheduler;
+      connectorRegistry.setRunner(scheduler);
       console.log('SyncScheduler attached to ConnectorRegistry');
     } catch (err) {
       // Don't let a broken scheduler take down the API. Operators see a

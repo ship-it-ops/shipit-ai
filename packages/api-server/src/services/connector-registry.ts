@@ -135,6 +135,12 @@ export class ConnectorRegistry {
   private connectors = new Map<string, ConnectorInstanceConfig>();
   private runner: ConnectorRunner;
   private runStore: ConnectorRunStore;
+  // Serializes persist() so two concurrent writers can't read → serialize
+  // → rename independently and silently drop one another's changes. The
+  // wizard's POST /connectors → POST /:id/sync sequence hits this risk on
+  // every successful create. Chained promise; rejections are absorbed so
+  // the chain itself can't get poisoned by one bad write.
+  private persistChain: Promise<void> = Promise.resolve();
 
   constructor(opts: ConnectorRegistryOptions) {
     this.localConfigPath = opts.localConfigPath;
@@ -155,6 +161,15 @@ export class ConnectorRegistry {
   // guaranteed consistent.
   getRunStore(): ConnectorRunStore {
     return this.runStore;
+  }
+
+  // Swap the runner. Used at boot to replace the default `NoopRunner`
+  // with a live `SyncScheduler` once Redis is confirmed reachable — see
+  // `live-reference-for-hot-reload` in docs/agent/patterns/. Safe to
+  // call once; calling twice replaces the runner without draining the
+  // previous one, which would orphan in-flight jobs.
+  setRunner(runner: ConnectorRunner): void {
+    this.runner = runner;
   }
 
   // Bootstraps the runner for already-loaded connectors. Called once after
@@ -322,7 +337,22 @@ export class ConnectorRegistry {
   // configuration. Emitting it here would (a) re-introduce the write
   // contention this refactor solved, and (b) leak operational telemetry
   // into a file users version-control and hand-edit.
+  //
+  // Concurrent persist() calls are serialized via `persistChain` so two
+  // writers can't read the same YAML, each serialize the in-memory state,
+  // and each rename — the last writer would silently win and drop the
+  // other's change. The chain absorbs rejections so a single failed write
+  // can't poison subsequent calls.
   private async persist(): Promise<void> {
+    const next = this.persistChain.then(
+      () => this.persistInner(),
+      () => this.persistInner(),
+    );
+    this.persistChain = next.catch(() => {});
+    return next;
+  }
+
+  private async persistInner(): Promise<void> {
     const raw = existsSync(this.localConfigPath) ? readFileSync(this.localConfigPath, 'utf-8') : '';
     const doc = raw.trim() ? parseDocument(raw) : parseDocument('');
     const instancesForYaml = this.list().map(({ lastRuns: _ignored, ...rest }) => rest);
