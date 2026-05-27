@@ -197,6 +197,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Update a single sticky comment on each run instead of posting
+          # a new comment per CI invocation — keeps the PR conversation
+          # readable when reviews run repeatedly (push, rebase, retries).
+          use_sticky_comment: true
           # Pull the ship-reviewed-prs skill from the ship-it-ops/ship-code
           # marketplace (multi-persona review with comment-lifecycle
           # suppression + APPROVE / REQUEST_CHANGES / COMMENT decision).
