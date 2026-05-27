@@ -120,14 +120,19 @@ jobs:
           cache-to: type=gha,mode=max
 
   # AI code review — gated behind every other CI job. Skipped when the PR
-  # is in draft, when the trigger is a push to main (PRs only), or when any
-  # upstream job failed. No point spending review tokens on code that
-  # doesn't compile or fails its own tests.
+  # is in draft, when the PR author is a bot (Dependabot, renovate — bot
+  # PRs don't benefit from AI review and would otherwise show a failing
+  # required check), when the trigger is a push to main (PRs only), or
+  # when any upstream job failed. No point spending review tokens on code
+  # that doesn't compile or fails its own tests.
   claude-review:
     name: Claude Code Review
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, build, docker]
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.user.type != 'Bot'
     permissions:
       contents: read
       pull-requests: write
@@ -192,6 +197,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Update a single sticky comment on each run instead of posting
+          # a new comment per CI invocation — keeps the PR conversation
+          # readable when reviews run repeatedly (push, rebase, retries).
+          use_sticky_comment: true
           # Pull the ship-reviewed-prs skill from the ship-it-ops/ship-code
           # marketplace (multi-persona review with comment-lifecycle
           # suppression + APPROVE / REQUEST_CHANGES / COMMENT decision).
