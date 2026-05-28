@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { FilterPanel } from './filter-panel';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
@@ -42,18 +44,29 @@ const sampleData: GraphData = {
   edges: [],
 };
 
+function withQueryClient(ui: ReactNode) {
+  // No-retry client keeps tests deterministic when the inner React Query
+  // hooks try (and fail) to fetch /api/graph/sources + /api/connectors.
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
+
 describe('FilterPanel', () => {
   beforeEach(() => {
     useGraphStore.getState().resetFilters();
   });
 
   it('does not render when closed', () => {
-    const { container } = render(<FilterPanel open={false} onClose={vi.fn()} data={sampleData} />);
+    const { container } = render(
+      withQueryClient(<FilterPanel open={false} onClose={vi.fn()} data={sampleData} />),
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders the four filter group headings when open', () => {
-    render(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />);
+  it('renders the filter group headings when open', () => {
+    render(withQueryClient(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />));
     expect(screen.getByText(/node labels/i)).toBeInTheDocument();
     expect(screen.getByText(/environment/i)).toBeInTheDocument();
     expect(screen.getByText(/tier/i)).toBeInTheDocument();
@@ -61,7 +74,7 @@ describe('FilterPanel', () => {
   });
 
   it('derives owner options from the graph data, not from a hardcoded list', () => {
-    render(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />);
+    render(withQueryClient(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />));
     expect(screen.getByText('payments')).toBeInTheDocument();
     expect(screen.getByText('finance')).toBeInTheDocument();
     // Old hardcoded values must no longer leak through.
@@ -69,9 +82,16 @@ describe('FilterPanel', () => {
     expect(screen.queryByText('platform-team')).not.toBeInTheDocument();
   });
 
+  it('exposes a Source facet (populated from /api/graph/sources)', () => {
+    render(withQueryClient(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />));
+    // Heading renders even when /api/graph/sources hasn't returned yet; the
+    // option list is filled in once the query resolves.
+    expect(screen.getByText(/^source$/i)).toBeInTheDocument();
+  });
+
   it('toggling a checkbox updates the graph store filters', async () => {
     const user = userEvent.setup();
-    render(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />);
+    render(withQueryClient(<FilterPanel open={true} onClose={vi.fn()} data={sampleData} />));
 
     const productionLabel = screen.getByText('production');
     await user.click(productionLabel);
@@ -122,7 +142,7 @@ describe('FilterPanel', () => {
         },
       ],
     };
-    render(<FilterPanel open={true} onClose={vi.fn()} data={githubLikeData} />);
+    render(withQueryClient(<FilterPanel open={true} onClose={vi.fn()} data={githubLikeData} />));
     expect(screen.getByText('platform-team')).toBeInTheDocument();
     expect(screen.getByText('mohamed')).toBeInTheDocument();
   });

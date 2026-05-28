@@ -166,6 +166,20 @@ export interface SearchResult {
   canonicalId: string;
   owner?: string;
   lastSynced?: string;
+  sourceSystem?: string;
+  sourceConnectorId?: string;
+  sourceOrg?: string;
+}
+
+export interface GraphSourceInfo {
+  sourceSystem: string;
+  sourceConnectorId: string | null;
+  entityCount: number;
+}
+
+export interface EntitySourceFilter {
+  sourceSystem?: string;
+  sourceConnectorId?: string;
 }
 
 export interface GraphNode {
@@ -612,8 +626,14 @@ export async function updateGitHubApp(
   return { status, hash: parseEtag(res.headers.get('ETag')) };
 }
 
-export async function searchEntities(query: string): Promise<SearchResult[]> {
-  return apiFetch<SearchResult[]>(`/api/graph/search?q=${encodeURIComponent(query)}`);
+export async function searchEntities(
+  query: string,
+  source?: EntitySourceFilter,
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  if (source?.sourceSystem) params.set('sourceSystem', source.sourceSystem);
+  if (source?.sourceConnectorId) params.set('sourceConnectorId', source.sourceConnectorId);
+  return apiFetch<SearchResult[]>(`/api/graph/search?${params.toString()}`);
 }
 
 export async function fetchNeighborhood(nodeId: string, depth: number = 2): Promise<GraphData> {
@@ -628,8 +648,18 @@ export async function fetchBlastRadius(nodeId: string, depth: number = 3): Promi
   );
 }
 
-export async function fetchGraphOverview(limit: number = 100): Promise<GraphData> {
-  return apiFetch<GraphData>(`/api/graph/overview?limit=${limit}`);
+export async function fetchGraphOverview(
+  limit: number = 100,
+  source?: EntitySourceFilter,
+): Promise<GraphData> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (source?.sourceSystem) params.set('sourceSystem', source.sourceSystem);
+  if (source?.sourceConnectorId) params.set('sourceConnectorId', source.sourceConnectorId);
+  return apiFetch<GraphData>(`/api/graph/overview?${params.toString()}`);
+}
+
+export async function fetchGraphSources(): Promise<GraphSourceInfo[]> {
+  return apiFetch<GraphSourceInfo[]>('/api/graph/sources');
 }
 
 export async function triggerSync(connectorId: string): Promise<void> {

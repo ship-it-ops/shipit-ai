@@ -50,14 +50,27 @@ function createMockNeo4jService(): Neo4jService {
     }),
     searchEntities: vi.fn().mockResolvedValue([
       {
-        get: () => ({
-          properties: {
-            id: 'shipit://LogicalService/shipitops/graph-api',
-            name: 'graph-api',
-            tier: 1,
-          },
-        }),
+        get: (key: string) => {
+          if (key === 'labels') return ['LogicalService'];
+          return {
+            properties: {
+              id: 'shipit://LogicalService/shipitops/graph-api',
+              name: 'graph-api',
+              tier: 1,
+              _source_system: 'github',
+              _source_connector_id: 'gh-acme',
+              _source_org: 'github/acme',
+              _last_synced: '2026-04-19T00:00:00.000Z',
+            },
+          };
+        },
       },
+    ]),
+    getOverview: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
+    getSources: vi.fn().mockResolvedValue([
+      { sourceSystem: 'github', sourceConnectorId: 'gh-acme', entityCount: 12 },
+      { sourceSystem: 'github', sourceConnectorId: 'gh-contoso', entityCount: 5 },
+      { sourceSystem: 'kubernetes', sourceConnectorId: null, entityCount: 3 },
     ]),
     close: vi.fn().mockResolvedValue(undefined),
   } as unknown as Neo4jService;
@@ -125,5 +138,60 @@ describe('Graph routes', () => {
     const body = response.json();
     expect(body).toHaveLength(1);
     expect(body[0].name).toBe('graph-api');
+  });
+
+  it('GET /api/graph/search surfaces source provenance fields', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/graph/search?q=payments',
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body[0].sourceSystem).toBe('github');
+    expect(body[0].sourceConnectorId).toBe('gh-acme');
+    expect(body[0].sourceOrg).toBe('github/acme');
+  });
+
+  it('GET /api/graph/search forwards sourceSystem + sourceConnectorId as filters', async () => {
+    await server.inject({
+      method: 'GET',
+      url: '/api/graph/search?sourceSystem=github&sourceConnectorId=gh-acme',
+    });
+    expect(mockNeo4j.searchEntities).toHaveBeenLastCalledWith(
+      expect.anything(), // request.ctx
+      expect.objectContaining({
+        filters: expect.objectContaining({
+          _source_system: 'github',
+          _source_connector_id: 'gh-acme',
+        }),
+      }),
+    );
+  });
+
+  it('GET /api/graph/overview forwards source filters to neo4j', async () => {
+    await server.inject({
+      method: 'GET',
+      url: '/api/graph/overview?sourceSystem=github&sourceConnectorId=gh-acme&limit=50',
+    });
+    expect(mockNeo4j.getOverview).toHaveBeenLastCalledWith(expect.anything(), {
+      limit: 50,
+      sourceSystem: 'github',
+      sourceConnectorId: 'gh-acme',
+    });
+  });
+
+  it('GET /api/graph/sources returns distinct source pairs', async () => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/graph/sources',
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveLength(3);
+    expect(body[0]).toEqual({
+      sourceSystem: 'github',
+      sourceConnectorId: 'gh-acme',
+      entityCount: 12,
+    });
   });
 });

@@ -13,9 +13,16 @@ import {
 } from '@ship-it-ui/ui';
 import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
-import { useBlastRadius, useEntityClaims, useGraphData } from '@/lib/hooks/use-graph-data';
+import {
+  useBlastRadius,
+  useEntityClaims,
+  useGraphData,
+  useConnectorsList,
+} from '@/lib/hooks/use-graph-data';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 import { ClaimList } from '@/components/claims/claim-list';
+import { resolveConnectorIdentity } from '@/lib/connector-identity';
+import { ConnectorPill } from '@/components/connectors/connector-pill';
 
 const TYPE_BADGE_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
   LogicalService: 'accent',
@@ -53,6 +60,7 @@ export default function EntityDetailPage() {
   const { data, isLoading, error } = useGraphData(id ?? undefined, 1);
   const blast = useBlastRadius(id ?? undefined, 3, blastOpen);
   const claims = useEntityClaims(id ?? undefined);
+  const { data: connectors } = useConnectorsList();
 
   const node = useMemo(
     () => (id ? data?.nodes.find((n) => n.data.id === id) : undefined),
@@ -146,6 +154,8 @@ export default function EntityDetailPage() {
   }
 
   const sourceSystem = typeof d['_source_system'] === 'string' ? d['_source_system'] : undefined;
+  const sourceConnectorId =
+    typeof d['_source_connector_id'] === 'string' ? d['_source_connector_id'] : undefined;
   const lastSynced = typeof d['_last_synced'] === 'string' ? d['_last_synced'] : undefined;
 
   return (
@@ -304,7 +314,28 @@ export default function EntityDetailPage() {
               {sourceSystem && (
                 <>
                   <dt className="text-text-dim font-mono uppercase">Source</dt>
-                  <dd className="text-text">{sourceSystem}</dd>
+                  <dd className="text-text">
+                    {(() => {
+                      const identity = resolveConnectorIdentity(
+                        sourceSystem,
+                        sourceConnectorId,
+                        connectors,
+                      );
+                      const pill = <ConnectorPill identity={identity} />;
+                      return identity.resolved && identity.connectorId ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push('/connectors')}
+                          aria-label={`Open ${identity.displayName}`}
+                          className="focus-visible:ring-accent-dim rounded outline-none focus-visible:ring-[3px]"
+                        >
+                          {pill}
+                        </button>
+                      ) : (
+                        pill
+                      );
+                    })()}
+                  </dd>
                 </>
               )}
               {lastSynced && (

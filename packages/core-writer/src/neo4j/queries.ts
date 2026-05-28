@@ -55,6 +55,7 @@ export async function mergeNode(
           n._source_system = $sourceSystem,
           n._source_org = $sourceOrg,
           n._source_id = $sourceId,
+          n._source_connector_id = $sourceConnectorId,
           n._event_version = $eventVersion
     )
     RETURN NOT reject AS written
@@ -71,6 +72,10 @@ export async function mergeNode(
     sourceSystem: node._source_system,
     sourceOrg: node._source_org,
     sourceId: node._source_id,
+    // Overwrite on every write — matches the semantics of _source_system /
+    // _source_id (most-recent writer wins). Per-claim provenance is still
+    // preserved in `_claims` for the resolver.
+    sourceConnectorId: node._source_connector_id ?? null,
     eventVersion: node._event_version,
   });
   return result.records[0]?.get('written') === true;

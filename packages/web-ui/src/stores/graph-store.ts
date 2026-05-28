@@ -6,6 +6,9 @@ export interface GraphFilters {
   environments: string[];
   tiers: string[];
   owners: string[];
+  // Connector-identity keys ('${type}:${connectorId}' or '${type}:*'); see
+  // connectorIdentityKey() in lib/connector-identity.ts.
+  sources: string[];
 }
 
 type LayoutType = 'dagre' | 'cose' | 'concentric';
@@ -37,6 +40,7 @@ const defaultFilters: GraphFilters = {
   environments: [],
   tiers: [],
   owners: [],
+  sources: [],
 };
 
 export const useGraphStore = create<GraphState>((set) => ({

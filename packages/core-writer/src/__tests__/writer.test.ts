@@ -341,6 +341,19 @@ describe('CoreWriter', () => {
     });
   });
 
+  it('stamps the envelope connector_id onto the written node as _source_connector_id', async () => {
+    // Normalizers don't know the connector instance ID; only the runner does.
+    // The writer is the seam where envelope-level connector identity gets
+    // attached to the node so downstream UI can filter by connector instance.
+    const event = makeEnvelope([makeNode('repo-a')], []);
+
+    await writer.processEvent(event);
+
+    const writeCall = vi.mocked(nodeWriter.writeNode).mock.calls[0];
+    const writtenNode = writeCall[0];
+    expect(writtenNode._source_connector_id).toBe(event.connector_id);
+  });
+
   it('reconciles identity and uses existing canonical ID for merge', async () => {
     // Pre-register a linking key pointing to an existing node
     const existingId = 'shipit://repository/default/org/payments-api';

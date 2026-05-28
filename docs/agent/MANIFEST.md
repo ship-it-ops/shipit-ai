@@ -63,6 +63,7 @@ Last updated: 2026-06-22 | Total notes: 75
 - [mcp-token-auth-stage-2a](decisions/mcp-token-auth-stage-2a.md) | decision | active | core | 2026-06-14 | mcp-server enforces per-user bearer tokens; shared token crypto
 - [per-field-confidence-and-verification](decisions/per-field-confidence-and-verification.md) | decision | active | core | 2026-06-15 | hybrid heuristic confidence engine + derived verification status; corroboration/ambiguity/verify
 - [webhook-receiver-design](decisions/webhook-receiver-design.md) | decision | active | core | 2026-06-18 | HMAC verify-first receiver; per-App secret no-downgrade; coalesced targeted refetch
+- [per-node-source-connector-id](decisions/per-node-source-connector-id.md) | decision | active | standard | 2026-05-28 | stamp _source_connector_id from envelope; powers catalog source facet/pills
 
 ## Patterns
 
