@@ -78,14 +78,9 @@ export class CoreWriter {
     let duplicatesSkipped = 0;
     const errors: string[] = [];
 
-    console.log(`[CoreWriter] processBatch: ${batch.length} events`);
-
     for (const event of batch) {
       const { payload } = event;
-      if (!payload || !Array.isArray(payload.nodes)) {
-        console.warn(`[CoreWriter] event ${event.id} has no payload.nodes; skipping`);
-        continue;
-      }
+      if (!payload || !Array.isArray(payload.nodes)) continue;
 
       // Process nodes
       for (const node of payload.nodes) {
@@ -143,11 +138,12 @@ export class CoreWriter {
       }
     }
 
-    console.log(
-      `[CoreWriter] processBatch done: nodesWritten=${nodesWritten} edgesWritten=${edgesWritten} dupes=${duplicatesSkipped} errors=${errors.length}`,
-    );
+    // Per-node errors are caught inside the loop above. Surface them so write
+    // failures don't disappear silently — `processBatch` returns the count
+    // but nothing else logs the actual reasons.
     if (errors.length > 0) {
-      for (const e of errors.slice(0, 5)) console.error(`  [CoreWriter] err:`, e);
+      for (const e of errors.slice(0, 5)) console.error('[CoreWriter]', e);
+      if (errors.length > 5) console.error(`[CoreWriter] (+${errors.length - 5} more)`);
     }
     return { nodesWritten, edgesWritten, duplicatesSkipped, errors };
   }

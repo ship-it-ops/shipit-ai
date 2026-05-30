@@ -25,15 +25,14 @@ export interface CanonicalIdMigrationStats {
  *      (regex `^shipit://<label>/default/[^/]+$`). New-format IDs
  *      (`shipit://<label>/default/<org>/<name>`) are left alone.
  *   2. Deletes matching `_LinkingKey` entries.
- *   3. Deletes `_IdempotencyLog` entries that reference ANY canonical ID
- *      of this label, both old and new format. This is the critical bit:
- *      otherwise the writer's idempotency check fires before writeNode is
- *      attempted, the sync no-ops, and the wiped nodes never get re-created.
- *      We're forcing a full re-sync of these entities so clearing dedup is
- *      exactly the right move.
+ *   3. Deletes `_IdempotencyLog` entries whose key references an OLD-format
+ *      canonical ID. Without this, the orphan dedup entry blocks the writer
+ *      from re-creating the wiped node — the idempotency check fires before
+ *      writeNode is attempted and the sync silently no-ops. New-format
+ *      entries are preserved so within-session dedup still works.
  *
- * Runs unconditionally on every boot; once everyone's migrated it's
- * effectively a no-op (queries that match zero rows).
+ * All three queries match zero rows once everyone's migrated, so the
+ * migration runs unconditionally on every boot at near-zero cost.
  */
 export async function runCanonicalIdMigration(
   client: Neo4jClient,
@@ -73,19 +72,24 @@ export async function runCanonicalIdMigration(
     });
     linkingKeysDeleted[label] = linkingKeyCount;
 
-    // Also clear idempotency entries that reference ANY canonical ID of this
-    // label (both old and new format). Without this, a previously-recorded
-    // write blocks the writer from re-creating a node that was wiped: the
-    // dedup check fires before writeNode is ever attempted, and the sync
-    // silently no-ops. Idempotency keys have the shape
-    // `<connector_id>:<canonical_id>:<event_version>`, so we match on the
-    // canonical-ID substring.
+    // Also clear `_IdempotencyLog` entries that reference an OLD-format
+    // canonical ID of this label. Without this, the orphan idempotency entry
+    // blocks the writer from re-creating the wiped node — the dedup check
+    // fires before writeNode is ever attempted, and the sync silently no-ops.
+    //
+    // Idempotency keys have the shape `<connector_id>:<canonical_id>:<version>`.
+    // The regex `.*:shipit://<label>/default/[^/]+:.*` matches keys whose
+    // canonical-ID portion is OLD-format (no slash between `default/` and the
+    // closing `:`). NEW-format keys (with `<org>/<name>`) contain a slash so
+    // they don't match — they stay intact and keep doing real dedup work.
+    // That makes this step idempotent like the other two: once the old-format
+    // entries are gone, subsequent boots match zero rows.
+    const oldKeyRegex = `.*:shipit://${label}/default/[^/]+:.*`;
     const idempotencyCount = await client.executeWrite(async (tx) => {
       const result = await tx.run(
-        `MATCH (i:_IdempotencyLog)
-         WHERE i.key CONTAINS $marker
+        `MATCH (i:_IdempotencyLog) WHERE i.key =~ $regex
          DELETE i RETURN count(i) AS deleted`,
-        { marker: `:${oldPrefix}` },
+        { regex: oldKeyRegex },
       );
       const raw = result.records[0]?.get('deleted');
       return typeof raw === 'object' && raw !== null && 'toNumber' in raw
