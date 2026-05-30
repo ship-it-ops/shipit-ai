@@ -143,6 +143,39 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     const cy = handleRef.current?.cy;
     if (!cy) return;
 
+    // Build a per-node ownership index once so we can answer "does this node
+    // pass the owner filter" without re-walking edges per node. A node is
+    // considered "owned" by an owner if any of:
+    //   - it has an incoming CODEOWNER_OF / OWNS / MEMBER_OF edge from a node
+    //     whose `name` matches the owner (the GitHub-connected reality)
+    //   - it carries a `d.owner` string equal to the owner (seeded data)
+    //   - it *is* the Team/Person node whose name is the owner (so picking
+    //     "platform-team" still shows the platform-team node itself)
+    const OWNERSHIP_EDGE_TYPES = new Set(['CODEOWNER_OF', 'OWNS', 'MEMBER_OF']);
+    const ownersByNodeId = new Map<string, Set<string>>();
+    const recordOwner = (nodeId: string, owner: string) => {
+      let set = ownersByNodeId.get(nodeId);
+      if (!set) {
+        set = new Set();
+        ownersByNodeId.set(nodeId, set);
+      }
+      set.add(owner);
+    };
+    cy.nodes().forEach((node) => {
+      const d = node.data();
+      if (typeof d.owner === 'string' && d.owner) recordOwner(node.id(), d.owner);
+      if ((d.type === 'Team' || d.type === 'Person') && typeof d.name === 'string' && d.name) {
+        recordOwner(node.id(), d.name);
+      }
+    });
+    cy.edges().forEach((edge) => {
+      const type = edge.data('type');
+      if (typeof type !== 'string' || !OWNERSHIP_EDGE_TYPES.has(type)) return;
+      const sourceName = edge.source().data('name');
+      const targetId = edge.target().id();
+      if (typeof sourceName === 'string' && sourceName) recordOwner(targetId, sourceName);
+    });
+
     cy.nodes().forEach((node) => {
       const d = node.data();
       let visible = true;
@@ -156,8 +189,11 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         visible = false;
       if (filters.tiers.length > 0 && d.tier && !filters.tiers.includes(String(d.tier)))
         visible = false;
-      if (filters.owners.length > 0 && d.owner && !filters.owners.includes(d.owner))
-        visible = false;
+      if (filters.owners.length > 0) {
+        const owners = ownersByNodeId.get(node.id());
+        const matches = owners && filters.owners.some((o) => owners.has(o));
+        if (!matches) visible = false;
+      }
 
       if (visible) node.removeClass('hidden');
       else node.addClass('hidden');

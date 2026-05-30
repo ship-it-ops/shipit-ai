@@ -25,24 +25,24 @@ function createMockNeo4jService(): Neo4jService {
       nodes: [
         {
           data: {
-            id: 'shipit://LogicalService/acme/payments',
+            id: 'shipit://LogicalService/shipitops/graph-api',
             label: 'LogicalService',
-            name: 'payments',
+            name: 'graph-api',
           },
         },
         {
           data: {
-            id: 'shipit://Repository/acme/payments-api',
+            id: 'shipit://Repository/shipitops/graph-api',
             label: 'Repository',
-            name: 'payments-api',
+            name: 'graph-api',
           },
         },
       ],
       edges: [
         {
           data: {
-            source: 'shipit://LogicalService/acme/payments',
-            target: 'shipit://Repository/acme/payments-api',
+            source: 'shipit://LogicalService/shipitops/graph-api',
+            target: 'shipit://Repository/shipitops/graph-api',
             type: 'IMPLEMENTED_BY',
           },
         },
@@ -51,7 +51,11 @@ function createMockNeo4jService(): Neo4jService {
     searchEntities: vi.fn().mockResolvedValue([
       {
         get: () => ({
-          properties: { id: 'shipit://LogicalService/acme/payments', name: 'payments', tier: 1 },
+          properties: {
+            id: 'shipit://LogicalService/shipitops/graph-api',
+            name: 'graph-api',
+            tier: 1,
+          },
         }),
       },
     ]),
@@ -88,7 +92,7 @@ describe('Graph routes', () => {
   it('GET /api/graph/neighborhood/:id returns neighborhood', async () => {
     const response = await server.inject({
       method: 'GET',
-      url: '/api/graph/neighborhood/shipit%3A%2F%2FLogicalService%2Facme%2Fpayments',
+      url: '/api/graph/neighborhood/shipit%3A%2F%2FLogicalService%2Fshipitops%2Fgraph-api',
     });
     expect(response.statusCode).toBe(200);
     const body = response.json();
@@ -115,11 +119,11 @@ describe('Graph routes', () => {
   it('GET /api/graph/search returns search results', async () => {
     const response = await server.inject({
       method: 'GET',
-      url: '/api/graph/search?label=LogicalService&q=payments',
+      url: '/api/graph/search?label=LogicalService&q=graph',
     });
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body).toHaveLength(1);
-    expect(body[0].name).toBe('payments');
+    expect(body[0].name).toBe('graph-api');
   });
 });

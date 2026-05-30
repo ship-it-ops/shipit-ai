@@ -19,8 +19,8 @@ export function normalizeCodeowner(
     let ownerId: string;
     if (isTeam) {
       // GitHub team refs are always `@<org>/<slug>` — preserve the org so
-      // a CODEOWNERS file in contoso that references @acme-corp/platform
-      // doesn't collapse onto contoso's `platform` team.
+      // a CODEOWNERS file in cargocloud that references @shipitops/platform
+      // doesn't collapse onto cargocloud's `platform` team.
       const [teamOrg, teamSlug] = cleanOwner.split('/');
       ownerId = buildScopedCanonicalId('Team', 'default', teamOrg, teamSlug);
     } else {

@@ -1,12 +1,13 @@
 /**
  * Demo data seeder for ShipIt-AI Walking Skeleton.
  *
- * Seeds the Neo4j graph with a small-enterprise dataset ("Acme Pay") that
- * exercises every entity type the UI registers — LogicalService, Repository,
- * Deployment, RuntimeService, Pipeline, Monitor, Team, Person — and the
- * canonical relationships between them (IMPLEMENTED_BY, DEPLOYED_AS,
- * EMITS_TELEMETRY_AS, DEPENDS_ON, CALLS, MONITORS, OWNS, MEMBER_OF,
- * CODEOWNER_OF, BUILT_BY, ON_CALL_FOR).
+ * Seeds the Neo4j graph with a small-enterprise dataset modelled on
+ * ShipItOps itself (a tech AI solutions & platform company) that
+ * exercises every entity type the UI registers — LogicalService,
+ * Repository, Deployment, RuntimeService, Pipeline, Monitor, Team,
+ * Person — and the canonical relationships between them
+ * (IMPLEMENTED_BY, DEPLOYED_AS, EMITS_TELEMETRY_AS, DEPENDS_ON, CALLS,
+ * MONITORS, OWNS, MEMBER_OF, CODEOWNER_OF, BUILT_BY, ON_CALL_FOR).
  *
  * Usage: npx tsx scripts/seed-demo.ts
  */
@@ -41,7 +42,8 @@ interface SeedEdge {
 
 const now = new Date().toISOString();
 const NS = 'default';
-const ORG = 'acme-pay';
+const ORG = 'shipitops';
+const EMAIL_DOMAIN = 'shipitops.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ID helpers
@@ -79,51 +81,51 @@ interface TeamSpec {
 
 const teamSpecs: TeamSpec[] = [
   {
-    slug: 'payments-team',
-    name: 'Payments',
-    email: 'payments@acmepay.com',
-    description: 'Core money movement: charges, refunds, ledger.',
+    slug: 'api-team',
+    name: 'API',
+    email: `api@${EMAIL_DOMAIN}`,
+    description: 'Graph API, claim store, connector runtime.',
   },
   {
     slug: 'identity-team',
     name: 'Identity',
-    email: 'identity@acmepay.com',
+    email: `identity@${EMAIL_DOMAIN}`,
     description: 'Authentication, user accounts, permissions.',
   },
   {
-    slug: 'storefront-team',
-    name: 'Storefront',
-    email: 'storefront@acmepay.com',
-    description: 'Web checkout and merchant-facing UI.',
+    slug: 'console-team',
+    name: 'Console',
+    email: `console@${EMAIL_DOMAIN}`,
+    description: 'Web console, search, schema registry.',
   },
   {
-    slug: 'mobile-team',
-    name: 'Mobile',
-    email: 'mobile@acmepay.com',
-    description: 'iOS and Android consumer apps and BFFs.',
+    slug: 'agents-team',
+    name: 'Agents',
+    email: `agents@${EMAIL_DOMAIN}`,
+    description: 'MCP gateway and agent integrations.',
   },
   {
-    slug: 'data-team',
-    name: 'Data Platform',
-    email: 'data@acmepay.com',
-    description: 'Warehousing, analytics, ML features.',
+    slug: 'ai-team',
+    name: 'AI',
+    email: `ai@${EMAIL_DOMAIN}`,
+    description: 'Embeddings, evals, suggestion engine.',
   },
   {
     slug: 'platform-team',
     name: 'Platform',
-    email: 'platform@acmepay.com',
-    description: 'Internal platform: config, notifications, dev tooling.',
+    email: `platform@${EMAIL_DOMAIN}`,
+    description: 'Config, notifications, billing, experimentation.',
   },
   {
     slug: 'sre-team',
     name: 'SRE',
-    email: 'sre@acmepay.com',
+    email: `sre@${EMAIL_DOMAIN}`,
     description: 'Reliability, on-call, observability.',
   },
   {
     slug: 'security-team',
     name: 'Security',
-    email: 'security@acmepay.com',
+    email: `security@${EMAIL_DOMAIN}`,
     description: 'AppSec, audit, threat detection.',
   },
 ];
@@ -150,35 +152,50 @@ interface PersonSpec {
 }
 
 const personSpecs: PersonSpec[] = [
-  // Payments
-  { login: 'alice', name: 'Alice Chen', email: 'alice@acmepay.com', role: 'Staff Engineer' },
-  { login: 'bob', name: 'Bob Okafor', email: 'bob@acmepay.com', role: 'Senior Engineer' },
-  { login: 'hank', name: 'Hank Larsson', email: 'hank@acmepay.com', role: 'Senior Engineer' },
-  { login: 'priya', name: 'Priya Iyer', email: 'priya@acmepay.com', role: 'Engineer' },
+  // API
+  { login: 'alice', name: 'Alice Chen', email: `alice@${EMAIL_DOMAIN}`, role: 'Staff Engineer' },
+  { login: 'hank', name: 'Hank Larsson', email: `hank@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
   // Identity
-  { login: 'charlie', name: 'Charlie Park', email: 'charlie@acmepay.com', role: 'Staff Engineer' },
-  { login: 'eve', name: 'Eve Martinez', email: 'eve@acmepay.com', role: 'Senior Engineer' },
-  { login: 'noah', name: 'Noah Adler', email: 'noah@acmepay.com', role: 'Engineer' },
-  // Storefront
-  { login: 'diana', name: 'Diana Petrov', email: 'diana@acmepay.com', role: 'Senior Engineer' },
-  { login: 'sam', name: 'Sam Rivera', email: 'sam@acmepay.com', role: 'Engineer' },
-  // Mobile
-  { login: 'kira', name: 'Kira Tanaka', email: 'kira@acmepay.com', role: 'Senior Engineer' },
-  { login: 'leo', name: 'Leo Schmidt', email: 'leo@acmepay.com', role: 'Engineer' },
-  // Data
-  { login: 'frank', name: 'Frank Brown', email: 'frank@acmepay.com', role: 'Staff Engineer' },
-  { login: 'rita', name: 'Rita Cohen', email: 'rita@acmepay.com', role: 'Data Engineer' },
-  { login: 'maya', name: 'Maya Singh', email: 'maya@acmepay.com', role: 'ML Engineer' },
+  {
+    login: 'charlie',
+    name: 'Charlie Park',
+    email: `charlie@${EMAIL_DOMAIN}`,
+    role: 'Staff Engineer',
+  },
+  { login: 'eve', name: 'Eve Martinez', email: `eve@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
+  { login: 'noah', name: 'Noah Adler', email: `noah@${EMAIL_DOMAIN}`, role: 'Engineer' },
+  // Console
+  { login: 'diana', name: 'Diana Petrov', email: `diana@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
+  { login: 'sam', name: 'Sam Rivera', email: `sam@${EMAIL_DOMAIN}`, role: 'Engineer' },
+  // Agents
+  { login: 'kira', name: 'Kira Tanaka', email: `kira@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
+  { login: 'leo', name: 'Leo Schmidt', email: `leo@${EMAIL_DOMAIN}`, role: 'Engineer' },
+  // AI
+  { login: 'frank', name: 'Frank Brown', email: `frank@${EMAIL_DOMAIN}`, role: 'Staff Engineer' },
+  { login: 'rita', name: 'Rita Cohen', email: `rita@${EMAIL_DOMAIN}`, role: 'ML Engineer' },
+  { login: 'maya', name: 'Maya Singh', email: `maya@${EMAIL_DOMAIN}`, role: 'ML Engineer' },
+  { login: 'bob', name: 'Bob Okafor', email: `bob@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
   // Platform
-  { login: 'grace', name: 'Grace Holloway', email: 'grace@acmepay.com', role: 'Staff Engineer' },
-  { login: 'omar', name: 'Omar Haddad', email: 'omar@acmepay.com', role: 'Senior Engineer' },
-  { login: 'tina', name: 'Tina Wu', email: 'tina@acmepay.com', role: 'Engineer' },
+  {
+    login: 'grace',
+    name: 'Grace Holloway',
+    email: `grace@${EMAIL_DOMAIN}`,
+    role: 'Staff Engineer',
+  },
+  { login: 'omar', name: 'Omar Haddad', email: `omar@${EMAIL_DOMAIN}`, role: 'Senior Engineer' },
+  { login: 'tina', name: 'Tina Wu', email: `tina@${EMAIL_DOMAIN}`, role: 'Engineer' },
+  { login: 'priya', name: 'Priya Iyer', email: `priya@${EMAIL_DOMAIN}`, role: 'Engineer' },
   // SRE
-  { login: 'jules', name: 'Jules Romano', email: 'jules@acmepay.com', role: 'SRE' },
-  { login: 'mira', name: 'Mira Olsen', email: 'mira@acmepay.com', role: 'SRE' },
+  { login: 'jules', name: 'Jules Romano', email: `jules@${EMAIL_DOMAIN}`, role: 'SRE' },
+  { login: 'mira', name: 'Mira Olsen', email: `mira@${EMAIL_DOMAIN}`, role: 'SRE' },
   // Security
-  { login: 'devi', name: 'Devi Krishnan', email: 'devi@acmepay.com', role: 'Security Engineer' },
-  { login: 'ian', name: 'Ian Whitlock', email: 'ian@acmepay.com', role: 'Security Engineer' },
+  {
+    login: 'devi',
+    name: 'Devi Krishnan',
+    email: `devi@${EMAIL_DOMAIN}`,
+    role: 'Security Engineer',
+  },
+  { login: 'ian', name: 'Ian Whitlock', email: `ian@${EMAIL_DOMAIN}`, role: 'Security Engineer' },
 ];
 
 const personNodes: SeedNode[] = personSpecs.map((p) => ({
@@ -214,46 +231,46 @@ interface ServiceSpec {
 }
 
 const serviceSpecs: ServiceSpec[] = [
-  // Payments domain
+  // API domain
   {
-    name: 'payments-api',
+    name: 'graph-api',
     tier: 1,
-    ownerTeam: 'payments-team',
+    ownerTeam: 'api-team',
     lifecycle: 'production',
     language: 'Go',
-    description: 'Charges, refunds, payment intent orchestration.',
+    description: 'Knowledge graph read/write API. Entities, edges, queries.',
   },
   {
-    name: 'ledger-service',
+    name: 'claim-store',
     tier: 1,
-    ownerTeam: 'payments-team',
+    ownerTeam: 'api-team',
     lifecycle: 'production',
     language: 'Go',
-    description: 'Double-entry ledger of record.',
+    description: 'Append-only property-claim store backing every entity.',
   },
   {
-    name: 'fraud-detection',
+    name: 'eval-service',
     tier: 1,
-    ownerTeam: 'payments-team',
+    ownerTeam: 'ai-team',
     lifecycle: 'production',
     language: 'Python',
-    description: 'Real-time fraud scoring on incoming charges.',
+    description: 'Runtime for evaluating agent outputs against scoring rubrics.',
   },
   {
-    name: 'card-issuance',
+    name: 'connector-runtime',
     tier: 2,
-    ownerTeam: 'payments-team',
+    ownerTeam: 'api-team',
     lifecycle: 'production',
     language: 'Go',
-    description: 'Virtual and physical card issuance.',
+    description: 'Runs scheduled and webhook-driven connector sync jobs.',
   },
   {
     name: 'billing-service',
     tier: 2,
-    ownerTeam: 'payments-team',
+    ownerTeam: 'platform-team',
     lifecycle: 'production',
     language: 'TypeScript',
-    description: 'Recurring billing and invoicing.',
+    description: 'Usage metering and invoicing.',
   },
 
   // Identity domain
@@ -282,64 +299,64 @@ const serviceSpecs: ServiceSpec[] = [
     description: 'Role-based access control.',
   },
 
-  // Storefront / mobile
+  // Console / agents
   {
-    name: 'web-storefront',
+    name: 'web-console',
     tier: 1,
-    ownerTeam: 'storefront-team',
+    ownerTeam: 'console-team',
     lifecycle: 'production',
     language: 'TypeScript',
-    description: 'Public-facing merchant checkout.',
+    description: 'Customer-facing web console for the knowledge graph.',
   },
   {
-    name: 'mobile-bff',
+    name: 'mcp-gateway',
     tier: 1,
-    ownerTeam: 'mobile-team',
+    ownerTeam: 'agents-team',
     lifecycle: 'production',
     language: 'TypeScript',
-    description: 'Backend-for-frontend for iOS / Android.',
+    description: 'Gateway for MCP clients and agent integrations.',
   },
   {
-    name: 'search-service',
+    name: 'graph-search',
     tier: 2,
-    ownerTeam: 'storefront-team',
+    ownerTeam: 'console-team',
     lifecycle: 'production',
     language: 'Go',
-    description: 'Merchant + transaction search.',
+    description: 'Full-text and semantic search over the graph.',
   },
   {
-    name: 'catalog-service',
+    name: 'schema-registry',
     tier: 2,
-    ownerTeam: 'storefront-team',
+    ownerTeam: 'console-team',
     lifecycle: 'production',
     language: 'Go',
-    description: 'Product catalog metadata.',
+    description: 'Entity-type and relationship schemas + versioning.',
   },
 
-  // Data / ML
+  // AI / data
   {
     name: 'analytics-pipeline',
     tier: 3,
-    ownerTeam: 'data-team',
+    ownerTeam: 'ai-team',
     lifecycle: 'production',
     language: 'Python',
     description: 'Batch ETL feeding the warehouse.',
   },
   {
-    name: 'ml-feature-store',
+    name: 'embedding-store',
     tier: 2,
-    ownerTeam: 'data-team',
+    ownerTeam: 'ai-team',
     lifecycle: 'production',
     language: 'Python',
-    description: 'Online feature serving for ML models.',
+    description: 'Vector embeddings for entities; powers semantic search and dedup.',
   },
   {
-    name: 'recommendation-service',
+    name: 'suggestion-engine',
     tier: 2,
-    ownerTeam: 'data-team',
+    ownerTeam: 'ai-team',
     lifecycle: 'beta',
     language: 'Python',
-    description: 'Merchant recommendations (beta rollout).',
+    description: 'Suggests missing edges and likely-duplicate entities (beta rollout).',
   },
 
   // Platform
@@ -368,12 +385,12 @@ const serviceSpecs: ServiceSpec[] = [
     description: 'A/B test assignment + analysis (beta).',
   },
   {
-    name: 'legacy-checkout',
+    name: 'legacy-importer',
     tier: 2,
-    ownerTeam: 'storefront-team',
+    ownerTeam: 'console-team',
     lifecycle: 'deprecated',
     language: 'Ruby',
-    description: 'Pre-rewrite checkout. Sunset target Q3.',
+    description: 'Pre-rewrite bulk-import path. Sunset target Q3.',
   },
 
   // Security
@@ -412,11 +429,11 @@ const logicalServiceNodes: SeedNode[] = serviceSpecs.map((s) => ({
 // source. The resolution strategy on each property still picks a winner.
 {
   const tierConflicts: Array<{ service: string; otherTier: number; otherSource: string }> = [
-    { service: 'payments-api', otherTier: 2, otherSource: 'kubernetes' },
-    { service: 'fraud-detection', otherTier: 1, otherSource: 'datadog' },
+    { service: 'graph-api', otherTier: 2, otherSource: 'kubernetes' },
+    { service: 'eval-service', otherTier: 1, otherSource: 'datadog' },
   ];
   const ownerConflicts: Array<{ service: string; otherOwner: string; otherSource: string }> = [
-    { service: 'ledger-service', otherOwner: 'platform-team', otherSource: 'github' },
+    { service: 'claim-store', otherOwner: 'platform-team', otherSource: 'github' },
   ];
   for (const c of tierConflicts) {
     const node = logicalServiceNodes.find((n) => n.properties.name === c.service);
@@ -588,7 +605,7 @@ const pipelineSpecs: PipelineSpec[] = [
     .filter((s) => s.lifecycle === 'production' && s.tier !== 3)
     .map<PipelineSpec>((s) => ({ name: `${s.name}-ci`, type: 'ci', repo: s.name })),
   { name: 'analytics-etl', type: 'etl', repo: 'analytics-pipeline' },
-  { name: 'ml-training', type: 'etl', repo: 'ml-feature-store' },
+  { name: 'embedding-training', type: 'etl', repo: 'embedding-store' },
   { name: 'terraform-apply', type: 'infra', repo: 'terraform-modules' },
   { name: 'release-train', type: 'cd' },
 ];
@@ -616,35 +633,35 @@ interface MonitorSpec {
 
 const monitorSpecs: MonitorSpec[] = [
   {
-    name: 'payments-latency-p99',
-    service: 'payments-api',
+    name: 'graph-api-latency-p99',
+    service: 'graph-api',
     status: 'OK',
     metric: 'http.latency.p99',
   },
   {
-    name: 'payments-error-rate',
-    service: 'payments-api',
+    name: 'graph-api-error-rate',
+    service: 'graph-api',
     status: 'WARN',
     metric: 'http.errors.5xx',
   },
-  { name: 'payments-saturation', service: 'payments-api', status: 'OK', metric: 'cpu.utilization' },
+  { name: 'graph-api-saturation', service: 'graph-api', status: 'OK', metric: 'cpu.utilization' },
   {
-    name: 'ledger-double-spend',
-    service: 'ledger-service',
+    name: 'claim-store-collision-rate',
+    service: 'claim-store',
     status: 'OK',
-    metric: 'ledger.double_spend.detected',
+    metric: 'claim_store.collision.detected',
   },
   {
-    name: 'ledger-replication-lag',
-    service: 'ledger-service',
+    name: 'claim-store-replication-lag',
+    service: 'claim-store',
     status: 'OK',
     metric: 'db.replication.lag',
   },
   {
-    name: 'fraud-fp-rate',
-    service: 'fraud-detection',
+    name: 'eval-disagreement-rate',
+    service: 'eval-service',
     status: 'WARN',
-    metric: 'fraud.false_positive.rate',
+    metric: 'eval.disagreement.rate',
   },
   {
     name: 'auth-login-latency',
@@ -660,18 +677,23 @@ const monitorSpecs: MonitorSpec[] = [
     metric: 'http.availability',
   },
   {
-    name: 'storefront-page-load',
-    service: 'web-storefront',
+    name: 'console-page-load',
+    service: 'web-console',
     status: 'OK',
     metric: 'rum.page_load',
   },
   {
-    name: 'storefront-checkout-funnel',
-    service: 'web-storefront',
+    name: 'console-onboarding-funnel',
+    service: 'web-console',
     status: 'ALERT',
     metric: 'rum.funnel.dropoff',
   },
-  { name: 'search-latency', service: 'search-service', status: 'OK', metric: 'search.latency.p95' },
+  {
+    name: 'graph-search-latency',
+    service: 'graph-search',
+    status: 'OK',
+    metric: 'search.latency.p95',
+  },
   {
     name: 'config-availability',
     service: 'config-service',
@@ -728,19 +750,19 @@ const monitorNodes: SeedNode[] = monitorSpecs.map((m) => {
 const duplicateServiceNodes: SeedNode[] = [
   {
     label: 'LogicalService',
-    id: 'shipit://logical-service/legacy/payments-svc',
+    id: 'shipit://logical-service/legacy/graph-svc',
     properties: {
-      name: 'payments-svc',
+      name: 'graph-svc',
       tier: 1,
-      owner: 'payments-team',
+      owner: 'api-team',
       lifecycle: 'production',
       language: 'Go',
-      description: 'Legacy entry — same as payments-api per the kubernetes deployment annotations.',
+      description: 'Legacy entry — same as graph-api per the kubernetes deployment annotations.',
       namespace: 'legacy',
     },
     claims: [
-      claim('name', 'payments-svc', 'kubernetes', 'k8s://prod/payments/payments-svc'),
-      claim('tier', 1, 'kubernetes', 'k8s://prod/payments/payments-svc'),
+      claim('name', 'graph-svc', 'kubernetes', 'k8s://prod/graph/graph-svc'),
+      claim('tier', 1, 'kubernetes', 'k8s://prod/graph/graph-svc'),
     ],
   },
 ];
@@ -826,49 +848,49 @@ for (const m of monitorSpecs) {
 
 // DEPENDS_ON: LogicalService -> LogicalService (business-level dependencies)
 const serviceDeps: Array<[string, string]> = [
-  ['payments-api', 'auth-service'],
-  ['payments-api', 'user-service'],
-  ['payments-api', 'fraud-detection'],
-  ['payments-api', 'ledger-service'],
-  ['payments-api', 'config-service'],
-  ['payments-api', 'notification-service'],
-  ['ledger-service', 'config-service'],
-  ['ledger-service', 'audit-log-service'],
-  ['fraud-detection', 'ml-feature-store'],
-  ['fraud-detection', 'config-service'],
-  ['card-issuance', 'payments-api'],
-  ['card-issuance', 'auth-service'],
-  ['card-issuance', 'notification-service'],
-  ['billing-service', 'payments-api'],
+  ['graph-api', 'auth-service'],
+  ['graph-api', 'user-service'],
+  ['graph-api', 'eval-service'],
+  ['graph-api', 'claim-store'],
+  ['graph-api', 'config-service'],
+  ['graph-api', 'notification-service'],
+  ['claim-store', 'config-service'],
+  ['claim-store', 'audit-log-service'],
+  ['eval-service', 'embedding-store'],
+  ['eval-service', 'config-service'],
+  ['connector-runtime', 'graph-api'],
+  ['connector-runtime', 'auth-service'],
+  ['connector-runtime', 'notification-service'],
+  ['billing-service', 'graph-api'],
   ['billing-service', 'notification-service'],
-  ['billing-service', 'ledger-service'],
+  ['billing-service', 'claim-store'],
   ['auth-service', 'user-service'],
   ['auth-service', 'permissions-service'],
   ['auth-service', 'audit-log-service'],
   ['user-service', 'config-service'],
   ['permissions-service', 'config-service'],
-  ['web-storefront', 'auth-service'],
-  ['web-storefront', 'payments-api'],
-  ['web-storefront', 'search-service'],
-  ['web-storefront', 'catalog-service'],
-  ['web-storefront', 'recommendation-service'],
-  ['mobile-bff', 'auth-service'],
-  ['mobile-bff', 'payments-api'],
-  ['mobile-bff', 'user-service'],
-  ['mobile-bff', 'catalog-service'],
-  ['search-service', 'catalog-service'],
-  ['catalog-service', 'config-service'],
-  ['recommendation-service', 'ml-feature-store'],
-  ['recommendation-service', 'catalog-service'],
-  ['analytics-pipeline', 'ledger-service'],
+  ['web-console', 'auth-service'],
+  ['web-console', 'graph-api'],
+  ['web-console', 'graph-search'],
+  ['web-console', 'schema-registry'],
+  ['web-console', 'suggestion-engine'],
+  ['mcp-gateway', 'auth-service'],
+  ['mcp-gateway', 'graph-api'],
+  ['mcp-gateway', 'user-service'],
+  ['mcp-gateway', 'schema-registry'],
+  ['graph-search', 'schema-registry'],
+  ['schema-registry', 'config-service'],
+  ['suggestion-engine', 'embedding-store'],
+  ['suggestion-engine', 'schema-registry'],
+  ['analytics-pipeline', 'claim-store'],
   ['analytics-pipeline', 'user-service'],
   ['analytics-pipeline', 'audit-log-service'],
-  ['ml-feature-store', 'analytics-pipeline'],
+  ['embedding-store', 'analytics-pipeline'],
   ['notification-service', 'user-service'],
   ['notification-service', 'config-service'],
   ['experimentation-service', 'config-service'],
   ['experimentation-service', 'analytics-pipeline'],
-  ['legacy-checkout', 'payments-api'],
+  ['legacy-importer', 'graph-api'],
 ];
 for (const [from, to] of serviceDeps) {
   edge('DEPENDS_ON', id.service(from), id.service(to), 'backstage', 0.85);
@@ -876,32 +898,27 @@ for (const [from, to] of serviceDeps) {
 
 // DEPENDS_ON: Repository -> Repository (shared library usage)
 const sharedGoUsers = [
-  'payments-api',
-  'ledger-service',
-  'card-issuance',
+  'graph-api',
+  'claim-store',
+  'connector-runtime',
   'auth-service',
   'user-service',
   'permissions-service',
-  'search-service',
-  'catalog-service',
+  'graph-search',
+  'schema-registry',
   'config-service',
   'notification-service',
   'audit-log-service',
 ];
-const sharedTsUsers = [
-  'web-storefront',
-  'mobile-bff',
-  'billing-service',
-  'experimentation-service',
-];
+const sharedTsUsers = ['web-console', 'mcp-gateway', 'billing-service', 'experimentation-service'];
 const protoUsers = [
-  'payments-api',
-  'ledger-service',
-  'fraud-detection',
+  'graph-api',
+  'claim-store',
+  'eval-service',
   'auth-service',
   'user-service',
-  'mobile-bff',
-  'web-storefront',
+  'mcp-gateway',
+  'web-console',
 ];
 for (const r of sharedGoUsers)
   edge('DEPENDS_ON', id.repo(r), id.repo('shared-go-lib'), 'github', 0.85);
@@ -914,25 +931,25 @@ for (const r of protoUsers)
 // the runtime call graph reads as the "hot path" rather than every logical
 // dependency)
 const runtimeCalls: Array<[string, string]> = [
-  ['web-storefront', 'mobile-bff'], // shared API surface
-  ['web-storefront', 'auth-service'],
-  ['web-storefront', 'payments-api'],
-  ['web-storefront', 'search-service'],
-  ['mobile-bff', 'auth-service'],
-  ['mobile-bff', 'payments-api'],
-  ['mobile-bff', 'catalog-service'],
-  ['payments-api', 'auth-service'],
-  ['payments-api', 'fraud-detection'],
-  ['payments-api', 'ledger-service'],
-  ['payments-api', 'notification-service'],
-  ['card-issuance', 'payments-api'],
-  ['billing-service', 'payments-api'],
+  ['web-console', 'mcp-gateway'], // shared API surface
+  ['web-console', 'auth-service'],
+  ['web-console', 'graph-api'],
+  ['web-console', 'graph-search'],
+  ['mcp-gateway', 'auth-service'],
+  ['mcp-gateway', 'graph-api'],
+  ['mcp-gateway', 'schema-registry'],
+  ['graph-api', 'auth-service'],
+  ['graph-api', 'eval-service'],
+  ['graph-api', 'claim-store'],
+  ['graph-api', 'notification-service'],
+  ['connector-runtime', 'graph-api'],
+  ['billing-service', 'graph-api'],
   ['billing-service', 'notification-service'],
-  ['fraud-detection', 'ml-feature-store'],
-  ['recommendation-service', 'ml-feature-store'],
+  ['eval-service', 'embedding-store'],
+  ['suggestion-engine', 'embedding-store'],
   ['auth-service', 'user-service'],
   ['auth-service', 'permissions-service'],
-  ['search-service', 'catalog-service'],
+  ['graph-search', 'schema-registry'],
 ];
 for (const [from, to] of runtimeCalls) {
   edge('CALLS', id.runtime(`${from}-runtime`), id.runtime(`${to}-runtime`), 'datadog', 0.9);
@@ -940,23 +957,23 @@ for (const [from, to] of runtimeCalls) {
 
 // MEMBER_OF: Person -> Team
 const memberships: Array<[string, string]> = [
-  ['alice', 'payments-team'],
-  ['bob', 'payments-team'],
-  ['hank', 'payments-team'],
-  ['priya', 'payments-team'],
+  ['alice', 'api-team'],
+  ['hank', 'api-team'],
   ['charlie', 'identity-team'],
   ['eve', 'identity-team'],
   ['noah', 'identity-team'],
-  ['diana', 'storefront-team'],
-  ['sam', 'storefront-team'],
-  ['kira', 'mobile-team'],
-  ['leo', 'mobile-team'],
-  ['frank', 'data-team'],
-  ['rita', 'data-team'],
-  ['maya', 'data-team'],
+  ['diana', 'console-team'],
+  ['sam', 'console-team'],
+  ['kira', 'agents-team'],
+  ['leo', 'agents-team'],
+  ['frank', 'ai-team'],
+  ['rita', 'ai-team'],
+  ['maya', 'ai-team'],
+  ['bob', 'ai-team'],
   ['grace', 'platform-team'],
   ['omar', 'platform-team'],
   ['tina', 'platform-team'],
+  ['priya', 'platform-team'],
   ['jules', 'sre-team'],
   ['mira', 'sre-team'],
   ['devi', 'security-team'],
@@ -970,7 +987,7 @@ for (const [login, team] of memberships) {
 for (const s of serviceSpecs) {
   edge('CODEOWNER_OF', id.team(s.ownerTeam), id.repo(s.name), 'github', 0.95);
 }
-// Shared libs: platform / SRE own infra-ish ones, data team owns the analytics shared bits
+// Shared libs: platform / SRE own infra-ish ones, AI team owns the analytics shared bits
 edge('CODEOWNER_OF', id.team('platform-team'), id.repo('shared-go-lib'), 'github', 0.95);
 edge('CODEOWNER_OF', id.team('platform-team'), id.repo('shared-ts-lib'), 'github', 0.95);
 edge('CODEOWNER_OF', id.team('platform-team'), id.repo('proto-schemas'), 'github', 0.95);
@@ -980,20 +997,20 @@ edge('CODEOWNER_OF', id.team('platform-team'), id.repo('open-sdk'), 'github', 0.
 // CODEOWNER_OF: Person -> Repository (individual codeowner overrides for the
 // services where someone is the de-facto owner)
 const individualCodeowners: Array<[string, string]> = [
-  ['alice', 'payments-api'],
-  ['alice', 'ledger-service'],
-  ['bob', 'fraud-detection'],
-  ['hank', 'card-issuance'],
+  ['alice', 'graph-api'],
+  ['alice', 'claim-store'],
+  ['bob', 'eval-service'],
+  ['hank', 'connector-runtime'],
   ['priya', 'billing-service'],
   ['charlie', 'auth-service'],
   ['eve', 'user-service'],
   ['noah', 'permissions-service'],
-  ['diana', 'web-storefront'],
-  ['sam', 'search-service'],
-  ['kira', 'mobile-bff'],
+  ['diana', 'web-console'],
+  ['sam', 'graph-search'],
+  ['kira', 'mcp-gateway'],
   ['frank', 'analytics-pipeline'],
-  ['maya', 'ml-feature-store'],
-  ['rita', 'recommendation-service'],
+  ['maya', 'embedding-store'],
+  ['rita', 'suggestion-engine'],
   ['grace', 'config-service'],
   ['omar', 'notification-service'],
   ['tina', 'experimentation-service'],
@@ -1005,18 +1022,18 @@ for (const [login, repo] of individualCodeowners) {
 
 // ON_CALL_FOR: Person -> LogicalService (one or two on-calls per critical svc)
 const onCall: Array<[string, string]> = [
-  ['alice', 'payments-api'],
-  ['hank', 'payments-api'],
-  ['alice', 'ledger-service'],
-  ['bob', 'fraud-detection'],
+  ['alice', 'graph-api'],
+  ['hank', 'graph-api'],
+  ['alice', 'claim-store'],
+  ['bob', 'eval-service'],
   ['charlie', 'auth-service'],
   ['eve', 'user-service'],
-  ['diana', 'web-storefront'],
-  ['kira', 'mobile-bff'],
+  ['diana', 'web-console'],
+  ['kira', 'mcp-gateway'],
   ['grace', 'config-service'],
-  ['jules', 'payments-api'],
+  ['jules', 'graph-api'],
   ['mira', 'auth-service'],
-  ['mira', 'web-storefront'],
+  ['mira', 'web-console'],
 ];
 for (const [login, svc] of onCall) {
   edge('ON_CALL_FOR', id.person(login), id.service(svc), 'pagerduty', 0.95);

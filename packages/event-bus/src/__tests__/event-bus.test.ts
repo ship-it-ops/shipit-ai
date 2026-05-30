@@ -59,13 +59,13 @@ import type { CanonicalEntity, CanonicalNode, EventEnvelope } from '@shipit-ai/s
 // ── Test fixtures ─────────────────────────────────────────────────────
 function makeNode(overrides: Partial<CanonicalNode> = {}): CanonicalNode {
   return {
-    id: 'shipit://LogicalService/github/payments-api',
+    id: 'shipit://LogicalService/github/graph-api',
     label: 'LogicalService',
-    properties: { name: 'payments-api' },
+    properties: { name: 'graph-api' },
     _claims: [],
     _source_system: 'github',
-    _source_org: 'github/acme-corp',
-    _source_id: 'github://acme/payments-api',
+    _source_org: 'github/shipitops',
+    _source_id: 'github://shipitops/graph-api',
     _last_synced: '2026-02-28T00:00:00Z',
     _event_version: 1,
     ...overrides,
@@ -130,11 +130,11 @@ describe('buildIdempotencyKey', () => {
     // BullMQ 5 forbids `:` in custom job IDs, so the lone colon in the
     // `shipit:` scheme gets rewritten to `~`; the `//` slashes survive.
     const node = makeNode({
-      id: 'shipit://LogicalService/github/payments-api',
+      id: 'shipit://LogicalService/github/graph-api',
       _event_version: 42,
     });
-    const key = buildIdempotencyKey('github-acme', node);
-    expect(key).toBe('github-acme~shipit~//LogicalService/github/payments-api~42');
+    const key = buildIdempotencyKey('github-shipitops', node);
+    expect(key).toBe('github-shipitops~shipit~//LogicalService/github/graph-api~42');
     expect(key).not.toContain(':');
   });
 
@@ -156,14 +156,14 @@ describe('EventBusProducer', () => {
   it('creates jobs with correct idempotency keys via addBulk', async () => {
     const producer = new EventBusProducer(TEST_CONFIG);
     const entity = makeEntity();
-    await producer.publish([entity], 'github-acme');
+    await producer.publish([entity], 'github-shipitops');
 
     expect(mockAddBulk).toHaveBeenCalledOnce();
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
     expect(jobs[0].name).toBe('event');
-    expect(jobs[0].opts.jobId).toBe('github-acme~shipit~//LogicalService/github/payments-api~1');
-    expect(jobs[0].data.connector_id).toBe('github-acme');
+    expect(jobs[0].opts.jobId).toBe('github-shipitops~shipit~//LogicalService/github/graph-api~1');
+    expect(jobs[0].data.connector_id).toBe('github-shipitops');
     expect(jobs[0].data.payload).toEqual(entity);
     expect(jobs[0].opts.removeOnComplete).toBe(true);
   });
@@ -174,7 +174,7 @@ describe('EventBusProducer', () => {
     const node2 = makeNode({ id: 'shipit://LogicalService/github/svc-b', _event_version: 2 });
     const entity = makeEntity([node1, node2]);
 
-    await producer.publish([entity], 'github-acme');
+    await producer.publish([entity], 'github-shipitops');
 
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(2);
@@ -190,7 +190,7 @@ describe('EventBusProducer', () => {
         {
           type: 'CODEOWNER_OF',
           from: 'shipit://person/default/alice',
-          to: 'shipit://repository/default/acme/payments-api',
+          to: 'shipit://repository/default/shipitops/graph-api',
           properties: { pattern: '*' },
           _source: 'github',
           _confidence: 0.95,
@@ -199,12 +199,12 @@ describe('EventBusProducer', () => {
       ],
     };
 
-    await producer.publish([entity], 'github-acme');
+    await producer.publish([entity], 'github-shipitops');
 
     expect(mockAddBulk).toHaveBeenCalledOnce();
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
-    expect(jobs[0].opts.jobId).toMatch(/^github-acme~edges~[a-f0-9]{16}$/);
+    expect(jobs[0].opts.jobId).toMatch(/^github-shipitops~edges~[a-f0-9]{16}$/);
     expect(jobs[0].data.payload).toEqual(entity);
   });
 
@@ -213,15 +213,15 @@ describe('EventBusProducer', () => {
     const edge = {
       type: 'CODEOWNER_OF',
       from: 'shipit://person/default/alice',
-      to: 'shipit://repository/default/acme/payments-api',
+      to: 'shipit://repository/default/shipitops/graph-api',
       _source: 'github',
       _confidence: 0.95,
       _ingested_at: '2026-02-28T00:00:00Z',
     };
     const entity: CanonicalEntity = { nodes: [], edges: [edge] };
 
-    await producer.publish([entity], 'github-acme');
-    await producer.publish([entity], 'github-acme');
+    await producer.publish([entity], 'github-shipitops');
+    await producer.publish([entity], 'github-shipitops');
 
     const firstJobId = mockAddBulk.mock.calls[0][0][0].opts.jobId;
     const secondJobId = mockAddBulk.mock.calls[1][0][0].opts.jobId;
@@ -230,7 +230,7 @@ describe('EventBusProducer', () => {
 
   it('writes events to Redis Stream', async () => {
     const producer = new EventBusProducer(TEST_CONFIG);
-    await producer.publish([makeEntity()], 'github-acme');
+    await producer.publish([makeEntity()], 'github-shipitops');
 
     expect(mockPipeline).toHaveBeenCalled();
     expect(mockPipelineExec).toHaveBeenCalled();
@@ -238,7 +238,7 @@ describe('EventBusProducer', () => {
 
   it('does nothing for empty events array', async () => {
     const producer = new EventBusProducer(TEST_CONFIG);
-    await producer.publish([], 'github-acme');
+    await producer.publish([], 'github-shipitops');
 
     expect(mockAddBulk).not.toHaveBeenCalled();
     expect(mockPipeline).not.toHaveBeenCalled();
@@ -264,8 +264,8 @@ describe('EventBusConsumer', () => {
     const fakeEnvelope: EventEnvelope = {
       id: 'test-uuid',
       timestamp: '2026-02-28T00:00:00Z',
-      connector_id: 'github-acme',
-      idempotency_key: 'github-acme~node~1',
+      connector_id: 'github-shipitops',
+      idempotency_key: 'github-shipitops~node~1',
       payload: makeEntity(),
     };
 
@@ -300,8 +300,8 @@ describe('EventBusReplay', () => {
     const envelope: EventEnvelope = {
       id: 'replay-uuid',
       timestamp: '2026-02-28T00:00:00Z',
-      connector_id: 'github-acme',
-      idempotency_key: 'github-acme~node~1',
+      connector_id: 'github-shipitops',
+      idempotency_key: 'github-shipitops~node~1',
       payload: makeEntity(),
     };
 
@@ -321,7 +321,7 @@ describe('EventBusReplay', () => {
     expect(mockAddBulk).toHaveBeenCalledOnce();
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
-    expect(jobs[0].opts.jobId).toBe('replay~github-acme~node~1');
+    expect(jobs[0].opts.jobId).toBe('replay~github-shipitops~node~1');
     expect(jobs[0].data).toEqual(envelope);
 
     await replay.close();
@@ -347,7 +347,7 @@ describe('BullMQEventBusClient', () => {
 
   it('publish delegates to producer', async () => {
     const client = new BullMQEventBusClient({ redisUrl: 'redis://localhost:6379' });
-    await client.publish([makeEntity()], 'github-acme');
+    await client.publish([makeEntity()], 'github-shipitops');
 
     expect(mockAddBulk).toHaveBeenCalledOnce();
     await client.close();

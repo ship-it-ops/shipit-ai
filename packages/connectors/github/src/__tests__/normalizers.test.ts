@@ -9,13 +9,13 @@ import type { GitHubTeam } from '../fetchers/teams.js';
 import type { GitHubWorkflow } from '../fetchers/workflows.js';
 import type { CodeownersEntry } from '../fetchers/codeowners.js';
 
-const ORG = 'acme-corp';
+const ORG = 'shipitops';
 
 describe('normalizeRepository', () => {
   const mockRepo: GitHubRepo = {
-    name: 'payments-api',
-    full_name: 'acme-corp/payments-api',
-    html_url: 'https://github.com/acme-corp/payments-api',
+    name: 'graph-api',
+    full_name: 'shipitops/graph-api',
+    html_url: 'https://github.com/shipitops/graph-api',
     default_branch: 'main',
     visibility: 'private',
     language: 'TypeScript',
@@ -33,13 +33,13 @@ describe('normalizeRepository', () => {
   it('sets correct canonical ID with org scope', () => {
     const result = normalizeRepository(mockRepo, ORG);
     expect(result.nodes[0].id).toBe(
-      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+      buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
     );
   });
 
   it('sets correct _source_id as linking key', () => {
     const result = normalizeRepository(mockRepo, ORG);
-    expect(result.nodes[0]._source_id).toBe(buildLinkingKey('github', ORG, 'payments-api'));
+    expect(result.nodes[0]._source_id).toBe(buildLinkingKey('github', ORG, 'graph-api'));
   });
 
   it('creates claims for name, url, default_branch, visibility, language, topics', () => {
@@ -80,7 +80,7 @@ describe('normalizeTeam', () => {
     name: 'Platform Team',
     description: 'Platform engineering team',
     privacy: 'closed',
-    html_url: 'https://github.com/orgs/acme-corp/teams/platform',
+    html_url: 'https://github.com/orgs/shipitops/teams/platform',
     members: [
       {
         login: 'alice',
@@ -138,9 +138,9 @@ describe('normalizePipeline', () => {
     name: 'CI',
     path: '.github/workflows/ci.yml',
     state: 'active',
-    html_url: 'https://github.com/acme-corp/payments-api/actions/workflows/ci.yml',
-    repo_name: 'payments-api',
-    repo_full_name: 'acme-corp/payments-api',
+    html_url: 'https://github.com/shipitops/graph-api/actions/workflows/ci.yml',
+    repo_name: 'graph-api',
+    repo_full_name: 'shipitops/graph-api',
     recent_runs: [
       {
         id: 1,
@@ -162,7 +162,7 @@ describe('normalizePipeline', () => {
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0].type).toBe('BUILT_BY');
     expect(result.edges[0].from).toBe(
-      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+      buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
     );
     expect(result.edges[0].to).toBe(result.nodes[0].id);
   });
@@ -178,9 +178,9 @@ describe('normalizePipeline', () => {
 describe('normalizeCodeowner', () => {
   const mockEntry: CodeownersEntry = {
     pattern: '*.ts',
-    owners: ['@acme-corp/platform', '@alice'],
-    repo_name: 'payments-api',
-    repo_full_name: 'acme-corp/payments-api',
+    owners: ['@shipitops/platform', '@alice'],
+    repo_name: 'graph-api',
+    repo_full_name: 'shipitops/graph-api',
   };
 
   it('produces CODEOWNER_OF edges', () => {
@@ -193,14 +193,14 @@ describe('normalizeCodeowner', () => {
     const result = normalizeCodeowner(mockEntry, ORG);
     const teamEdge = result.edges.find((e) => e.from.includes('team'));
     expect(teamEdge).toBeDefined();
-    expect(teamEdge!.from).toBe(buildScopedCanonicalId('Team', 'default', 'acme-corp', 'platform'));
+    expect(teamEdge!.from).toBe(buildScopedCanonicalId('Team', 'default', 'shipitops', 'platform'));
     expect(teamEdge!.type).toBe('CODEOWNER_OF');
   });
 
   it('routes CODEOWNER_OF edges to the org-scoped Repository ID', () => {
     const result = normalizeCodeowner(mockEntry, ORG);
     for (const edge of result.edges) {
-      expect(edge.to).toBe(buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'));
+      expect(edge.to).toBe(buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'));
     }
   });
 

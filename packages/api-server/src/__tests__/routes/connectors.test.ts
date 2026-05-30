@@ -50,7 +50,7 @@ describe('Connector routes (CRUD + ETag)', () => {
     type: 'github' as const,
     name: 'Test GitHub',
     installationId: '12345',
-    org: 'acme-corp',
+    org: 'shipitops',
     enabled: true,
   };
 
@@ -70,7 +70,7 @@ describe('Connector routes (CRUD + ETag)', () => {
     const body = response.json();
     expect(body.id).toBe('github-test');
     expect(body.type).toBe('github');
-    expect(body.org).toBe('acme-corp');
+    expect(body.org).toBe('shipitops');
     // Defaults from Zod should be filled in
     expect(body.schedule).toBe('*/15 * * * *');
     expect(body.scope.cappedAt).toBe(100);
@@ -184,7 +184,7 @@ describe('Connector routes (CRUD + ETag)', () => {
     const response = await server.inject({
       method: 'POST',
       url: '/api/connectors',
-      payload: { id: 'gh-2', type: 'github', name: 'X', org: 'acme' },
+      payload: { id: 'gh-2', type: 'github', name: 'X', org: 'shipitops' },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.message).toContain('installationId');
@@ -790,11 +790,11 @@ describe('GitHub App manifest flow', () => {
   it('GET /manifest/launch routes to org URL when owner is supplied', async () => {
     const res = await server.inject({
       method: 'GET',
-      url: '/api/connectors/github/manifest/launch?owner=acme-corp',
+      url: '/api/connectors/github/manifest/launch?owner=shipitops',
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toMatch(
-      /action="https:\/\/github\.com\/organizations\/acme-corp\/settings\/apps\/new\?state=[a-f0-9]+"/,
+      /action="https:\/\/github\.com\/organizations\/shipitops\/settings\/apps\/new\?state=[a-f0-9]+"/,
     );
   });
 
@@ -1023,15 +1023,15 @@ describe('GitHub App manifest flow', () => {
 
   it('callback with target=instance leaves global App unchanged and stashes pending creds', async () => {
     const nonce = 'wizard-uuid-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const state = await issueInstanceStateViaLaunch(nonce, 'acme-corp');
+    const state = await issueInstanceStateViaLaunch(nonce, 'shipitops');
 
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           id: 7777,
-          name: 'ShipIt-AI (acme-corp)',
-          slug: 'shipit-ai-acme',
-          html_url: 'https://github.com/apps/shipit-ai-acme',
+          name: 'ShipIt-AI (shipitops)',
+          slug: 'shipit-ai-shipitops',
+          html_url: 'https://github.com/apps/shipit-ai-shipitops',
           pem: '-----BEGIN RSA PRIVATE KEY-----\nINSTANCE-DUMMY\n-----END RSA PRIVATE KEY-----\n',
           webhook_secret: 'whsec_instance',
         }),
@@ -1061,9 +1061,9 @@ describe('GitHub App manifest flow', () => {
     expect(claim.statusCode).toBe(200);
     const body = claim.json();
     expect(body.appId).toBe('7777');
-    expect(body.appName).toBe('ShipIt-AI (acme-corp)');
+    expect(body.appName).toBe('ShipIt-AI (shipitops)');
     expect(body.privateKeyPath).toContain('github-app-7777.pem');
-    expect(body.installUrl).toBe('https://github.com/apps/shipit-ai-acme');
+    expect(body.installUrl).toBe('https://github.com/apps/shipit-ai-shipitops');
 
     // PEM was still written to disk (the per-org override needs a file
     // path on the server, just like the shared App does).

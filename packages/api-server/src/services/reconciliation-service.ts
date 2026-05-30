@@ -114,7 +114,7 @@ function nodeFromRow(row: { properties: Record<string, unknown>; labels?: string
   return {
     id,
     name: asString(props.name, fallbackName),
-    // `_source_org` is the *origin* of the claim (e.g., "github/acme-pay") —
+    // `_source_org` is the *origin* of the claim (e.g., "github/shipitops") —
     // using it as a fallback namespace makes two K8s/Backstage entities from
     // the same source-org look "namespaced together" by accident. Only treat
     // an explicit `namespace` property as namespace data.

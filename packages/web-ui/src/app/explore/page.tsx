@@ -63,7 +63,7 @@ export default function GraphExplorerPage() {
 
   return (
     <div className="flex h-full">
-      <FilterPanel open={filterOpen} onClose={() => setFilterOpen(false)} />
+      <FilterPanel open={filterOpen} onClose={() => setFilterOpen(false)} data={graphData} />
 
       <div className="flex flex-1 flex-col">
         <div className="border-border flex items-center gap-3 border-b px-4 py-3">

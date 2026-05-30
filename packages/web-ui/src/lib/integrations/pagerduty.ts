@@ -5,7 +5,7 @@ import type { IncidentIntegration, PersonContext, ServiceContext } from './types
  * PagerDuty adapter.
  *
  * Configuration: `frontend.integrations.pagerduty.subdomain` in
- * shipit.config.yaml (e.g., "acme-pay" for https://acme-pay.pagerduty.com).
+ * shipit.config.yaml (e.g., "shipitops" for https://shipitops.pagerduty.com).
  * When the connector is wired in Phase 2 it will populate `pd_service_id` /
  * `pd_user_id` properties on Service / Person nodes; for Phase 1 we fall
  * back to the global incidents view — still better than no link.

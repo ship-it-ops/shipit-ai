@@ -8,8 +8,8 @@ import {
 
 describe('buildCanonicalId', () => {
   it('builds from PascalCase label', () => {
-    expect(buildCanonicalId('LogicalService', 'default', 'payments-api')).toBe(
-      'shipit://logical-service/default/payments-api',
+    expect(buildCanonicalId('LogicalService', 'default', 'graph-api')).toBe(
+      'shipit://logical-service/default/graph-api',
     );
   });
 
@@ -32,40 +32,40 @@ describe('buildCanonicalId', () => {
 
 describe('buildScopedCanonicalId', () => {
   it('adds a scope segment between namespace and name', () => {
-    expect(buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'payments-api')).toBe(
-      'shipit://repository/default/acme-corp/payments-api',
+    expect(buildScopedCanonicalId('Repository', 'default', 'shipitops', 'graph-api')).toBe(
+      'shipit://repository/default/shipitops/graph-api',
     );
   });
 
   it('builds scoped Team IDs', () => {
-    expect(buildScopedCanonicalId('Team', 'default', 'acme-corp', 'platform')).toBe(
-      'shipit://team/default/acme-corp/platform',
+    expect(buildScopedCanonicalId('Team', 'default', 'shipitops', 'platform')).toBe(
+      'shipit://team/default/shipitops/platform',
     );
   });
 
   it('round-trips through parseCanonicalId with the scope baked into name', () => {
-    const id = buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'payments-api');
+    const id = buildScopedCanonicalId('Repository', 'default', 'shipitops', 'graph-api');
     expect(parseCanonicalId(id)).toEqual({
       label: 'repository',
       namespace: 'default',
-      name: 'acme-corp/payments-api',
+      name: 'shipitops/graph-api',
     });
   });
 
   it('produces distinct IDs for the same name in different scopes', () => {
-    const a = buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'infra');
-    const b = buildScopedCanonicalId('Repository', 'default', 'contoso', 'infra');
+    const a = buildScopedCanonicalId('Repository', 'default', 'shipitops', 'infra');
+    const b = buildScopedCanonicalId('Repository', 'default', 'cargocloud', 'infra');
     expect(a).not.toBe(b);
   });
 });
 
 describe('parseCanonicalId', () => {
   it('parses valid canonical ID', () => {
-    const result = parseCanonicalId('shipit://logical-service/default/payments-api');
+    const result = parseCanonicalId('shipit://logical-service/default/graph-api');
     expect(result).toEqual({
       label: 'logical-service',
       namespace: 'default',
-      name: 'payments-api',
+      name: 'graph-api',
     });
   });
 
@@ -97,7 +97,7 @@ describe('isValidCanonicalId', () => {
   });
 
   it('validates multi-segment name', () => {
-    expect(isValidCanonicalId('shipit://logical-service/default/payments-api')).toBe(true);
+    expect(isValidCanonicalId('shipit://logical-service/default/graph-api')).toBe(true);
   });
 
   it('rejects invalid format', () => {

@@ -41,7 +41,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         type: 'string',
         required: true,
         description:
-          'Starting node canonical ID (e.g. shipit://repository/default/acme-corp/config-service).',
+          'Starting node canonical ID (e.g. shipit://repository/default/shipitops/config-service).',
       },
       {
         name: 'depth',
