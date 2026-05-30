@@ -54,7 +54,12 @@ export type {
 } from './types/reconciliation-api.js';
 
 // Identity utilities
-export { buildCanonicalId, parseCanonicalId, isValidCanonicalId } from './identity/canonical-id.js';
+export {
+  buildCanonicalId,
+  buildScopedCanonicalId,
+  parseCanonicalId,
+  isValidCanonicalId,
+} from './identity/canonical-id.js';
 
 export { buildLinkingKey, parseLinkingKey } from './identity/linking-key.js';
 

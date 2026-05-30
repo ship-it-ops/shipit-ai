@@ -19,13 +19,19 @@ export class BatchProcessor {
   }
 
   start(): void {
+    console.log(
+      `[BatchProcessor] start: flushIntervalMs=${this.flushIntervalMs} batchSize=${this.batchSize}`,
+    );
     this.flushTimer = setInterval(() => {
-      void this.flush();
+      void this.flush().catch((err) => {
+        console.error(`[BatchProcessor] timer flush threw:`, err);
+      });
     }, this.flushIntervalMs);
   }
 
   async add(event: EventEnvelope): Promise<void> {
     this.buffer.push(event);
+    console.log(`[BatchProcessor] add: buffer.length=${this.buffer.length} event.id=${event.id}`);
     if (this.buffer.length >= this.batchSize) {
       await this.flush();
     }
@@ -34,7 +40,14 @@ export class BatchProcessor {
   async flush(): Promise<void> {
     if (this.buffer.length === 0) return;
     const batch = this.buffer.splice(0, this.batchSize);
-    await this.onFlush(batch);
+    console.log(`[BatchProcessor] flush: draining ${batch.length} events`);
+    try {
+      await this.onFlush(batch);
+      console.log(`[BatchProcessor] flush: onFlush completed cleanly`);
+    } catch (err) {
+      console.error(`[BatchProcessor] flush: onFlush THREW`, err);
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {

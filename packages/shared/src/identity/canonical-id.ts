@@ -7,6 +7,15 @@ export function buildCanonicalId(label: string, namespace: string, name: string)
   return `shipit://${normalizedLabel}/${namespace}/${name}`;
 }
 
+export function buildScopedCanonicalId(
+  label: string,
+  namespace: string,
+  scope: string,
+  name: string,
+): string {
+  return buildCanonicalId(label, namespace, `${scope}/${name}`);
+}
+
 export function parseCanonicalId(
   id: string,
 ): { label: string; namespace: string; name: string } | null {

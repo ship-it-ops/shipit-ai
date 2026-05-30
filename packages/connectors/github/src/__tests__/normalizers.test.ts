@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildCanonicalId, buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 import { normalizeRepository } from '../normalizers/repository.js';
 import { normalizeTeam } from '../normalizers/team.js';
 import { normalizePipeline } from '../normalizers/pipeline.js';
@@ -30,9 +30,11 @@ describe('normalizeRepository', () => {
     expect(result.nodes[0].label).toBe('Repository');
   });
 
-  it('sets correct canonical ID', () => {
+  it('sets correct canonical ID with org scope', () => {
     const result = normalizeRepository(mockRepo, ORG);
-    expect(result.nodes[0].id).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
+    expect(result.nodes[0].id).toBe(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+    );
   });
 
   it('sets correct _source_id as linking key', () => {
@@ -103,9 +105,9 @@ describe('normalizeTeam', () => {
     expect(result.nodes[2].label).toBe('Person');
   });
 
-  it('sets correct canonical IDs', () => {
+  it('sets correct canonical IDs (Team scoped by org, Person global)', () => {
     const result = normalizeTeam(mockTeam, ORG);
-    expect(result.nodes[0].id).toBe(buildCanonicalId('Team', 'default', 'platform'));
+    expect(result.nodes[0].id).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
     expect(result.nodes[1].id).toBe(buildCanonicalId('Person', 'default', 'alice'));
   });
 
@@ -115,7 +117,7 @@ describe('normalizeTeam', () => {
 
     for (const edge of result.edges) {
       expect(edge.type).toBe('MEMBER_OF');
-      expect(edge.to).toBe(buildCanonicalId('Team', 'default', 'platform'));
+      expect(edge.to).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
       expect(edge._source).toBe('github');
       expect(edge._confidence).toBe(0.9);
     }
@@ -159,7 +161,9 @@ describe('normalizePipeline', () => {
     const result = normalizePipeline(mockWorkflow, ORG);
     expect(result.edges).toHaveLength(1);
     expect(result.edges[0].type).toBe('BUILT_BY');
-    expect(result.edges[0].from).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
+    expect(result.edges[0].from).toBe(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+    );
     expect(result.edges[0].to).toBe(result.nodes[0].id);
   });
 
@@ -180,35 +184,42 @@ describe('normalizeCodeowner', () => {
   };
 
   it('produces CODEOWNER_OF edges', () => {
-    const result = normalizeCodeowner(mockEntry);
+    const result = normalizeCodeowner(mockEntry, ORG);
     expect(result.edges).toHaveLength(2);
     expect(result.nodes).toHaveLength(0);
   });
 
-  it('resolves team owners to Team canonical IDs', () => {
-    const result = normalizeCodeowner(mockEntry);
+  it('resolves team owners to Team canonical IDs preserving the @org/team org', () => {
+    const result = normalizeCodeowner(mockEntry, ORG);
     const teamEdge = result.edges.find((e) => e.from.includes('team'));
     expect(teamEdge).toBeDefined();
-    expect(teamEdge!.from).toBe(buildCanonicalId('Team', 'default', 'platform'));
+    expect(teamEdge!.from).toBe(buildScopedCanonicalId('Team', 'default', 'acme-corp', 'platform'));
     expect(teamEdge!.type).toBe('CODEOWNER_OF');
   });
 
-  it('resolves user owners to Person canonical IDs', () => {
-    const result = normalizeCodeowner(mockEntry);
+  it('routes CODEOWNER_OF edges to the org-scoped Repository ID', () => {
+    const result = normalizeCodeowner(mockEntry, ORG);
+    for (const edge of result.edges) {
+      expect(edge.to).toBe(buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'));
+    }
+  });
+
+  it('resolves user owners to Person canonical IDs (global, unscoped)', () => {
+    const result = normalizeCodeowner(mockEntry, ORG);
     const personEdge = result.edges.find((e) => e.from.includes('person'));
     expect(personEdge).toBeDefined();
     expect(personEdge!.from).toBe(buildCanonicalId('Person', 'default', 'alice'));
   });
 
   it('includes pattern in edge properties', () => {
-    const result = normalizeCodeowner(mockEntry);
+    const result = normalizeCodeowner(mockEntry, ORG);
     for (const edge of result.edges) {
       expect(edge.properties?.['pattern']).toBe('*.ts');
     }
   });
 
   it('sets confidence to 0.95', () => {
-    const result = normalizeCodeowner(mockEntry);
+    const result = normalizeCodeowner(mockEntry, ORG);
     for (const edge of result.edges) {
       expect(edge._confidence).toBe(0.95);
     }

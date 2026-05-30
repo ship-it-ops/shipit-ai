@@ -8,7 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { CanonicalEntity, EventBusClient, EventEnvelope } from '@shipit-ai/shared';
-import { buildCanonicalId } from '@shipit-ai/shared';
+import { buildCanonicalId, buildScopedCanonicalId } from '@shipit-ai/shared';
+
+const ORG = 'acme-corp';
 import { CoreWriter, type NodeWriter } from '../writer.js';
 import { InMemoryLinkingKeyIndex } from '../identity/linking-key-index.js';
 import { InMemoryIdempotencyChecker } from '../idempotency.js';
@@ -21,7 +23,7 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
   return {
     nodes: [
       {
-        id: buildCanonicalId('Repository', 'default', 'payments-api'),
+        id: buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
         label: 'Repository',
         properties: {
           name: 'payments-api',
@@ -57,7 +59,7 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
         _event_version: 1,
       },
       {
-        id: buildCanonicalId('Team', 'default', 'platform'),
+        id: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
         label: 'Team',
         properties: { name: 'Platform Team', slug: 'platform' },
         _claims: [
@@ -103,15 +105,15 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
       {
         type: 'MEMBER_OF',
         from: buildCanonicalId('Person', 'default', 'alice'),
-        to: buildCanonicalId('Team', 'default', 'platform'),
+        to: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
         _source: 'github',
         _confidence: 0.9,
         _ingested_at: now,
       },
       {
         type: 'CODEOWNER_OF',
-        from: buildCanonicalId('Team', 'default', 'platform'),
-        to: buildCanonicalId('Repository', 'default', 'payments-api'),
+        from: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
+        to: buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
         properties: { pattern: '*' },
         _source: 'github',
         _confidence: 0.95,
@@ -174,8 +176,10 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
     await writer.processEvent(event);
 
-    expect(writtenNodes.has(buildCanonicalId('Repository', 'default', 'payments-api'))).toBe(true);
-    expect(writtenNodes.has(buildCanonicalId('Team', 'default', 'platform'))).toBe(true);
+    expect(
+      writtenNodes.has(buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api')),
+    ).toBe(true);
+    expect(writtenNodes.has(buildScopedCanonicalId('Team', 'default', ORG, 'platform'))).toBe(true);
     expect(writtenNodes.has(buildCanonicalId('Person', 'default', 'alice'))).toBe(true);
   });
 
@@ -188,12 +192,14 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     const memberOfEdge = writtenEdges.find((e) => e.type === 'MEMBER_OF');
     expect(memberOfEdge).toBeDefined();
     expect(memberOfEdge!.from).toBe(buildCanonicalId('Person', 'default', 'alice'));
-    expect(memberOfEdge!.to).toBe(buildCanonicalId('Team', 'default', 'platform'));
+    expect(memberOfEdge!.to).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
 
     const codeownerEdge = writtenEdges.find((e) => e.type === 'CODEOWNER_OF');
     expect(codeownerEdge).toBeDefined();
-    expect(codeownerEdge!.from).toBe(buildCanonicalId('Team', 'default', 'platform'));
-    expect(codeownerEdge!.to).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
+    expect(codeownerEdge!.from).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
+    expect(codeownerEdge!.to).toBe(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+    );
   });
 
   it('resolves effective properties from claims', async () => {
@@ -202,7 +208,9 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
     await writer.processEvent(event);
 
-    const repoEntry = writtenNodes.get(buildCanonicalId('Repository', 'default', 'payments-api'));
+    const repoEntry = writtenNodes.get(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
+    );
     expect(repoEntry).toBeDefined();
     expect(repoEntry!.effectiveProps).toHaveProperty('name', 'payments-api');
     expect(repoEntry!.effectiveProps).toHaveProperty('language', 'TypeScript');
@@ -235,7 +243,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     const backstageOutput: CanonicalEntity = {
       nodes: [
         {
-          id: buildCanonicalId('Repository', 'default', 'payments-api'),
+          id: buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api'),
           label: 'Repository',
           properties: { name: 'payments-api', tier: 1 },
           _claims: [
@@ -266,7 +274,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
       .mocked(nodeWriter.writeNode)
       .mock.calls.find(
         (call) =>
-          call[0].id === buildCanonicalId('Repository', 'default', 'payments-api') &&
+          call[0].id === buildScopedCanonicalId('Repository', 'default', ORG, 'payments-api') &&
           call[0]._source_system === 'backstage',
       );
     expect(repoWriteCall).toBeDefined();

@@ -157,12 +157,15 @@ function HeaderRow({
   runtime: SyncRuntimeStatus | null;
 }) {
   const info = connectorInfo(connector, runtime);
+  const isRunning = runtime?.state === 'running';
   return (
     <div className="flex items-center gap-2">
-      <Badge variant={statusVariant[info.status] ?? 'neutral'}>
-        {info.status.replace('_', ' ')}
-      </Badge>
-      {runtime?.state === 'running' && (
+      {!isRunning && (
+        <Badge variant={statusVariant[info.status] ?? 'neutral'}>
+          {info.status.replace('_', ' ')}
+        </Badge>
+      )}
+      {isRunning && (
         <Badge variant="warn">
           <Spinner size="sm" /> syncing
         </Badge>

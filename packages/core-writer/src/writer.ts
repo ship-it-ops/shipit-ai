@@ -78,8 +78,14 @@ export class CoreWriter {
     let duplicatesSkipped = 0;
     const errors: string[] = [];
 
+    console.log(`[CoreWriter] processBatch: ${batch.length} events`);
+
     for (const event of batch) {
       const { payload } = event;
+      if (!payload || !Array.isArray(payload.nodes)) {
+        console.warn(`[CoreWriter] event ${event.id} has no payload.nodes; skipping`);
+        continue;
+      }
 
       // Process nodes
       for (const node of payload.nodes) {
@@ -124,6 +130,7 @@ export class CoreWriter {
       }
 
       // Process edges
+      if (!Array.isArray(payload.edges)) continue;
       for (const edge of payload.edges) {
         try {
           await this.nodeWriter.writeEdge(edge);
@@ -136,6 +143,12 @@ export class CoreWriter {
       }
     }
 
+    console.log(
+      `[CoreWriter] processBatch done: nodesWritten=${nodesWritten} edgesWritten=${edgesWritten} dupes=${duplicatesSkipped} errors=${errors.length}`,
+    );
+    if (errors.length > 0) {
+      for (const e of errors.slice(0, 5)) console.error(`  [CoreWriter] err:`, e);
+    }
     return { nodesWritten, edgesWritten, duplicatesSkipped, errors };
   }
 }

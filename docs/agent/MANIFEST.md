@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-26 | Total notes: 23
+Last updated: 2026-05-30 | Total notes: 24
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -11,7 +11,7 @@ Last updated: 2026-05-26 | Total notes: 23
 
 <!-- always-read at session start -->
 
-- [handoff-github-connector-wizard-mid-flow](status/handoff-github-connector-wizard-mid-flow.md) | status | active | core | 2026-05-22 | mid-flow: user verifying scheduler-attach fix end-to-end
+_(no in-flight work)_
 
 ## Decisions
 
@@ -29,6 +29,7 @@ Last updated: 2026-05-26 | Total notes: 23
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 - [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
 - [per-org-github-app-is-default-not-shared](decisions/per-org-github-app-is-default-not-shared.md) | decision | active | core | 2026-05-24 | wizard defaults to per-org App; shared needs public App on GitHub
+- [canonical-id-org-namespacing](decisions/canonical-id-org-namespacing.md) | decision | active | core | 2026-05-30 | Repository/Team/Pipeline IDs gain org segment; Person stays global
 
 ## Patterns
 
@@ -43,7 +44,6 @@ Last updated: 2026-05-26 | Total notes: 23
 
 ## Open Questions
 
-- [canonical-id-org-namespacing](open-questions/canonical-id-org-namespacing.md) | open-question | active | core | 2026-05-20 | Repository IDs collide across orgs decide before ship
 - [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-05-20 | per-org App webhook secret lookup needed for P1
 
 ## Scars
@@ -52,3 +52,4 @@ Last updated: 2026-05-26 | Total notes: 23
 - [github-app-manifest-is-post-not-get](scars/github-app-manifest-is-post-not-get.md) | scar | active | core | 2026-05-22 | GitHub App manifest requires POST form not manifest_url GET
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files
 - [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs
+- [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw

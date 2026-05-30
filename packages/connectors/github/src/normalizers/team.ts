@@ -1,5 +1,5 @@
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
-import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildCanonicalId, buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 import type { GitHubTeam } from '../fetchers/teams.js';
 
 function makeClaim(key: string, value: unknown, sourceId: string): PropertyClaim {
@@ -22,7 +22,7 @@ export function normalizeTeam(
   const teamSourceId = buildLinkingKey('github', org, 'team', team.slug);
 
   const teamNode: CanonicalNode = {
-    id: buildCanonicalId('Team', 'default', team.slug),
+    id: buildScopedCanonicalId('Team', 'default', org, team.slug),
     label: 'Team',
     properties: {
       name: team.name,
@@ -52,6 +52,7 @@ export function normalizeTeam(
     const personSourceId = buildLinkingKey('github', org, 'user', member.login);
 
     const personNode: CanonicalNode = {
+      // Person stays unscoped — a GitHub login is globally unique across orgs.
       id: buildCanonicalId('Person', 'default', member.login),
       label: 'Person',
       properties: {

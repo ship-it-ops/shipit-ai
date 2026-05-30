@@ -118,7 +118,7 @@ export class GitHubConnector implements ShipItConnector {
         allEdges.push(...result.edges);
       } else if ('pattern' in record && 'owners' in record) {
         // Codeowners entry
-        const result = normalizeCodeowner(record as unknown as CodeownersEntry);
+        const result = normalizeCodeowner(record as unknown as CodeownersEntry, this.org);
         allEdges.push(...result.edges);
       }
     }

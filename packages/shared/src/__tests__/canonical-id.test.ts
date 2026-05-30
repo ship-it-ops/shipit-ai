@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildCanonicalId,
+  buildScopedCanonicalId,
   parseCanonicalId,
   isValidCanonicalId,
 } from '../identity/canonical-id.js';
@@ -26,6 +27,35 @@ describe('buildCanonicalId', () => {
 
   it('preserves already lowercase label', () => {
     expect(buildCanonicalId('team', 'default', 'platform')).toBe('shipit://team/default/platform');
+  });
+});
+
+describe('buildScopedCanonicalId', () => {
+  it('adds a scope segment between namespace and name', () => {
+    expect(buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'payments-api')).toBe(
+      'shipit://repository/default/acme-corp/payments-api',
+    );
+  });
+
+  it('builds scoped Team IDs', () => {
+    expect(buildScopedCanonicalId('Team', 'default', 'acme-corp', 'platform')).toBe(
+      'shipit://team/default/acme-corp/platform',
+    );
+  });
+
+  it('round-trips through parseCanonicalId with the scope baked into name', () => {
+    const id = buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'payments-api');
+    expect(parseCanonicalId(id)).toEqual({
+      label: 'repository',
+      namespace: 'default',
+      name: 'acme-corp/payments-api',
+    });
+  });
+
+  it('produces distinct IDs for the same name in different scopes', () => {
+    const a = buildScopedCanonicalId('Repository', 'default', 'acme-corp', 'infra');
+    const b = buildScopedCanonicalId('Repository', 'default', 'contoso', 'infra');
+    expect(a).not.toBe(b);
   });
 });
 
