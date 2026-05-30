@@ -182,6 +182,52 @@ describe('EventBusProducer', () => {
     expect(jobs[1].opts.jobId).toContain('svc-b~2');
   });
 
+  it('emits one envelope for an edge-only entity (e.g., Codeowners batch)', async () => {
+    const producer = new EventBusProducer(TEST_CONFIG);
+    const entity: CanonicalEntity = {
+      nodes: [],
+      edges: [
+        {
+          type: 'CODEOWNER_OF',
+          from: 'shipit://person/default/alice',
+          to: 'shipit://repository/default/acme/payments-api',
+          properties: { pattern: '*' },
+          _source: 'github',
+          _confidence: 0.95,
+          _ingested_at: '2026-02-28T00:00:00Z',
+        },
+      ],
+    };
+
+    await producer.publish([entity], 'github-acme');
+
+    expect(mockAddBulk).toHaveBeenCalledOnce();
+    const jobs = mockAddBulk.mock.calls[0][0];
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].opts.jobId).toMatch(/^github-acme~edges~[a-f0-9]{16}$/);
+    expect(jobs[0].data.payload).toEqual(entity);
+  });
+
+  it('emits the same envelope id for the same edge batch (stable hash)', async () => {
+    const producer = new EventBusProducer(TEST_CONFIG);
+    const edge = {
+      type: 'CODEOWNER_OF',
+      from: 'shipit://person/default/alice',
+      to: 'shipit://repository/default/acme/payments-api',
+      _source: 'github',
+      _confidence: 0.95,
+      _ingested_at: '2026-02-28T00:00:00Z',
+    };
+    const entity: CanonicalEntity = { nodes: [], edges: [edge] };
+
+    await producer.publish([entity], 'github-acme');
+    await producer.publish([entity], 'github-acme');
+
+    const firstJobId = mockAddBulk.mock.calls[0][0][0].opts.jobId;
+    const secondJobId = mockAddBulk.mock.calls[1][0][0].opts.jobId;
+    expect(firstJobId).toBe(secondJobId);
+  });
+
   it('writes events to Redis Stream', async () => {
     const producer = new EventBusProducer(TEST_CONFIG);
     await producer.publish([makeEntity()], 'github-acme');
