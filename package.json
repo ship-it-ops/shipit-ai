@@ -35,6 +35,7 @@
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "@types/node": "^22.0.0",
     "husky": "^9.1.7",
+    "ioredis": "^5.11.0",
     "lint-staged": "^17.0.5",
     "neo4j-driver": "^5.28.3",
     "prettier": "^3.8.3",

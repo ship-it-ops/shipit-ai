@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-30 | Total notes: 25
+Last updated: 2026-05-31 | Total notes: 26
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -37,6 +37,7 @@ _(no in-flight work)_
 - [live-reference-for-hot-reload](patterns/live-reference-for-hot-reload.md) | pattern | active | standard | 2026-05-20 | shared object refs propagate updates without restart
 - [internal-node-label-underscore-prefix](patterns/internal-node-label-underscore-prefix.md) | pattern | active | core | 2026-05-22 | exclude `_`-prefixed labels from user-facing graph queries
 - [ownership-edge-semantics](patterns/ownership-edge-semantics.md) | pattern | active | core | 2026-05-30 | mark ownership-class rel types with semantics: ownership
+- [reset-script-must-drain-redis-surfaces](patterns/reset-script-must-drain-redis-surfaces.md) | pattern | active | core | 2026-05-31 | seed:reset wipes Neo4j + Redis run history + BullMQ queues
 
 ## Plans
 

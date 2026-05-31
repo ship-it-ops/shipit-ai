@@ -10,4 +10,10 @@ export default defineWorkspace([
   'packages/api-server',
   'packages/mcp-server',
   'packages/web-ui',
+  {
+    test: {
+      name: 'scripts',
+      include: ['scripts/**/*.test.ts'],
+    },
+  },
 ]);
