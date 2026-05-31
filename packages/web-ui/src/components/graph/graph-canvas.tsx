@@ -7,7 +7,7 @@ import {
   DEFAULT_OWNERSHIP_REL_TYPES,
   getOwnershipRelTypes,
   type ShipItSchema as SharedShipItSchema,
-} from '@shipit-ai/shared';
+} from '@shipit-ai/shared/schema';
 import {
   GraphCanvas as DSGraphCanvas,
   readThemeTokens,

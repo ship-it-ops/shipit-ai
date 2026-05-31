@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_OWNERSHIP_REL_TYPES } from '@shipit-ai/shared';
+import { DEFAULT_OWNERSHIP_REL_TYPES } from '@shipit-ai/shared/schema';
 import type { GraphData } from '@/lib/api';
 import { buildOwnershipIndex } from './ownership-index';
 
