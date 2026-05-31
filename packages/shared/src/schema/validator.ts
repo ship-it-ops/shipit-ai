@@ -33,6 +33,7 @@ const relTypeDefSchema = z.object({
   cardinality: z.enum(['1:1', '1:N', 'N:1', 'N:M']),
   properties: z.record(z.string(), propertyDefSchema).optional(),
   description: z.string().optional(),
+  semantics: z.literal('ownership').optional(),
 });
 
 const schemaSchema = z.object({

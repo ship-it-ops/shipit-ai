@@ -654,6 +654,8 @@ export interface SchemaRelTypeDef {
   cardinality: '1:1' | '1:N' | 'N:1' | 'N:M';
   properties?: Record<string, SchemaPropertyDef>;
   description?: string;
+  /** Behavioral category — see @shipit-ai/shared `RelTypeSemantics`. */
+  semantics?: 'ownership';
 }
 
 export interface ShipItSchema {

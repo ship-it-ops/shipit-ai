@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { parseSchemaFile } from '../schema/parser.js';
 import { validateSchemaRelationships } from '../schema/validator.js';
 import { DEFAULT_SCHEMA } from '../schema/defaults.js';
+import { DEFAULT_OWNERSHIP_REL_TYPES, getOwnershipRelTypes } from '../schema/semantics.js';
 
 describe('parseSchemaFile', () => {
   it('parses the default YAML schema file', () => {
@@ -103,6 +104,58 @@ describe('validateSchemaRelationships', () => {
     expect(errors[0]).toContain("'from' label 'NonExistent'");
   });
 
+  it('accepts and parses optional `semantics: ownership` on a relationship', () => {
+    const yaml = `
+version: "1.0"
+mode: full
+node_types:
+  Team:
+    description: "A team"
+    properties:
+      name:
+        type: string
+        required: true
+        resolution_strategy: HIGHEST_CONFIDENCE
+  LogicalService:
+    description: "A service"
+    properties:
+      name:
+        type: string
+        required: true
+        resolution_strategy: HIGHEST_CONFIDENCE
+relationship_types:
+  OWNS:
+    from: Team
+    to: LogicalService
+    cardinality: "1:N"
+    semantics: ownership
+`;
+    const schema = parseSchemaFile(yaml);
+    expect(schema.relationship_types['OWNS']?.semantics).toBe('ownership');
+  });
+
+  it('rejects an unknown semantics value', () => {
+    const yaml = `
+version: "1.0"
+mode: full
+node_types:
+  Service:
+    description: "A service"
+    properties:
+      name:
+        type: string
+        required: true
+        resolution_strategy: HIGHEST_CONFIDENCE
+relationship_types:
+  DEPENDS_ON:
+    from: Service
+    to: Service
+    cardinality: "N:M"
+    semantics: nonsense
+`;
+    expect(() => parseSchemaFile(yaml)).toThrow();
+  });
+
   it('detects missing to label', () => {
     const errors = validateSchemaRelationships({
       version: '1.0',
@@ -129,5 +182,25 @@ describe('validateSchemaRelationships', () => {
     });
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("'to' label 'MissingRepo'");
+  });
+});
+
+describe('getOwnershipRelTypes', () => {
+  it('extracts every rel type tagged semantics: ownership', () => {
+    const result = getOwnershipRelTypes(DEFAULT_SCHEMA);
+    expect(result.has('OWNS')).toBe(true);
+    expect(result.has('CODEOWNER_OF')).toBe(true);
+  });
+
+  // Regression guard for the bug where MEMBER_OF was treated as ownership.
+  // MEMBER_OF is Person → Team — membership, not ownership.
+  it('does not mark MEMBER_OF as ownership in the default schema', () => {
+    const result = getOwnershipRelTypes(DEFAULT_SCHEMA);
+    expect(result.has('MEMBER_OF')).toBe(false);
+  });
+
+  it('matches DEFAULT_OWNERSHIP_REL_TYPES for the shipped schema', () => {
+    const fromSchema = getOwnershipRelTypes(DEFAULT_SCHEMA);
+    expect(new Set(fromSchema)).toEqual(new Set(DEFAULT_OWNERSHIP_REL_TYPES));
   });
 });

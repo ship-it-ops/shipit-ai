@@ -280,6 +280,9 @@ importers:
       '@shipit-ai/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@shipit-ai/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tanstack/react-query':
         specifier: ^5.60.0
         version: 5.90.21(react@19.2.6)

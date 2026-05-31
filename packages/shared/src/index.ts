@@ -13,6 +13,7 @@ export type {
   SchemaPropertyDef,
   SchemaNodeTypeDef,
   SchemaRelTypeDef,
+  RelTypeSemantics,
   ShipItSchema,
 } from './types/schema.js';
 
@@ -69,6 +70,7 @@ export type { ConnectorType } from './identity/linking-key.js';
 export { parseSchemaFile } from './schema/parser.js';
 export { validateSchema, validateSchemaRelationships } from './schema/validator.js';
 export { DEFAULT_SCHEMA } from './schema/defaults.js';
+export { DEFAULT_OWNERSHIP_REL_TYPES, getOwnershipRelTypes } from './schema/semantics.js';
 
 // Utilities
 export { computeEffectiveConfidence } from './utils/confidence.js';
