@@ -72,22 +72,22 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // Repositories (5)
     {
-      id: 'shipit://repository/default/graph-api',
+      id: 'shipit://repository/default/shipitops/graph-api',
       label: 'Repository',
       properties: { name: 'graph-api', url: 'https://github.com/shipitops/graph-api' },
     },
     {
-      id: 'shipit://repository/default/config-service',
+      id: 'shipit://repository/default/shipitops/config-service',
       label: 'Repository',
       properties: { name: 'config-service', url: 'https://github.com/shipitops/config-service' },
     },
     {
-      id: 'shipit://repository/default/claim-store',
+      id: 'shipit://repository/default/shipitops/claim-store',
       label: 'Repository',
       properties: { name: 'claim-store', url: 'https://github.com/shipitops/claim-store' },
     },
     {
-      id: 'shipit://repository/default/connector-runtime',
+      id: 'shipit://repository/default/shipitops/connector-runtime',
       label: 'Repository',
       properties: {
         name: 'connector-runtime',
@@ -95,7 +95,7 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
       },
     },
     {
-      id: 'shipit://repository/default/auth-service',
+      id: 'shipit://repository/default/shipitops/auth-service',
       label: 'Repository',
       properties: { name: 'auth-service', url: 'https://github.com/shipitops/auth-service' },
     },
@@ -181,17 +181,17 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // Teams (3)
     {
-      id: 'shipit://team/default/api-team',
+      id: 'shipit://team/default/shipitops/api-team',
       label: 'Team',
       properties: { name: 'api-team', email: 'api@shipitops.com' },
     },
     {
-      id: 'shipit://team/default/platform-team',
+      id: 'shipit://team/default/shipitops/platform-team',
       label: 'Team',
       properties: { name: 'platform-team', email: 'platform@shipitops.com' },
     },
     {
-      id: 'shipit://team/default/ai-team',
+      id: 'shipit://team/default/shipitops/ai-team',
       label: 'Team',
       properties: { name: 'ai-team', email: 'ai@shipitops.com' },
     },
@@ -240,17 +240,17 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // Pipelines (3)
     {
-      id: 'shipit://pipeline/default/graph-api-ci',
+      id: 'shipit://pipeline/default/shipitops/graph-api-ci',
       label: 'Pipeline',
       properties: { name: 'graph-api-ci', type: 'CI/CD' },
     },
     {
-      id: 'shipit://pipeline/default/config-service-ci',
+      id: 'shipit://pipeline/default/shipitops/config-service-ci',
       label: 'Pipeline',
       properties: { name: 'config-service-ci', type: 'CI/CD' },
     },
     {
-      id: 'shipit://pipeline/default/connector-runtime-ci',
+      id: 'shipit://pipeline/default/shipitops/connector-runtime-ci',
       label: 'Pipeline',
       properties: { name: 'connector-runtime-ci', type: 'CI/CD' },
     },
@@ -273,27 +273,27 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/graph-api',
-      to: 'shipit://repository/default/graph-api',
+      to: 'shipit://repository/default/shipitops/graph-api',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/config-service',
-      to: 'shipit://repository/default/config-service',
+      to: 'shipit://repository/default/shipitops/config-service',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/claim-store',
-      to: 'shipit://repository/default/claim-store',
+      to: 'shipit://repository/default/shipitops/claim-store',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/connector-runtime',
-      to: 'shipit://repository/default/connector-runtime',
+      to: 'shipit://repository/default/shipitops/connector-runtime',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/auth-service',
-      to: 'shipit://repository/default/auth-service',
+      to: 'shipit://repository/default/shipitops/auth-service',
     },
 
     // DEPLOYED_AS: LogicalService -> Deployment
@@ -417,27 +417,27 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     // OWNS: Team -> LogicalService
     {
       type: 'OWNS',
-      from: 'shipit://team/default/api-team',
+      from: 'shipit://team/default/shipitops/api-team',
       to: 'shipit://logical-service/default/graph-api',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/api-team',
+      from: 'shipit://team/default/shipitops/api-team',
       to: 'shipit://logical-service/default/claim-store',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/platform-team',
+      from: 'shipit://team/default/shipitops/platform-team',
       to: 'shipit://logical-service/default/config-service',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/platform-team',
+      from: 'shipit://team/default/shipitops/platform-team',
       to: 'shipit://logical-service/default/auth-service',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/ai-team',
+      from: 'shipit://team/default/shipitops/ai-team',
       to: 'shipit://logical-service/default/connector-runtime',
     },
 
@@ -445,59 +445,59 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/alice',
-      to: 'shipit://team/default/api-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/bob',
-      to: 'shipit://team/default/api-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/charlie',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/diana',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/eve',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/frank',
-      to: 'shipit://team/default/ai-team',
+      to: 'shipit://team/default/shipitops/ai-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/grace',
-      to: 'shipit://team/default/ai-team',
+      to: 'shipit://team/default/shipitops/ai-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/hank',
-      to: 'shipit://team/default/api-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
 
     // BUILT_BY: Repository -> Pipeline
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/graph-api',
-      to: 'shipit://pipeline/default/graph-api-ci',
+      from: 'shipit://repository/default/shipitops/graph-api',
+      to: 'shipit://pipeline/default/shipitops/graph-api-ci',
     },
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/config-service',
-      to: 'shipit://pipeline/default/config-service-ci',
+      from: 'shipit://repository/default/shipitops/config-service',
+      to: 'shipit://pipeline/default/shipitops/config-service-ci',
     },
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/connector-runtime',
-      to: 'shipit://pipeline/default/connector-runtime-ci',
+      from: 'shipit://repository/default/shipitops/connector-runtime',
+      to: 'shipit://pipeline/default/shipitops/connector-runtime-ci',
     },
 
     // MONITORS: Monitor -> LogicalService
@@ -516,12 +516,12 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     {
       type: 'CODEOWNER_OF',
       from: 'shipit://person/default/alice',
-      to: 'shipit://repository/default/graph-api',
+      to: 'shipit://repository/default/shipitops/graph-api',
     },
     {
       type: 'CODEOWNER_OF',
       from: 'shipit://person/default/charlie',
-      to: 'shipit://repository/default/config-service',
+      to: 'shipit://repository/default/shipitops/config-service',
     },
 
     // ON_CALL_FOR: Person -> LogicalService

@@ -7,6 +7,34 @@ import type { Neo4jClient } from './client.js';
 
 const SCOPED_LABELS = ['repository', 'team', 'pipeline'] as const;
 
+type ScopedLabel = (typeof SCOPED_LABELS)[number];
+
+/**
+ * Regex matching the OLD single-segment canonical-ID shape for a scoped label.
+ * NEW IDs include `<org>/<name>` so the slash in the name segment stops the
+ * `[^/]+` match. Anchored — Cypher `=~` requires full-string match.
+ */
+export function buildOldCanonicalIdRegex(label: ScopedLabel): string {
+  return `^shipit://${label}/default/[^/]+$`;
+}
+
+/**
+ * Regex matching idempotency-log keys whose canonical-ID portion is OLD-format.
+ *
+ * `_IdempotencyLog.key` is the BullMQ job ID built by `buildIdempotencyKey()`
+ * in event-bus, which substitutes `~` for every `:` before storage (BullMQ 5
+ * rejects `:` in custom job IDs; see
+ * docs/agent/scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md).
+ * So stored keys have the shape
+ *   `<connector_id>~shipit~//<label>/default/<name>~<event_version>`
+ *
+ * `[^/~]+` excludes new-format IDs — their `<org>/<name>` portion contains a
+ * `/`, and `~` is the separator before `<event_version>`.
+ */
+export function buildOldIdempotencyKeyRegex(label: ScopedLabel): string {
+  return `.*~shipit~//${label}/default/[^/~]+~.*`;
+}
+
 export interface CanonicalIdMigrationStats {
   nodesDeleted: Record<(typeof SCOPED_LABELS)[number], number>;
   linkingKeysDeleted: Record<(typeof SCOPED_LABELS)[number], number>;
@@ -43,7 +71,7 @@ export async function runCanonicalIdMigration(
 
   for (const label of SCOPED_LABELS) {
     const oldPrefix = `shipit://${label}/default/`;
-    const oldShapeRegex = `^shipit://${label}/default/[^/]+$`;
+    const oldShapeRegex = buildOldCanonicalIdRegex(label);
 
     const nodeCount = await client.executeWrite(async (tx) => {
       const result = await tx.run(
@@ -76,15 +104,8 @@ export async function runCanonicalIdMigration(
     // canonical ID of this label. Without this, the orphan idempotency entry
     // blocks the writer from re-creating the wiped node — the dedup check
     // fires before writeNode is ever attempted, and the sync silently no-ops.
-    //
-    // Idempotency keys have the shape `<connector_id>:<canonical_id>:<version>`.
-    // The regex `.*:shipit://<label>/default/[^/]+:.*` matches keys whose
-    // canonical-ID portion is OLD-format (no slash between `default/` and the
-    // closing `:`). NEW-format keys (with `<org>/<name>`) contain a slash so
-    // they don't match — they stay intact and keep doing real dedup work.
-    // That makes this step idempotent like the other two: once the old-format
-    // entries are gone, subsequent boots match zero rows.
-    const oldKeyRegex = `.*:shipit://${label}/default/[^/]+:.*`;
+    // See `buildOldIdempotencyKeyRegex` for the stored key shape (`~` not `:`).
+    const oldKeyRegex = buildOldIdempotencyKeyRegex(label);
     const idempotencyCount = await client.executeWrite(async (tx) => {
       const result = await tx.run(
         `MATCH (i:_IdempotencyLog) WHERE i.key =~ $regex
