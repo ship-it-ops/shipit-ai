@@ -302,7 +302,7 @@ export const DEFAULT_SCHEMA: ShipItSchema = {
       to: 'RuntimeService',
       cardinality: 'N:M',
     },
-    OWNS: { from: 'Team', to: 'LogicalService', cardinality: '1:N' },
+    OWNS: { from: 'Team', to: 'LogicalService', cardinality: '1:N', semantics: 'ownership' },
     MEMBER_OF: { from: 'Person', to: 'Team', cardinality: 'N:M' },
     CONTRIBUTES_TO: {
       from: 'Person',
@@ -322,7 +322,12 @@ export const DEFAULT_SCHEMA: ShipItSchema = {
       to: 'LogicalService',
       cardinality: 'N:M',
     },
-    CODEOWNER_OF: { from: 'Person', to: 'Repository', cardinality: 'N:M' },
+    CODEOWNER_OF: {
+      from: 'Person',
+      to: 'Repository',
+      cardinality: 'N:M',
+      semantics: 'ownership',
+    },
     ON_CALL_FOR: {
       from: 'Person',
       to: 'LogicalService',

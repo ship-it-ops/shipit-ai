@@ -297,7 +297,7 @@ queries:
 MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC;
 
 // Everything around a specific entity
-MATCH (n {canonical_id: "shipit://repository/default/payments-api"})-[r]-(m)
+MATCH (n {id: "shipit://repository/default/acme-corp/payments-api"})-[r]-(m)
 RETURN n, r, m LIMIT 50;
 
 // Wipe everything (dev only!)

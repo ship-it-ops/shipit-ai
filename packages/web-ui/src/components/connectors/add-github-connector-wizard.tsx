@@ -501,12 +501,12 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                   <Field
                     label="Org login"
                     required
-                    hint="GitHub org login — the slug after github.com/, e.g. `acme-corp`. The org must already exist and you must be an admin."
+                    hint="GitHub org login — the slug after github.com/, e.g. `shipitops`. The org must already exist and you must be an admin."
                   >
                     {(p) => (
                       <Input
                         {...p}
-                        placeholder="acme-corp"
+                        placeholder="shipitops"
                         value={manifestOwner}
                         onChange={(e) => setManifestOwner(e.target.value)}
                         disabled={perOrgPending}
@@ -618,12 +618,12 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                     </p>
                     <Field
                       label="Owner organization (optional)"
-                      hint="GitHub org LOGIN — the slug after github.com/, e.g. `acme-corp`. The org must already exist. Leave blank to create the App under your personal GitHub account; you can transfer it to an org from GitHub later."
+                      hint="GitHub org LOGIN — the slug after github.com/, e.g. `shipitops`. The org must already exist. Leave blank to create the App under your personal GitHub account; you can transfer it to an org from GitHub later."
                     >
                       {(p) => (
                         <Input
                           {...p}
-                          placeholder="acme-corp"
+                          placeholder="shipitops"
                           value={manifestOwner}
                           onChange={(e) => setManifestOwner(e.target.value)}
                           disabled={manifestPending}

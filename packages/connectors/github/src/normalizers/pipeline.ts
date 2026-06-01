@@ -1,5 +1,5 @@
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
-import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 import type { GitHubWorkflow } from '../fetchers/workflows.js';
 
 function makeClaim(key: string, value: unknown, sourceId: string): PropertyClaim {
@@ -31,7 +31,7 @@ export function normalizePipeline(
   const lastRun = workflow.recent_runs[0] ?? null;
 
   const node: CanonicalNode = {
-    id: buildCanonicalId('Pipeline', 'default', pipelineName),
+    id: buildScopedCanonicalId('Pipeline', 'default', org, pipelineName),
     label: 'Pipeline',
     properties: {
       name: workflow.name,
@@ -56,7 +56,7 @@ export function normalizePipeline(
     _event_version: 1,
   };
 
-  const repoId = buildCanonicalId('Repository', 'default', workflow.repo_name);
+  const repoId = buildScopedCanonicalId('Repository', 'default', org, workflow.repo_name);
 
   const edge: CanonicalEdge = {
     type: 'BUILT_BY',

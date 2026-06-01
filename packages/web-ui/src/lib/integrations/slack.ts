@@ -5,10 +5,10 @@ import type { IncidentIntegration, ServiceContext, TeamContext } from './types';
  * Slack adapter.
  *
  * Configuration: `frontend.integrations.slack.workspace` in shipit.config.yaml
- * — the workspace subdomain (e.g., "acme" for https://acme.slack.com).
+ * — the workspace subdomain (e.g., "shipitops" for https://shipitops.slack.com).
  * Optional `frontend.integrations.slack.channelPrefix` controls how team
- * slugs convert to channel names; default `team-` so `payments-team`
- * → `#team-payments-team`.
+ * slugs convert to channel names; default `team-` so `api-team`
+ * → `#team-api`.
  *
  * Without a Slack bot token (Phase 2) we can't open a *new* incident
  * channel, but we can deeplink to the team's standing channel — the most
@@ -33,8 +33,8 @@ export const slackAdapter: IncidentIntegration = {
     const url = workspaceUrl();
     if (!url) return null;
     const prefix = clientConfig.integrations.slack.channelPrefix;
-    // Team slugs in the catalog look like "payments-team"; strip a trailing
-    // "-team" suffix so we get "#team-payments" not "#team-payments-team".
+    // Team slugs in the catalog look like "api-team"; strip a trailing
+    // "-team" suffix so we get "#team-api" not "#team-api-team".
     const slug = team.slug.replace(/-team$/, '');
     const channel = `${prefix}${slug}`;
     return `${url}/app_redirect?channel=${encodeURIComponent(channel)}`;

@@ -1,5 +1,5 @@
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
-import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 import type { GitHubRepo } from '../fetchers/repositories.js';
 
 function makeClaim(key: string, value: unknown, org: string, repoName: string): PropertyClaim {
@@ -31,7 +31,7 @@ export function normalizeRepository(
   ];
 
   const node: CanonicalNode = {
-    id: buildCanonicalId('Repository', 'default', repo.name),
+    id: buildScopedCanonicalId('Repository', 'default', org, repo.name),
     label: 'Repository',
     properties: {
       name: repo.name,

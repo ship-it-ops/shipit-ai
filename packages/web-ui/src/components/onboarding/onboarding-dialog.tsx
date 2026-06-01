@@ -198,7 +198,7 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
     toast({
       variant: 'ok',
       title: 'Saved · demo data loaded',
-      description: 'Your dev identity and the Acme Pay sample dataset are ready.',
+      description: 'Your dev identity and the ShipItOps sample dataset are ready.',
     });
     setSaving('idle');
     onOpenChange(false);
@@ -506,7 +506,7 @@ function SeedStep({
         <Checkbox checked={seedRequested} onCheckedChange={(v) => onChange(v === true)} />
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-text text-[13px] font-medium">
-            Seed the Acme Pay sample dataset
+            Seed the ShipItOps sample dataset
           </span>
           <span className="text-text-muted text-[12px]">
             ~170 entities · ~300 edges. Gives the catalog, graph explorer, incident, and team views
@@ -551,7 +551,7 @@ function ReviewStep({
     {
       label: 'Seed demo data',
       value: willSeed
-        ? 'Yes (Acme Pay)'
+        ? 'Yes (ShipItOps)'
         : seedStatus === 'has-data'
           ? 'No (graph already populated)'
           : seedStatus === 'unreachable'

@@ -153,7 +153,7 @@ Claims are stored as a JSON `_claims` array on each node (see [ADR-002](adrs/ADR
 Entities are identified across sources using a two-step ladder (Phase 1):
 
 1. **Primary Key** — Canonical ID (`shipit://label/namespace/name`). Exact match.
-2. **Linking Key** — Source-specific ID (e.g., `github://acme/config-service`, `k8s://prod-cluster/default/config-svc`). Stored as `_LinkingKey` nodes in Neo4j.
+2. **Linking Key** — Source-specific ID (e.g., `github://acme-corp/config-service`, `k8s://prod-cluster/default/config-svc`). Stored as `_LinkingKey` nodes in Neo4j.
 
 Phase 2 will add fuzzy matching for entities that can't be linked by exact keys.
 
@@ -163,11 +163,20 @@ Phase 2 will add fuzzy matching for entities that can't be linked by exact keys.
 shipit://{label}/{namespace}/{name}
 ```
 
+For entities owned by a multi-tenant source (e.g., GitHub orgs), `{name}` is
+scoped by the owning tenant to avoid silent cross-tenant collisions:
+
+```
+shipit://{label}/{namespace}/{scope}/{name}
+```
+
 Examples:
 
-- `shipit://repository/default/config-service`
-- `shipit://team/default/platform-team`
+- `shipit://repository/default/acme-corp/config-service`
+- `shipit://team/default/acme-corp/platform-team`
+- `shipit://pipeline/default/acme-corp/config-service-ci`
 - `shipit://deployment/production/config-svc-prod`
+- `shipit://person/default/alice` _(unscoped — GitHub logins are globally unique)_
 
 ## MCP Server
 

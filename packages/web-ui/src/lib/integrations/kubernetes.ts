@@ -7,9 +7,9 @@ import type { DeploymentContext, IncidentIntegration } from './types';
  * Configuration: `frontend.integrations.kubernetes.consoleUrlTemplate` in
  * shipit.config.yaml — a URL template with `{cluster}`, `{namespace}`,
  * `{name}` placeholders. Examples:
- *   - Argo CD:  `https://argo.acme.com/applications/{namespace}/{name}`
+ *   - Argo CD:  `https://argo.shipitops.com/applications/{namespace}/{name}`
  *   - Lens:     `lens://catalog/general/{cluster}/{namespace}/{name}`
- *   - Generic:  `https://k8s-console.acme.com/{cluster}/{namespace}/{name}`
+ *   - Generic:  `https://k8s-console.shipitops.com/{cluster}/{namespace}/{name}`
  *
  * Without the template the adapter is inert. The catalog connector
  * populates Deployment.cluster / namespace / name; if any are missing, we

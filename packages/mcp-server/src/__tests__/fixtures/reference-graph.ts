@@ -20,12 +20,12 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
   nodes: [
     // LogicalServices (5)
     {
-      id: 'shipit://logical-service/default/payments-api',
+      id: 'shipit://logical-service/default/graph-api',
       label: 'LogicalService',
       properties: {
-        name: 'payments-api',
+        name: 'graph-api',
         tier_effective: 1,
-        owner_effective: 'payments-team',
+        owner_effective: 'api-team',
         lifecycle_effective: 'production',
       },
     },
@@ -40,22 +40,22 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
       },
     },
     {
-      id: 'shipit://logical-service/default/ledger-service',
+      id: 'shipit://logical-service/default/claim-store',
       label: 'LogicalService',
       properties: {
-        name: 'ledger-service',
+        name: 'claim-store',
         tier_effective: 1,
-        owner_effective: 'payments-team',
+        owner_effective: 'api-team',
         lifecycle_effective: 'production',
       },
     },
     {
-      id: 'shipit://logical-service/default/card-issuance',
+      id: 'shipit://logical-service/default/connector-runtime',
       label: 'LogicalService',
       properties: {
-        name: 'card-issuance',
+        name: 'connector-runtime',
         tier_effective: 2,
-        owner_effective: 'cards-team',
+        owner_effective: 'ai-team',
         lifecycle_effective: 'production',
       },
     },
@@ -72,41 +72,44 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // Repositories (5)
     {
-      id: 'shipit://repository/default/payments-api',
+      id: 'shipit://repository/default/shipitops/graph-api',
       label: 'Repository',
-      properties: { name: 'payments-api', url: 'https://github.com/acme/payments-api' },
+      properties: { name: 'graph-api', url: 'https://github.com/shipitops/graph-api' },
     },
     {
-      id: 'shipit://repository/default/config-service',
+      id: 'shipit://repository/default/shipitops/config-service',
       label: 'Repository',
-      properties: { name: 'config-service', url: 'https://github.com/acme/config-service' },
+      properties: { name: 'config-service', url: 'https://github.com/shipitops/config-service' },
     },
     {
-      id: 'shipit://repository/default/ledger-service',
+      id: 'shipit://repository/default/shipitops/claim-store',
       label: 'Repository',
-      properties: { name: 'ledger-service', url: 'https://github.com/acme/ledger-service' },
+      properties: { name: 'claim-store', url: 'https://github.com/shipitops/claim-store' },
     },
     {
-      id: 'shipit://repository/default/card-issuance',
+      id: 'shipit://repository/default/shipitops/connector-runtime',
       label: 'Repository',
-      properties: { name: 'card-issuance', url: 'https://github.com/acme/card-issuance' },
+      properties: {
+        name: 'connector-runtime',
+        url: 'https://github.com/shipitops/connector-runtime',
+      },
     },
     {
-      id: 'shipit://repository/default/auth-service',
+      id: 'shipit://repository/default/shipitops/auth-service',
       label: 'Repository',
-      properties: { name: 'auth-service', url: 'https://github.com/acme/auth-service' },
+      properties: { name: 'auth-service', url: 'https://github.com/shipitops/auth-service' },
     },
 
     // Deployments (10: 2 per service: staging + prod)
     {
-      id: 'shipit://deployment/default/payments-api-prod',
+      id: 'shipit://deployment/default/graph-api-prod',
       label: 'Deployment',
-      properties: { name: 'payments-api-prod', environment: 'production', replicas: 3 },
+      properties: { name: 'graph-api-prod', environment: 'production', replicas: 3 },
     },
     {
-      id: 'shipit://deployment/default/payments-api-staging',
+      id: 'shipit://deployment/default/graph-api-staging',
       label: 'Deployment',
-      properties: { name: 'payments-api-staging', environment: 'staging', replicas: 1 },
+      properties: { name: 'graph-api-staging', environment: 'staging', replicas: 1 },
     },
     {
       id: 'shipit://deployment/default/config-service-prod',
@@ -119,24 +122,24 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
       properties: { name: 'config-service-staging', environment: 'staging', replicas: 1 },
     },
     {
-      id: 'shipit://deployment/default/ledger-service-prod',
+      id: 'shipit://deployment/default/claim-store-prod',
       label: 'Deployment',
-      properties: { name: 'ledger-service-prod', environment: 'production', replicas: 3 },
+      properties: { name: 'claim-store-prod', environment: 'production', replicas: 3 },
     },
     {
-      id: 'shipit://deployment/default/ledger-service-staging',
+      id: 'shipit://deployment/default/claim-store-staging',
       label: 'Deployment',
-      properties: { name: 'ledger-service-staging', environment: 'staging', replicas: 1 },
+      properties: { name: 'claim-store-staging', environment: 'staging', replicas: 1 },
     },
     {
-      id: 'shipit://deployment/default/card-issuance-prod',
+      id: 'shipit://deployment/default/connector-runtime-prod',
       label: 'Deployment',
-      properties: { name: 'card-issuance-prod', environment: 'production', replicas: 2 },
+      properties: { name: 'connector-runtime-prod', environment: 'production', replicas: 2 },
     },
     {
-      id: 'shipit://deployment/default/card-issuance-staging',
+      id: 'shipit://deployment/default/connector-runtime-staging',
       label: 'Deployment',
-      properties: { name: 'card-issuance-staging', environment: 'staging', replicas: 1 },
+      properties: { name: 'connector-runtime-staging', environment: 'staging', replicas: 1 },
     },
     {
       id: 'shipit://deployment/default/auth-service-prod',
@@ -151,9 +154,9 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // RuntimeServices (5)
     {
-      id: 'shipit://runtime-service/default/payments-api-runtime',
+      id: 'shipit://runtime-service/default/graph-api-runtime',
       label: 'RuntimeService',
-      properties: { name: 'payments-api-runtime' },
+      properties: { name: 'graph-api-runtime' },
     },
     {
       id: 'shipit://runtime-service/default/config-service-runtime',
@@ -161,14 +164,14 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
       properties: { name: 'config-service-runtime' },
     },
     {
-      id: 'shipit://runtime-service/default/ledger-service-runtime',
+      id: 'shipit://runtime-service/default/claim-store-runtime',
       label: 'RuntimeService',
-      properties: { name: 'ledger-service-runtime' },
+      properties: { name: 'claim-store-runtime' },
     },
     {
-      id: 'shipit://runtime-service/default/card-issuance-runtime',
+      id: 'shipit://runtime-service/default/connector-runtime-runtime',
       label: 'RuntimeService',
-      properties: { name: 'card-issuance-runtime' },
+      properties: { name: 'connector-runtime-runtime' },
     },
     {
       id: 'shipit://runtime-service/default/auth-service-runtime',
@@ -178,90 +181,90 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
 
     // Teams (3)
     {
-      id: 'shipit://team/default/payments-team',
+      id: 'shipit://team/default/shipitops/api-team',
       label: 'Team',
-      properties: { name: 'payments-team', email: 'payments@acme.com' },
+      properties: { name: 'api-team', email: 'api@shipitops.com' },
     },
     {
-      id: 'shipit://team/default/platform-team',
+      id: 'shipit://team/default/shipitops/platform-team',
       label: 'Team',
-      properties: { name: 'platform-team', email: 'platform@acme.com' },
+      properties: { name: 'platform-team', email: 'platform@shipitops.com' },
     },
     {
-      id: 'shipit://team/default/cards-team',
+      id: 'shipit://team/default/shipitops/ai-team',
       label: 'Team',
-      properties: { name: 'cards-team', email: 'cards@acme.com' },
+      properties: { name: 'ai-team', email: 'ai@shipitops.com' },
     },
 
     // Persons (8)
     {
       id: 'shipit://person/default/alice',
       label: 'Person',
-      properties: { name: 'Alice Smith', email: 'alice@acme.com' },
+      properties: { name: 'Alice Smith', email: 'alice@shipitops.com' },
     },
     {
       id: 'shipit://person/default/bob',
       label: 'Person',
-      properties: { name: 'Bob Jones', email: 'bob@acme.com' },
+      properties: { name: 'Bob Jones', email: 'bob@shipitops.com' },
     },
     {
       id: 'shipit://person/default/charlie',
       label: 'Person',
-      properties: { name: 'Charlie Brown', email: 'charlie@acme.com' },
+      properties: { name: 'Charlie Brown', email: 'charlie@shipitops.com' },
     },
     {
       id: 'shipit://person/default/diana',
       label: 'Person',
-      properties: { name: 'Diana Prince', email: 'diana@acme.com' },
+      properties: { name: 'Diana Prince', email: 'diana@shipitops.com' },
     },
     {
       id: 'shipit://person/default/eve',
       label: 'Person',
-      properties: { name: 'Eve Wilson', email: 'eve@acme.com' },
+      properties: { name: 'Eve Wilson', email: 'eve@shipitops.com' },
     },
     {
       id: 'shipit://person/default/frank',
       label: 'Person',
-      properties: { name: 'Frank Castle', email: 'frank@acme.com' },
+      properties: { name: 'Frank Castle', email: 'frank@shipitops.com' },
     },
     {
       id: 'shipit://person/default/grace',
       label: 'Person',
-      properties: { name: 'Grace Hopper', email: 'grace@acme.com' },
+      properties: { name: 'Grace Hopper', email: 'grace@shipitops.com' },
     },
     {
       id: 'shipit://person/default/hank',
       label: 'Person',
-      properties: { name: 'Hank Pym', email: 'hank@acme.com' },
+      properties: { name: 'Hank Pym', email: 'hank@shipitops.com' },
     },
 
     // Pipelines (3)
     {
-      id: 'shipit://pipeline/default/payments-ci',
+      id: 'shipit://pipeline/default/shipitops/graph-api-ci',
       label: 'Pipeline',
-      properties: { name: 'payments-ci', type: 'CI/CD' },
+      properties: { name: 'graph-api-ci', type: 'CI/CD' },
     },
     {
-      id: 'shipit://pipeline/default/config-ci',
+      id: 'shipit://pipeline/default/shipitops/config-service-ci',
       label: 'Pipeline',
-      properties: { name: 'config-ci', type: 'CI/CD' },
+      properties: { name: 'config-service-ci', type: 'CI/CD' },
     },
     {
-      id: 'shipit://pipeline/default/cards-ci',
+      id: 'shipit://pipeline/default/shipitops/connector-runtime-ci',
       label: 'Pipeline',
-      properties: { name: 'cards-ci', type: 'CI/CD' },
+      properties: { name: 'connector-runtime-ci', type: 'CI/CD' },
     },
 
     // Monitors (2)
     {
-      id: 'shipit://monitor/default/payments-latency',
+      id: 'shipit://monitor/default/graph-api-latency',
       label: 'Monitor',
-      properties: { name: 'payments-latency', status: 'OK' },
+      properties: { name: 'graph-api-latency', status: 'OK' },
     },
     {
-      id: 'shipit://monitor/default/payments-error-rate',
+      id: 'shipit://monitor/default/graph-api-error-rate',
       label: 'Monitor',
-      properties: { name: 'payments-error-rate', status: 'OK' },
+      properties: { name: 'graph-api-error-rate', status: 'OK' },
     },
   ],
 
@@ -269,40 +272,40 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     // IMPLEMENTED_BY: LogicalService -> Repository
     {
       type: 'IMPLEMENTED_BY',
-      from: 'shipit://logical-service/default/payments-api',
-      to: 'shipit://repository/default/payments-api',
+      from: 'shipit://logical-service/default/graph-api',
+      to: 'shipit://repository/default/shipitops/graph-api',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/config-service',
-      to: 'shipit://repository/default/config-service',
+      to: 'shipit://repository/default/shipitops/config-service',
     },
     {
       type: 'IMPLEMENTED_BY',
-      from: 'shipit://logical-service/default/ledger-service',
-      to: 'shipit://repository/default/ledger-service',
+      from: 'shipit://logical-service/default/claim-store',
+      to: 'shipit://repository/default/shipitops/claim-store',
     },
     {
       type: 'IMPLEMENTED_BY',
-      from: 'shipit://logical-service/default/card-issuance',
-      to: 'shipit://repository/default/card-issuance',
+      from: 'shipit://logical-service/default/connector-runtime',
+      to: 'shipit://repository/default/shipitops/connector-runtime',
     },
     {
       type: 'IMPLEMENTED_BY',
       from: 'shipit://logical-service/default/auth-service',
-      to: 'shipit://repository/default/auth-service',
+      to: 'shipit://repository/default/shipitops/auth-service',
     },
 
     // DEPLOYED_AS: LogicalService -> Deployment
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/payments-api',
-      to: 'shipit://deployment/default/payments-api-prod',
+      from: 'shipit://logical-service/default/graph-api',
+      to: 'shipit://deployment/default/graph-api-prod',
     },
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/payments-api',
-      to: 'shipit://deployment/default/payments-api-staging',
+      from: 'shipit://logical-service/default/graph-api',
+      to: 'shipit://deployment/default/graph-api-staging',
     },
     {
       type: 'DEPLOYED_AS',
@@ -316,23 +319,23 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     },
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/ledger-service',
-      to: 'shipit://deployment/default/ledger-service-prod',
+      from: 'shipit://logical-service/default/claim-store',
+      to: 'shipit://deployment/default/claim-store-prod',
     },
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/ledger-service',
-      to: 'shipit://deployment/default/ledger-service-staging',
+      from: 'shipit://logical-service/default/claim-store',
+      to: 'shipit://deployment/default/claim-store-staging',
     },
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/card-issuance',
-      to: 'shipit://deployment/default/card-issuance-prod',
+      from: 'shipit://logical-service/default/connector-runtime',
+      to: 'shipit://deployment/default/connector-runtime-prod',
     },
     {
       type: 'DEPLOYED_AS',
-      from: 'shipit://logical-service/default/card-issuance',
-      to: 'shipit://deployment/default/card-issuance-staging',
+      from: 'shipit://logical-service/default/connector-runtime',
+      to: 'shipit://deployment/default/connector-runtime-staging',
     },
     {
       type: 'DEPLOYED_AS',
@@ -348,8 +351,8 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     // EMITS_TELEMETRY_AS: LogicalService -> RuntimeService
     {
       type: 'EMITS_TELEMETRY_AS',
-      from: 'shipit://logical-service/default/payments-api',
-      to: 'shipit://runtime-service/default/payments-api-runtime',
+      from: 'shipit://logical-service/default/graph-api',
+      to: 'shipit://runtime-service/default/graph-api-runtime',
     },
     {
       type: 'EMITS_TELEMETRY_AS',
@@ -358,13 +361,13 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     },
     {
       type: 'EMITS_TELEMETRY_AS',
-      from: 'shipit://logical-service/default/ledger-service',
-      to: 'shipit://runtime-service/default/ledger-service-runtime',
+      from: 'shipit://logical-service/default/claim-store',
+      to: 'shipit://runtime-service/default/claim-store-runtime',
     },
     {
       type: 'EMITS_TELEMETRY_AS',
-      from: 'shipit://logical-service/default/card-issuance',
-      to: 'shipit://runtime-service/default/card-issuance-runtime',
+      from: 'shipit://logical-service/default/connector-runtime',
+      to: 'shipit://runtime-service/default/connector-runtime-runtime',
     },
     {
       type: 'EMITS_TELEMETRY_AS',
@@ -375,157 +378,157 @@ export const REFERENCE_GRAPH: ReferenceGraph = {
     // DEPENDS_ON: LogicalService -> LogicalService
     {
       type: 'DEPENDS_ON',
-      from: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://logical-service/default/graph-api',
       to: 'shipit://logical-service/default/config-service',
     },
     {
       type: 'DEPENDS_ON',
-      from: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://logical-service/default/graph-api',
       to: 'shipit://logical-service/default/auth-service',
     },
     {
       type: 'DEPENDS_ON',
-      from: 'shipit://logical-service/default/ledger-service',
+      from: 'shipit://logical-service/default/claim-store',
       to: 'shipit://logical-service/default/config-service',
     },
     {
       type: 'DEPENDS_ON',
-      from: 'shipit://logical-service/default/card-issuance',
-      to: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://logical-service/default/connector-runtime',
+      to: 'shipit://logical-service/default/graph-api',
     },
     {
       type: 'DEPENDS_ON',
-      from: 'shipit://logical-service/default/card-issuance',
+      from: 'shipit://logical-service/default/connector-runtime',
       to: 'shipit://logical-service/default/auth-service',
     },
 
     // CALLS: RuntimeService -> RuntimeService
     {
       type: 'CALLS',
-      from: 'shipit://runtime-service/default/payments-api-runtime',
+      from: 'shipit://runtime-service/default/graph-api-runtime',
       to: 'shipit://runtime-service/default/config-service-runtime',
     },
     {
       type: 'CALLS',
-      from: 'shipit://runtime-service/default/card-issuance-runtime',
-      to: 'shipit://runtime-service/default/payments-api-runtime',
+      from: 'shipit://runtime-service/default/connector-runtime-runtime',
+      to: 'shipit://runtime-service/default/graph-api-runtime',
     },
 
     // OWNS: Team -> LogicalService
     {
       type: 'OWNS',
-      from: 'shipit://team/default/payments-team',
-      to: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://team/default/shipitops/api-team',
+      to: 'shipit://logical-service/default/graph-api',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/payments-team',
-      to: 'shipit://logical-service/default/ledger-service',
+      from: 'shipit://team/default/shipitops/api-team',
+      to: 'shipit://logical-service/default/claim-store',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/platform-team',
+      from: 'shipit://team/default/shipitops/platform-team',
       to: 'shipit://logical-service/default/config-service',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/platform-team',
+      from: 'shipit://team/default/shipitops/platform-team',
       to: 'shipit://logical-service/default/auth-service',
     },
     {
       type: 'OWNS',
-      from: 'shipit://team/default/cards-team',
-      to: 'shipit://logical-service/default/card-issuance',
+      from: 'shipit://team/default/shipitops/ai-team',
+      to: 'shipit://logical-service/default/connector-runtime',
     },
 
     // MEMBER_OF: Person -> Team
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/alice',
-      to: 'shipit://team/default/payments-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/bob',
-      to: 'shipit://team/default/payments-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/charlie',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/diana',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/eve',
-      to: 'shipit://team/default/platform-team',
+      to: 'shipit://team/default/shipitops/platform-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/frank',
-      to: 'shipit://team/default/cards-team',
+      to: 'shipit://team/default/shipitops/ai-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/grace',
-      to: 'shipit://team/default/cards-team',
+      to: 'shipit://team/default/shipitops/ai-team',
     },
     {
       type: 'MEMBER_OF',
       from: 'shipit://person/default/hank',
-      to: 'shipit://team/default/payments-team',
+      to: 'shipit://team/default/shipitops/api-team',
     },
 
     // BUILT_BY: Repository -> Pipeline
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/payments-api',
-      to: 'shipit://pipeline/default/payments-ci',
+      from: 'shipit://repository/default/shipitops/graph-api',
+      to: 'shipit://pipeline/default/shipitops/graph-api-ci',
     },
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/config-service',
-      to: 'shipit://pipeline/default/config-ci',
+      from: 'shipit://repository/default/shipitops/config-service',
+      to: 'shipit://pipeline/default/shipitops/config-service-ci',
     },
     {
       type: 'BUILT_BY',
-      from: 'shipit://repository/default/card-issuance',
-      to: 'shipit://pipeline/default/cards-ci',
+      from: 'shipit://repository/default/shipitops/connector-runtime',
+      to: 'shipit://pipeline/default/shipitops/connector-runtime-ci',
     },
 
     // MONITORS: Monitor -> LogicalService
     {
       type: 'MONITORS',
-      from: 'shipit://monitor/default/payments-latency',
-      to: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://monitor/default/graph-api-latency',
+      to: 'shipit://logical-service/default/graph-api',
     },
     {
       type: 'MONITORS',
-      from: 'shipit://monitor/default/payments-error-rate',
-      to: 'shipit://logical-service/default/payments-api',
+      from: 'shipit://monitor/default/graph-api-error-rate',
+      to: 'shipit://logical-service/default/graph-api',
     },
 
     // CODEOWNER_OF: Person -> Repository
     {
       type: 'CODEOWNER_OF',
       from: 'shipit://person/default/alice',
-      to: 'shipit://repository/default/payments-api',
+      to: 'shipit://repository/default/shipitops/graph-api',
     },
     {
       type: 'CODEOWNER_OF',
       from: 'shipit://person/default/charlie',
-      to: 'shipit://repository/default/config-service',
+      to: 'shipit://repository/default/shipitops/config-service',
     },
 
     // ON_CALL_FOR: Person -> LogicalService
     {
       type: 'ON_CALL_FOR',
       from: 'shipit://person/default/alice',
-      to: 'shipit://logical-service/default/payments-api',
+      to: 'shipit://logical-service/default/graph-api',
     },
     {
       type: 'ON_CALL_FOR',

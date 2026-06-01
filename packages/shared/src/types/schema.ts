@@ -18,12 +18,21 @@ export interface SchemaNodeTypeDef {
   };
 }
 
+/**
+ * Behavioral categories the UI uses to group relationships. Marking a
+ * relationship as `ownership` opts it into the Owner filter on the graph
+ * explorer — the source node's `name` is treated as an owner of the target.
+ * Kept as a single-value union for now; widen as more categories emerge.
+ */
+export type RelTypeSemantics = 'ownership';
+
 export interface SchemaRelTypeDef {
   from: string;
   to: string;
   cardinality: '1:1' | '1:N' | 'N:1' | 'N:M';
   properties?: Record<string, SchemaPropertyDef>;
   description?: string;
+  semantics?: RelTypeSemantics;
 }
 
 export interface ShipItSchema {

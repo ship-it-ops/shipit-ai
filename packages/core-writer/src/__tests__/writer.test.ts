@@ -8,7 +8,7 @@ import { DEFAULT_CONFIG } from '../config.js';
 
 function makeNode(name: string): CanonicalNode {
   return {
-    id: `shipit://repository/default/${name}`,
+    id: `shipit://repository/default/org/${name}`,
     label: 'Repository',
     properties: { name },
     _claims: [
@@ -33,8 +33,8 @@ function makeNode(name: string): CanonicalNode {
 function makeEdge(from: string, to: string): CanonicalEdge {
   return {
     type: 'DEPENDS_ON',
-    from: `shipit://repository/default/${from}`,
-    to: `shipit://repository/default/${to}`,
+    from: `shipit://repository/default/org/${from}`,
+    to: `shipit://repository/default/org/${to}`,
     _source: 'github',
     _confidence: 0.9,
     _ingested_at: '2026-02-28T10:00:00Z',
@@ -170,7 +170,7 @@ describe('CoreWriter', () => {
 
   it('reconciles identity and uses existing canonical ID for merge', async () => {
     // Pre-register a linking key pointing to an existing node
-    const existingId = 'shipit://repository/default/payments-api';
+    const existingId = 'shipit://repository/default/org/payments-api';
     const linkingKey = 'github://org/payments-api';
     await linkingKeyIndex.register(existingId, linkingKey);
 

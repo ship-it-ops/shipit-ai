@@ -32,3 +32,4 @@ service-account*.json
 .secretlint-cache
 gitleaks-report.json
 ClaudePlans/
+.claude/worktrees/

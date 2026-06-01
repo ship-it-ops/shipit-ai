@@ -39,7 +39,7 @@ The 10 foundational choices, all in force as of v1:
 
 ## Consequences
 
-- `Repository` canonical IDs will need org namespacing once multi-org orgs share repo names (`shipit://repository/default/<org>/<name>`). Tracked as an [open question](../open-questions/canonical-id-org-namespacing.md) — decide before any cross-org repo collision lands.
+- `Repository`, `Team`, and `Pipeline` canonical IDs are now org-scoped (`shipit://<label>/default/<org>/<name>`) — see [canonical-id-org-namespacing](./canonical-id-org-namespacing.md). `Person` stays unscoped because GitHub logins are globally unique.
 - A leaked App private key reads every org the App is installed in. Mitigated by **per-org App override** (see [per-org-github-app-override](./per-org-github-app-override.md)) for orgs that need isolation.
 - The webhook secret is currently global; per-App webhook secrets are [open](../open-questions/per-app-webhook-secrets.md) for P1.
 

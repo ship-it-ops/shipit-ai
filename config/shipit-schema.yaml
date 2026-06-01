@@ -307,6 +307,7 @@ relationship_types:
     from: Team
     to: LogicalService
     cardinality: '1:N'
+    semantics: ownership
 
   MEMBER_OF:
     from: Person
@@ -347,6 +348,7 @@ relationship_types:
     from: Person
     to: Repository
     cardinality: 'N:M'
+    semantics: ownership
 
   ON_CALL_FOR:
     from: Person

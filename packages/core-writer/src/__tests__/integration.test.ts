@@ -8,7 +8,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { CanonicalEntity, EventBusClient, EventEnvelope } from '@shipit-ai/shared';
-import { buildCanonicalId } from '@shipit-ai/shared';
+import { buildCanonicalId, buildScopedCanonicalId } from '@shipit-ai/shared';
+
+const ORG = 'shipitops';
 import { CoreWriter, type NodeWriter } from '../writer.js';
 import { InMemoryLinkingKeyIndex } from '../identity/linking-key-index.js';
 import { InMemoryIdempotencyChecker } from '../idempotency.js';
@@ -21,11 +23,11 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
   return {
     nodes: [
       {
-        id: buildCanonicalId('Repository', 'default', 'payments-api'),
+        id: buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
         label: 'Repository',
         properties: {
-          name: 'payments-api',
-          url: 'https://github.com/acme-corp/payments-api',
+          name: 'graph-api',
+          url: 'https://github.com/shipitops/graph-api',
           default_branch: 'main',
           visibility: 'private',
           language: 'TypeScript',
@@ -33,9 +35,9 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
         _claims: [
           {
             property_key: 'name',
-            value: 'payments-api',
+            value: 'graph-api',
             source: 'github',
-            source_id: 'github://acme-corp/payments-api',
+            source_id: 'github://shipitops/graph-api',
             ingested_at: now,
             confidence: 0.9,
             evidence: null,
@@ -44,20 +46,20 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
             property_key: 'language',
             value: 'TypeScript',
             source: 'github',
-            source_id: 'github://acme-corp/payments-api',
+            source_id: 'github://shipitops/graph-api',
             ingested_at: now,
             confidence: 0.9,
             evidence: null,
           },
         ],
         _source_system: 'github',
-        _source_org: 'github/acme-corp',
-        _source_id: 'github://acme-corp/payments-api',
+        _source_org: 'github/shipitops',
+        _source_id: 'github://shipitops/graph-api',
         _last_synced: now,
         _event_version: 1,
       },
       {
-        id: buildCanonicalId('Team', 'default', 'platform'),
+        id: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
         label: 'Team',
         properties: { name: 'Platform Team', slug: 'platform' },
         _claims: [
@@ -65,15 +67,15 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
             property_key: 'name',
             value: 'Platform Team',
             source: 'github',
-            source_id: 'github://acme-corp/team/platform',
+            source_id: 'github://shipitops/team/platform',
             ingested_at: now,
             confidence: 0.9,
             evidence: null,
           },
         ],
         _source_system: 'github',
-        _source_org: 'github/acme-corp',
-        _source_id: 'github://acme-corp/team/platform',
+        _source_org: 'github/shipitops',
+        _source_id: 'github://shipitops/team/platform',
         _last_synced: now,
         _event_version: 1,
       },
@@ -86,15 +88,15 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
             property_key: 'login',
             value: 'alice',
             source: 'github',
-            source_id: 'github://acme-corp/user/alice',
+            source_id: 'github://shipitops/user/alice',
             ingested_at: now,
             confidence: 0.9,
             evidence: null,
           },
         ],
         _source_system: 'github',
-        _source_org: 'github/acme-corp',
-        _source_id: 'github://acme-corp/user/alice',
+        _source_org: 'github/shipitops',
+        _source_id: 'github://shipitops/user/alice',
         _last_synced: now,
         _event_version: 1,
       },
@@ -103,15 +105,15 @@ function createGitHubNormalizedOutput(): CanonicalEntity {
       {
         type: 'MEMBER_OF',
         from: buildCanonicalId('Person', 'default', 'alice'),
-        to: buildCanonicalId('Team', 'default', 'platform'),
+        to: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
         _source: 'github',
         _confidence: 0.9,
         _ingested_at: now,
       },
       {
         type: 'CODEOWNER_OF',
-        from: buildCanonicalId('Team', 'default', 'platform'),
-        to: buildCanonicalId('Repository', 'default', 'payments-api'),
+        from: buildScopedCanonicalId('Team', 'default', ORG, 'platform'),
+        to: buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
         properties: { pattern: '*' },
         _source: 'github',
         _confidence: 0.95,
@@ -159,7 +161,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
   it('processes GitHub connector output end-to-end', async () => {
     const normalized = createGitHubNormalizedOutput();
-    const event = makeEnvelope(normalized, 'github-acme-corp');
+    const event = makeEnvelope(normalized, 'github-shipitops');
 
     const result = await writer.processEvent(event);
 
@@ -170,47 +172,53 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
   it('creates Repository, Team, and Person nodes', async () => {
     const normalized = createGitHubNormalizedOutput();
-    const event = makeEnvelope(normalized, 'github-acme-corp');
+    const event = makeEnvelope(normalized, 'github-shipitops');
 
     await writer.processEvent(event);
 
-    expect(writtenNodes.has(buildCanonicalId('Repository', 'default', 'payments-api'))).toBe(true);
-    expect(writtenNodes.has(buildCanonicalId('Team', 'default', 'platform'))).toBe(true);
+    expect(
+      writtenNodes.has(buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api')),
+    ).toBe(true);
+    expect(writtenNodes.has(buildScopedCanonicalId('Team', 'default', ORG, 'platform'))).toBe(true);
     expect(writtenNodes.has(buildCanonicalId('Person', 'default', 'alice'))).toBe(true);
   });
 
   it('creates MEMBER_OF and CODEOWNER_OF edges', async () => {
     const normalized = createGitHubNormalizedOutput();
-    const event = makeEnvelope(normalized, 'github-acme-corp');
+    const event = makeEnvelope(normalized, 'github-shipitops');
 
     await writer.processEvent(event);
 
     const memberOfEdge = writtenEdges.find((e) => e.type === 'MEMBER_OF');
     expect(memberOfEdge).toBeDefined();
     expect(memberOfEdge!.from).toBe(buildCanonicalId('Person', 'default', 'alice'));
-    expect(memberOfEdge!.to).toBe(buildCanonicalId('Team', 'default', 'platform'));
+    expect(memberOfEdge!.to).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
 
     const codeownerEdge = writtenEdges.find((e) => e.type === 'CODEOWNER_OF');
     expect(codeownerEdge).toBeDefined();
-    expect(codeownerEdge!.from).toBe(buildCanonicalId('Team', 'default', 'platform'));
-    expect(codeownerEdge!.to).toBe(buildCanonicalId('Repository', 'default', 'payments-api'));
+    expect(codeownerEdge!.from).toBe(buildScopedCanonicalId('Team', 'default', ORG, 'platform'));
+    expect(codeownerEdge!.to).toBe(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
+    );
   });
 
   it('resolves effective properties from claims', async () => {
     const normalized = createGitHubNormalizedOutput();
-    const event = makeEnvelope(normalized, 'github-acme-corp');
+    const event = makeEnvelope(normalized, 'github-shipitops');
 
     await writer.processEvent(event);
 
-    const repoEntry = writtenNodes.get(buildCanonicalId('Repository', 'default', 'payments-api'));
+    const repoEntry = writtenNodes.get(
+      buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
+    );
     expect(repoEntry).toBeDefined();
-    expect(repoEntry!.effectiveProps).toHaveProperty('name', 'payments-api');
+    expect(repoEntry!.effectiveProps).toHaveProperty('name', 'graph-api');
     expect(repoEntry!.effectiveProps).toHaveProperty('language', 'TypeScript');
   });
 
   it('deduplicates on re-processing the same event', async () => {
     const normalized = createGitHubNormalizedOutput();
-    const event = makeEnvelope(normalized, 'github-acme-corp');
+    const event = makeEnvelope(normalized, 'github-shipitops');
 
     await writer.processEvent(event);
     const result2 = await writer.processEvent(event);
@@ -224,7 +232,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
   it('merges Backstage claims with GitHub claims on same entity', async () => {
     // First: GitHub provides the repo
     const githubOutput = createGitHubNormalizedOutput();
-    const githubEvent = makeEnvelope(githubOutput, 'github-acme-corp');
+    const githubEvent = makeEnvelope(githubOutput, 'github-shipitops');
     await writer.processEvent(githubEvent);
 
     // Simulate existing claims returned from "Neo4j" for the repo node
@@ -235,15 +243,15 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     const backstageOutput: CanonicalEntity = {
       nodes: [
         {
-          id: buildCanonicalId('Repository', 'default', 'payments-api'),
+          id: buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api'),
           label: 'Repository',
-          properties: { name: 'payments-api', tier: 1 },
+          properties: { name: 'graph-api', tier: 1 },
           _claims: [
             {
               property_key: 'tier',
               value: 1,
               source: 'backstage',
-              source_id: 'backstage://default/component/payments-api',
+              source_id: 'backstage://default/component/graph-api',
               ingested_at: new Date().toISOString(),
               confidence: 0.95,
               evidence: 'catalog-info.yaml',
@@ -251,7 +259,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
           ],
           _source_system: 'backstage',
           _source_org: 'backstage/default',
-          _source_id: 'backstage://default/component/payments-api',
+          _source_id: 'backstage://default/component/graph-api',
           _last_synced: new Date().toISOString(),
           _event_version: 2,
         },
@@ -266,7 +274,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
       .mocked(nodeWriter.writeNode)
       .mock.calls.find(
         (call) =>
-          call[0].id === buildCanonicalId('Repository', 'default', 'payments-api') &&
+          call[0].id === buildScopedCanonicalId('Repository', 'default', ORG, 'graph-api') &&
           call[0]._source_system === 'backstage',
       );
     expect(repoWriteCall).toBeDefined();
@@ -303,7 +311,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
     // Step 1: Connector produces normalized output and publishes via event bus
     const normalized = createGitHubNormalizedOutput();
-    await mockEventBus.publish([normalized], 'github-acme-corp');
+    await mockEventBus.publish([normalized], 'github-shipitops');
     expect(publishedEvents).toHaveLength(1);
 
     // Step 2: Core Writer consumes events

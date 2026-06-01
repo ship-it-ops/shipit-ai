@@ -32,15 +32,15 @@ frontend:
   #
   # integrations:
   #   pagerduty:
-  #     subdomain: acme-pay
+  #     subdomain: shipitops
   #   datadog:
   #     site: datadoghq.com
   #   github:
   #     org: ship-it-ops
   #   slack:
-  #     workspace: acme
+  #     workspace: shipitops
   #   kubernetes:
-  #     consoleUrlTemplate: https://argo.acme.com/applications/{namespace}/{name}
+  #     consoleUrlTemplate: https://argo.shipitops.com/applications/{namespace}/{name}
 
 # ── GitHub connector instances ────────────────────────────────────────────
 # Most users won't hand-edit this — the Connector Hub at /connectors writes
@@ -51,12 +51,12 @@ frontend:
 #
 # connectors:
 #   instances:
-#     - id: github-acme
+#     - id: github-shipitops
 #       type: github
 #       enabled: true
-#       name: "Acme Corp"
+#       name: "ShipItOps"
 #       installationId: "12345678"      # numeric id from the App installation URL
-#       org: "acme-corp"
+#       org: "shipitops"
 #       schedule: "*/15 * * * *"        # polling cron, fallback for missed webhooks
 #       scope:
 #         repos:

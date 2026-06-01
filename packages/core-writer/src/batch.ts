@@ -20,7 +20,11 @@ export class BatchProcessor {
 
   start(): void {
     this.flushTimer = setInterval(() => {
-      void this.flush();
+      // Errors thrown inside the periodic flush would be unhandled rejections
+      // otherwise; log them so silent write failures don't go unnoticed.
+      void this.flush().catch((err) => {
+        console.error('[BatchProcessor] timer flush threw:', err);
+      });
     }, this.flushIntervalMs);
   }
 

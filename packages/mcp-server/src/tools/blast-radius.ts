@@ -35,7 +35,9 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
     {
       node: z
         .string()
-        .describe('Starting node canonical ID (e.g., shipit://repository/default/config-service)'),
+        .describe(
+          'Starting node canonical ID (e.g., shipit://repository/default/shipitops/config-service)',
+        ),
       depth: z
         .number()
         .int()

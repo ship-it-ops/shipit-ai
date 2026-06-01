@@ -80,6 +80,7 @@ export class CoreWriter {
 
     for (const event of batch) {
       const { payload } = event;
+      if (!payload || !Array.isArray(payload.nodes)) continue;
 
       // Process nodes
       for (const node of payload.nodes) {
@@ -124,6 +125,7 @@ export class CoreWriter {
       }
 
       // Process edges
+      if (!Array.isArray(payload.edges)) continue;
       for (const edge of payload.edges) {
         try {
           await this.nodeWriter.writeEdge(edge);
@@ -136,6 +138,13 @@ export class CoreWriter {
       }
     }
 
+    // Per-node errors are caught inside the loop above. Surface them so write
+    // failures don't disappear silently — `processBatch` returns the count
+    // but nothing else logs the actual reasons.
+    if (errors.length > 0) {
+      for (const e of errors.slice(0, 5)) console.error('[CoreWriter]', e);
+      if (errors.length > 5) console.error(`[CoreWriter] (+${errors.length - 5} more)`);
+    }
     return { nodesWritten, edgesWritten, duplicatesSkipped, errors };
   }
 }

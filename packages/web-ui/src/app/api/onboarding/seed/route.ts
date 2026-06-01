@@ -4,8 +4,9 @@ import { findConfigPaths } from '@/lib/onboarding/repo-root';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// Seed against Acme Pay (~170 entities). Local Neo4j writes typically finish
-// in 5–10s; cap at 60 to keep a runaway from holding the route open.
+// Seed against the ShipItOps sample dataset (~170 entities). Local Neo4j
+// writes typically finish in 5–10s; cap at 60 to keep a runaway from holding
+// the route open.
 export const maxDuration = 90;
 
 const SEED_TIMEOUT_MS = 60_000;

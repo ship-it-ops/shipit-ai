@@ -9,16 +9,16 @@ describe('find_owners tool', () => {
         createMockRecord({
           entity: {
             properties: {
-              id: 'shipit://logical-service/default/payments-api',
-              name: 'payments-api',
+              id: 'shipit://logical-service/default/graph-api',
+              name: 'graph-api',
             },
           },
           owners: [
             {
               properties: {
-                name: 'payments-team',
-                email: 'payments@acme.com',
-                id: 'shipit://team/default/payments-team',
+                name: 'api-team',
+                email: 'api@shipitops.com',
+                id: 'shipit://team/default/api-team',
               },
             },
           ],
@@ -26,7 +26,7 @@ describe('find_owners tool', () => {
             {
               properties: {
                 name: 'Alice Smith',
-                email: 'alice@acme.com',
+                email: 'alice@shipitops.com',
                 id: 'shipit://person/default/alice',
               },
             },
@@ -35,7 +35,7 @@ describe('find_owners tool', () => {
             {
               properties: {
                 name: 'Alice Smith',
-                email: 'alice@acme.com',
+                email: 'alice@shipitops.com',
                 id: 'shipit://person/default/alice',
               },
             },
@@ -56,7 +56,7 @@ describe('find_owners tool', () => {
     const onCall = record.get('on_call') as Array<{ properties: { name: string } }>;
 
     expect(owners.length).toBe(1);
-    expect(owners[0].properties.name).toBe('payments-team');
+    expect(owners[0].properties.name).toBe('api-team');
     expect(codeowners.length).toBe(1);
     expect(codeowners[0].properties.name).toBe('Alice Smith');
     expect(onCall.length).toBe(1);
@@ -68,12 +68,12 @@ describe('find_owners tool', () => {
       records: [
         createMockRecord({
           entity: { properties: { id: 'test-id' } },
-          owners: [{ properties: { name: 'payments-team', email: null, id: 'team-id' } }],
+          owners: [{ properties: { name: 'api-team', email: null, id: 'team-id' } }],
           codeowners: [],
           on_call: [],
           members: [
-            { properties: { name: 'Alice Smith', email: 'alice@acme.com', id: 'alice-id' } },
-            { properties: { name: 'Bob Jones', email: 'bob@acme.com', id: 'bob-id' } },
+            { properties: { name: 'Alice Smith', email: 'alice@shipitops.com', id: 'alice-id' } },
+            { properties: { name: 'Bob Jones', email: 'bob@shipitops.com', id: 'bob-id' } },
           ],
         }),
       ],

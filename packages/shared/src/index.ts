@@ -13,6 +13,7 @@ export type {
   SchemaPropertyDef,
   SchemaNodeTypeDef,
   SchemaRelTypeDef,
+  RelTypeSemantics,
   ShipItSchema,
 } from './types/schema.js';
 
@@ -54,7 +55,12 @@ export type {
 } from './types/reconciliation-api.js';
 
 // Identity utilities
-export { buildCanonicalId, parseCanonicalId, isValidCanonicalId } from './identity/canonical-id.js';
+export {
+  buildCanonicalId,
+  buildScopedCanonicalId,
+  parseCanonicalId,
+  isValidCanonicalId,
+} from './identity/canonical-id.js';
 
 export { buildLinkingKey, parseLinkingKey } from './identity/linking-key.js';
 
@@ -64,6 +70,7 @@ export type { ConnectorType } from './identity/linking-key.js';
 export { parseSchemaFile } from './schema/parser.js';
 export { validateSchema, validateSchemaRelationships } from './schema/validator.js';
 export { DEFAULT_SCHEMA } from './schema/defaults.js';
+export { DEFAULT_OWNERSHIP_REL_TYPES, getOwnershipRelTypes } from './schema/semantics.js';
 
 // Utilities
 export { computeEffectiveConfidence } from './utils/confidence.js';

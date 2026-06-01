@@ -1,7 +1,12 @@
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { randomUUID } from 'node:crypto';
-import type { CanonicalEntity, CanonicalNode, EventEnvelope } from '@shipit-ai/shared';
+import { createHash, randomUUID } from 'node:crypto';
+import type {
+  CanonicalEdge,
+  CanonicalEntity,
+  CanonicalNode,
+  EventEnvelope,
+} from '@shipit-ai/shared';
 import type { ResolvedConfig } from '../config.js';
 
 const EVENT_LOG_STREAM = 'shipit-event-log';
@@ -16,17 +21,45 @@ function buildIdempotencyKey(connectorId: string, node: CanonicalNode): string {
   return `${connectorId}:${node.id}:${node._event_version}`.replace(/:/g, '~');
 }
 
+function buildEdgeBatchIdempotencyKey(connectorId: string, edges: CanonicalEdge[]): string {
+  // Stable, content-derived key so re-syncing the same edge batch dedupes at
+  // the BullMQ layer (jobId). Sort to make order-independent: a connector
+  // emitting the same edges in different order should produce the same key.
+  const tuples = edges
+    .map((e) => `${e.from}|${e.to}|${e.type}`)
+    .sort()
+    .join(';');
+  const hash = createHash('sha256').update(tuples).digest('hex').slice(0, 16);
+  return `${connectorId}:edges:${hash}`.replace(/:/g, '~');
+}
+
 function buildEnvelopes(entities: CanonicalEntity[], connectorId: string): EventEnvelope[] {
   const envelopes: EventEnvelope[] = [];
   const now = new Date().toISOString();
 
   for (const entity of entities) {
-    for (const node of entity.nodes) {
+    if (entity.nodes.length > 0) {
+      // One envelope per node — payload carries the whole entity so the
+      // writer sees both nodes and edges. Idempotency key is per-node so
+      // BullMQ dedupes at the entity-membership level.
+      for (const node of entity.nodes) {
+        envelopes.push({
+          id: randomUUID(),
+          timestamp: now,
+          connector_id: connectorId,
+          idempotency_key: buildIdempotencyKey(connectorId, node),
+          payload: entity,
+        });
+      }
+    } else if (entity.edges.length > 0) {
+      // Edge-only entity (e.g., a Codeowners batch normalizes to edges with
+      // no new nodes). Without this branch the entity is silently dropped
+      // before it ever reaches the event bus.
       envelopes.push({
         id: randomUUID(),
         timestamp: now,
         connector_id: connectorId,
-        idempotency_key: buildIdempotencyKey(connectorId, node),
+        idempotency_key: buildEdgeBatchIdempotencyKey(connectorId, entity.edges),
         payload: entity,
       });
     }

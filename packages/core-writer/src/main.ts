@@ -17,6 +17,7 @@ import { Neo4jClient } from './neo4j/client.js';
 import { Neo4jNodeWriter } from './neo4j/node-writer.js';
 import { Neo4jLinkingKeyIndex } from './neo4j/linking-key-index.js';
 import { Neo4jIdempotencyChecker } from './neo4j/idempotency-checker.js';
+import { runCanonicalIdMigration } from './neo4j/migrations.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -33,6 +34,23 @@ async function main(): Promise<void> {
     // Fail loudly — if we can't reach Neo4j there's nothing to do.
     console.error(`CoreWriter failed to connect to Neo4j: ${(err as Error).message}`);
     process.exit(1);
+  }
+
+  const migrationStats = await runCanonicalIdMigration(neo4jClient);
+  const totalAffected =
+    Object.values(migrationStats.nodesDeleted).reduce((a, b) => a + b, 0) +
+    Object.values(migrationStats.idempotencyEntriesDeleted).reduce((a, b) => a + b, 0);
+  if (totalAffected > 0) {
+    const labels = Object.keys(migrationStats.nodesDeleted) as Array<
+      keyof typeof migrationStats.nodesDeleted
+    >;
+    const summary = labels
+      .map(
+        (label) =>
+          `${label}: nodes=${migrationStats.nodesDeleted[label]} idempotency=${migrationStats.idempotencyEntriesDeleted[label]}`,
+      )
+      .join('; ');
+    console.log(`CoreWriter canonical-ID migration: ${summary}`);
   }
 
   if (!config.backend.redis.url) {

@@ -149,10 +149,15 @@ export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelP
             size="sm"
             icon={<IconGlyph name="search" size={11} />}
             onClick={() => setDialog('claims')}
+            className="relative"
           >
             Inspect claims
             {claims.length > 0 && (
-              <Badge variant="neutral" size="sm" className="ml-auto font-mono">
+              <Badge
+                variant="neutral"
+                size="sm"
+                className="absolute top-1/2 right-3 -translate-y-1/2 font-mono"
+              >
                 {claims.length}
               </Badge>
             )}

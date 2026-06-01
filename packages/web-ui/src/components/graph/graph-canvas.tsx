@@ -2,14 +2,21 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import cytoscape, { type ElementDefinition } from 'cytoscape';
+import { useQuery } from '@tanstack/react-query';
+import {
+  DEFAULT_OWNERSHIP_REL_TYPES,
+  getOwnershipRelTypes,
+  type ShipItSchema as SharedShipItSchema,
+} from '@shipit-ai/shared/schema';
 import {
   GraphCanvas as DSGraphCanvas,
   readThemeTokens,
   type GraphCanvasHandle,
 } from '@ship-it-ui/cytoscape';
 import { useTheme } from '@ship-it-ui/ui';
-import type { GraphData } from '@/lib/api';
+import { fetchSchema, type GraphData, type SchemaWithHash } from '@/lib/api';
 import { useGraphStore } from '@/stores/graph-store';
+import { buildOwnershipIndex } from './ownership-index';
 
 interface GraphCanvasProps {
   data: GraphData;
@@ -21,6 +28,23 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
   const handleRef = useRef<GraphCanvasHandle | null>(null);
   const { layout, filters, setCyInstance } = useGraphStore();
   const { theme } = useTheme();
+
+  // Schema drives which edge types count as ownership. Reuses the existing
+  // ['schema'] query key from app/configure/schema/page.tsx — react-query
+  // dedupes the fetch and shares the cache, so this is "free" once the schema
+  // page or any other consumer has loaded it. Falls back to the well-known
+  // default set during initial load and when the API is unreachable, so the
+  // Owner filter never wedges waiting for a fetch.
+  const { data: schemaResult } = useQuery<SchemaWithHash>({
+    queryKey: ['schema'],
+    queryFn: fetchSchema,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const ownershipRelTypes = useMemo<ReadonlySet<string>>(() => {
+    if (!schemaResult?.schema) return DEFAULT_OWNERSHIP_REL_TYPES;
+    return getOwnershipRelTypes(schemaResult.schema as SharedShipItSchema);
+  }, [schemaResult]);
 
   // The DS base edge style doesn't set `color`, so without this our edge
   // labels render in cytoscape's default black and disappear on the dark
@@ -138,6 +162,15 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
     };
   }, [elements, layoutConfig, setCyInstance]);
 
+  // Built from the raw graph payload — independent of Cytoscape — so changes
+  // to filter selections don't re-walk every edge in the canvas. See
+  // `buildOwnershipIndex` for the rules (CODEOWNER_OF/OWNS/etc. edges +
+  // `d.owner` seed string + Team/Person self-membership).
+  const ownershipIndex = useMemo(
+    () => buildOwnershipIndex(data, ownershipRelTypes),
+    [data, ownershipRelTypes],
+  );
+
   // Apply visibility filters by toggling Cytoscape classes on the live instance.
   useEffect(() => {
     const cy = handleRef.current?.cy;
@@ -156,8 +189,11 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         visible = false;
       if (filters.tiers.length > 0 && d.tier && !filters.tiers.includes(String(d.tier)))
         visible = false;
-      if (filters.owners.length > 0 && d.owner && !filters.owners.includes(d.owner))
-        visible = false;
+      if (filters.owners.length > 0) {
+        const owners = ownershipIndex.get(node.id());
+        const matches = owners && filters.owners.some((o) => owners.has(o));
+        if (!matches) visible = false;
+      }
 
       if (visible) node.removeClass('hidden');
       else node.addClass('hidden');
@@ -169,7 +205,7 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
       if (source.hasClass('hidden') || target.hasClass('hidden')) edge.addClass('hidden');
       else edge.removeClass('hidden');
     });
-  }, [filters, elements]);
+  }, [filters, elements, ownershipIndex]);
 
   return (
     <div

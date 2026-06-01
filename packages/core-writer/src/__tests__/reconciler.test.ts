@@ -5,13 +5,13 @@ import { InMemoryLinkingKeyIndex } from '../identity/linking-key-index.js';
 
 function makeNode(overrides: Partial<CanonicalNode> = {}): CanonicalNode {
   return {
-    id: 'shipit://repository/default/payments-api',
+    id: 'shipit://repository/default/shipitops/graph-api',
     label: 'Repository',
-    properties: { name: 'payments-api' },
+    properties: { name: 'graph-api' },
     _claims: [],
     _source_system: 'github',
-    _source_org: 'github/acme-corp',
-    _source_id: 'github://acme-corp/payments-api',
+    _source_org: 'github/shipitops',
+    _source_id: 'github://shipitops/graph-api',
     _last_synced: '2026-02-28T10:00:00Z',
     _event_version: 1,
     ...overrides,
@@ -55,13 +55,13 @@ describe('IdentityReconciler', () => {
   });
 
   it('merges via linking key match', async () => {
-    const existingId = 'shipit://repository/default/payments-api';
-    const linkingKey = 'github://acme-corp/payments-api';
+    const existingId = 'shipit://repository/default/shipitops/graph-api';
+    const linkingKey = 'github://shipitops/graph-api';
     await index.register(existingId, linkingKey);
 
     // New node with same linking key but different canonical ID
     const node = makeNode({
-      id: 'shipit://repository/default/payments-api-new',
+      id: 'shipit://repository/default/shipitops/graph-api-new',
       _source_id: linkingKey,
     });
 
@@ -73,11 +73,11 @@ describe('IdentityReconciler', () => {
 
   it('creates separate entities for different linking keys', async () => {
     const node1 = makeNode({
-      id: 'shipit://repository/default/repo-a',
+      id: 'shipit://repository/default/org/repo-a',
       _source_id: 'github://org/repo-a',
     });
     const node2 = makeNode({
-      id: 'shipit://repository/default/repo-b',
+      id: 'shipit://repository/default/org/repo-b',
       _source_id: 'github://org/repo-b',
     });
 
@@ -87,5 +87,30 @@ describe('IdentityReconciler', () => {
     expect(result1.action).toBe('create');
     expect(result2.action).toBe('create');
     expect(result1.canonicalId).not.toBe(result2.canonicalId);
+  });
+
+  it('keeps cross-org repos with identical names as distinct entities', async () => {
+    // Regression guard for the canonical-ID org-namespacing fix: before the
+    // change, `shipitops/infra` and `cargocloud/infra` collapsed onto a single
+    // `shipit://repository/default/infra` node — pre-rename this case used
+    // `acme-corp` + `contoso` (see git history).
+    // `shipit://repository/default/infra` node.
+    const shipitopsInfra = makeNode({
+      id: 'shipit://repository/default/shipitops/infra',
+      _source_org: 'github/shipitops',
+      _source_id: 'github://shipitops/infra',
+    });
+    const cargocloudInfra = makeNode({
+      id: 'shipit://repository/default/cargocloud/infra',
+      _source_org: 'github/cargocloud',
+      _source_id: 'github://cargocloud/infra',
+    });
+
+    const r1 = await reconciler.reconcile(shipitopsInfra);
+    const r2 = await reconciler.reconcile(cargocloudInfra);
+
+    expect(r1.action).toBe('create');
+    expect(r2.action).toBe('create');
+    expect(r1.canonicalId).not.toBe(r2.canonicalId);
   });
 });

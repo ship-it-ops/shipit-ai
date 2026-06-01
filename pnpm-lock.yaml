@@ -35,6 +35,9 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      ioredis:
+        specifier: ^5.11.0
+        version: 5.11.0
       lint-staged:
         specifier: ^17.0.5
         version: 17.0.5
@@ -280,6 +283,9 @@ importers:
       '@shipit-ai/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
+      '@shipit-ai/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@tanstack/react-query':
         specifier: ^5.60.0
         version: 5.90.21(react@19.2.6)
