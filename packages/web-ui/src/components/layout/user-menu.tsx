@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Avatar,
   DropdownMenu,
@@ -11,10 +12,33 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { useCurrentUser } from '@/lib/current-user';
+import { clientConfig } from '@/lib/client-config';
 
 export function UserMenu() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const user = useCurrentUser();
+
+  async function handleSignOut() {
+    // POST /api/auth/logout destroys the Redis session + clears the
+    // cookie. We then drop the cached principal so the next read goes
+    // back through /api/auth/me — which 401s, triggers the auth-required
+    // event, and the layout routes to /login. Auth-disabled deployments
+    // ignore the request silently; the dev-fallback principal will just
+    // reappear on the next fetch.
+    try {
+      await fetch(`${clientConfig.api.url}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // Network failure here just means the cookie outlives the request —
+      // not worth a toast. Push to /login regardless so the user isn't
+      // stuck in a half-signed-out state.
+    }
+    queryClient.removeQueries({ queryKey: ['auth', 'me'] });
+    router.push('/login');
+  }
 
   return (
     <DropdownMenu>
@@ -40,13 +64,7 @@ export function UserMenu() {
           Settings
         </MenuItem>
         <MenuSeparator />
-        <MenuItem
-          icon={<IconGlyph name="power" />}
-          onSelect={() => {
-            // TODO: wire to auth sign-out when auth lands.
-            console.info('[mock] sign out');
-          }}
-        >
+        <MenuItem icon={<IconGlyph name="power" />} onSelect={handleSignOut}>
           Sign out
         </MenuItem>
       </DropdownMenuContent>

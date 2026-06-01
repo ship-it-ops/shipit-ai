@@ -2,6 +2,28 @@ import { clientConfig } from './client-config';
 
 const API_URL = clientConfig.api.url;
 
+/** Fired when a backend request returns 401 — the auth provider listens
+ * for this and routes to /login instead of every consumer reimplementing
+ * the redirect. */
+export const AUTH_REQUIRED_EVENT = 'shipit:auth-required';
+
+/**
+ * Wrapped `fetch` that adds `credentials: 'include'` so the session
+ * cookie round-trips on every API call, and dispatches a global event
+ * on 401 so the auth provider can redirect to /login centrally.
+ *
+ * Every fetch in this file should go through this helper. Direct
+ * `fetch()` calls won't send the session cookie cross-origin and won't
+ * notify the redirect handler on auth failure.
+ */
+async function fetchApi(input: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, { ...init, credentials: 'include' });
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
+  }
+  return response;
+}
+
 export interface GraphStats {
   nodeCount: number;
   edgeCount: number;
@@ -192,7 +214,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (options?.body != null && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const res = await fetchApi(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     throw new Error(`API error: ${res.status} ${res.statusText}`);
   }
@@ -213,7 +235,7 @@ export interface ConnectorWithHash {
 }
 
 export async function fetchConnector(id: string): Promise<ConnectorWithHash> {
-  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`);
+  const res = await fetchApi(`${API_URL}/api/connectors/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`fetchConnector: ${res.status}`);
   const connector = (await res.json()) as Connector;
   return { connector, hash: parseEtag(res.headers.get('ETag')) };
@@ -233,7 +255,7 @@ export interface CreateConnectorInput {
 }
 
 export async function createConnector(input: CreateConnectorInput): Promise<Connector> {
-  const res = await fetch(`${API_URL}/api/connectors`, {
+  const res = await fetchApi(`${API_URL}/api/connectors`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -263,7 +285,7 @@ export async function patchConnector(
 ): Promise<ConnectorWithHash> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
-  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
+  const res = await fetchApi(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers,
     body: JSON.stringify(input),
@@ -289,7 +311,7 @@ export async function patchConnector(
 export async function deleteConnector(id: string, ifMatch?: string): Promise<void> {
   const headers: Record<string, string> = {};
   if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
-  const res = await fetch(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
+  const res = await fetchApi(`${API_URL}/api/connectors/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     headers,
   });
@@ -332,7 +354,7 @@ export interface ProbeInput {
 }
 
 export async function probeConnector(input: ProbeInput): Promise<ProbeResult> {
-  const res = await fetch(`${API_URL}/api/connectors/probe`, {
+  const res = await fetchApi(`${API_URL}/api/connectors/probe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -368,7 +390,7 @@ export interface GitHubAppStatusWithHash {
 }
 
 export async function fetchGitHubAppStatus(): Promise<GitHubAppStatusWithHash> {
-  const res = await fetch(`${API_URL}/api/connectors/github/app`);
+  const res = await fetchApi(`${API_URL}/api/connectors/github/app`);
   if (!res.ok) {
     // 503 means the service isn't wired (no global App config object on
     // the server) — treat as "not configured" rather than throwing so
@@ -432,7 +454,7 @@ export interface PendingInstanceApp {
 }
 
 export async function fetchPendingInstanceApp(nonce: string): Promise<PendingInstanceApp | null> {
-  const res = await fetch(
+  const res = await fetchApi(
     `${API_URL}/api/connectors/github/manifest/pending-instance/${encodeURIComponent(nonce)}`,
   );
   if (res.status === 404) return null;
@@ -476,7 +498,7 @@ export class GitHubAppNotConfiguredError extends Error {
 }
 
 export async function fetchGitHubAppInstallations(): Promise<GitHubAppInstallationsResponse> {
-  const res = await fetch(`${API_URL}/api/connectors/github/installations`);
+  const res = await fetchApi(`${API_URL}/api/connectors/github/installations`);
   if (res.status === 404) {
     // App not configured yet — first-run state. Caller (the wizard) maps
     // this to the "create an App first" copy on Step 1 rather than to a
@@ -496,7 +518,7 @@ export async function updateGitHubApp(
 ): Promise<GitHubAppStatusWithHash> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
-  const res = await fetch(`${API_URL}/api/connectors/github/app`, {
+  const res = await fetchApi(`${API_URL}/api/connectors/github/app`, {
     method: 'PUT',
     headers,
     body: JSON.stringify(input),
@@ -555,7 +577,7 @@ export async function fetchActivity(): Promise<ActivityEvent[]> {
  */
 export async function recordIncidentView(serviceId: string): Promise<void> {
   try {
-    await fetch(`${API_URL}/api/incident-events/view`, {
+    await fetchApi(`${API_URL}/api/incident-events/view`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ serviceId }),
@@ -744,7 +766,7 @@ export interface SchemaWithHash {
 }
 
 export async function fetchSchema(): Promise<SchemaWithHash> {
-  const res = await fetch(`${API_URL}/api/schema`);
+  const res = await fetchApi(`${API_URL}/api/schema`);
   if (!res.ok) throw new Error(`fetchSchema: ${res.status}`);
   const schema = (await res.json()) as ShipItSchema;
   return { schema, hash: parseEtag(res.headers.get('ETag')) };
@@ -757,7 +779,7 @@ export async function fetchSchemaHistory(): Promise<SchemaSnapshot[]> {
 export async function saveSchemaYaml(yaml: string, ifMatch?: string): Promise<SchemaWithHash> {
   const headers: Record<string, string> = { 'Content-Type': 'text/yaml' };
   if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
-  const res = await fetch(`${API_URL}/api/schema?actor=web-ui`, {
+  const res = await fetchApi(`${API_URL}/api/schema?actor=web-ui`, {
     method: 'PUT',
     headers,
     body: yaml,
@@ -781,7 +803,7 @@ export async function saveSchemaYaml(yaml: string, ifMatch?: string): Promise<Sc
 }
 
 export async function diffSchemaYaml(yaml: string): Promise<SchemaDiff> {
-  const res = await fetch(`${API_URL}/api/schema/diff`, {
+  const res = await fetchApi(`${API_URL}/api/schema/diff`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/yaml' },
     body: yaml,
@@ -794,7 +816,7 @@ export async function diffSchemaYaml(yaml: string): Promise<SchemaDiff> {
 }
 
 export async function migrationPreview(yaml: string): Promise<MigrationPreview> {
-  const res = await fetch(`${API_URL}/api/schema/migration-preview`, {
+  const res = await fetchApi(`${API_URL}/api/schema/migration-preview`, {
     method: 'POST',
     headers: { 'Content-Type': 'text/yaml' },
     body: yaml,
@@ -807,7 +829,7 @@ export async function migrationPreview(yaml: string): Promise<MigrationPreview> 
 }
 
 export async function rollbackSchema(version: string): Promise<SchemaWithHash> {
-  const res = await fetch(`${API_URL}/api/schema/rollback?actor=web-ui`, {
+  const res = await fetchApi(`${API_URL}/api/schema/rollback?actor=web-ui`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ version }),
@@ -993,7 +1015,7 @@ export async function runCypherQuery(
   cypher: string,
   params: Record<string, unknown> = {},
 ): Promise<CypherQueryResult> {
-  const res = await fetch(`${API_URL}/api/query`, {
+  const res = await fetchApi(`${API_URL}/api/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cypher, params }),
