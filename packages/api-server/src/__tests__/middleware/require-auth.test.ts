@@ -38,6 +38,7 @@ function enableAuth(overrides: Partial<Config['accessControl']['auth']> = {}): C
             enabled: true,
             issuerUrl: 'https://example.com',
             clientId: 'test-client',
+            clientSecretEnv: 'TEST_OIDC_CLIENT_SECRET',
           },
         },
         admins: ['admin@example.com'],
@@ -50,6 +51,20 @@ function enableAuth(overrides: Partial<Config['accessControl']['auth']> = {}): C
     },
   };
 }
+
+// Mock OIDC provider used by require-auth tests — we don't exercise the
+// real openid-client flow here, only verify the preHandler enforces
+// auth around it.
+const mockOidcProvider = {
+  startAuthorization: async () => ({
+    url: 'https://example.com/authorize?stub',
+    state: 'state-stub',
+    codeVerifier: 'verifier-stub',
+  }),
+  exchange: async () => {
+    throw new Error('require-auth tests should not reach OIDC exchange');
+  },
+} as unknown as import('../../services/auth/oidc-provider.js').OidcProvider;
 
 describe('require-auth preHandler — auth disabled', () => {
   describe('with no devUser in config', () => {
@@ -132,7 +147,11 @@ describe('require-auth preHandler — auth enabled', () => {
   beforeAll(async () => {
     process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
     redis = new RedisMock() as unknown as Redis;
-    server = await createServer({ config: enableAuth(), redis });
+    server = await createServer({
+      config: enableAuth(),
+      redis,
+      oidcProvider: mockOidcProvider,
+    });
     withProbeRoute(server, {});
     await server.ready();
   });
@@ -147,12 +166,14 @@ describe('require-auth preHandler — auth enabled', () => {
     expect(response.statusCode).toBe(200);
   });
 
-  it('lets /api/auth/* through without a session (route may 404 but auth is bypassed)', async () => {
-    // No /api/auth/login route is registered yet (Stage B4), but the
-    // preHandler must not block — we want a 404 from the router, not a 401
-    // from auth. Fastify's default 404 handler runs after preHandler.
+  it('lets /api/auth/* through without a session', async () => {
+    // The /api/auth/providers route is registered in Stage B4 and is
+    // explicitly on the public allow-list because the login page reads
+    // it pre-session to know which buttons to render. A 200 response
+    // here means both the preHandler bypassed the auth check AND the
+    // route ran without a session.
     const response = await server.inject({ method: 'GET', url: '/api/auth/providers' });
-    expect(response.statusCode).toBe(404);
+    expect(response.statusCode).toBe(200);
   });
 
   it('lets /api/mcp/info through without a session', async () => {
@@ -187,7 +208,11 @@ describe('require-auth preHandler — session-resolved principal', () => {
   beforeAll(async () => {
     process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
     redis = new RedisMock() as unknown as Redis;
-    server = await createServer({ config: enableAuth(), redis });
+    server = await createServer({
+      config: enableAuth(),
+      redis,
+      oidcProvider: mockOidcProvider,
+    });
     withProbeRoute(server, captured);
 
     // Helper route that mimics what the Stage B4 OIDC callback will do:

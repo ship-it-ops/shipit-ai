@@ -9,6 +9,10 @@ import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
 import { registerRequireAuth } from './middleware/require-auth.js';
 import { RedisSessionStore } from './services/auth/redis-session-store.js';
+import { AuthStateStore } from './services/auth/state-store.js';
+import { OidcProvider } from './services/auth/oidc-provider.js';
+import { GitHubProvider } from './services/auth/github-provider.js';
+import authRoutes from './routes/auth.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
@@ -43,6 +47,11 @@ export interface CreateServerOptions {
   // history. When auth is disabled (the local-dev default), the session
   // store is not registered and this can be omitted.
   redis?: Redis;
+  // Override providers for tests. Production lets createServer construct
+  // the real OIDC / GitHub provider modules from config; mocks can pass
+  // their own to avoid hitting any real IdP.
+  oidcProvider?: OidcProvider;
+  githubProvider?: GitHubProvider;
 }
 
 class AuthConfigError extends Error {
@@ -162,6 +171,52 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
       },
       saveUninitialized: false,
     });
+
+    // Construct providers (or accept overrides from tests). The callback
+    // URL is derived from frontend.api.url since that's the canonical
+    // public origin the web-UI hits — operators register the same URL
+    // with their IdP. Provider modules are skipped when their respective
+    // `providers.<id>.enabled` flag is false so disabled providers don't
+    // need their secret env vars populated.
+    const publicBaseUrl = opts.config!.frontend.api.url.replace(/\/$/, '');
+    const stateStore = new AuthStateStore(opts.redis);
+    server.decorate('authStateStore', stateStore);
+
+    if (opts.oidcProvider) {
+      server.decorate('oidcProvider', opts.oidcProvider);
+    } else if (opts.config!.accessControl.auth.providers.oidc.enabled) {
+      const oidcCfg = opts.config!.accessControl.auth.providers.oidc;
+      const oidcSecret = process.env[oidcCfg.clientSecretEnv];
+      if (!oidcSecret) {
+        throw new AuthConfigError(`OIDC clientSecretEnv "${oidcCfg.clientSecretEnv}" is not set.`);
+      }
+      server.decorate(
+        'oidcProvider',
+        new OidcProvider(
+          opts.config!.accessControl.auth,
+          oidcSecret,
+          `${publicBaseUrl}/api/auth/callback/oidc`,
+        ),
+      );
+    }
+
+    if (opts.githubProvider) {
+      server.decorate('githubProvider', opts.githubProvider);
+    } else if (opts.config!.accessControl.auth.providers.github.enabled) {
+      const ghCfg = opts.config!.accessControl.auth.providers.github;
+      const ghSecret = process.env[ghCfg.clientSecretEnv];
+      if (!ghSecret) {
+        throw new AuthConfigError(`GitHub clientSecretEnv "${ghCfg.clientSecretEnv}" is not set.`);
+      }
+      server.decorate(
+        'githubProvider',
+        new GitHubProvider(
+          opts.config!.accessControl.auth,
+          ghSecret,
+          `${publicBaseUrl}/api/auth/callback/github`,
+        ),
+      );
+    }
   }
 
   // Global rate limit. Conservative defaults (200 req/min per IP) protect
@@ -225,6 +280,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
+  await server.register(authRoutes, { prefix: '/api/auth' });
   await server.register(connectorRoutes, { prefix: '/api/connectors' });
   await server.register(schemaRoutes, { prefix: '/api/schema' });
 
