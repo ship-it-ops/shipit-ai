@@ -225,6 +225,50 @@ export async function fetchGraphStats(): Promise<GraphStats> {
   return apiFetch<GraphStats>('/api/graph/stats');
 }
 
+// ── Personal access tokens (auth.enabled deployments only) ────────────────
+
+export interface AccessTokenSummary {
+  id: string;
+  name: string;
+  scopes: ReadonlyArray<string>;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revoked: boolean;
+}
+
+export interface MintedToken {
+  id: string;
+  name: string;
+  /** Plaintext value returned exactly once on create — never persisted. */
+  token: string;
+  scopes: ReadonlyArray<string>;
+  createdAt: string;
+}
+
+export async function fetchTokens(): Promise<AccessTokenSummary[]> {
+  const { tokens } = await apiFetch<{ tokens: AccessTokenSummary[] }>('/api/tokens');
+  return tokens;
+}
+
+export async function createToken(args: {
+  name: string;
+  scopes?: ReadonlyArray<string>;
+}): Promise<MintedToken> {
+  return apiFetch<MintedToken>('/api/tokens', {
+    method: 'POST',
+    body: JSON.stringify({ name: args.name, scopes: args.scopes }),
+  });
+}
+
+export async function revokeToken(id: string): Promise<void> {
+  const res = await fetchApi(`${API_URL}/api/tokens/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`revokeToken failed: ${res.status}`);
+  }
+}
+
 export async function fetchConnectors(): Promise<Connector[]> {
   return apiFetch<Connector[]>('/api/connectors');
 }

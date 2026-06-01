@@ -1,18 +1,8 @@
 'use client';
 
-import {
-  Badge,
-  Button,
-  Card,
-  Checkbox,
-  EmptyState,
-  Tabs,
-  TabsList,
-  Tab,
-  TabsContent,
-} from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { Badge, Card, Checkbox, Tabs, TabsList, Tab, TabsContent } from '@ship-it-ui/ui';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { ApiKeysTab } from '@/components/settings/api-keys-tab';
 
 export default function SettingsPage() {
   return (
@@ -73,17 +63,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="api-keys" className="mt-4">
-          <EmptyState
-            tone="accent"
-            icon={<IconGlyph name="bolt" size={22} />}
-            title="No personal access tokens yet"
-            description="Per-user tokens for authenticating AI agents against the MCP server are on the roadmap. Until then, see MCP Access for connection info and the shared-secret option."
-            action={
-              <Button variant="outline" asChild icon={<IconGlyph name="sparkle" />}>
-                <a href="/configure/mcp">Open MCP Access</a>
-              </Button>
-            }
-          />
+          <ApiKeysTab />
         </TabsContent>
       </Tabs>
     </div>
