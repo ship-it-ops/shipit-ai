@@ -4,6 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
+import { registerBuildContext } from './middleware/build-context.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
@@ -80,6 +81,15 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
       info: { title: 'ShipIt-AI API', version: '0.1.0' },
     },
   });
+
+  // Attach the per-request RequestContext. Today this is the dev-fallback
+  // principal synthesized from frontend.devUser (or SYSTEM_CONTEXT if auth
+  // is enabled but Stage B's auth preHandler hasn't replaced this one). Real
+  // OIDC / GitHub OAuth resolution lands in Stage B and replaces this with
+  // a session-aware version that also handles 401s. Registered directly (not
+  // via server.register) so the preHandler hook reaches every route rather
+  // than being confined to a plugin's encapsulation context.
+  registerBuildContext(server);
 
   server.setErrorHandler(errorHandler);
 

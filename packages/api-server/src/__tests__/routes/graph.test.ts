@@ -105,7 +105,7 @@ describe('Graph routes', () => {
       method: 'GET',
       url: '/api/graph/neighborhood/test-node?depth=3',
     });
-    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith('test-node', 3);
+    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 3);
   });
 
   it('GET /api/graph/neighborhood/:id caps depth at 5', async () => {
@@ -113,7 +113,7 @@ describe('Graph routes', () => {
       method: 'GET',
       url: '/api/graph/neighborhood/test-node?depth=99',
     });
-    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith('test-node', 5);
+    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 5);
   });
 
   it('GET /api/graph/search returns search results', async () => {

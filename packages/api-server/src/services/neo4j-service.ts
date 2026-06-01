@@ -1,4 +1,5 @@
 import neo4j, { type Driver, type Record as Neo4jRecord } from 'neo4j-driver';
+import type { RequestContext } from '@shipit-ai/shared';
 
 export interface GraphStats {
   nodeCount: number;
@@ -78,7 +79,13 @@ export class Neo4jService {
     }
   }
 
-  async getGraphStats(): Promise<GraphStats> {
+  // The `_ctx` parameters on the user-facing methods below are the seam
+  // Stage B6's org filter sits behind. They're accepted-but-unused today so
+  // route handlers and tests can be wired with the right shape before the
+  // filter logic lands. `runQuery` deliberately stays ctx-free — it's an
+  // internal escape hatch called from worker services without a request
+  // scope (claim-service, team-service, reconciliation, etc.).
+  async getGraphStats(_ctx: RequestContext): Promise<GraphStats> {
     // `db.labels()` returns every label including the `_LinkingKey` /
     // `_IdempotencyLog` housekeeping ones. Strip them at the application
     // layer so the dashboard's "node count" matches what users see in the
@@ -122,7 +129,11 @@ export class Neo4jService {
     };
   }
 
-  async getNeighborhood(nodeId: string, depth: number = 2): Promise<NeighborhoodResult> {
+  async getNeighborhood(
+    _ctx: RequestContext,
+    nodeId: string,
+    depth: number = 2,
+  ): Promise<NeighborhoodResult> {
     // Project edge endpoints by the canonical `id` property — `rel.start` /
     // `rel.end` would be Neo4j's internal numeric node ids, which the UI can't
     // line up with the `shipit://…` ids on the node payload.
@@ -201,7 +212,11 @@ export class Neo4jService {
    * inbound impact edges (Person, Team, leaf Repositories) correctly return
    * just themselves.
    */
-  async getBlastRadius(nodeId: string, depth: number = 3): Promise<NeighborhoodResult> {
+  async getBlastRadius(
+    _ctx: RequestContext,
+    nodeId: string,
+    depth: number = 3,
+  ): Promise<NeighborhoodResult> {
     // Ask APOC for one node beyond the cap so we can detect overflow rather
     // than silently truncate.
     const probeLimit = MAX_BLAST_RADIUS_NODES + 1;
@@ -283,7 +298,7 @@ export class Neo4jService {
     return { nodes, edges, truncated };
   }
 
-  async getOverview(limit: number = 100): Promise<NeighborhoodResult> {
+  async getOverview(_ctx: RequestContext, limit: number = 100): Promise<NeighborhoodResult> {
     const nodeRecords = await this.runQuery(
       `MATCH (n) WHERE ${EXCLUDE_INTERNAL_LABELS} RETURN n, labels(n) AS labels LIMIT $limit`,
       { limit: neo4j.int(limit) },
@@ -337,15 +352,18 @@ export class Neo4jService {
     return { nodes: Array.from(nodesMap.values()), edges };
   }
 
-  async searchEntities(opts: {
-    label?: string;
-    /** Free-text query — matched case-insensitively against `name` and the canonical id. */
-    q?: string;
-    /** Exact-match filters (tier, owner, etc.) applied with `=`. */
-    filters?: Record<string, unknown>;
-    limit?: number;
-    sortBy?: string;
-  }): Promise<Neo4jRecord[]> {
+  async searchEntities(
+    _ctx: RequestContext,
+    opts: {
+      label?: string;
+      /** Free-text query — matched case-insensitively against `name` and the canonical id. */
+      q?: string;
+      /** Exact-match filters (tier, owner, etc.) applied with `=`. */
+      filters?: Record<string, unknown>;
+      limit?: number;
+      sortBy?: string;
+    },
+  ): Promise<Neo4jRecord[]> {
     const { label, q, filters = {}, limit = 25, sortBy } = opts;
     const nodeLabel = label ? `:${label}` : '';
     // Always exclude the writer's internal `_LinkingKey` / `_IdempotencyLog`

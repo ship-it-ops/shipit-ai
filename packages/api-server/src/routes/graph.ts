@@ -11,8 +11,8 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
   const neo4j = server.neo4jService;
 
   // GET /api/graph/stats
-  server.get('/stats', async () => {
-    return neo4j.getGraphStats();
+  server.get('/stats', async (request) => {
+    return neo4j.getGraphStats(request.ctx);
   });
 
   // GET /api/graph/overview
@@ -20,7 +20,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
     Querystring: { limit?: string };
   }>('/overview', async (request) => {
     const limit = Math.min(Number(request.query.limit ?? 100), 500);
-    return neo4j.getOverview(limit);
+    return neo4j.getOverview(request.ctx, limit);
   });
 
   // GET /api/graph/neighborhood/:id
@@ -29,7 +29,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
     Querystring: { depth?: string };
   }>('/neighborhood/:id', async (request) => {
     const depth = Math.min(Number(request.query.depth ?? 2), 5);
-    return neo4j.getNeighborhood(request.params.id, depth);
+    return neo4j.getNeighborhood(request.ctx, request.params.id, depth);
   });
 
   // GET /api/graph/blast-radius/:id
@@ -38,7 +38,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
     Querystring: { depth?: string };
   }>('/blast-radius/:id', async (request) => {
     const depth = Math.min(Number(request.query.depth ?? 3), 5);
-    return neo4j.getBlastRadius(request.params.id, depth);
+    return neo4j.getBlastRadius(request.ctx, request.params.id, depth);
   });
 
   // GET /api/graph/search
@@ -56,7 +56,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
     if (tier) filters.tier = tier;
     if (owner) filters.owner = owner;
 
-    const records = await neo4j.searchEntities({
+    const records = await neo4j.searchEntities(request.ctx, {
       label,
       q,
       filters,
