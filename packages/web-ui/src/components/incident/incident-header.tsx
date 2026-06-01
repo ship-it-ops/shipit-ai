@@ -6,6 +6,7 @@ import { Badge, Button, Spinner } from '@ship-it-ui/ui';
 import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta, StalenessChip } from '@ship-it-ui/shipit';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
+import { INCIDENT_SEARCH_EXCLUDE } from '@/lib/incident/search';
 import {
   type ServiceNode,
   serviceContext,
@@ -107,6 +108,7 @@ export function IncidentHeader({
           <EntitySearchBox
             size="sm"
             preferLabel="LogicalService"
+            excludeLabels={INCIDENT_SEARCH_EXCLUDE}
             placeholder="Switch service…"
             onSelect={(r) => router.push(`/incidents/${encodeURIComponent(r.id)}`)}
           />

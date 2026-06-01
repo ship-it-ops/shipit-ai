@@ -24,6 +24,8 @@ export interface EntitySearchBoxProps {
   size?: 'sm' | 'md' | 'lg';
   /** When provided, results matching this Cypher label are surfaced first. */
   preferLabel?: string;
+  /** Results matching any of these Cypher labels are dropped before render. */
+  excludeLabels?: readonly string[];
   /** Keep the typed text after selection (defaults to clearing). */
   retainQueryOnSelect?: boolean;
   /** Initial focus. */
@@ -41,6 +43,7 @@ export function EntitySearchBox({
   placeholder = 'Search entities by name…',
   size = 'md',
   preferLabel,
+  excludeLabels,
   retainQueryOnSelect = false,
   autoFocus,
   className,
@@ -55,18 +58,22 @@ export function EntitySearchBox({
 
   const { data, isLoading, isFetching } = useSearch(query);
 
-  // Results: filter empty + sort preferred label first. The backend already
-  // does a CONTAINS match; we keep the original relevance order for the rest.
+  // Results: drop excluded labels, then sort preferred label first. The backend
+  // already does a CONTAINS match; we keep the original relevance order for the rest.
   const results = useMemo<SearchResult[]>(() => {
     if (!data) return [];
-    if (!preferLabel) return data;
-    return [...data].sort((a, b) => {
+    const filtered =
+      excludeLabels && excludeLabels.length > 0
+        ? data.filter((r) => !excludeLabels.includes(r.label))
+        : data;
+    if (!preferLabel) return filtered;
+    return [...filtered].sort((a, b) => {
       const aHit = a.label === preferLabel;
       const bHit = b.label === preferLabel;
       if (aHit === bHit) return 0;
       return aHit ? -1 : 1;
     });
-  }, [data, preferLabel]);
+  }, [data, preferLabel, excludeLabels]);
 
   // Reset the highlighted row whenever the result set changes so ↓/↑ start
   // from the top instead of pointing past the end of a shorter list.

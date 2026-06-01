@@ -5,6 +5,7 @@ import { Card, EmptyState } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { EntityList, EntityListRowButton, type EntityType } from '@ship-it-ui/shipit';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
+import { INCIDENT_SEARCH_EXCLUDE } from '@/lib/incident/search';
 import { useRecentlyViewed } from '@/lib/hooks/use-recently-viewed';
 
 /**
@@ -33,6 +34,7 @@ export default function IncidentModeLandingPage() {
           autoFocus
           size="lg"
           preferLabel="LogicalService"
+          excludeLabels={INCIDENT_SEARCH_EXCLUDE}
           placeholder="What service is having problems?"
           onSelect={(result) => router.push(`/incidents/${encodeURIComponent(result.id)}`)}
         />

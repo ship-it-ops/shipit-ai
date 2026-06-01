@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { EntitySearchBox } from '@/components/search/entity-search-box';
+import { INCIDENT_SEARCH_EXCLUDE } from '@/lib/incident/search';
 import { IncidentBlastRadiusTable } from '@/components/incident/incident-blast-radius-table';
 import { IncidentDependencies } from '@/components/incident/incident-dependencies';
 import { IncidentFooter } from '@/components/incident/incident-footer';
@@ -150,6 +151,7 @@ export default function IncidentDashboardPage() {
               autoFocus
               size="lg"
               preferLabel="LogicalService"
+              excludeLabels={INCIDENT_SEARCH_EXCLUDE}
               placeholder="Search by service name…"
               onSelect={(r) => router.push(`/incidents/${encodeURIComponent(r.id)}`)}
             />
