@@ -1,10 +1,14 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
+import session from '@fastify/session';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
+import type { Redis } from 'ioredis';
 import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
-import { registerBuildContext } from './middleware/build-context.js';
+import { registerRequireAuth } from './middleware/require-auth.js';
+import { RedisSessionStore } from './services/auth/redis-session-store.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
@@ -33,6 +37,50 @@ export interface CreateServerOptions {
   // the server can construct one bound to the right file. Tests can omit
   // this and rely on the injected registry instead.
   localConfigPath?: string;
+  // Redis client used by the session store. Required when
+  // accessControl.auth.enabled is true. Tests can pass an ioredis-mock
+  // instance; production wires the same Redis used for connector run
+  // history. When auth is disabled (the local-dev default), the session
+  // store is not registered and this can be omitted.
+  redis?: Redis;
+}
+
+class AuthConfigError extends Error {
+  constructor(message: string) {
+    super(`accessControl.auth: ${message}`);
+    this.name = 'AuthConfigError';
+  }
+}
+
+// Boot-time invariants that Zod can't easily express. Throwing here makes
+// a misconfigured production deployment fail loud at startup rather than
+// silently accepting requests without auth, or rejecting every request
+// because a critical knob is missing.
+function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void {
+  const auth = config.accessControl.auth;
+  if (!auth.enabled) return;
+
+  const oidcEnabled = auth.providers.oidc.enabled;
+  const githubEnabled = auth.providers.github.enabled;
+  if (!oidcEnabled && !githubEnabled) {
+    throw new AuthConfigError(
+      'auth is enabled but no provider is enabled. Set providers.oidc.enabled or providers.github.enabled to true.',
+    );
+  }
+
+  if (auth.admins.length === 0) {
+    throw new AuthConfigError(
+      'auth is enabled but admins[] is empty. Add at least one admin email so the first deployment is usable.',
+    );
+  }
+
+  const secretEnv = auth.session.signingSecretEnv;
+  const secretValue = env[secretEnv];
+  if (!secretValue || secretValue.length < 32) {
+    throw new AuthConfigError(
+      `session signing secret env var "${secretEnv}" must be set and at least 32 characters long.`,
+    );
+  }
 }
 
 declare module 'fastify' {
@@ -48,7 +96,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   if (opts.config) {
     server.decorate('config', opts.config);
+    assertAuthConfigBootable(opts.config, process.env);
   }
+
+  const authEnabled = opts.config?.accessControl.auth.enabled ?? false;
 
   // Accept plain text bodies for YAML schema endpoints
   server.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
@@ -61,7 +112,58 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     done(null, body);
   });
 
-  await server.register(cors, { origin: true });
+  // CORS. With auth enabled, lock the origin list down to what the operator
+  // explicitly configured and enable credentials so the session cookie
+  // round-trips across the web-UI → api-server hop (different ports in dev,
+  // potentially different subdomains in prod). With auth disabled the
+  // permissive `origin: true` keeps the existing local-dev workflow intact —
+  // there's no session to protect.
+  if (authEnabled) {
+    const allowedOrigins = opts.config?.accessControl.web.allowedOrigins ?? [];
+    await server.register(cors, {
+      origin: allowedOrigins,
+      credentials: true,
+    });
+  } else {
+    await server.register(cors, { origin: true });
+  }
+
+  // Session + cookie plugins ride along when auth is enabled. The Redis
+  // session store reuses the api-server's existing ioredis client; tests
+  // and disabled-auth deployments skip the registration entirely so the
+  // boot path doesn't require Redis when auth isn't in play.
+  if (authEnabled) {
+    if (!opts.redis) {
+      throw new AuthConfigError('redis client is required when auth.enabled is true.');
+    }
+    const sessionSecret = process.env[opts.config!.accessControl.auth.session.signingSecretEnv]!;
+    await server.register(cookie);
+    await server.register(session, {
+      secret: sessionSecret,
+      cookieName: opts.config!.accessControl.auth.session.cookieName,
+      store: new RedisSessionStore({
+        redis: opts.redis,
+        defaultTtlSeconds: opts.config!.accessControl.auth.session.ttlHours * 60 * 60,
+      }),
+      cookie: {
+        httpOnly: true,
+        sameSite: opts.config!.accessControl.auth.session.sameSite,
+        // `secure: true` is forced in production regardless of the
+        // configured value — cleartext session cookies are not safe over
+        // unencrypted transports. Tests and developer laptops keep the
+        // configured default (still `true` unless deliberately set to
+        // `false`) so a misconfigured local-prod-like setup still fails
+        // closed.
+        secure:
+          process.env.NODE_ENV === 'production'
+            ? true
+            : opts.config!.accessControl.auth.session.secure,
+        maxAge: opts.config!.accessControl.auth.session.ttlHours * 60 * 60 * 1000,
+      },
+      saveUninitialized: false,
+    });
+  }
+
   // Global rate limit. Conservative defaults (200 req/min per IP) protect
   // the expensive endpoints (probe, manifest exchange, installations
   // listing — they hit the filesystem, the GitHub API, or both) from
@@ -82,14 +184,14 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     },
   });
 
-  // Attach the per-request RequestContext. Today this is the dev-fallback
-  // principal synthesized from frontend.devUser (or SYSTEM_CONTEXT if auth
-  // is enabled but Stage B's auth preHandler hasn't replaced this one). Real
-  // OIDC / GitHub OAuth resolution lands in Stage B and replaces this with
-  // a session-aware version that also handles 401s. Registered directly (not
-  // via server.register) so the preHandler hook reaches every route rather
-  // than being confined to a plugin's encapsulation context.
-  registerBuildContext(server);
+  // Auth boundary. With auth disabled this preHandler synthesizes a
+  // principal from frontend.devUser and lets every request through (the
+  // existing local-dev flow). With auth enabled it enforces the resolution
+  // order documented in require-auth.ts: public allow-list → bearer token
+  // (Stage B5) → session cookie → 401. Registered directly so the hook
+  // reaches every route rather than being confined to a plugin's
+  // encapsulation context.
+  registerRequireAuth(server);
 
   server.setErrorHandler(errorHandler);
 

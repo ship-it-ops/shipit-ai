@@ -185,6 +185,12 @@ async function main() {
     githubAppService,
     githubAppManifestService,
     config,
+    // The Redis client used by the session store reuses the run-store
+    // connection when present so a single deployment doesn't open two
+    // ioredis instances for sibling concerns. When auth is disabled
+    // (the default), the session store is never registered so the absence
+    // of a Redis URL stays a soft warning rather than a hard boot failure.
+    redis: runStoreRedis ?? undefined,
   });
 
   // Start any pre-configured connectors after the server is constructed so
