@@ -41,6 +41,41 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       },
       instances: [],
     },
+    accessControl: {
+      auth: {
+        enabled: false,
+        providers: {
+          oidc: {
+            enabled: false,
+            issuerUrl: '',
+            clientId: '',
+            clientSecretEnv: '',
+            scopes: ['openid', 'email', 'profile'],
+            emailClaim: 'email',
+            displayName: 'OIDC',
+          },
+          github: {
+            enabled: false,
+            clientId: '',
+            clientSecretEnv: '',
+            allowedOrgs: [],
+            displayName: 'GitHub',
+          },
+        },
+        admins: [],
+        allowList: [],
+        session: {
+          ttlHours: 12,
+          cookieName: 'shipit_sid',
+          sameSite: 'lax',
+          secure: true,
+          signingSecretEnv: 'SHIPIT_SESSION_SECRET',
+        },
+      },
+      web: {
+        allowedOrigins: ['http://localhost:3000'],
+      },
+    },
     ...overrides,
   };
 }

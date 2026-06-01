@@ -101,4 +101,6 @@ export type {
   LastRun,
   ResolvedAppCredentials,
   AppLike,
+  AccessControlConfig,
+  AuthConfig,
 } from './config/index.js';
