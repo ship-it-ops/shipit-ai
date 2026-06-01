@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-05-31 | Total notes: 26
+Last updated: 2026-06-01 | Total notes: 27
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -47,6 +47,7 @@ _(no in-flight work)_
 ## Open Questions
 
 - [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-05-20 | per-org App webhook secret lookup needed for P1
+- [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
 
 ## Scars
 
