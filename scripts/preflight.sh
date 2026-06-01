@@ -127,4 +127,48 @@ else
   ok "shipit.config.local.yaml exists"
 fi
 
+# ── workspace builds ────────────────────────────────────────────────────────
+# `turbo dev` runs each service from source, but cross-package imports still
+# resolve through each workspace package's `main` (its compiled dist/).
+# Without a build, api-server's `import { MCP_TOOLS } from '@shipit-ai/mcp-server'`
+# fails with ERR_MODULE_NOT_FOUND and the service silently dies — leaving the
+# Next.js UI rendering empty panels because nothing answers on :3001. Auto-
+# build once on first run, then no-op forever after.
+section "Workspace builds"
+
+# Workspace globs come from pnpm-workspace.yaml: packages/* + packages/connectors/*
+missing=()
+for pkg_json in packages/*/package.json packages/connectors/*/package.json; do
+  [ -f "$pkg_json" ] || continue
+  pkg_dir="$(dirname "$pkg_json")"
+  pkg_name="$(basename "$pkg_dir")"
+  # web-ui builds to .next/ via Next.js, not dist/ — Next handles it itself in
+  # dev mode, so it doesn't need to be in this check.
+  [ "$pkg_name" = "web-ui" ] && continue
+  # Packages without a build script (none today, but future-proofed) have no
+  # dist/ to check.
+  grep -q '"build"' "$pkg_json" || continue
+  if [ ! -d "$pkg_dir/dist" ] || [ -z "$(ls -A "$pkg_dir/dist" 2>/dev/null)" ]; then
+    missing+=("$pkg_name")
+  fi
+done
+
+if [ "${#missing[@]}" -gt 0 ]; then
+  warn "Workspace dist/ missing for: ${missing[*]} — running pnpm turbo build (~30s, one-time)…"
+  pnpm turbo build
+  for pkg_name in "${missing[@]}"; do
+    for candidate in "packages/$pkg_name" "packages/connectors/$pkg_name"; do
+      if [ -d "$candidate" ]; then
+        if [ ! -d "$candidate/dist" ] || [ -z "$(ls -A "$candidate/dist" 2>/dev/null)" ]; then
+          fail "Build did not produce $candidate/dist — check pnpm turbo build output above."
+          exit 1
+        fi
+      fi
+    done
+  done
+  ok "Workspace packages built"
+else
+  ok "Workspace dist/ artifacts present"
+fi
+
 printf "\n${GREEN}${BOLD}Preflight complete.${RESET}\n"
