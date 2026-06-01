@@ -189,14 +189,19 @@ describe('require-auth preHandler — auth enabled', () => {
     });
   });
 
-  it('rejects a bearer-token request with 401 TOKEN_AUTH_NOT_IMPLEMENTED until Stage B5', async () => {
+  it('rejects a bearer-token request with TOKEN_AUTH_DISABLED when no TokenService is wired', async () => {
+    // This suite mounts createServer without a neo4jService, so the
+    // TokenService is never constructed. Bearer-token validation thus
+    // fails closed with a 503 — that's the wiring path that matters
+    // here; the happy path (valid bearer → mcp-token principal) is
+    // covered in routes/tokens.test.ts.
     const response = await server.inject({
       method: 'GET',
       url: '/_probe/ctx',
       headers: { authorization: 'Bearer fake-token-stub' },
     });
-    expect(response.statusCode).toBe(401);
-    expect(response.json().error.code).toBe('TOKEN_AUTH_NOT_IMPLEMENTED');
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe('TOKEN_AUTH_DISABLED');
   });
 });
 

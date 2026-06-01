@@ -107,18 +107,45 @@ async function resolveContext(
     return contextFromPrincipal(ANONYMOUS_PRINCIPAL, 'default', requestId);
   }
 
-  // Bearer token path — wired up in Stage B5. Detect-and-reject keeps the
-  // request from falling through to the cookie path with a half-set ctx.
+  // Bearer token path. Tokens are minted at /api/tokens and validated by
+  // TokenService against the _AccessToken nodes in Neo4j. A valid token
+  // produces a principal with provider: 'mcp-token' and capabilities
+  // taken from the token's stored scope list.
   const authHeader = request.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    reply.status(401).send({
-      error: {
-        code: 'TOKEN_AUTH_NOT_IMPLEMENTED',
-        message:
-          'Bearer token authentication is not yet enabled. Mint a session via /api/auth/login.',
+    const plaintext = authHeader.slice('Bearer '.length).trim();
+    const tokenService = request.server.tokenService;
+    if (!tokenService) {
+      reply.status(503).send({
+        error: {
+          code: 'TOKEN_AUTH_DISABLED',
+          message: 'Bearer tokens are not enabled on this deployment.',
+        },
+      });
+      return null;
+    }
+    const validated = await tokenService.validate(plaintext);
+    if (!validated) {
+      reply.status(401).send({
+        error: {
+          code: 'TOKEN_INVALID',
+          message: 'Bearer token is invalid, revoked, or expired.',
+        },
+      });
+      return null;
+    }
+    return contextFromPrincipal(
+      {
+        id: `token:${validated.id}`,
+        email: validated.ownerEmail,
+        displayName: validated.ownerEmail,
+        provider: 'mcp-token',
+        role: 'member',
+        capabilities: validated.scopes,
       },
-    });
-    return null;
+      'default',
+      requestId,
+    );
   }
 
   // Session cookie path. `request.session` is provided by @fastify/session

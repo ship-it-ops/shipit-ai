@@ -12,7 +12,9 @@ import { RedisSessionStore } from './services/auth/redis-session-store.js';
 import { AuthStateStore } from './services/auth/state-store.js';
 import { OidcProvider } from './services/auth/oidc-provider.js';
 import { GitHubProvider } from './services/auth/github-provider.js';
+import { TokenService } from './services/auth/token-service.js';
 import authRoutes from './routes/auth.js';
+import tokenRoutes from './routes/tokens.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
@@ -52,6 +54,9 @@ export interface CreateServerOptions {
   // their own to avoid hitting any real IdP.
   oidcProvider?: OidcProvider;
   githubProvider?: GitHubProvider;
+  // Override the TokenService for tests. Production constructs one over
+  // the Neo4j driver when auth is enabled AND a neo4jService is supplied.
+  tokenService?: TokenService;
 }
 
 class AuthConfigError extends Error {
@@ -217,6 +222,16 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
         ),
       );
     }
+
+    // TokenService persists access tokens as _AccessToken nodes in Neo4j.
+    // It's only useful when a Neo4j service is wired; tests can inject a
+    // mock. Without Neo4j, /api/tokens returns 503 (TOKENS_DISABLED) and
+    // the require-auth Bearer path falls through to TOKEN_AUTH_DISABLED.
+    if (opts.tokenService) {
+      server.decorate('tokenService', opts.tokenService);
+    } else if (opts.neo4jService) {
+      server.decorate('tokenService', new TokenService({ neo4j: opts.neo4jService }));
+    }
   }
 
   // Global rate limit. Conservative defaults (200 req/min per IP) protect
@@ -281,6 +296,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
   await server.register(authRoutes, { prefix: '/api/auth' });
+  if (authEnabled) {
+    await server.register(tokenRoutes, { prefix: '/api/tokens' });
+  }
   await server.register(connectorRoutes, { prefix: '/api/connectors' });
   await server.register(schemaRoutes, { prefix: '/api/schema' });
 
