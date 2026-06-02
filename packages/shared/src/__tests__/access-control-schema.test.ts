@@ -108,4 +108,141 @@ describe('accessControl schema', () => {
       }),
     ).toThrow();
   });
+
+  // Provider-level refines: empty values are fine when the provider is
+  // disabled (so feature-flagged YAML stays cheap to ship), but the
+  // moment enabled flips to true the schema rejects the load with a
+  // dotted-path error instead of letting a half-configured provider
+  // 500 at first login.
+
+  it('accepts an OIDC provider with empty values when disabled', () => {
+    const cfg = configSchema.parse({
+      ...baseConfig,
+      accessControl: {
+        auth: {
+          providers: {
+            oidc: { enabled: false, issuerUrl: '', clientId: '', clientSecretEnv: '' },
+          },
+        },
+      },
+    });
+    expect(cfg.accessControl.auth.providers.oidc.enabled).toBe(false);
+  });
+
+  it('rejects an enabled OIDC provider with an empty issuerUrl', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: {
+          auth: {
+            enabled: true,
+            providers: {
+              oidc: {
+                enabled: true,
+                issuerUrl: '',
+                clientId: 'shipit',
+                clientSecretEnv: 'OIDC_CLIENT_SECRET',
+                displayName: 'IdP',
+              },
+            },
+            admins: ['a@example.com'],
+          },
+        },
+      }),
+    ).toThrow(/oidc\.enabled is true[\s\S]*issuerUrl/);
+  });
+
+  it('rejects an enabled OIDC provider with an empty clientId', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: {
+          auth: {
+            enabled: true,
+            providers: {
+              oidc: {
+                enabled: true,
+                issuerUrl: 'https://idp.example.com',
+                clientId: '',
+                clientSecretEnv: 'OIDC_CLIENT_SECRET',
+                displayName: 'IdP',
+              },
+            },
+            admins: ['a@example.com'],
+          },
+        },
+      }),
+    ).toThrow(/oidc\.enabled is true[\s\S]*clientId/);
+  });
+
+  it('rejects an enabled OIDC provider with an empty clientSecretEnv', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: {
+          auth: {
+            enabled: true,
+            providers: {
+              oidc: {
+                enabled: true,
+                issuerUrl: 'https://idp.example.com',
+                clientId: 'shipit',
+                clientSecretEnv: '',
+                displayName: 'IdP',
+              },
+            },
+            admins: ['a@example.com'],
+          },
+        },
+      }),
+    ).toThrow(/oidc\.enabled is true[\s\S]*clientSecretEnv/);
+  });
+
+  it('accepts a GitHub OAuth provider with empty values when disabled', () => {
+    const cfg = configSchema.parse({
+      ...baseConfig,
+      accessControl: {
+        auth: {
+          providers: {
+            github: { enabled: false, clientId: '', clientSecretEnv: '' },
+          },
+        },
+      },
+    });
+    expect(cfg.accessControl.auth.providers.github.enabled).toBe(false);
+  });
+
+  it('rejects an enabled GitHub OAuth provider with an empty clientId', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: {
+          auth: {
+            enabled: true,
+            providers: {
+              github: { enabled: true, clientId: '', clientSecretEnv: 'GITHUB_OAUTH_SECRET' },
+            },
+            admins: ['a@example.com'],
+          },
+        },
+      }),
+    ).toThrow(/github\.enabled is true[\s\S]*clientId/);
+  });
+
+  it('rejects an enabled GitHub OAuth provider with an empty clientSecretEnv', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: {
+          auth: {
+            enabled: true,
+            providers: {
+              github: { enabled: true, clientId: 'gh-client', clientSecretEnv: '' },
+            },
+            admins: ['a@example.com'],
+          },
+        },
+      }),
+    ).toThrow(/github\.enabled is true[\s\S]*clientSecretEnv/);
+  });
 });

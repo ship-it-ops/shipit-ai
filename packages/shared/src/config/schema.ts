@@ -242,26 +242,56 @@ const devUserSchema = z
 // it at boot. Same pattern as `connectors.github.app.privateKeyPath` — paths
 // and env-var names are safe to commit; the values they point at are not.
 
-const oidcProviderSchema = z.object({
-  enabled: z.boolean().default(false),
-  issuerUrl: z.string().default(''),
-  clientId: z.string().default(''),
-  clientSecretEnv: z.string().default(''),
-  scopes: z.array(z.string()).default(['openid', 'email', 'profile']),
-  emailClaim: z.string().default('email'),
-  displayName: z.string().default('OIDC'),
-});
+// When a provider is disabled the empty-string defaults below are fine —
+// the provider never gets instantiated. When enabled, the refines below
+// turn missing values into a loud, dotted-path validation error at
+// loadConfig() time instead of a surprise at first login attempt.
+const oidcProviderSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuerUrl: z.string().default(''),
+    clientId: z.string().default(''),
+    clientSecretEnv: z.string().default(''),
+    scopes: z.array(z.string()).default(['openid', 'email', 'profile']),
+    emailClaim: z.string().default('email'),
+    displayName: z.string().default('OIDC'),
+  })
+  .refine((v) => !v.enabled || v.issuerUrl.length > 0, {
+    message: 'must be set when oidc.enabled is true',
+    path: ['issuerUrl'],
+  })
+  .refine((v) => !v.enabled || v.clientId.length > 0, {
+    message: 'must be set when oidc.enabled is true',
+    path: ['clientId'],
+  })
+  .refine((v) => !v.enabled || v.clientSecretEnv.length > 0, {
+    message: 'must be the name of an env var holding the client secret when oidc.enabled is true',
+    path: ['clientSecretEnv'],
+  })
+  .refine((v) => !v.enabled || v.displayName.length > 0, {
+    message: 'must be set when oidc.enabled is true (shown on the login button)',
+    path: ['displayName'],
+  });
 
-const githubOAuthProviderSchema = z.object({
-  enabled: z.boolean().default(false),
-  clientId: z.string().default(''),
-  clientSecretEnv: z.string().default(''),
-  // Optional GitHub-org allow-list. Empty array = any GitHub user with an
-  // account can log in. Distinct from the connector-side `org` config —
-  // this gates *web-UI sign-in*, not the data sync.
-  allowedOrgs: z.array(z.string()).default([]),
-  displayName: z.string().default('GitHub'),
-});
+const githubOAuthProviderSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    clientId: z.string().default(''),
+    clientSecretEnv: z.string().default(''),
+    // Optional GitHub-org allow-list. Empty array = any GitHub user with an
+    // account can log in. Distinct from the connector-side `org` config —
+    // this gates *web-UI sign-in*, not the data sync.
+    allowedOrgs: z.array(z.string()).default([]),
+    displayName: z.string().default('GitHub'),
+  })
+  .refine((v) => !v.enabled || v.clientId.length > 0, {
+    message: 'must be set when github.enabled is true',
+    path: ['clientId'],
+  })
+  .refine((v) => !v.enabled || v.clientSecretEnv.length > 0, {
+    message: 'must be the name of an env var holding the client secret when github.enabled is true',
+    path: ['clientSecretEnv'],
+  });
 
 const sessionSchema = z.object({
   ttlHours: z.number().int().positive().default(12),

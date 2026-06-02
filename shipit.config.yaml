@@ -1,9 +1,11 @@
-# ShipIt-AI configuration — committed, production base.
+# ShipIt-AI configuration — committed, deployment-agnostic baseline.
 #
 # Values here are the defaults every deployment starts from. Use ${ENV_VAR}
 # (required) or ${ENV_VAR:-default} (with fallback) for anything that varies
 # per environment or is a secret. Local development overrides and personal
-# settings go in shipit.config.local.yaml (gitignored).
+# settings go in shipit.config.local.yaml (gitignored). Production
+# deployments either set the env vars on the host or commit a separate
+# overlay (e.g. a private shipit.config.<env>.yaml).
 #
 # Two top-level sections:
 #   backend.*  — Node services (api-server, mcp-server, etc.). Server-only.
@@ -12,11 +14,21 @@
 
 backend:
   neo4j:
-    uri: ${NEO4J_URI:-bolt://localhost:7687}
-    user: ${NEO4J_USER:-neo4j}
+    # Required everywhere — no localhost fallback so a misconfigured prod
+    # deploy fails loud at boot instead of silently pointing at a
+    # nonexistent local database. Local dev provides this via
+    # shipit.config.local.yaml.
+    uri: ${NEO4J_URI}
+    # `neo4j` is the universal default Neo4j user. Setting it as a
+    # required env var (not a silent fallback) forces every deploy to
+    # acknowledge which DB account is being used.
+    user: ${NEO4J_USER}
     password: ${NEO4J_PASSWORD}
   redis:
-    url: ${REDIS_URL:-redis://localhost:6379}
+    # Required everywhere — same rationale as neo4j.uri. Sessions + the
+    # connector run store both live here when auth is on, so a missing
+    # value is a hard failure, not a soft warning.
+    url: ${REDIS_URL}
   api:
     port: 3001
   schema:
@@ -56,7 +68,9 @@ connectors:
       id: ${GITHUB_APP_ID:-}
       privateKeyPath: ${GITHUB_APP_PRIVATE_KEY_PATH:-}
       webhookSecret: ${GITHUB_WEBHOOK_SECRET:-}
-      webhookPublicUrl: ${GITHUB_WEBHOOK_PUBLIC_URL:-http://localhost:3001/api/webhooks/github}
+      # Public URL GitHub posts webhooks to. Required only when you wire a
+      # GitHub connector instance; leave empty otherwise.
+      webhookPublicUrl: ${GITHUB_WEBHOOK_PUBLIC_URL:-}
     rateLimits:
       # Opt into Octokit If-None-Match conditional requests to stretch the
       # 5k/hr per-installation budget. Disable if you're debugging fetchers.
@@ -70,9 +84,17 @@ connectors:
 
 frontend:
   api:
-    url: ${SHIPIT_API_URL:-http://localhost:3001}
+    # Public URL the web-UI's browser code uses to reach the api-server.
+    # Required everywhere — no default, since this varies by deployment.
+    # Local dev sets this to http://localhost:3001 in
+    # shipit.config.local.yaml; production sets it to the public origin
+    # (typically the same as SHIPIT_WEB_ORIGIN when web + api share a
+    # reverse proxy).
+    url: ${SHIPIT_API_URL}
   # devUser is intentionally absent here — set it in shipit.config.local.yaml.
-  # Once real auth lands this whole block goes away.
+  # It powers the dev-fallback principal when accessControl.auth.enabled is
+  # false (the local-dev path). In production with auth enabled, the principal
+  # comes from the IdP and devUser is ignored.
   integrations:
     pagerduty:
       subdomain: null
@@ -85,3 +107,98 @@ frontend:
       channelPrefix: team-
     kubernetes:
       consoleUrlTemplate: null
+
+# ── Access control ────────────────────────────────────────────────────────
+# Authentication for /api/* and the web-UI. Committed defaults are
+# safe-by-default:
+#
+#   - auth.enabled: true            (no anonymous access)
+#   - both providers disabled       (operator enables one before deploying)
+#   - admins: []                    (operator adds their email before deploying)
+#   - session cookies require secure=true (forced anyway when NODE_ENV=production)
+#
+# These defaults guarantee that a fresh checkout deployed without further
+# configuration FAILS LOUD at boot with a clear AuthConfigError — there's
+# no path where "I forgot to configure auth" results in an
+# open-to-the-internet deployment.
+#
+# Local development opts out via shipit.config.local.yaml — set
+# accessControl.auth.enabled: false there and the dev-fallback principal
+# synthesized from frontend.devUser takes over. The rest of this block
+# stays inert.
+#
+# Secrets NEVER live in YAML — clientSecretEnv / signingSecretEnv hold
+# the *names* of env vars; the api-server resolves the values at boot
+# and refuses to start if any required env var is missing or the
+# signing secret is shorter than 32 chars.
+accessControl:
+  auth:
+    enabled: true
+
+    providers:
+      # Generic OIDC — works with any standards-compliant identity provider
+      # (Auth0, Okta, Authentik, Keycloak, Microsoft Entra, Google
+      # Workspace, etc.). Flip enabled: true and fill in the issuer URL,
+      # client ID, and clientSecretEnv to use.
+      #
+      # Callback URL the IdP needs to know:
+      #   https://<your-domain>/api/auth/callback/oidc
+      oidc:
+        enabled: false
+        issuerUrl: ${OIDC_ISSUER_URL:-}
+        clientId: ${OIDC_CLIENT_ID:-}
+        clientSecretEnv: OIDC_CLIENT_SECRET
+        scopes: [openid, email, profile]
+        emailClaim: email
+        displayName: ${OIDC_DISPLAY_NAME}
+
+      # "Sign in with GitHub" via a GitHub OAuth App. NOTE: this is a
+      # different kind of GitHub credential than the GitHub App used by
+      # the connectors block above — you'll need to create both
+      # separately if you want both features.
+      #
+      # Create the OAuth App at:
+      #   https://github.com/settings/developers (New OAuth App)
+      # Authorization callback URL:
+      #   https://<your-domain>/api/auth/callback/github
+      github:
+        enabled: false
+        clientId: ${GITHUB_OAUTH_CLIENT_ID:-}
+        clientSecretEnv: GITHUB_OAUTH_SECRET
+        # Optional GitHub-org allow-list — empty means any authenticated
+        # GitHub user can sign in (which usually isn't what you want in
+        # production). Add your org name(s) here to gate sign-in by org
+        # membership.
+        allowedOrgs: []
+        displayName: GitHub
+
+    # Pre-seeded admin list. First sign-in for any of these emails lands
+    # as `admin`; everyone else is `member` (or rejected if allowList
+    # below is non-empty). Boot fails loud when auth.enabled is true and
+    # this list is empty — add your email here (or override in
+    # shipit.config.local.yaml on the deploy host) before first boot.
+    admins: []
+
+    # Optional sign-in allow-list — empty means any authenticated user
+    # may sign in (subject to provider-level checks like allowedOrgs).
+    # Non-empty means ONLY listed emails can sign in.
+    allowList: []
+
+    session:
+      ttlHours: 12
+      cookieName: shipit_sid
+      sameSite: lax
+      secure: true
+      # 32+ char secret. Boot fails loud when auth.enabled is true and
+      # this env var doesn't resolve to a long-enough value. Generate
+      # with: openssl rand -base64 48
+      signingSecretEnv: SHIPIT_SESSION_SECRET
+
+  # CORS allow-list for the web-UI origin(s). Required when auth is on —
+  # the api-server only accepts credentialed cross-origin requests from
+  # these. Single-origin deploys set SHIPIT_WEB_ORIGIN; multi-origin
+  # deploys (staging + prod, an internal admin tool, etc.) can replace
+  # this list with explicit entries.
+  web:
+    allowedOrigins:
+      - ${SHIPIT_WEB_ORIGIN}
