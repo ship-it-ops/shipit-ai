@@ -225,7 +225,7 @@ describe('require-auth preHandler — session-resolved principal', () => {
     // this first to obtain a session cookie, then exercise the protected
     // probe with that cookie.
     server.post<{ Body: { principal: AuthPrincipal; org?: string } }>(
-      '/api/auth/_test/seed-session',
+      '/api/auth/callback/_test-seed',
       async (request, reply) => {
         request.session.principal = request.body.principal;
         request.session.org = request.body.org ?? 'default';
@@ -253,7 +253,7 @@ describe('require-auth preHandler — session-resolved principal', () => {
 
     const seed = await server.inject({
       method: 'POST',
-      url: '/api/auth/_test/seed-session',
+      url: '/api/auth/callback/_test-seed',
       payload: { principal: adminPrincipal, org: 'default' },
       headers: { 'content-type': 'application/json' },
     });

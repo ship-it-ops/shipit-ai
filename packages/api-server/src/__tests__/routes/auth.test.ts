@@ -131,9 +131,64 @@ describe('/api/auth — auth disabled', () => {
 
   it('GET /api/auth/login/oidc 404s when auth is disabled', async () => {
     const response = await server.inject({ method: 'GET', url: '/api/auth/login/oidc' });
-    // With auth disabled the route plugin only registers /providers, so
+    // With auth disabled the route plugin only registers /providers + /me, so
     // unknown paths fall through to the default 404 handler.
     expect(response.statusCode).toBe(404);
+  });
+
+  it('GET /api/auth/me returns the dev-fallback principal when devUser is absent', async () => {
+    const response = await server.inject({ method: 'GET', url: '/api/auth/me' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.user.provider).toBe('dev-fallback');
+    expect(body.user.email).toBe('dev@shipit.local');
+    expect(body.user.role).toBe('admin');
+    expect(body.user.capabilities).toEqual(['*']);
+    expect(body.org).toBe('default');
+    // No devUser → no team/joinedAt in the response either.
+    expect(body.user.team).toBeUndefined();
+    expect(body.user.joinedAt).toBeUndefined();
+  });
+});
+
+describe('/api/auth — auth disabled with a configured devUser', () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    const base = makeTestConfig();
+    const config: Config = {
+      ...base,
+      frontend: {
+        ...base.frontend,
+        devUser: {
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+          email: 'ada@example.com',
+          role: 'Engineer',
+          team: 'platform-team',
+          joinedAt: '2026-01-15',
+          capabilities: ['graph:read', 'graph:write'],
+        },
+      },
+    };
+    server = await createServer({ config });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('GET /api/auth/me mirrors the devUser config including team and joinedAt', async () => {
+    const response = await server.inject({ method: 'GET', url: '/api/auth/me' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.user.provider).toBe('dev-fallback');
+    expect(body.user.email).toBe('ada@example.com');
+    expect(body.user.displayName).toBe('Ada Lovelace');
+    expect(body.user.capabilities).toEqual(['graph:read', 'graph:write']);
+    expect(body.user.team).toBe('platform-team');
+    expect(body.user.joinedAt).toBe('2026-01-15');
   });
 });
 

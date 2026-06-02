@@ -51,6 +51,33 @@ const authRoutes: FastifyPluginAsync = async (server) => {
   const config = server.config;
   const auth = config?.accessControl.auth;
 
+  // /me is registered in BOTH modes — it's the single endpoint the web-UI
+  // calls to learn the current principal. When auth is disabled,
+  // require-auth's preHandler has already populated request.ctx with the
+  // dev-fallback principal synthesized from frontend.devUser. When auth
+  // is enabled, require-auth either populated ctx from the session or
+  // emitted a 401 before this handler runs. Either way the handler reads
+  // a single source: request.ctx.
+  //
+  // team / joinedAt aren't on AuthPrincipal because real OIDC providers
+  // don't return them, but the dev-fallback path has them in config — we
+  // pluck them out here so the local-dev profile page renders the full
+  // identity card.
+  server.get('/me', async (request) => {
+    const base = { user: request.ctx.user, org: request.ctx.org };
+    if (request.ctx.user.provider !== 'dev-fallback') return base;
+    const devUser = request.server.config?.frontend.devUser;
+    if (!devUser) return base;
+    return {
+      user: {
+        ...request.ctx.user,
+        team: devUser.team,
+        joinedAt: devUser.joinedAt,
+      },
+      org: base.org,
+    };
+  });
+
   if (!auth?.enabled) {
     // Auth disabled — register only /providers (returning an empty list
     // so the web-UI login page can render "no providers configured" if
@@ -72,19 +99,6 @@ const authRoutes: FastifyPluginAsync = async (server) => {
       providers.push({ id: 'github', displayName: auth.providers.github.displayName });
     }
     return { providers };
-  });
-
-  server.get('/me', async (request, reply) => {
-    const principal = request.session?.principal;
-    if (!principal) {
-      return reply.status(401).send({
-        error: { code: 'AUTH_REQUIRED', message: 'Sign in to continue.' },
-      });
-    }
-    return {
-      user: principal,
-      org: request.session.org ?? 'default',
-    };
   });
 
   server.post('/logout', async (request, reply) => {

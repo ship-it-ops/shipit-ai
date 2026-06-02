@@ -40,11 +40,24 @@ declare module 'fastify' {
 }
 
 // Public paths that bypass auth even when it's enabled. /api/health
-// powers external uptime checks; /api/auth/* must be reachable pre-login
-// to drive the login flow itself; /api/mcp/info is read by the
-// /configure/mcp page so admins can verify their MCP setup before they
-// have any token.
-const PUBLIC_PATH_PREFIXES: ReadonlyArray<string> = ['/api/health', '/api/auth/', '/api/mcp/info'];
+// powers external uptime checks; the specific /api/auth/* endpoints
+// listed below need pre-login access so the login flow itself can run
+// (providers list, login start, IdP callback, logout); /api/mcp/info is
+// read by the /configure/mcp page so admins can verify their MCP setup
+// before they have any token.
+//
+// Note: /api/auth/me is intentionally NOT public. When auth is enabled
+// and the user has no session, /me should 401 (so the web-UI redirects
+// to /login) — that 401 is best emitted here, not in the route handler,
+// so a single code path owns the auth-required response.
+const PUBLIC_PATH_PREFIXES: ReadonlyArray<string> = [
+  '/api/health',
+  '/api/auth/providers',
+  '/api/auth/login/',
+  '/api/auth/callback/',
+  '/api/auth/logout',
+  '/api/mcp/info',
+];
 
 const ANONYMOUS_PRINCIPAL: AuthPrincipal = {
   id: 'anonymous',
