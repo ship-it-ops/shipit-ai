@@ -127,11 +127,13 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   });
 
   // CORS. With auth enabled, lock the origin list down to what the operator
-  // explicitly configured and enable credentials so the session cookie
-  // round-trips across the web-UI → api-server hop (different ports in dev,
-  // potentially different subdomains in prod). With auth disabled the
-  // permissive `origin: true` keeps the existing local-dev workflow intact —
-  // there's no session to protect.
+  // explicitly configured. With auth disabled the permissive `origin: true`
+  // keeps the existing local-dev workflow intact. `credentials: true` is
+  // set in BOTH modes because the web-UI's fetchApi wrapper sends every
+  // request with `credentials: 'include'` — without the matching
+  // Access-Control-Allow-Credentials response header, the browser drops
+  // the response and useCurrentUser (and every other API call) silently
+  // sees a network error.
   if (authEnabled) {
     const allowedOrigins = opts.config?.accessControl.web.allowedOrigins ?? [];
     await server.register(cors, {
@@ -139,7 +141,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
       credentials: true,
     });
   } else {
-    await server.register(cors, { origin: true });
+    await server.register(cors, { origin: true, credentials: true });
   }
 
   // Session + cookie plugins ride along when auth is enabled. The Redis
