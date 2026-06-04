@@ -24,6 +24,15 @@ export interface ClientConfig {
   api: {
     url: string;
   };
+  // Build-time snapshot of accessControl.auth. Re-read at runtime by the
+  // edge middleware (NEXT_PUBLIC_SHIPIT_AUTH_*) and the login page. Lets
+  // the UI diagnose "auth is enabled but no provider is" without needing
+  // the api-server to be reachable — useful precisely when the api-server
+  // crashed at boot because of that exact misconfiguration.
+  auth: {
+    enabled: boolean;
+    providersEnabled: ReadonlyArray<'oidc' | 'github'>;
+  };
   devUser: DevUserConfig | null;
   integrations: {
     pagerduty: { subdomain: string | null };
@@ -77,9 +86,17 @@ const devUser: DevUserConfig | null =
       }
     : null;
 
+const authProvidersEnabled = (
+  csv(process.env.NEXT_PUBLIC_SHIPIT_AUTH_PROVIDERS_ENABLED) ?? []
+).filter((id): id is 'oidc' | 'github' => id === 'oidc' || id === 'github');
+
 export const clientConfig: ClientConfig = Object.freeze({
   api: {
     url: str(process.env.NEXT_PUBLIC_SHIPIT_API_URL) ?? 'http://localhost:3001',
+  },
+  auth: {
+    enabled: process.env.NEXT_PUBLIC_SHIPIT_AUTH_ENABLED === 'true',
+    providersEnabled: authProvidersEnabled,
   },
   devUser,
   integrations: {

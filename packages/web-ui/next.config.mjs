@@ -30,11 +30,25 @@ function loadShipitAuthFlags() {
   // the api-server. Both knobs are surfaced as NEXT_PUBLIC vars so the
   // middleware can read them at edge-runtime without needing to load the
   // YAML at request time.
+  //
+  // providersEnabled also rides along so the login page can diagnose
+  // "no providers configured" even when the api-server is unreachable —
+  // which is exactly what happens when an operator flips auth.enabled to
+  // true without enabling any provider (the api-server fails closed at
+  // boot, so /api/auth/providers becomes uncallable). Without this hint
+  // the page would fall back to a generic "API server down" message and
+  // miss the real root cause.
   const merged = loadMergedConfig();
   const auth = merged.accessControl?.auth ?? {};
+  const providers = auth.providers ?? {};
+  const providersEnabled = [];
+  if (providers.oidc?.enabled === true) providersEnabled.push('oidc');
+  if (providers.github?.enabled === true) providersEnabled.push('github');
   return {
     enabled: auth.enabled === true,
-    cookieName: typeof auth.session?.cookieName === 'string' ? auth.session.cookieName : 'shipit_sid',
+    cookieName:
+      typeof auth.session?.cookieName === 'string' ? auth.session.cookieName : 'shipit_sid',
+    providersEnabled,
   };
 }
 
@@ -121,6 +135,7 @@ for (const [k, v] of Object.entries(flat)) {
 const authFlags = loadShipitAuthFlags();
 envBlock.NEXT_PUBLIC_SHIPIT_AUTH_ENABLED = authFlags.enabled ? 'true' : 'false';
 envBlock.NEXT_PUBLIC_SHIPIT_AUTH_COOKIE_NAME = authFlags.cookieName;
+envBlock.NEXT_PUBLIC_SHIPIT_AUTH_PROVIDERS_ENABLED = authFlags.providersEnabled.join(',');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

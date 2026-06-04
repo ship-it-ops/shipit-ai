@@ -7,16 +7,19 @@ import './globals.css';
 import { ThemeBootstrap } from '@ship-it-ui/next';
 import { getThemeFromCookies } from '@ship-it-ui/next/server';
 import { Providers } from '@/components/providers';
-import { Sidebar } from '@/components/layout/sidebar';
-import { Header } from '@/components/layout/header';
-import { GlobalCommandPalette } from '@/components/layout/global-command-palette';
-import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
 
 export const metadata: Metadata = {
   title: 'ShipIt-AI',
   description: 'AI-Ready Knowledge Graph Builder for Software Ecosystems',
 };
 
+// Root layout. Owns the <html>/<body> shell and the cross-cutting
+// providers (theme, React Query, auth-redirect listener) that every
+// surface needs. Chrome — the sidebar, header, global command palette,
+// onboarding trigger — lives in `(app)/layout.tsx` so unauthenticated
+// surfaces (`/login`, future `/forbidden`, `/session-expired`) can
+// render bare against the same theme without the authenticated app
+// frame leaking through.
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = getThemeFromCookies(await cookies());
 
@@ -26,17 +29,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ThemeBootstrap />
       </head>
       <body className="bg-bg text-text">
-        <Providers>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <Header />
-              <main className="flex-1 overflow-y-auto">{children}</main>
-            </div>
-          </div>
-          <GlobalCommandPalette />
-          <OnboardingTrigger />
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

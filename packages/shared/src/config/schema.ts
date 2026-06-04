@@ -234,8 +234,7 @@ const devUserSchema = z
 //
 // Production sets `enabled: true`; the boot-time invariant (validated in
 // the api-server, not here — Zod can't easily express it) requires at
-// least one enabled provider and a non-empty `admins[]`. See
-// `docs/agent/decisions/auth-architecture-v1.md`.
+// least one enabled provider and a non-empty `admins[]`.
 //
 // Secrets are NEVER stored here. Provider config holds the env-var *name*
 // (e.g. `clientSecretEnv: "OIDC_CLIENT_SECRET"`) and the api-server resolves

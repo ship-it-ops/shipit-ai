@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-01 | Total notes: 27
+Last updated: 2026-06-04 | Total notes: 30
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -43,11 +43,14 @@ _(no in-flight work)_
 
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
+- [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | active | core | 2026-06-04 | distributed/embedded runtime toggle for near-free hosting
 
 ## Open Questions
 
 - [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-05-20 | per-org App webhook secret lookup needed for P1
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
+- [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
+- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
 
 ## Scars
 
