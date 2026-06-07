@@ -222,6 +222,12 @@ jobs:
           # behavior: REQUEST_CHANGES exits 1 (fails the job), APPROVE and
           # COMMENT exit 0. Add `--strict` if you want COMMENT to also fail.
           prompt: '/ship-reviewed-prs ${{ github.event.pull_request.number }}'
+          # DIAGNOSTIC — surface the agent's tool calls and text in the runner
+          # log so we can see why a 0-finding review isn't appearing on the PR
+          # (PR #48 ran to completion in CI but submitted nothing). Revert to
+          # the default (false) once the gap is identified, since the verbose
+          # output is otherwise noisy.
+          show_full_output: true
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           # Skill source: https://github.com/ship-it-ops/ship-code/tree/main/skills/ship-reviewed-prs
