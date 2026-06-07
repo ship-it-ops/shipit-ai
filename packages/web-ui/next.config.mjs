@@ -16,6 +16,43 @@ const repoRoot = resolve(__dirname, '../..');
 // evaluates. Inlining keeps web-ui's build self-contained — at the cost of
 // ~30 lines of repetition with packages/shared/src/config/loader.ts.
 function loadShipitFrontendConfig() {
+  const merged = loadMergedConfig();
+  // Only substitute env on the frontend subtree — the backend tree may
+  // reference required-without-fallback vars (e.g. ${NEO4J_PASSWORD}) that
+  // aren't relevant to or present during a frontend build.
+  return substituteEnv(merged.frontend ?? {}, ['frontend']);
+}
+
+function loadShipitAuthFlags() {
+  // accessControl drives the web-UI middleware: when auth.enabled is true
+  // the middleware redirects unauthenticated requests to /login, and the
+  // session-cookie name has to match what @fastify/session writes from
+  // the api-server. Both knobs are surfaced as NEXT_PUBLIC vars so the
+  // middleware can read them at edge-runtime without needing to load the
+  // YAML at request time.
+  //
+  // providersEnabled also rides along so the login page can diagnose
+  // "no providers configured" even when the api-server is unreachable —
+  // which is exactly what happens when an operator flips auth.enabled to
+  // true without enabling any provider (the api-server fails closed at
+  // boot, so /api/auth/providers becomes uncallable). Without this hint
+  // the page would fall back to a generic "API server down" message and
+  // miss the real root cause.
+  const merged = loadMergedConfig();
+  const auth = merged.accessControl?.auth ?? {};
+  const providers = auth.providers ?? {};
+  const providersEnabled = [];
+  if (providers.oidc?.enabled === true) providersEnabled.push('oidc');
+  if (providers.github?.enabled === true) providersEnabled.push('github');
+  return {
+    enabled: auth.enabled === true,
+    cookieName:
+      typeof auth.session?.cookieName === 'string' ? auth.session.cookieName : 'shipit_sid',
+    providersEnabled,
+  };
+}
+
+function loadMergedConfig() {
   const basePath = join(repoRoot, 'shipit.config.yaml');
   const localPath = join(repoRoot, 'shipit.config.local.yaml');
   if (!existsSync(basePath)) {
@@ -23,11 +60,7 @@ function loadShipitFrontendConfig() {
   }
   const base = parseYaml(readFileSync(basePath, 'utf-8')) ?? {};
   const local = existsSync(localPath) ? (parseYaml(readFileSync(localPath, 'utf-8')) ?? {}) : {};
-  const merged = deepMerge(base, local);
-  // Only substitute env on the frontend subtree — the backend tree may
-  // reference required-without-fallback vars (e.g. ${NEO4J_PASSWORD}) that
-  // aren't relevant to or present during a frontend build.
-  return substituteEnv(merged.frontend ?? {}, ['frontend']);
+  return deepMerge(base, local);
 }
 
 function isPlainObject(value) {
@@ -99,6 +132,10 @@ const envBlock = {};
 for (const [k, v] of Object.entries(flat)) {
   envBlock[`NEXT_PUBLIC_SHIPIT_${k}`] = v;
 }
+const authFlags = loadShipitAuthFlags();
+envBlock.NEXT_PUBLIC_SHIPIT_AUTH_ENABLED = authFlags.enabled ? 'true' : 'false';
+envBlock.NEXT_PUBLIC_SHIPIT_AUTH_COOKIE_NAME = authFlags.cookieName;
+envBlock.NEXT_PUBLIC_SHIPIT_AUTH_PROVIDERS_ENABLED = authFlags.providersEnabled.join(',');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

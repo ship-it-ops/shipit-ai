@@ -10,4 +10,6 @@ export type {
   LastRun,
   ResolvedAppCredentials,
   AppLike,
+  AccessControlConfig,
+  AuthConfig,
 } from './schema.js';

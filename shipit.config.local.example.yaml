@@ -6,13 +6,38 @@
 
 backend:
   neo4j:
+    # shipit.config.yaml requires NEO4J_URI in prod (no localhost
+    # fallback). Provide the local docker-compose value here.
+    uri: bolt://localhost:7687
+    # shipit.config.yaml requires NEO4J_USER too — `neo4j` is the
+    # standard default user for any official Neo4j install.
+    user: neo4j
     # Matches the password baked into docker/docker-compose.yml's local Neo4j.
     # Override if you've changed it.
     password: shipit-dev
+  redis:
+    # Required for the same reason as neo4j.uri.
+    url: redis://localhost:6379
+
+connectors:
+  github:
+    app:
+      # Receiver URL used by smee.io or similar webhook forwarder. The
+      # prod-shaped shipit.config.yaml expects this to be set via the
+      # GITHUB_WEBHOOK_PUBLIC_URL env var on the deploy host; for local
+      # dev either keep this localhost URL or paste your smee tunnel URL.
+      webhookPublicUrl: http://localhost:3001/api/webhooks/github
 
 frontend:
-  # Mock identity until real auth is wired up. Personalize these — they show
-  # in the user menu and on the profile page.
+  # The api-server URL the browser hits. Prod defaults to the public
+  # domain in shipit.config.yaml; locally we need the dev port.
+  api:
+    url: http://localhost:3001
+  # Identity used by the dev-fallback auth path. When
+  # accessControl.auth.enabled is false (the local-dev default below),
+  # the api-server synthesizes a principal from these values and the
+  # profile page / user menu render off them. Personalize freely —
+  # they're never read in production.
   devUser:
     firstName: Dev
     lastName: User
@@ -32,15 +57,15 @@ frontend:
   #
   # integrations:
   #   pagerduty:
-  #     subdomain: shipitops
+  #     subdomain: your-pd-subdomain
   #   datadog:
   #     site: datadoghq.com
   #   github:
-  #     org: ship-it-ops
+  #     org: your-github-org
   #   slack:
-  #     workspace: shipitops
+  #     workspace: your-slack-workspace
   #   kubernetes:
-  #     consoleUrlTemplate: https://argo.shipitops.com/applications/{namespace}/{name}
+  #     consoleUrlTemplate: https://argo.your-domain.com/applications/{namespace}/{name}
 
 # ── GitHub connector instances ────────────────────────────────────────────
 # Most users won't hand-edit this — the Connector Hub at /connectors writes
@@ -51,12 +76,12 @@ frontend:
 #
 # connectors:
 #   instances:
-#     - id: github-shipitops
+#     - id: github-your-org
 #       type: github
 #       enabled: true
-#       name: "ShipItOps"
+#       name: "Your Org"
 #       installationId: "12345678"      # numeric id from the App installation URL
-#       org: "shipitops"
+#       org: "your-github-org"
 #       schedule: "*/15 * * * *"        # polling cron, fallback for missed webhooks
 #       scope:
 #         repos:
@@ -84,3 +109,28 @@ frontend:
 #       app:
 #         id: "654321"
 #         privateKeyPath: "/etc/shipit/keys/prod-app.pem"
+
+# ── Access control (opt out of prod's auth locally) ───────────────────────
+# shipit.config.yaml ships with accessControl.auth.enabled: true so a
+# fresh production deploy is safe by default. For local development we
+# usually want the dev-fallback path instead — synthesize a principal
+# from frontend.devUser above without bouncing through an IdP.
+#
+# The override below is the minimum needed: every other field
+# (providers, admins, session config, allowedOrigins) stays as the
+# committed prod-safe default, but `enabled: false` short-circuits the
+# whole auth boundary so the require-auth preHandler returns the
+# dev-fallback principal on every request.
+#
+# Flip this to true when you want to test the real OIDC / GitHub OAuth
+# flow locally. You'll also need to set SHIPIT_SESSION_SECRET and
+# whichever provider's clientSecretEnv before the api-server will boot.
+accessControl:
+  auth:
+    enabled: false
+    providers:
+      # shipit.config.yaml uses ${OIDC_DISPLAY_NAME} as a required env
+      # var. Provide a placeholder here so the loader doesn't trip when
+      # oidc.enabled is false locally.
+      oidc:
+        displayName: SSO

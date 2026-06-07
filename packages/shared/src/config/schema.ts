@@ -227,6 +227,187 @@ const devUserSchema = z
   })
   .optional();
 
+// ── Access control / authentication ───────────────────────────────────────
+// Top-level `accessControl:` block. The `auth.enabled` flag is the master
+// switch: when false (local dev default), the api-server synthesizes a
+// principal from `frontend.devUser` and skips OIDC entirely.
+//
+// Production sets `enabled: true`; the boot-time invariant (validated in
+// the api-server, not here — Zod can't easily express it) requires at
+// least one enabled provider and a non-empty `admins[]`.
+//
+// Secrets are NEVER stored here. Provider config holds the env-var *name*
+// (e.g. `clientSecretEnv: "OIDC_CLIENT_SECRET"`) and the api-server resolves
+// it at boot. Same pattern as `connectors.github.app.privateKeyPath` — paths
+// and env-var names are safe to commit; the values they point at are not.
+
+// When a provider is disabled the empty-string defaults below are fine —
+// the provider never gets instantiated. When enabled, the refines below
+// turn missing values into a loud, dotted-path validation error at
+// loadConfig() time instead of a surprise at first login attempt.
+const oidcProviderSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    issuerUrl: z.string().default(''),
+    clientId: z.string().default(''),
+    clientSecretEnv: z.string().default(''),
+    scopes: z.array(z.string()).default(['openid', 'email', 'profile']),
+    emailClaim: z.string().default('email'),
+    displayName: z.string().default('OIDC'),
+  })
+  .refine((v) => !v.enabled || v.issuerUrl.length > 0, {
+    message: 'must be set when oidc.enabled is true',
+    path: ['issuerUrl'],
+  })
+  .refine((v) => !v.enabled || v.clientId.length > 0, {
+    message: 'must be set when oidc.enabled is true',
+    path: ['clientId'],
+  })
+  .refine((v) => !v.enabled || v.clientSecretEnv.length > 0, {
+    message: 'must be the name of an env var holding the client secret when oidc.enabled is true',
+    path: ['clientSecretEnv'],
+  })
+  .refine((v) => !v.enabled || v.displayName.length > 0, {
+    message: 'must be set when oidc.enabled is true (shown on the login button)',
+    path: ['displayName'],
+  });
+
+const githubOAuthProviderSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    clientId: z.string().default(''),
+    clientSecretEnv: z.string().default(''),
+    // Optional GitHub-org allow-list. Empty array = any GitHub user with an
+    // account can log in. Distinct from the connector-side `org` config —
+    // this gates *web-UI sign-in*, not the data sync.
+    allowedOrgs: z.array(z.string()).default([]),
+    displayName: z.string().default('GitHub'),
+  })
+  .refine((v) => !v.enabled || v.clientId.length > 0, {
+    message: 'must be set when github.enabled is true',
+    path: ['clientId'],
+  })
+  .refine((v) => !v.enabled || v.clientSecretEnv.length > 0, {
+    message: 'must be the name of an env var holding the client secret when github.enabled is true',
+    path: ['clientSecretEnv'],
+  });
+
+const sessionSchema = z.object({
+  ttlHours: z.number().int().positive().default(12),
+  cookieName: z.string().default('shipit_sid'),
+  // `lax` is the right default for first-party web-UI on its own origin.
+  // SaaS deployments fronted by a different domain than the api-server
+  // need `none` (and `secure: true`).
+  sameSite: z.enum(['lax', 'strict', 'none']).default('lax'),
+  // Forced to true outside development by the api-server at boot. Kept
+  // configurable so a self-hosted operator with TLS-terminating proxies
+  // can opt back in.
+  secure: z.boolean().default(true),
+  // Name of the env var holding the session signing secret. Required at
+  // boot when auth.enabled is true.
+  signingSecretEnv: z.string().default('SHIPIT_SESSION_SECRET'),
+});
+
+const accessControlSchema = z.object({
+  auth: z
+    .object({
+      enabled: z.boolean().default(false),
+      providers: z
+        .object({
+          oidc: oidcProviderSchema.default({
+            enabled: false,
+            issuerUrl: '',
+            clientId: '',
+            clientSecretEnv: '',
+            scopes: ['openid', 'email', 'profile'],
+            emailClaim: 'email',
+            displayName: 'OIDC',
+          }),
+          github: githubOAuthProviderSchema.default({
+            enabled: false,
+            clientId: '',
+            clientSecretEnv: '',
+            allowedOrgs: [],
+            displayName: 'GitHub',
+          }),
+        })
+        .default({
+          oidc: {
+            enabled: false,
+            issuerUrl: '',
+            clientId: '',
+            clientSecretEnv: '',
+            scopes: ['openid', 'email', 'profile'],
+            emailClaim: 'email',
+            displayName: 'OIDC',
+          },
+          github: {
+            enabled: false,
+            clientId: '',
+            clientSecretEnv: '',
+            allowedOrgs: [],
+            displayName: 'GitHub',
+          },
+        }),
+      admins: z.array(z.string()).default([]),
+      // Optional sign-in allow-list. Empty = any authenticated user may
+      // sign in (and gets the default 'member' role). Non-empty = ONLY
+      // listed emails may sign in.
+      allowList: z.array(z.string()).default([]),
+      session: sessionSchema.default({
+        ttlHours: 12,
+        cookieName: 'shipit_sid',
+        sameSite: 'lax',
+        secure: true,
+        signingSecretEnv: 'SHIPIT_SESSION_SECRET',
+      }),
+    })
+    .default({
+      enabled: false,
+      providers: {
+        oidc: {
+          enabled: false,
+          issuerUrl: '',
+          clientId: '',
+          clientSecretEnv: '',
+          scopes: ['openid', 'email', 'profile'],
+          emailClaim: 'email',
+          displayName: 'OIDC',
+        },
+        github: {
+          enabled: false,
+          clientId: '',
+          clientSecretEnv: '',
+          allowedOrgs: [],
+          displayName: 'GitHub',
+        },
+      },
+      admins: [],
+      allowList: [],
+      session: {
+        ttlHours: 12,
+        cookieName: 'shipit_sid',
+        sameSite: 'lax',
+        secure: true,
+        signingSecretEnv: 'SHIPIT_SESSION_SECRET',
+      },
+    }),
+  // CORS allow-list for the web-UI origin(s). When auth is disabled, the
+  // api-server falls back to permissive CORS so the existing local-dev
+  // flow keeps working. When auth is enabled, this list is enforced and
+  // `credentials: 'include'` round-trips require an exact match.
+  web: z
+    .object({
+      allowedOrigins: z.array(z.string()).default(['http://localhost:3000']),
+    })
+    .default({
+      allowedOrigins: ['http://localhost:3000'],
+    }),
+});
+
+export type AccessControlConfig = z.infer<typeof accessControlSchema>;
+export type AuthConfig = AccessControlConfig['auth'];
+
 export const configSchema = z.object({
   backend: z.object({
     neo4j: z.object({
@@ -281,6 +462,44 @@ export const configSchema = z.object({
       rateLimits: { conditionalRequests: true, maxConcurrentSyncs: 3 },
     },
     instances: [],
+  }),
+  // Top-level accessControl section — see `accessControlSchema` above.
+  // Defaulted shape so existing configs without an accessControl block
+  // still validate and boot with auth disabled.
+  accessControl: accessControlSchema.default({
+    auth: {
+      enabled: false,
+      providers: {
+        oidc: {
+          enabled: false,
+          issuerUrl: '',
+          clientId: '',
+          clientSecretEnv: '',
+          scopes: ['openid', 'email', 'profile'],
+          emailClaim: 'email',
+          displayName: 'OIDC',
+        },
+        github: {
+          enabled: false,
+          clientId: '',
+          clientSecretEnv: '',
+          allowedOrgs: [],
+          displayName: 'GitHub',
+        },
+      },
+      admins: [],
+      allowList: [],
+      session: {
+        ttlHours: 12,
+        cookieName: 'shipit_sid',
+        sameSite: 'lax',
+        secure: true,
+        signingSecretEnv: 'SHIPIT_SESSION_SECRET',
+      },
+    },
+    web: {
+      allowedOrigins: ['http://localhost:3000'],
+    },
   }),
 });
 

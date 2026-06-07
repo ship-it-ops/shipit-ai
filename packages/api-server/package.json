@@ -20,8 +20,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/session": "^11.1.1",
     "@fastify/swagger": "^9.7.0",
     "@shipit-ai/connector-github": "workspace:*",
     "@shipit-ai/connector-sdk": "workspace:*",
@@ -32,9 +34,12 @@
     "fastify": "^5.8.5",
     "ioredis": "^5.11.0",
     "neo4j-driver": "^5.27.0",
+    "openid-client": "^6.8.4",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
+    "@types/ioredis-mock": "^8.2.7",
+    "ioredis-mock": "^8.13.1",
     "typescript": "^6.0.3",
     "vitest": "^3.0.0"
   }

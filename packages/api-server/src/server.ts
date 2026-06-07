@@ -1,9 +1,20 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
+import session from '@fastify/session';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
+import type { Redis } from 'ioredis';
 import type { Config } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
+import { registerRequireAuth } from './middleware/require-auth.js';
+import { RedisSessionStore } from './services/auth/redis-session-store.js';
+import { AuthStateStore } from './services/auth/state-store.js';
+import { OidcProvider } from './services/auth/oidc-provider.js';
+import { GitHubProvider } from './services/auth/github-provider.js';
+import { TokenService } from './services/auth/token-service.js';
+import authRoutes from './routes/auth.js';
+import tokenRoutes from './routes/tokens.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
@@ -32,6 +43,69 @@ export interface CreateServerOptions {
   // the server can construct one bound to the right file. Tests can omit
   // this and rely on the injected registry instead.
   localConfigPath?: string;
+  // Redis client used by the session store. Required when
+  // accessControl.auth.enabled is true. Tests can pass an ioredis-mock
+  // instance; production wires the same Redis used for connector run
+  // history. When auth is disabled (the local-dev default), the session
+  // store is not registered and this can be omitted.
+  redis?: Redis;
+  // Override providers for tests. Production lets createServer construct
+  // the real OIDC / GitHub provider modules from config; mocks can pass
+  // their own to avoid hitting any real IdP.
+  oidcProvider?: OidcProvider;
+  githubProvider?: GitHubProvider;
+  // Override the TokenService for tests. Production constructs one over
+  // the Neo4j driver when auth is enabled AND a neo4jService is supplied.
+  tokenService?: TokenService;
+}
+
+class AuthConfigError extends Error {
+  constructor(message: string) {
+    super(`accessControl.auth: ${message}`);
+    this.name = 'AuthConfigError';
+  }
+}
+
+// Boot-time invariants that Zod can't easily express. Throwing here makes
+// a misconfigured production deployment fail loud at startup rather than
+// silently accepting requests without auth, or rejecting every request
+// because a critical knob is missing.
+function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void {
+  const auth = config.accessControl.auth;
+  if (!auth.enabled) return;
+
+  const oidcEnabled = auth.providers.oidc.enabled;
+  const githubEnabled = auth.providers.github.enabled;
+  if (!oidcEnabled && !githubEnabled) {
+    throw new AuthConfigError(
+      'auth is enabled but no provider is enabled. Set providers.oidc.enabled or providers.github.enabled to true.',
+    );
+  }
+
+  if (auth.admins.length === 0) {
+    throw new AuthConfigError(
+      'auth is enabled but admins[] is empty. Add at least one admin email so the first deployment is usable.',
+    );
+  }
+
+  // With `credentials: true` CORS (set below when auth is enabled), an
+  // empty allow-list means every browser request is rejected at the
+  // preflight stage — symptomatic of a misconfigured deploy and
+  // impossible to diagnose from request logs alone. Fail loud at boot
+  // instead, alongside the other "auth enabled but unusable" checks.
+  if (config.accessControl.web.allowedOrigins.length === 0) {
+    throw new AuthConfigError(
+      'auth is enabled but accessControl.web.allowedOrigins is empty. Add at least one origin (e.g. https://app.example.com) so the web-UI can reach the API.',
+    );
+  }
+
+  const secretEnv = auth.session.signingSecretEnv;
+  const secretValue = env[secretEnv];
+  if (!secretValue || secretValue.length < 32) {
+    throw new AuthConfigError(
+      `session signing secret env var "${secretEnv}" must be set and at least 32 characters long.`,
+    );
+  }
 }
 
 declare module 'fastify' {
@@ -47,7 +121,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   if (opts.config) {
     server.decorate('config', opts.config);
+    assertAuthConfigBootable(opts.config, process.env);
   }
+
+  const authEnabled = opts.config?.accessControl.auth.enabled ?? false;
 
   // Accept plain text bodies for YAML schema endpoints
   server.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
@@ -60,7 +137,116 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     done(null, body);
   });
 
-  await server.register(cors, { origin: true });
+  // CORS. With auth enabled, lock the origin list down to what the operator
+  // explicitly configured. With auth disabled the permissive `origin: true`
+  // keeps the existing local-dev workflow intact. `credentials: true` is
+  // set in BOTH modes because the web-UI's fetchApi wrapper sends every
+  // request with `credentials: 'include'` — without the matching
+  // Access-Control-Allow-Credentials response header, the browser drops
+  // the response and useCurrentUser (and every other API call) silently
+  // sees a network error.
+  if (authEnabled) {
+    const allowedOrigins = opts.config?.accessControl.web.allowedOrigins ?? [];
+    await server.register(cors, {
+      origin: allowedOrigins,
+      credentials: true,
+    });
+  } else {
+    await server.register(cors, { origin: true, credentials: true });
+  }
+
+  // Session + cookie plugins ride along when auth is enabled. The Redis
+  // session store reuses the api-server's existing ioredis client; tests
+  // and disabled-auth deployments skip the registration entirely so the
+  // boot path doesn't require Redis when auth isn't in play.
+  if (authEnabled) {
+    if (!opts.redis) {
+      throw new AuthConfigError('redis client is required when auth.enabled is true.');
+    }
+    const sessionSecret = process.env[opts.config!.accessControl.auth.session.signingSecretEnv]!;
+    await server.register(cookie);
+    await server.register(session, {
+      secret: sessionSecret,
+      cookieName: opts.config!.accessControl.auth.session.cookieName,
+      store: new RedisSessionStore({
+        redis: opts.redis,
+        defaultTtlSeconds: opts.config!.accessControl.auth.session.ttlHours * 60 * 60,
+      }),
+      cookie: {
+        httpOnly: true,
+        sameSite: opts.config!.accessControl.auth.session.sameSite,
+        // `secure: true` is forced in production regardless of the
+        // configured value — cleartext session cookies are not safe over
+        // unencrypted transports. Tests and developer laptops keep the
+        // configured default (still `true` unless deliberately set to
+        // `false`) so a misconfigured local-prod-like setup still fails
+        // closed.
+        secure:
+          process.env.NODE_ENV === 'production'
+            ? true
+            : opts.config!.accessControl.auth.session.secure,
+        maxAge: opts.config!.accessControl.auth.session.ttlHours * 60 * 60 * 1000,
+      },
+      saveUninitialized: false,
+    });
+
+    // Construct providers (or accept overrides from tests). The callback
+    // URL is derived from frontend.api.url since that's the canonical
+    // public origin the web-UI hits — operators register the same URL
+    // with their IdP. Provider modules are skipped when their respective
+    // `providers.<id>.enabled` flag is false so disabled providers don't
+    // need their secret env vars populated.
+    const publicBaseUrl = opts.config!.frontend.api.url.replace(/\/$/, '');
+    const stateStore = new AuthStateStore(opts.redis);
+    server.decorate('authStateStore', stateStore);
+
+    if (opts.oidcProvider) {
+      server.decorate('oidcProvider', opts.oidcProvider);
+    } else if (opts.config!.accessControl.auth.providers.oidc.enabled) {
+      const oidcCfg = opts.config!.accessControl.auth.providers.oidc;
+      const oidcSecret = process.env[oidcCfg.clientSecretEnv];
+      if (!oidcSecret) {
+        throw new AuthConfigError(`OIDC clientSecretEnv "${oidcCfg.clientSecretEnv}" is not set.`);
+      }
+      server.decorate(
+        'oidcProvider',
+        new OidcProvider(
+          opts.config!.accessControl.auth,
+          oidcSecret,
+          `${publicBaseUrl}/api/auth/callback/oidc`,
+        ),
+      );
+    }
+
+    if (opts.githubProvider) {
+      server.decorate('githubProvider', opts.githubProvider);
+    } else if (opts.config!.accessControl.auth.providers.github.enabled) {
+      const ghCfg = opts.config!.accessControl.auth.providers.github;
+      const ghSecret = process.env[ghCfg.clientSecretEnv];
+      if (!ghSecret) {
+        throw new AuthConfigError(`GitHub clientSecretEnv "${ghCfg.clientSecretEnv}" is not set.`);
+      }
+      server.decorate(
+        'githubProvider',
+        new GitHubProvider(
+          opts.config!.accessControl.auth,
+          ghSecret,
+          `${publicBaseUrl}/api/auth/callback/github`,
+        ),
+      );
+    }
+
+    // TokenService persists access tokens as _AccessToken nodes in Neo4j.
+    // It's only useful when a Neo4j service is wired; tests can inject a
+    // mock. Without Neo4j, /api/tokens returns 503 (TOKENS_DISABLED) and
+    // the require-auth Bearer path falls through to TOKEN_AUTH_DISABLED.
+    if (opts.tokenService) {
+      server.decorate('tokenService', opts.tokenService);
+    } else if (opts.neo4jService) {
+      server.decorate('tokenService', new TokenService({ neo4j: opts.neo4jService }));
+    }
+  }
+
   // Global rate limit. Conservative defaults (200 req/min per IP) protect
   // the expensive endpoints (probe, manifest exchange, installations
   // listing — they hit the filesystem, the GitHub API, or both) from
@@ -80,6 +266,15 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
       info: { title: 'ShipIt-AI API', version: '0.1.0' },
     },
   });
+
+  // Auth boundary. With auth disabled this preHandler synthesizes a
+  // principal from frontend.devUser and lets every request through (the
+  // existing local-dev flow). With auth enabled it enforces the resolution
+  // order documented in require-auth.ts: public allow-list → bearer token
+  // (Stage B5) → session cookie → 401. Registered directly so the hook
+  // reaches every route rather than being confined to a plugin's
+  // encapsulation context.
+  registerRequireAuth(server);
 
   server.setErrorHandler(errorHandler);
 
@@ -113,6 +308,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
+  await server.register(authRoutes, { prefix: '/api/auth' });
+  if (authEnabled) {
+    await server.register(tokenRoutes, { prefix: '/api/tokens' });
+  }
   await server.register(connectorRoutes, { prefix: '/api/connectors' });
   await server.register(schemaRoutes, { prefix: '/api/schema' });
 

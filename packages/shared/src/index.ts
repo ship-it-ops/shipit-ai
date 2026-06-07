@@ -75,6 +75,15 @@ export { DEFAULT_OWNERSHIP_REL_TYPES, getOwnershipRelTypes } from './schema/sema
 // Utilities
 export { computeEffectiveConfidence } from './utils/confidence.js';
 
+// Auth / request context
+export { SYSTEM_CONTEXT, hasCapability, buildCapabilitySet } from './auth/request-context.js';
+export type {
+  AuthPrincipal,
+  AuthProvider,
+  AuthRole,
+  RequestContext,
+} from './auth/request-context.js';
+
 // Config
 export {
   loadConfig,
@@ -92,4 +101,6 @@ export type {
   LastRun,
   ResolvedAppCredentials,
   AppLike,
+  AccessControlConfig,
+  AuthConfig,
 } from './config/index.js';

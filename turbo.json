@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
+      "env": ["SHIPIT_API_URL", "SHIPIT_WEB_ORIGIN"]
     },
     "dev": {
       "cache": false,

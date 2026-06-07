@@ -18,8 +18,8 @@ export default function ProfilePage() {
             <h1 className="text-text text-[22px] font-semibold tracking-tight">{user.name}</h1>
             <p className="text-text-muted text-[13px]">{user.email}</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Badge variant="accent">{user.role}</Badge>
-              <Badge variant="neutral">{user.team}</Badge>
+              {user.role && <Badge variant="accent">{user.role}</Badge>}
+              {user.team && <Badge variant="neutral">{user.team}</Badge>}
             </div>
           </div>
         </div>
@@ -34,11 +34,14 @@ export default function ProfilePage() {
 
       <Card title="Basic info">
         <dl className="m-0 flex flex-col gap-3 text-[13px]">
-          <Row label="Display name" value={user.name} />
-          <Row label="Email" value={user.email} />
-          <Row label="Role" value={user.role} />
-          <Row label="Team" value={user.team} />
-          <Row label="Joined" value={new Date(user.joinedAt).toLocaleDateString()} />
+          <Row label="Display name" value={user.name || '—'} />
+          <Row label="Email" value={user.email || '—'} />
+          <Row label="Role" value={user.role || '—'} />
+          {user.team && <Row label="Team" value={user.team} />}
+          {user.joinedAt && (
+            <Row label="Joined" value={new Date(user.joinedAt).toLocaleDateString()} />
+          )}
+          <Row label="Provider" value={user.provider} />
         </dl>
       </Card>
 
