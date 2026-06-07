@@ -218,16 +218,41 @@ jobs:
           # Marketplace manifest: .claude-plugin/marketplace.json on main.
           plugin_marketplaces: 'https://github.com/ship-it-ops/ship-code.git'
           plugins: 'ship-reviewed-prs@ship-code'
-          # The skill submits in CI mode (no confirmation gate). Default exit
-          # behavior: REQUEST_CHANGES exits 1 (fails the job), APPROVE and
-          # COMMENT exit 0. Add `--strict` if you want COMMENT to also fail.
-          prompt: '/ship-reviewed-prs ${{ github.event.pull_request.number }}'
-          # DIAGNOSTIC — surface the agent's tool calls and text in the runner
-          # log so we can see why a 0-finding review isn't appearing on the PR
-          # (PR #48 ran to completion in CI but submitted nothing). Revert to
-          # the default (false) once the gap is identified, since the verbose
-          # output is otherwise noisy.
-          show_full_output: true
+          # Two non-obvious requirements when invoking the skill from inside
+          # anthropics/claude-code-action@v1:
+          #
+          # 1. Use the namespaced `/<plugin>:<command>` form, not the bare
+          #    `/ship-reviewed-prs`. The action's slash-command resolver
+          #    treats the bare form as unknown and falls back unpredictably.
+          #    See ship-it-ops/ship-code → docs/agent/scars/
+          #    bare-slash-command-unknown-in-action.md.
+          #
+          # 2. Pass `--non-interactive`. The skill normally auto-detects CI
+          #    via `CI=true` and skips its confirm-before-submit gate, but
+          #    that env signal does NOT reliably propagate into the SDK's
+          #    reasoning context inside this action — the skill falls into
+          #    local mode, attempts AskUserQuestion ("Should I submit this
+          #    to GitHub now?"), gets permission-denied, and silently drops
+          #    the fully-computed review. See ship-it-ops/ship-code →
+          #    docs/agent/scars/ci-mode-auto-detect-unreliable.md. This is
+          #    exactly what bit PR #48 (verdict computed, nothing posted).
+          #
+          # Default exit behavior of the skill: REQUEST_CHANGES exits 1
+          # (fails the job), APPROVE and COMMENT exit 0. Add `--strict` if
+          # you want COMMENT to also fail.
+          #
+          # Canonical reference workflow:
+          #   ship-it-ops/ship-code → skills/ship-reviewed-prs/examples/
+          #   ci-github-actions-claude-code-action.yml
+          prompt: '/ship-reviewed-prs:review-pr ${{ github.event.pull_request.number }} --non-interactive'
+          # Keep the agent's tool calls + text in the runner log for one more
+          # PR cycle so the --non-interactive fix above is observable end-to-
+          # end (we want to confirm the skill reaches the gh submit path, not
+          # just that the job exits clean). Remove in a follow-up PR once a
+          # clean review is visible on a real PR — the verbose output is
+          # noisy for routine runs.
+
+          # show_full_output: true
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           # Skill source: https://github.com/ship-it-ops/ship-code/tree/main/skills/ship-reviewed-prs
