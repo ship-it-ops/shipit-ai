@@ -139,6 +139,15 @@ async function resolveContext(
     }
     const validated = await tokenService.validate(plaintext);
     if (!validated) {
+      // Log every auth rejection at warn level — production dashboards
+      // can't distinguish a mis-typed token from a brute-force sweep
+      // without structured signal here. Path is stripped of the query
+      // string so secrets accidentally appended (e.g. ?api_key=...) don't
+      // ride along into logs.
+      request.log.warn(
+        { path: request.url.split('?')[0], code: 'TOKEN_INVALID' },
+        'auth: rejected request',
+      );
       reply.status(401).send({
         error: {
           code: 'TOKEN_INVALID',
@@ -170,6 +179,12 @@ async function resolveContext(
     return contextFromPrincipal(principal, org, requestId);
   }
 
+  // Same auth-rejection log shape as the TOKEN_INVALID path above (see
+  // comment there) so dashboards can bucket rejection reasons uniformly.
+  request.log.warn(
+    { path: request.url.split('?')[0], code: 'AUTH_REQUIRED' },
+    'auth: rejected request',
+  );
   reply.status(401).send({
     error: {
       code: 'AUTH_REQUIRED',

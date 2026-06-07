@@ -54,15 +54,27 @@ export class OidcProvider {
     if (!this.configurationPromise) {
       const issuer = this.authConfig.providers.oidc.issuerUrl;
       const clientId = this.authConfig.providers.oidc.clientId;
-      this.configurationPromise = discovery(new URL(issuer), clientId, this.clientSecret).catch(
-        (err) => {
-          // Drop the cached rejection so the next request can retry once
-          // the IdP is reachable again — useful when the api-server boots
-          // before the IdP in docker-compose stacks.
-          this.configurationPromise = null;
-          throw err;
-        },
-      );
+      // 10s timeout (openid-client expresses it in seconds) — without
+      // this a slow or unreachable IdP would hold the discovery promise
+      // open for the OS TCP timeout (several minutes), and every
+      // concurrent login would block on the same dangling promise,
+      // stacking Fastify worker threads. The value is stored on the
+      // resolved Configuration so subsequent token-exchange / userinfo
+      // calls inherit the same cap. Mirrors the GITHUB_API_TIMEOUT_MS
+      // guard on the GitHub provider.
+      this.configurationPromise = discovery(
+        new URL(issuer),
+        clientId,
+        this.clientSecret,
+        undefined,
+        { timeout: 10 },
+      ).catch((err) => {
+        // Drop the cached rejection so the next request can retry once
+        // the IdP is reachable again — useful when the api-server boots
+        // before the IdP in docker-compose stacks.
+        this.configurationPromise = null;
+        throw err;
+      });
     }
     return this.configurationPromise;
   }
