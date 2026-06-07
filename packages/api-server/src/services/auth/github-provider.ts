@@ -13,6 +13,16 @@ const GITHUB_USER_URL = 'https://api.github.com/user';
 const GITHUB_USER_EMAILS_URL = 'https://api.github.com/user/emails';
 const GITHUB_USER_ORGS_URL = 'https://api.github.com/user/orgs';
 
+// Cap every GitHub API call in this file. A degraded GitHub API would
+// otherwise hold each server-side OAuth exchange open indefinitely; the
+// four calls in `exchange()` are sequential, so one slow GitHub means a
+// single login pins Fastify resources for up to 4× that delay, and
+// concurrent logins stack until the server stops accepting connections
+// (health checks included). AbortError surfaces to the route handler,
+// which already maps non-GitHubAccessDeniedError exceptions onto the
+// EXCHANGE_FAILED user-facing branch.
+const GITHUB_API_TIMEOUT_MS = 5_000;
+
 // `user:email` lets us read the authenticated user's email even if it's
 // private. `read:org` is only requested when allowedOrgs is non-empty
 // (asking for it unconditionally creates a scarier consent screen for
@@ -84,6 +94,7 @@ export class GitHubProvider {
         code,
         redirect_uri: this.redirectUri,
       }),
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     });
     if (!tokenRes.ok) {
       throw new Error(`GitHub token endpoint returned ${tokenRes.status}`);
@@ -117,6 +128,7 @@ export class GitHubProvider {
   ): Promise<{ id: number; login: string; name: string | null; email: string | null }> {
     const res = await fetch(GITHUB_USER_URL, {
       headers: this.apiHeaders(accessToken),
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`GitHub /user returned ${res.status}`);
@@ -135,6 +147,7 @@ export class GitHubProvider {
     if (user.email && user.email.length > 0) return user.email;
     const res = await fetch(GITHUB_USER_EMAILS_URL, {
       headers: this.apiHeaders(accessToken),
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`GitHub /user/emails returned ${res.status}`);
@@ -158,6 +171,7 @@ export class GitHubProvider {
     if (allowed.length === 0) return;
     const res = await fetch(GITHUB_USER_ORGS_URL, {
       headers: this.apiHeaders(accessToken),
+      signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`GitHub /user/orgs returned ${res.status}`);

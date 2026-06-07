@@ -298,6 +298,15 @@ describe('createServer — auth boot-time invariants', () => {
     ).rejects.toThrow(/admins\[\] is empty/);
   });
 
+  it('throws when auth.enabled is true and accessControl.web.allowedOrigins is empty', async () => {
+    process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
+    const config = enableAuth();
+    config.accessControl.web.allowedOrigins = [];
+    await expect(
+      createServer({ config, redis: new RedisMock() as unknown as Redis }),
+    ).rejects.toThrow(/allowedOrigins is empty/);
+  });
+
   it('throws when the session signing secret env var is missing', async () => {
     delete process.env.SHIPIT_SESSION_SECRET;
     const config = enableAuth();

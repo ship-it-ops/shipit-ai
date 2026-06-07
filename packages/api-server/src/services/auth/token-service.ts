@@ -55,10 +55,12 @@ export interface TokenServiceOptions {
 }
 
 /**
- * Parse the `<id>_<secret>` payload from a `shipit_pat_<id>_<secret>` token.
- * Returns null on any malformed input so the validate path can collapse
- * "wrong prefix", "wrong shape", and "wrong content" into the same
- * "token invalid" branch.
+ * Parse the `<id>.<secret>` payload from a `shipit_pat_<id>.<secret>`
+ * token. The separator is `TOKEN_SEPARATOR` (`.`), chosen because it's
+ * outside the base64url alphabet used for both id and secret, so an
+ * indexOf split is unambiguous. Returns null on any malformed input so
+ * the validate path can collapse "wrong prefix", "wrong shape", and
+ * "wrong content" into the same "token invalid" branch.
  */
 function splitToken(plaintext: string): { id: string; secret: string } | null {
   if (!plaintext.startsWith(TOKEN_PREFIX)) return null;
@@ -75,9 +77,13 @@ function hashSecret(secret: string, salt: string): string {
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
-  // timingSafeEqual requires equal-length buffers. Pad both to the same
-  // size before comparing so a length mismatch doesn't short-circuit and
-  // leak timing info.
+  // Both inputs in this codebase are SHA-256 hex digests (always 64
+  // characters), so any length mismatch means we're comparing a real
+  // hash against malformed input — not a timing oracle a real token
+  // could exploit. timingSafeEqual still requires equal-length buffers,
+  // so the early return below satisfies its precondition; if either
+  // input ever becomes variable-length we'd need to pad before
+  // comparing to avoid leaking the length.
   const buf = Buffer.from(a);
   const other = Buffer.from(b);
   if (buf.length !== other.length) return false;

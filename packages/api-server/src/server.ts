@@ -88,6 +88,17 @@ function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void 
     );
   }
 
+  // With `credentials: true` CORS (set below when auth is enabled), an
+  // empty allow-list means every browser request is rejected at the
+  // preflight stage — symptomatic of a misconfigured deploy and
+  // impossible to diagnose from request logs alone. Fail loud at boot
+  // instead, alongside the other "auth enabled but unusable" checks.
+  if (config.accessControl.web.allowedOrigins.length === 0) {
+    throw new AuthConfigError(
+      'auth is enabled but accessControl.web.allowedOrigins is empty. Add at least one origin (e.g. https://app.example.com) so the web-UI can reach the API.',
+    );
+  }
+
   const secretEnv = auth.session.signingSecretEnv;
   const secretValue = env[secretEnv];
   if (!secretValue || secretValue.length < 32) {

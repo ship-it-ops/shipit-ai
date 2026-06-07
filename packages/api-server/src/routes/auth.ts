@@ -28,6 +28,20 @@ function sanitizeRedirect(raw: string | undefined): string {
   return raw;
 }
 
+// Build the `/login?error=<CODE>&redirect_to=<path>` URL the callback
+// uses when an OAuth round-trip fails. Browser navigations land on this
+// page rather than seeing a raw JSON error body; the login page's
+// `describeCallbackError` already maps each CODE to a user-facing line.
+// `redirect_to` is preserved so a successful re-auth lands the user
+// where they originally wanted to go.
+function buildLoginErrorRedirect(errorCode: string, redirectTo?: string): string {
+  const params = new URLSearchParams({ error: errorCode });
+  if (redirectTo && redirectTo !== SUCCESS_REDIRECT) {
+    params.set('redirect_to', redirectTo);
+  }
+  return `/login?${params.toString()}`;
+}
+
 function resolveRole(email: string, admins: ReadonlyArray<string>): AuthRole {
   const lowered = email.toLowerCase();
   return admins.some((a) => a.toLowerCase() === lowered) ? 'admin' : 'member';
@@ -185,13 +199,27 @@ const authRoutes: FastifyPluginAsync = async (server) => {
       const provider = request.params.provider;
       const { code, state, error: idpError, error_description: idpErrorDesc } = request.query;
 
+      // Failure branches reachable via real browser navigation redirect
+      // back to `/login?error=<CODE>` so the user lands on a friendly
+      // page instead of a raw JSON body. INVALID_CALLBACK and
+      // AUTH_NOT_WIRED stay JSON because they only fire for
+      // operator/programmer mistakes (a hand-crafted GET, a misconfigured
+      // deploy), not for a real IdP round-trip — JSON is fine there.
+      //
+      // The `idpError`/`idpErrorDesc` query parameters are attacker-
+      // controlled (an attacker could craft a `/callback/:provider?error=
+      // <anything>` URL and trick a user into clicking it). The original
+      // implementation echoed them into the response body, which is both
+      // an XSS-adjacent surface (if any caller ever rendered the message
+      // outside JSON.parse) and a log-poisoning vector (reverse proxies
+      // record response bodies). We log the raw values server-side for
+      // operators and emit only the fixed CODE to the browser.
       if (idpError) {
-        return reply.status(400).send({
-          error: {
-            code: 'IDP_ERROR',
-            message: `Identity provider returned ${idpError}: ${idpErrorDesc ?? 'no description'}`,
-          },
-        });
+        request.log.warn(
+          { idpError, idpErrorDesc, provider },
+          'auth callback: identity provider returned an error',
+        );
+        return reply.redirect(buildLoginErrorRedirect('IDP_ERROR'));
       }
       if (!code || !state) {
         return reply.status(400).send({
@@ -209,24 +237,22 @@ const authRoutes: FastifyPluginAsync = async (server) => {
 
       const stateRecord = await stateStore.consume(state);
       if (!stateRecord || stateRecord.provider !== provider) {
-        return reply.status(400).send({
-          error: {
-            code: 'INVALID_STATE',
-            message: 'Login state is missing, expired, or does not match the provider.',
-          },
-        });
+        return reply.redirect(buildLoginErrorRedirect('INVALID_STATE'));
       }
 
       try {
         const principal = await resolvePrincipal(request, provider, code, state, stateRecord);
 
         if (!emailPassesAllowList(principal.email, auth.allowList)) {
-          return reply.status(403).send({
-            error: {
-              code: 'NOT_ALLOWLISTED',
-              message: `Account ${principal.email} is not on the access allow-list.`,
-            },
-          });
+          // Email belongs to the user but they're not allow-listed. Log
+          // it server-side for operators triaging access requests; do
+          // not echo it to the browser response (proxies log response
+          // bodies, PII shouldn't ride along).
+          request.log.warn(
+            { email: principal.email, provider },
+            'auth callback: account is not on the access allow-list',
+          );
+          return reply.redirect(buildLoginErrorRedirect('NOT_ALLOWLISTED', stateRecord.redirectTo));
         }
 
         request.session.principal = principal;
@@ -234,17 +260,11 @@ const authRoutes: FastifyPluginAsync = async (server) => {
         return reply.redirect(sanitizeRedirect(stateRecord.redirectTo));
       } catch (err) {
         if (err instanceof GitHubAccessDeniedError) {
-          return reply.status(403).send({
-            error: { code: 'ACCESS_DENIED', message: err.message },
-          });
+          request.log.warn({ err, provider }, 'auth callback: access denied by provider');
+          return reply.redirect(buildLoginErrorRedirect('ACCESS_DENIED', stateRecord.redirectTo));
         }
-        request.log.warn({ err }, 'auth callback exchange failed');
-        return reply.status(400).send({
-          error: {
-            code: 'EXCHANGE_FAILED',
-            message: 'Could not complete sign-in. Try again, or contact your administrator.',
-          },
-        });
+        request.log.warn({ err, provider }, 'auth callback exchange failed');
+        return reply.redirect(buildLoginErrorRedirect('EXCHANGE_FAILED', stateRecord.redirectTo));
       }
     },
   );

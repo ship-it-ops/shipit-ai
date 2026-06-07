@@ -351,43 +351,43 @@ describe('/api/auth — auth enabled', () => {
     expect(body.user.capabilities).toEqual(['graph:read', 'catalog:read']);
   });
 
-  it('callback rejects with INVALID_STATE on an unknown state value', async () => {
+  it('callback redirects to /login?error=INVALID_STATE on an unknown state value', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/auth/callback/oidc?code=oidc-code&state=does-not-exist',
     });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe('INVALID_STATE');
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/login?error=INVALID_STATE');
   });
 
-  it('callback rejects with INVALID_STATE when state was minted for a different provider', async () => {
+  it('callback redirects to /login?error=INVALID_STATE when state was minted for a different provider', async () => {
     await server.inject({ method: 'GET', url: '/api/auth/login/github' });
     const response = await server.inject({
       method: 'GET',
       url: '/api/auth/callback/oidc?code=any&state=gh-state-stub',
     });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe('INVALID_STATE');
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/login?error=INVALID_STATE');
   });
 
-  it('callback surfaces an IDP_ERROR when the IdP returns ?error', async () => {
+  it('callback redirects to /login?error=IDP_ERROR when the IdP returns ?error (does not reflect attacker-controlled message)', async () => {
     const response = await server.inject({
       method: 'GET',
       url: '/api/auth/callback/oidc?error=access_denied&error_description=User%20said%20no',
     });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe('IDP_ERROR');
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/login?error=IDP_ERROR');
   });
 
-  it('callback surfaces ACCESS_DENIED when the GitHub provider rejects org membership', async () => {
+  it('callback redirects to /login?error=ACCESS_DENIED when the GitHub provider rejects org membership', async () => {
     github.nextError = new GitHubAccessDeniedError('Not in allowed org');
     await server.inject({ method: 'GET', url: '/api/auth/login/github' });
     const response = await server.inject({
       method: 'GET',
       url: '/api/auth/callback/github?code=gh-code&state=gh-state-stub',
     });
-    expect(response.statusCode).toBe(403);
-    expect(response.json().error.code).toBe('ACCESS_DENIED');
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/login?error=ACCESS_DENIED');
     github.nextError = undefined;
   });
 });
@@ -418,7 +418,7 @@ describe('/api/auth — allow-list enforcement', () => {
     delete process.env.SHIPIT_SESSION_SECRET;
   });
 
-  it('rejects an email that is not on the allow-list', async () => {
+  it('redirects to /login?error=NOT_ALLOWLISTED and does not leak the email in the response', async () => {
     oidc.nextUserInfo = {
       sub: 'denied',
       email: 'someone-else@example.com',
@@ -429,8 +429,13 @@ describe('/api/auth — allow-list enforcement', () => {
       method: 'GET',
       url: '/api/auth/callback/oidc?code=any&state=oidc-state-stub',
     });
-    expect(response.statusCode).toBe(403);
-    expect(response.json().error.code).toBe('NOT_ALLOWLISTED');
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toBe('/login?error=NOT_ALLOWLISTED');
+    // PII guard: the rejected email must NOT appear in any response
+    // body or header — proxies log both, and we route email to the
+    // server log instead.
+    expect(JSON.stringify(response.headers)).not.toContain('someone-else@example.com');
+    expect(response.body ?? '').not.toContain('someone-else@example.com');
   });
 
   it('admits an email that is on the allow-list', async () => {

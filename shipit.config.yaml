@@ -150,7 +150,13 @@ accessControl:
         clientSecretEnv: OIDC_CLIENT_SECRET
         scopes: [openid, email, profile]
         emailClaim: email
-        displayName: ${OIDC_DISPLAY_NAME}
+        # Fallback ensures the YAML load succeeds when OIDC is disabled
+        # (the committed default) and OIDC_DISPLAY_NAME isn't set. The
+        # config loader substitutes env across the whole tree before any
+        # `enabled: false` guard runs, so a no-fallback ${OIDC_DISPLAY_NAME}
+        # would break every fresh checkout. The enabled-case requirement
+        # for a meaningful display name is enforced by Zod refines.
+        displayName: ${OIDC_DISPLAY_NAME:-OIDC}
 
       # "Sign in with GitHub" via a GitHub OAuth App. NOTE: this is a
       # different kind of GitHub credential than the GitHub App used by
