@@ -1,6 +1,6 @@
 ---
 type: plan
-status: active
+status: superseded
 created: 2026-06-04
 updated: 2026-06-04
 author: claude-session-2026-06-04-deployment
@@ -10,11 +10,15 @@ importance: core
 
 # Deployment Runtime Modes: `distributed` vs `embedded`
 
-> **Status: DESIGN — pending user approval.** Nothing here is implemented yet.
-> This note captures the full reasoning from the 2026-06-04 hosting/deployment
-> brainstorm so it can be reviewed and turned into an implementation plan later.
-> When approved, the runtime-mode choice should be promoted to a `decisions/`
-> note and the build steps to their own active plan.
+> **⚠️ SUPERSEDED (2026-06-04) by [k8s-deployment-architecture](k8s-deployment-architecture.md).**
+> The hosting direction landed on **deploying the existing distributed stack
+> as-is on GKE** — see decision
+> [hosting-gke-distributed-not-vercel](../decisions/hosting-gke-distributed-not-vercel.md).
+> The Vercel/serverless constraints that motivated the `embedded`/`serverless`
+> modes, the stateless-cookie auth, and the state-relocation work were all
+> dropped. This file is retained for its **reasoning trail** (why Vercel/
+> serverless was rejected, the two-queue topology analysis, bucket-C, the
+> manual-overlay findings) — NOT as an active plan. Do not implement from it.
 
 ## Goal
 
@@ -50,9 +54,15 @@ from the brainstorm:
    reconciliation) — re-platforming onto Postgres would be a ground-up rewrite and
    is explicitly rejected.
 4. **Redis quietly does more than the queues:** auth sessions
-   (`redis-session-store.ts`) and the connector run store (Redis LIST). Dropping
-   BullMQ does not automatically drop Redis — those two uses must be handled
-   (for hobby/auth-off, sessions don't matter; run store needs a fallback).
+   (`redis-session-store.ts`), the 5-minute OAuth/PKCE state
+   (`state-store.ts`), and the connector run store (Redis LIST). Dropping BullMQ
+   does not automatically drop Redis — these uses must each be handled. **API
+   tokens are NOT a problem — they already persist on Neo4j `_AccessToken` nodes
+   (`token-service.ts`), not Redis.**
+5. **Auth must stay ON by default in `embedded` mode** (user requirement,
+   2026-06-04). The hobby deployment is shipped to Vercel for people to log in
+   and explore, so sessions must operate well without Redis — not be disabled.
+   This corrects an earlier wrong assumption ("hobby runs with auth off").
 
 ## Current topology (what we're toggling)
 
@@ -124,14 +134,47 @@ are embedded.
   `@shipit-ai/mcp-server` and has `routes/mcp.ts`) so embedded = a single
   container. Keep as a flag; not required for v1.
 - Redis **dropped**. Consequences to handle:
-  - Sessions: only needed when auth is on; hobby/personal runs with auth off, so
-    no session store needed. (If auth-on + embedded is ever wanted, fall back to
-    an in-memory or signed-cookie session store.)
+  - **Auth stays ON (default).** See "Embedded auth" below — sessions and OAuth
+    state move to stateless cookies, no server store. API tokens already live in
+    Neo4j, so they need no change.
   - Connector run store: move from Redis LIST to an in-memory ring buffer or a
     small Neo4j-backed store (`connector-run-store.ts`).
   - Replay stream: gone. Acceptable — replay is currently unused (see
     open-question `replay-stream-wire-or-cut`). The **Neo4j idempotency-checker
     still protects against double-writes**, so losing queue-level dedup is fine.
+
+### Embedded auth (auth ON, no Redis) — decided 2026-06-04
+
+Only two auth pieces are Redis-bound today; both move to stateless cookies in
+`embedded` mode. (CORS already does credentialed cross-origin via
+`accessControl.web.allowedOrigins`; the signing secret is already required at
+≥32 chars.)
+
+- **Sessions → stateless encrypted cookie** (chosen mechanism). The principal
+  (id, email, team, roles) is signed/encrypted _into_ the cookie
+  (`@fastify/secure-session` or a signed JWT) instead of stored in Redis behind a
+  session-ID cookie. Replaces the `@fastify/session` + `RedisSessionStore` pair
+  in this mode.
+  - Survives process restarts and works across multiple instances / serverless —
+    the robustness the Vercel-facing "poke around" deployment needs.
+  - **Trade-offs (accepted):** no server-side force-logout of an individual
+    session (logout clears the cookie client-side; a denylist would be needed for
+    server revocation); keep the payload small; **rotating the signing secret
+    invalidates all cookies** (logs everyone out) — so the secret must be a
+    stable env var across deploys/instances.
+- **OAuth/PKCE state → short-lived signed cookie** set at `/login`, consumed
+  single-use at `/callback` (5-min TTL). Replaces `AuthStateStore` (Redis) in
+  this mode.
+- `distributed` mode keeps `RedisSessionStore` + `AuthStateStore` (server-side
+  revocation, larger payloads) — these become a third pair of mode-selected
+  seams alongside `ConnectorRunner` / `EventBusClient`.
+- **Open: cookie domain topology.** A Vercel web-ui + Fly API split puts the two
+  on different registrable domains, making the session cookie a **third-party
+  cookie** that Safari/Firefox/Chrome increasingly block — which would silently
+  break login regardless of storage mechanism. Two fixes (shared-subdomain custom
+  domain vs Vercel same-origin proxy) are tracked in open-question
+  `cookie-domain-topology`; **deferred to deployment-setup time** per user
+  (2026-06-04).
 
 ### What is preserved regardless of mode (important)
 
@@ -195,7 +238,16 @@ Notes:
   `embedded`, construct `CoreWriter` + subscribe it; optionally mount MCP.
 - `packages/api-server/src/services/connector-run-store.ts` — add non-Redis
   backend (in-memory ring or Neo4j) for `embedded`.
-- Auth/session wiring — guard Redis session store behind `auth.enabled && mode === 'distributed'`.
+- **Auth (embedded, no Redis):**
+  - `packages/api-server/src/server.ts` — select session strategy by `mode`:
+    `@fastify/session` + `RedisSessionStore` in `distributed`; stateless
+    `@fastify/secure-session` (or signed-JWT cookie) in `embedded`. Keep the
+    `request.session` read/write surface consistent across both for route code.
+  - `packages/api-server/src/services/auth/` — add a cookie-backed OAuth/PKCE
+    state strategy to replace `AuthStateStore` (Redis) in `embedded`.
+  - Require the session signing secret as a stable env var in `embedded`
+    (fail-fast at boot; rotation logs everyone out).
+  - No change to `token-service.ts` (tokens already on Neo4j).
 - Deploy: `fly.toml` for the embedded container; keep existing Dockerfiles;
   Vercel project for web-ui. (`distributed` later: Cloud Run service defs.)
 - Docs: update `docs/architecture.md` + `docs/deployment.md` with both modes.
@@ -214,6 +266,9 @@ proves the seam).
 - `manual-edit-write-path` — the webapp write endpoints for manual claims/edges
   aren't built yet, and there's a `manual` source-priority inconsistency to fix.
   Independent of this toggle but on the same roadmap.
+- `cookie-domain-topology` — how the Vercel web-ui and Fly API share a first-party
+  cookie (shared subdomain vs same-origin proxy). Deferred to deployment-setup
+  time; must be resolved before the auth flow works end-to-end on a real deploy.
 
 ## Related
 
@@ -222,3 +277,4 @@ proves the seam).
 - [core-writer-runs-as-its-own-process](../decisions/core-writer-runs-as-its-own-process.md) — the process this toggle optionally folds in
 - [replay-stream-wire-or-cut](../open-questions/replay-stream-wire-or-cut.md)
 - [manual-edit-write-path](../open-questions/manual-edit-write-path.md)
+- [cookie-domain-topology](../open-questions/cookie-domain-topology.md)
