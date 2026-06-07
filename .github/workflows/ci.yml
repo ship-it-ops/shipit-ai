@@ -18,6 +18,17 @@ concurrency:
 permissions:
   contents: read
 
+# Build-time placeholders for env vars the YAML now requires. next.config.mjs
+# evaluates shipit.config.yaml and substitutes ${SHIPIT_API_URL} /
+# ${SHIPIT_WEB_ORIGIN}; both lost their localhost fallbacks in b5884e2 so a
+# misconfigured prod deploy fails loud at boot. The web-ui build itself is
+# environment-agnostic — the actual URL is supplied by the deployment, not by
+# CI — so a placeholder here is safe and keeps build/lint/typecheck/test/docker
+# runnable without forcing every contributor to maintain a local config.
+env:
+  SHIPIT_API_URL: http://localhost:3001
+  SHIPIT_WEB_ORIGIN: http://localhost:3000
+
 jobs:
   lint:
     name: Lint

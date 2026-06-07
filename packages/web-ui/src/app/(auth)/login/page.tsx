@@ -195,7 +195,7 @@ function LoginBody({ state, firstButtonRef, onSignIn }: LoginBodyProps) {
         title="Can't reach the sign-in service"
         body={
           <>
-            The web UI couldn't connect to the API server at{' '}
+            The web UI couldn&apos;t connect to the API server at{' '}
             <code className="bg-panel rounded px-1 py-[1px] font-mono text-[11.5px]">
               {clientConfig.api.url}
             </code>
@@ -238,8 +238,8 @@ function LoginBody({ state, firstButtonRef, onSignIn }: LoginBodyProps) {
             <code className="bg-panel rounded px-1 py-[1px] font-mono text-[11.5px]">
               accessControl.auth.providers
             </code>{' '}
-            and restart the backend to continue. The API server won't accept logins — or boot at all
-            — until at least one provider is enabled.
+            and restart the backend to continue. The API server won&apos;t accept logins — or boot
+            at all — until at least one provider is enabled.
           </>
         }
       />

@@ -108,127 +108,146 @@ const authRoutes: FastifyPluginAsync = async (server) => {
     return reply.status(204).send();
   });
 
+  // Per-route rate limit on top of the global one (server.ts). CodeQL's
+  // js/missing-rate-limiting heuristic flags authorization handlers that
+  // lack a route-local limiter, and login starts are an abuse target in
+  // their own right (state-store flooding, IdP redirect spam).
   server.get<{
     Params: { provider: ProviderId };
     Querystring: { redirect_to?: string };
-  }>('/login/:provider', async (request, reply) => {
-    const provider = request.params.provider;
-    if (provider !== 'oidc' && provider !== 'github') {
-      return reply.status(404).send({
-        error: { code: 'PROVIDER_NOT_FOUND', message: `Unknown auth provider: ${provider}` },
-      });
-    }
-    if (!stateStore) {
-      return reply.status(500).send({
-        error: { code: 'AUTH_NOT_WIRED', message: 'Auth state store is not configured.' },
-      });
-    }
-
-    const redirectTo = sanitizeRedirect(request.query.redirect_to);
-
-    if (provider === 'oidc') {
-      if (!oidc || !auth.providers.oidc.enabled) {
+  }>(
+    '/login/:provider',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const provider = request.params.provider;
+      if (provider !== 'oidc' && provider !== 'github') {
         return reply.status(404).send({
-          error: { code: 'PROVIDER_DISABLED', message: 'OIDC provider is not configured.' },
+          error: { code: 'PROVIDER_NOT_FOUND', message: `Unknown auth provider: ${provider}` },
         });
       }
-      const start = await oidc.startAuthorization();
+      if (!stateStore) {
+        return reply.status(500).send({
+          error: { code: 'AUTH_NOT_WIRED', message: 'Auth state store is not configured.' },
+        });
+      }
+
+      const redirectTo = sanitizeRedirect(request.query.redirect_to);
+
+      if (provider === 'oidc') {
+        if (!oidc || !auth.providers.oidc.enabled) {
+          return reply.status(404).send({
+            error: { code: 'PROVIDER_DISABLED', message: 'OIDC provider is not configured.' },
+          });
+        }
+        const start = await oidc.startAuthorization();
+        await stateStore.put(start.state, {
+          provider: 'oidc',
+          codeVerifier: start.codeVerifier,
+          redirectTo,
+          createdAt: new Date().toISOString(),
+        });
+        return reply.redirect(start.url);
+      }
+
+      // github
+      if (!github || !auth.providers.github.enabled) {
+        return reply.status(404).send({
+          error: { code: 'PROVIDER_DISABLED', message: 'GitHub provider is not configured.' },
+        });
+      }
+      const start = github.startAuthorization();
       await stateStore.put(start.state, {
-        provider: 'oidc',
-        codeVerifier: start.codeVerifier,
+        provider: 'github',
+        // GitHub OAuth Apps don't use PKCE — store an empty verifier so the
+        // record shape stays uniform. Callback ignores it.
+        codeVerifier: '',
         redirectTo,
         createdAt: new Date().toISOString(),
       });
       return reply.redirect(start.url);
-    }
+    },
+  );
 
-    // github
-    if (!github || !auth.providers.github.enabled) {
-      return reply.status(404).send({
-        error: { code: 'PROVIDER_DISABLED', message: 'GitHub provider is not configured.' },
-      });
-    }
-    const start = github.startAuthorization();
-    await stateStore.put(start.state, {
-      provider: 'github',
-      // GitHub OAuth Apps don't use PKCE — store an empty verifier so the
-      // record shape stays uniform. Callback ignores it.
-      codeVerifier: '',
-      redirectTo,
-      createdAt: new Date().toISOString(),
-    });
-    return reply.redirect(start.url);
-  });
-
+  // Per-route rate limit (see /login/:provider above). Callback handlers
+  // exchange the IdP authorization code for a session; an attacker who
+  // grabs a code+state pair could otherwise replay it at high rate.
   server.get<{
     Params: { provider: ProviderId };
     Querystring: { code?: string; state?: string; error?: string; error_description?: string };
-  }>('/callback/:provider', async (request, reply) => {
-    const provider = request.params.provider;
-    const { code, state, error: idpError, error_description: idpErrorDesc } = request.query;
+  }>(
+    '/callback/:provider',
+    {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      const provider = request.params.provider;
+      const { code, state, error: idpError, error_description: idpErrorDesc } = request.query;
 
-    if (idpError) {
-      return reply.status(400).send({
-        error: {
-          code: 'IDP_ERROR',
-          message: `Identity provider returned ${idpError}: ${idpErrorDesc ?? 'no description'}`,
-        },
-      });
-    }
-    if (!code || !state) {
-      return reply.status(400).send({
-        error: {
-          code: 'INVALID_CALLBACK',
-          message: 'Missing required code or state query parameter.',
-        },
-      });
-    }
-    if (!stateStore) {
-      return reply.status(500).send({
-        error: { code: 'AUTH_NOT_WIRED', message: 'Auth state store is not configured.' },
-      });
-    }
-
-    const stateRecord = await stateStore.consume(state);
-    if (!stateRecord || stateRecord.provider !== provider) {
-      return reply.status(400).send({
-        error: {
-          code: 'INVALID_STATE',
-          message: 'Login state is missing, expired, or does not match the provider.',
-        },
-      });
-    }
-
-    try {
-      const principal = await resolvePrincipal(request, provider, code, state, stateRecord);
-
-      if (!emailPassesAllowList(principal.email, auth.allowList)) {
-        return reply.status(403).send({
+      if (idpError) {
+        return reply.status(400).send({
           error: {
-            code: 'NOT_ALLOWLISTED',
-            message: `Account ${principal.email} is not on the access allow-list.`,
+            code: 'IDP_ERROR',
+            message: `Identity provider returned ${idpError}: ${idpErrorDesc ?? 'no description'}`,
+          },
+        });
+      }
+      if (!code || !state) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_CALLBACK',
+            message: 'Missing required code or state query parameter.',
+          },
+        });
+      }
+      if (!stateStore) {
+        return reply.status(500).send({
+          error: { code: 'AUTH_NOT_WIRED', message: 'Auth state store is not configured.' },
+        });
+      }
+
+      const stateRecord = await stateStore.consume(state);
+      if (!stateRecord || stateRecord.provider !== provider) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_STATE',
+            message: 'Login state is missing, expired, or does not match the provider.',
           },
         });
       }
 
-      request.session.principal = principal;
-      request.session.org = 'default';
-      return reply.redirect(sanitizeRedirect(stateRecord.redirectTo));
-    } catch (err) {
-      if (err instanceof GitHubAccessDeniedError) {
-        return reply.status(403).send({
-          error: { code: 'ACCESS_DENIED', message: err.message },
+      try {
+        const principal = await resolvePrincipal(request, provider, code, state, stateRecord);
+
+        if (!emailPassesAllowList(principal.email, auth.allowList)) {
+          return reply.status(403).send({
+            error: {
+              code: 'NOT_ALLOWLISTED',
+              message: `Account ${principal.email} is not on the access allow-list.`,
+            },
+          });
+        }
+
+        request.session.principal = principal;
+        request.session.org = 'default';
+        return reply.redirect(sanitizeRedirect(stateRecord.redirectTo));
+      } catch (err) {
+        if (err instanceof GitHubAccessDeniedError) {
+          return reply.status(403).send({
+            error: { code: 'ACCESS_DENIED', message: err.message },
+          });
+        }
+        request.log.warn({ err }, 'auth callback exchange failed');
+        return reply.status(400).send({
+          error: {
+            code: 'EXCHANGE_FAILED',
+            message: 'Could not complete sign-in. Try again, or contact your administrator.',
+          },
         });
       }
-      request.log.warn({ err }, 'auth callback exchange failed');
-      return reply.status(400).send({
-        error: {
-          code: 'EXCHANGE_FAILED',
-          message: 'Could not complete sign-in. Try again, or contact your administrator.',
-        },
-      });
-    }
-  });
+    },
+  );
 
   async function resolvePrincipal(
     request: FastifyRequest,
