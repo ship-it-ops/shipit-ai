@@ -45,7 +45,7 @@
     "postcss": "^8.5.10",
     "eslint": "^9.30.0",
     "eslint-config-next": "^16.2.7",
-    "vitest": "^3.0.0",
+    "vitest": "^4.1.0",
     "@vitejs/plugin-react": "^4.3.0",
     "@testing-library/react": "^16.0.1",
     "@testing-library/jest-dom": "^6.6.3",
