@@ -21,7 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "neo4j-driver": "^5.27.0",
+    "neo4j-driver": "^6.1.0",
     "@shipit-ai/shared": "workspace:*",
     "@shipit-ai/event-bus": "workspace:*"
   },
