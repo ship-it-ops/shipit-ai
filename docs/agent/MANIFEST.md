@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-07 | Total notes: 35
+Last updated: 2026-06-07 | Total notes: 36
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -32,6 +32,7 @@ _(no in-flight work)_
 - [canonical-id-org-namespacing](decisions/canonical-id-org-namespacing.md) | decision | active | core | 2026-05-30 | Repository/Team/Pipeline IDs gain org segment; Person stays global
 - [hosting-gke-distributed-not-vercel](decisions/hosting-gke-distributed-not-vercel.md) | decision | active | core | 2026-06-04 | deploy existing distributed stack as-is on GKE, not Vercel
 - [api-server-config-persistence-strategy](decisions/api-server-config-persistence-strategy.md) | decision | active | core | 2026-06-07 | ephemeral emptyDir for v1, Postgres config store next
+- [image-build-owned-by-infra-repo](decisions/image-build-owned-by-infra-repo.md) | decision | active | core | 2026-06-07 | infra repo builds+publishes images; public app repo holds no GCP creds
 
 ## Patterns
 
