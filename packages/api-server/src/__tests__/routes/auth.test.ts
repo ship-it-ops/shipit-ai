@@ -514,8 +514,49 @@ describe('PUT /api/auth/providers/oidc — OIDC settings endpoint', () => {
         payload: JSON.stringify({ issuerUrl: '', clientId: 'cid', clientSecret: 'secret' }),
       });
       expect(response.statusCode).toBe(400);
+      expect(response.json().error.message).toMatch(/issuerUrl and clientId are required/);
     } finally {
       await srv.close();
+    }
+  });
+
+  it('401 when no session cookie is sent to an auth-enabled server', async () => {
+    process.env.SHIPIT_SESSION_SECRET = 'test-signing-secret-thirty-two-chars-or-more-please';
+    const redis = new RedisMock() as unknown as Redis;
+    const env = {} as NodeJS.ProcessEnv;
+    const config = buildAuthConfig();
+    const oidcSettingsService = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: config.accessControl.auth,
+      secretStore: new FileSecretStore(env),
+      env,
+    });
+    const oidcMock = buildMockOidcProvider();
+    const githubMock = buildMockGitHubProvider();
+    const srv = await createServer({
+      config,
+      redis,
+      oidcProvider: oidcMock,
+      githubProvider: githubMock,
+      oidcSettingsService,
+    });
+    await srv.ready();
+    try {
+      // No session cookie → require-auth returns 401.
+      const response = await srv.inject({
+        method: 'PUT',
+        url: '/api/auth/providers/oidc',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({
+          issuerUrl: 'https://idp.example.com',
+          clientId: 'cid',
+          clientSecret: 'secret',
+        }),
+      });
+      expect(response.statusCode).toBe(401);
+    } finally {
+      await srv.close();
+      delete process.env.SHIPIT_SESSION_SECRET;
     }
   });
 

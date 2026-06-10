@@ -81,7 +81,8 @@ async function main() {
   // config file's directory, not the process cwd. Turbo runs the api-server
   // with cwd = `packages/api-server/`, so `./config/shipit-schema.yaml`
   // would otherwise miss the file that lives at the repo root.
-  const configDir = dirname(findConfigPaths().basePath);
+  const configPaths = findConfigPaths();
+  const configDir = dirname(configPaths.basePath);
   const schemaPath = isAbsolute(schema.path) ? schema.path : resolve(configDir, schema.path);
 
   const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
@@ -90,7 +91,7 @@ async function main() {
   // Locate the local config file so the registry can write connector edits
   // back. Falls back to the sibling shipit.config.local.yaml of whatever
   // base config we loaded.
-  const { localPath } = findConfigPaths();
+  const { localPath } = configPaths;
 
   // Run history is operational state, not configuration — it lives in
   // Redis (capped LIST per connector) instead of being re-serialized into
@@ -227,8 +228,8 @@ async function main() {
     connectorRegistry,
     githubAppService,
     githubAppManifestService,
-    secretStore,
     oidcSettingsService,
+    configPaths: { basePath: configPaths.basePath, localPath },
     config,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two

@@ -47,7 +47,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function deepMerge(base: unknown, override: unknown): unknown {
+export function deepMerge(base: unknown, override: unknown): unknown {
   if (!isPlainObject(base) || !isPlainObject(override)) return override;
   const out: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(override)) {
