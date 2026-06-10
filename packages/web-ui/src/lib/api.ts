@@ -1027,6 +1027,28 @@ export interface McpServerInfo {
   transport: 'stdio';
 }
 
+// ── OIDC provider ────────────────────────────────────────────────────────────
+
+export async function updateOidcProvider(input: {
+  issuerUrl: string;
+  clientId: string;
+  clientSecret?: string;
+}): Promise<{ ok: boolean; restartRequired: boolean }> {
+  const res = await fetchApi(`${API_URL}/api/auth/providers/oidc`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    // Surface the backend's structured message ("Admin role required.",
+    // "issuerUrl and clientId are required") rather than a bare status —
+    // this form is operator-facing and the 400s are actionable.
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `OIDC update failed: ${res.status}`);
+  }
+  return (await res.json()) as { ok: boolean; restartRequired: boolean };
+}
+
 export async function fetchMcpInfo(): Promise<McpServerInfo> {
   // Only `authRequired` and `transport` are read by the UI — the endpoint
   // also returns the tool catalog but the page renders that from a static
