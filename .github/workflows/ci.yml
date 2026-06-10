@@ -208,6 +208,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Pin the review model to Opus 4.8. The `model` input is
+          # deprecated; the model is set via `claude_args --model`.
+          claude_args: '--model claude-opus-4-8'
           # Update a single sticky comment on each run instead of posting
           # a new comment per CI invocation — keeps the PR conversation
           # readable when reviews run repeatedly (push, rebase, retries).
