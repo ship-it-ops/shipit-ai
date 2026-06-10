@@ -19,6 +19,8 @@ import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
+import type { SecretStore } from './secrets/types.js';
 import type { Neo4jService } from './services/neo4j-service.js';
 import healthRoutes from './routes/health.js';
 import connectorRoutes from './routes/connectors.js';
@@ -57,6 +59,13 @@ export interface CreateServerOptions {
   // Override the TokenService for tests. Production constructs one over
   // the Neo4j driver when auth is enabled AND a neo4jService is supplied.
   tokenService?: TokenService;
+  // Secret store passed through to OidcSettingsService (and potentially
+  // other write-path services). Optional: tests that don't touch OIDC
+  // persistence can omit it.
+  secretStore?: SecretStore;
+  // OIDC settings persistence service. Optional: the route returns 503
+  // when not wired (e.g. tests or deployments that don't need it).
+  oidcSettingsService?: OidcSettingsService;
 }
 
 class AuthConfigError extends Error {
@@ -111,6 +120,7 @@ function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void 
 declare module 'fastify' {
   interface FastifyInstance {
     config: Config;
+    oidcSettingsService?: OidcSettingsService;
   }
 }
 
@@ -301,6 +311,13 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // together — see api-server/src/index.ts for the production bootstrap.
   if (opts.githubAppManifestService) {
     server.decorate('githubAppManifestService', opts.githubAppManifestService);
+  }
+  // OIDC settings service is optional. The PUT /api/auth/providers/oidc
+  // route returns 503 when not decorated. Decoration is skipped entirely
+  // when the service isn't supplied so Fastify's duplicate-decoration guard
+  // doesn't fire in tests that create multiple servers.
+  if (opts.oidcSettingsService) {
+    server.decorate('oidcSettingsService', opts.oidcSettingsService);
   }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);

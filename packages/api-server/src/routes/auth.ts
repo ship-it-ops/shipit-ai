@@ -13,6 +13,10 @@ declare module 'fastify' {
   }
 }
 
+// Note: the oidcSettingsService decoration and its declare module augmentation
+// live in server.ts alongside CreateServerOptions. It is imported via the
+// FastifyInstance augmentation there; no re-declaration needed here.
+
 type ProviderId = 'oidc' | 'github';
 
 const SUCCESS_REDIRECT = '/';
@@ -91,6 +95,42 @@ const authRoutes: FastifyPluginAsync = async (server) => {
       org: base.org,
     };
   });
+
+  // PUT /api/auth/providers/oidc — operator pastes externally-registered
+  // OIDC client credentials; the secret persists via the SecretStore
+  // (GSM in prod), identifiers via local YAML. Admin-only: this mutates
+  // instance-wide auth config.
+  //
+  // Note: /api/auth/providers is in the public allow-list (exact match,
+  // no trailing slash). /api/auth/providers/oidc is NOT public, so
+  // require-auth applies. In auth-disabled mode the dev-fallback principal
+  // has role 'admin' and passes the role check; in auth-enabled mode a
+  // valid session with role 'admin' is required.
+  server.put<{ Body: { issuerUrl?: string; clientId?: string; clientSecret?: string } }>(
+    '/providers/oidc',
+    async (request, reply) => {
+      if (request.ctx.user.role !== 'admin') {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Admin role required.' },
+        });
+      }
+      const svc = server.oidcSettingsService;
+      if (!svc) {
+        return reply.status(503).send({
+          error: {
+            code: 'OIDC_SETTINGS_DISABLED',
+            message: 'OIDC settings persistence is not wired on this deployment.',
+          },
+        });
+      }
+      const { restartRequired } = await svc.update({
+        issuerUrl: request.body?.issuerUrl ?? '',
+        clientId: request.body?.clientId ?? '',
+        clientSecret: request.body?.clientSecret,
+      });
+      return reply.send({ ok: true, restartRequired });
+    },
+  );
 
   if (!auth?.enabled) {
     // Auth disabled — register only /providers (returning an empty list

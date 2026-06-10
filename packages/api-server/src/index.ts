@@ -15,6 +15,7 @@ import {
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { hydrateFromStore, makeSecretStore } from './secrets/index.js';
 
 export { createServer } from './server.js';
@@ -38,6 +39,11 @@ export type {
   ManifestServiceOptions,
   ConversionResult,
 } from './services/github-app-manifest-service.js';
+export { OidcSettingsService } from './services/auth/oidc-settings-service.js';
+export type {
+  OidcSettingsInput,
+  OidcSettingsServiceOptions,
+} from './services/auth/oidc-settings-service.js';
 export { SchemaService } from './services/schema-service.js';
 export { Neo4jService } from './services/neo4j-service.js';
 export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js';
@@ -133,6 +139,16 @@ async function main() {
     secretStore,
   });
 
+  // OIDC settings service: persists client secret via SecretStore (GSM in
+  // prod) and public identifiers (issuerUrl, clientId) to
+  // shipit.config.local.yaml. Lives alongside the manifest service since
+  // both write to the same local config file.
+  const oidcSettingsService = new OidcSettingsService({
+    localConfigPath: localPath,
+    authConfig: config.accessControl.auth,
+    secretStore,
+  });
+
   // Wire the BullMQ-backed scheduler whenever Redis is reachable.
   //
   // Earlier versions of this block gated scheduler attachment on having
@@ -211,6 +227,8 @@ async function main() {
     connectorRegistry,
     githubAppService,
     githubAppManifestService,
+    secretStore,
+    oidcSettingsService,
     config,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two

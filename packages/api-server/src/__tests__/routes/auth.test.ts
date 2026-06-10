@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import RedisMock from 'ioredis-mock';
 import type { Redis } from 'ioredis';
 import type { FastifyInstance } from 'fastify';
@@ -8,6 +11,8 @@ import { makeTestConfig } from '../test-config.js';
 import type { OidcProvider } from '../../services/auth/oidc-provider.js';
 import type { GitHubProvider, GitHubUserInfo } from '../../services/auth/github-provider.js';
 import { GitHubAccessDeniedError } from '../../services/auth/github-provider.js';
+import { OidcSettingsService } from '../../services/auth/oidc-settings-service.js';
+import { FileSecretStore } from '../../secrets/file-store.js';
 
 const SIGNING_SECRET = 'test-signing-secret-thirty-two-chars-or-more-please';
 
@@ -450,5 +455,146 @@ describe('/api/auth — allow-list enforcement', () => {
       url: '/api/auth/callback/oidc?code=any&state=oidc-state-stub',
     });
     expect(response.statusCode).toBe(302);
+  });
+});
+
+describe('PUT /api/auth/providers/oidc — OIDC settings endpoint', () => {
+  let tmpDir: string;
+  let localPath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-oidc-route-'));
+    localPath = join(tmpDir, 'shipit.config.local.yaml');
+  });
+  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+
+  // Builds an auth-disabled server (dev-fallback principal = role 'admin')
+  // with an oidcSettingsService wired for persistence tests.
+  async function buildServerWithService(): Promise<FastifyInstance> {
+    const env = {} as NodeJS.ProcessEnv;
+    const config = makeTestConfig();
+    const oidcSettingsService = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: config.accessControl.auth,
+      secretStore: new FileSecretStore(env),
+      env,
+    });
+    const srv = await createServer({ config, oidcSettingsService });
+    await srv.ready();
+    return srv;
+  }
+
+  it('200 with { ok: true, restartRequired: true } for an admin principal (auth disabled = dev-fallback admin)', async () => {
+    const srv = await buildServerWithService();
+    try {
+      const response = await srv.inject({
+        method: 'PUT',
+        url: '/api/auth/providers/oidc',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({
+          issuerUrl: 'https://idp.example.com',
+          clientId: 'shipit-client',
+          clientSecret: 'super-secret',
+        }),
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ ok: true, restartRequired: true });
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('400 when issuerUrl is missing (service validation surfaces as HTTP 400)', async () => {
+    const srv = await buildServerWithService();
+    try {
+      const response = await srv.inject({
+        method: 'PUT',
+        url: '/api/auth/providers/oidc',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({ issuerUrl: '', clientId: 'cid', clientSecret: 'secret' }),
+      });
+      expect(response.statusCode).toBe(400);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('503 with OIDC_SETTINGS_DISABLED when no oidcSettingsService is wired', async () => {
+    const srv = await createServer({ config: makeTestConfig() });
+    await srv.ready();
+    try {
+      const response = await srv.inject({
+        method: 'PUT',
+        url: '/api/auth/providers/oidc',
+        headers: { 'content-type': 'application/json' },
+        payload: JSON.stringify({
+          issuerUrl: 'https://idp.example.com',
+          clientId: 'cid',
+          clientSecret: 'secret',
+        }),
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe('OIDC_SETTINGS_DISABLED');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('403 with FORBIDDEN for a non-admin (member) principal in an auth-enabled server', async () => {
+    process.env.SHIPIT_SESSION_SECRET = 'test-signing-secret-thirty-two-chars-or-more-please';
+    const redis = new RedisMock() as unknown as Redis;
+    const env = {} as NodeJS.ProcessEnv;
+    const config = buildAuthConfig();
+    // Use the per-test tmpDir/localPath from beforeEach.
+    const oidcSettingsService = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: config.accessControl.auth,
+      secretStore: new FileSecretStore(env),
+      env,
+    });
+    const oidcMock = buildMockOidcProvider();
+    const githubMock = buildMockGitHubProvider();
+    const srv = await createServer({
+      config,
+      redis,
+      oidcProvider: oidcMock,
+      githubProvider: githubMock,
+      oidcSettingsService,
+    });
+    await srv.ready();
+
+    try {
+      // Log in as a non-admin (member role — email not in admins list).
+      oidcMock.nextUserInfo = {
+        sub: 'member-sub',
+        email: 'member@example.com',
+        displayName: 'Member',
+      };
+      await srv.inject({ method: 'GET', url: '/api/auth/login/oidc' });
+      const callback = await srv.inject({
+        method: 'GET',
+        url: '/api/auth/callback/oidc?code=any&state=oidc-state-stub',
+      });
+      const cookie = cookieHeader(callback.headers['set-cookie']);
+
+      const response = await srv.inject({
+        method: 'PUT',
+        url: '/api/auth/providers/oidc',
+        headers: {
+          'content-type': 'application/json',
+          cookie,
+        },
+        payload: JSON.stringify({
+          issuerUrl: 'https://idp.example.com',
+          clientId: 'cid',
+          clientSecret: 'secret',
+        }),
+      });
+      expect(response.statusCode).toBe(403);
+      expect(response.json().error.code).toBe('FORBIDDEN');
+    } finally {
+      await srv.close();
+      delete process.env.SHIPIT_SESSION_SECRET;
+    }
   });
 });
