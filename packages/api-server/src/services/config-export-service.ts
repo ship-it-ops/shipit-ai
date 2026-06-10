@@ -41,6 +41,14 @@ export class ConfigExportService {
     return (parseYaml(readFileSync(path, 'utf-8')) ?? {}) as Record<string, unknown>;
   }
 
+  // INVARIANT this denylist leans on: every secret in the config schema is
+  // env-only (fields hold env-var NAMES like clientSecretEnv, or ${ENV}
+  // placeholders that survive unsubstituted). The three deletions below are
+  // the only known fields that can carry literal secret material or runtime
+  // noise. If you add a config field that holds a literal secret value,
+  // you MUST either make it env-only like the rest of the schema or add it
+  // here — otherwise it leaks into the export, whose header promises
+  // "Secrets are NOT in this file".
   private scrub(merged: Record<string, unknown>): void {
     const mcp = (merged.backend as Record<string, unknown> | undefined)?.mcp as
       | Record<string, unknown>

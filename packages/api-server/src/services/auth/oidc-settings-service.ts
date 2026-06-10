@@ -50,6 +50,33 @@ export class OidcSettingsService {
     if (!issuerUrl || !clientId) {
       throw Object.assign(new Error('issuerUrl and clientId are required'), { statusCode: 400 });
     }
+    // Reject a malformed issuer early: this value is persisted with
+    // oidc.enabled=true and the next boot builds OidcProvider from it, so a
+    // bad paste would brick startup until the local YAML is hand-edited —
+    // exactly the manual step this endpoint exists to remove. https is
+    // required except for loopback hosts (local-dev IdPs like Keycloak on
+    // http://localhost), mirroring checkWebhookUrlPublic's pragmatism.
+    let parsedIssuer: URL;
+    try {
+      parsedIssuer = new URL(issuerUrl);
+    } catch {
+      throw Object.assign(new Error('issuerUrl must be a valid URL'), { statusCode: 400 });
+    }
+    const issuerHost = parsedIssuer.hostname.toLowerCase();
+    const isLoopback =
+      issuerHost === 'localhost' ||
+      issuerHost.endsWith('.localhost') ||
+      issuerHost.startsWith('127.') ||
+      issuerHost === '::1' ||
+      issuerHost === '[::1]';
+    if (parsedIssuer.protocol !== 'https:' && !isLoopback) {
+      throw Object.assign(
+        new Error('issuerUrl must use https (http is allowed only for loopback hosts)'),
+        {
+          statusCode: 400,
+        },
+      );
+    }
     const hasExistingSecret = Boolean(this.env.OIDC_CLIENT_SECRET);
     const clientSecret = input.clientSecret?.trim();
     if (!clientSecret && !hasExistingSecret) {

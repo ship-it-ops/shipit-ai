@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
@@ -59,6 +59,48 @@ describe('OidcSettingsService', () => {
     await expect(
       svc.update({ issuerUrl: '', clientId: 'x', clientSecret: 'y' }),
     ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('rejects a malformed issuerUrl with 400 before anything persists', async () => {
+    const svc = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: makeTestConfig().accessControl.auth,
+      secretStore: new FileSecretStore({} as NodeJS.ProcessEnv),
+      env: {} as NodeJS.ProcessEnv,
+    });
+    await expect(
+      svc.update({ issuerUrl: 'idp.example.com', clientId: 'cid', clientSecret: 's' }),
+    ).rejects.toMatchObject({ statusCode: 400, message: /valid URL/ });
+    expect(existsSync(localPath)).toBe(false);
+  });
+
+  it('rejects a non-loopback http issuerUrl with 400', async () => {
+    const svc = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: makeTestConfig().accessControl.auth,
+      secretStore: new FileSecretStore({} as NodeJS.ProcessEnv),
+      env: {} as NodeJS.ProcessEnv,
+    });
+    await expect(
+      svc.update({ issuerUrl: 'http://idp.example.com', clientId: 'cid', clientSecret: 's' }),
+    ).rejects.toMatchObject({ statusCode: 400, message: /https/ });
+  });
+
+  it('allows an http loopback issuerUrl (local-dev IdP)', async () => {
+    const env = {} as NodeJS.ProcessEnv;
+    const svc = new OidcSettingsService({
+      localConfigPath: localPath,
+      authConfig: makeTestConfig().accessControl.auth,
+      secretStore: new FileSecretStore(env),
+      env,
+    });
+    await expect(
+      svc.update({
+        issuerUrl: 'http://localhost:8080/realms/dev',
+        clientId: 'cid',
+        clientSecret: 's',
+      }),
+    ).resolves.toEqual({ restartRequired: true });
   });
 
   it('keeps the existing secret when clientSecret is omitted (edit identifiers only)', async () => {
