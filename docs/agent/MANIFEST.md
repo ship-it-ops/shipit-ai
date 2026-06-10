@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-07 | Total notes: 36
+Last updated: 2026-06-09 | Total notes: 38
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -33,6 +33,7 @@ _(no in-flight work)_
 - [hosting-gke-distributed-not-vercel](decisions/hosting-gke-distributed-not-vercel.md) | decision | active | core | 2026-06-04 | deploy existing distributed stack as-is on GKE, not Vercel
 - [api-server-config-persistence-strategy](decisions/api-server-config-persistence-strategy.md) | decision | active | core | 2026-06-07 | ephemeral emptyDir for v1, Postgres config store next
 - [image-build-owned-by-infra-repo](decisions/image-build-owned-by-infra-repo.md) | decision | active | core | 2026-06-07 | infra repo builds+publishes images; public app repo holds no GCP creds
+- [gsm-secret-store-and-config-export](decisions/gsm-secret-store-and-config-export.md) | decision | active | core | 2026-06-09 | SecretStore + boot hydration persists wizard credentials to GSM
 
 ## Patterns
 
@@ -47,6 +48,7 @@ _(no in-flight work)_
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
+- [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | active | core | 2026-06-09 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
 
 ## Open Questions
