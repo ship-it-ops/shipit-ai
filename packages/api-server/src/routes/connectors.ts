@@ -481,12 +481,17 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
                 <dt>Private key</dt><dd><code>${escapeHtml(result.privateKeyPath)}</code></dd>
                 <dt>Webhook secret</dt><dd><code>${escapeHtml(result.webhookSecretPath)}</code></dd>
               </dl>
-              <p>
+              ${
+                result.persistedToGsm
+                  ? `<p>Credentials were persisted to Secret Manager — they survive restarts. Install the App on your org from
+                <a href="${escapeHtml(result.installUrl)}/installations/new" target="_blank" rel="noreferrer">GitHub</a>.</p>`
+                  : `<p>
                 Wire the webhook secret into your environment:<br/>
                 <code>export GITHUB_WEBHOOK_SECRET=$(cat ${escapeHtml(result.webhookSecretPath)})</code><br/>
                 Then install the App on your org from
                 <a href="${escapeHtml(result.installUrl)}/installations/new" target="_blank" rel="noreferrer">GitHub</a>.
-              </p>
+              </p>`
+              }
               <p><a href="/connectors?from=app-manifest">Return to ShipIt-AI →</a></p>
             `,
           }),

@@ -87,6 +87,7 @@ export type {
 // Config
 export {
   loadConfig,
+  deepMerge,
   findConfigPaths,
   configSchema,
   connectorInstanceSchema,

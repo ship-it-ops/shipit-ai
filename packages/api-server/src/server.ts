@@ -5,7 +5,7 @@ import session from '@fastify/session';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import type { Redis } from 'ioredis';
-import type { Config } from '@shipit-ai/shared';
+import type { Config, ConfigPaths } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
 import { registerRequireAuth } from './middleware/require-auth.js';
 import { RedisSessionStore } from './services/auth/redis-session-store.js';
@@ -19,6 +19,7 @@ import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import type { Neo4jService } from './services/neo4j-service.js';
 import healthRoutes from './routes/health.js';
 import connectorRoutes from './routes/connectors.js';
@@ -30,6 +31,7 @@ import teamsRoutes from './routes/teams.js';
 import reconciliationRoutes from './routes/reconciliation.js';
 import incidentEventsRoutes from './routes/incident-events.js';
 import mcpRoutes from './routes/mcp.js';
+import { configExportRoutes } from './routes/config-export.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -57,6 +59,14 @@ export interface CreateServerOptions {
   // Override the TokenService for tests. Production constructs one over
   // the Neo4j driver when auth is enabled AND a neo4jService is supplied.
   tokenService?: TokenService;
+  // OIDC settings persistence service. Optional: the route returns 503
+  // when not wired (e.g. tests or deployments that don't need it).
+  oidcSettingsService?: OidcSettingsService;
+  // Paths to the base and local config files. Required for the
+  // GET /api/config/export endpoint; when absent the route returns 503
+  // (CONFIG_EXPORT_DISABLED). Tests and deployments that don't need the
+  // export can omit it.
+  configPaths?: ConfigPaths;
 }
 
 class AuthConfigError extends Error {
@@ -111,6 +121,8 @@ function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void 
 declare module 'fastify' {
   interface FastifyInstance {
     config: Config;
+    oidcSettingsService?: OidcSettingsService;
+    configPaths?: ConfigPaths;
   }
 }
 
@@ -302,6 +314,18 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.githubAppManifestService) {
     server.decorate('githubAppManifestService', opts.githubAppManifestService);
   }
+  // OIDC settings service is optional. The PUT /api/auth/providers/oidc
+  // route returns 503 when not decorated. Decoration is skipped entirely
+  // when the service isn't supplied so Fastify's duplicate-decoration guard
+  // doesn't fire in tests that create multiple servers.
+  if (opts.oidcSettingsService) {
+    server.decorate('oidcSettingsService', opts.oidcSettingsService);
+  }
+  // Config paths for the export endpoint. Optional — route returns 503
+  // when not decorated (deployments that don't expose the export).
+  if (opts.configPaths) {
+    server.decorate('configPaths', opts.configPaths);
+  }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);
   }
@@ -331,6 +355,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // MCP server metadata (auth status, tool catalog). Surface for the in-app
   // /configure/mcp page; also useful for future CLI/plugin discovery.
   await server.register(mcpRoutes, { prefix: '/api/mcp' });
+
+  // Config export — admin-only download of the merged raw config (pre-env-
+  // substitution) for committing as the next deploy's seed config.
+  await server.register(configExportRoutes, { prefix: '/api/config' });
 
   return server;
 }

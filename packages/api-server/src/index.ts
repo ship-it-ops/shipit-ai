@@ -15,6 +15,8 @@ import {
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
+import { hydrateFromStore, makeSecretStore } from './secrets/index.js';
 
 export { createServer } from './server.js';
 export type { CreateServerOptions } from './server.js';
@@ -37,11 +39,41 @@ export type {
   ManifestServiceOptions,
   ConversionResult,
 } from './services/github-app-manifest-service.js';
+export { OidcSettingsService } from './services/auth/oidc-settings-service.js';
+export type {
+  OidcSettingsInput,
+  OidcSettingsServiceOptions,
+} from './services/auth/oidc-settings-service.js';
 export { SchemaService } from './services/schema-service.js';
 export { Neo4jService } from './services/neo4j-service.js';
 export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js';
+export {
+  makeSecretStore,
+  hydrateFromStore,
+  FileSecretStore,
+  GsmSecretStore,
+  SecretWriteForbiddenError,
+} from './secrets/index.js';
+export type { SecretStore, LogicalSecret } from './secrets/index.js';
 
 async function main() {
+  // Secret store + hydration MUST run before loadConfig(): in gsm mode
+  // hydration populates the env vars (GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_PATH,
+  // OAuth/OIDC secrets) that the chart-seeded config's ${ENV} placeholders
+  // reference. In file mode (default) this is a no-op.
+  const secretStore = makeSecretStore();
+  const hydration = await hydrateFromStore(secretStore);
+  if (hydration.hydrated.length > 0) {
+    console.log(
+      `Hydrated ${hydration.hydrated.length} secret(s) from GSM: ${hydration.hydrated.join(', ')}` +
+        (hydration.pemPath ? ` (PEM at ${hydration.pemPath})` : ''),
+    );
+  } else if (secretStore.kind === 'gsm') {
+    console.log(
+      'GSM secret store active; no secrets present yet (first run — use the onboarding wizard).',
+    );
+  }
+
   const config = loadConfig();
   const { neo4j, schema, api } = config.backend;
 
@@ -49,7 +81,8 @@ async function main() {
   // config file's directory, not the process cwd. Turbo runs the api-server
   // with cwd = `packages/api-server/`, so `./config/shipit-schema.yaml`
   // would otherwise miss the file that lives at the repo root.
-  const configDir = dirname(findConfigPaths().basePath);
+  const configPaths = findConfigPaths();
+  const configDir = dirname(configPaths.basePath);
   const schemaPath = isAbsolute(schema.path) ? schema.path : resolve(configDir, schema.path);
 
   const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
@@ -58,7 +91,7 @@ async function main() {
   // Locate the local config file so the registry can write connector edits
   // back. Falls back to the sibling shipit.config.local.yaml of whatever
   // base config we loaded.
-  const { localPath } = findConfigPaths();
+  const { localPath } = configPaths;
 
   // Run history is operational state, not configuration — it lives in
   // Redis (capped LIST per connector) instead of being re-serialized into
@@ -104,6 +137,17 @@ async function main() {
     appService: githubAppService,
     // Local-dev default; container deploys override.
     keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+    secretStore,
+  });
+
+  // OIDC settings service: persists client secret via SecretStore (GSM in
+  // prod) and public identifiers (issuerUrl, clientId) to
+  // shipit.config.local.yaml. Lives alongside the manifest service since
+  // both write to the same local config file.
+  const oidcSettingsService = new OidcSettingsService({
+    localConfigPath: localPath,
+    authConfig: config.accessControl.auth,
+    secretStore,
   });
 
   // Wire the BullMQ-backed scheduler whenever Redis is reachable.
@@ -184,6 +228,8 @@ async function main() {
     connectorRegistry,
     githubAppService,
     githubAppManifestService,
+    oidcSettingsService,
+    configPaths: { basePath: configPaths.basePath, localPath },
     config,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two

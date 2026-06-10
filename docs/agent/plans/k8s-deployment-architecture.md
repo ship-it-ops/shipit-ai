@@ -124,6 +124,7 @@ deploy), following the build order above.
 
 ## Related
 
+- [api-server-config-persistence-strategy](../decisions/api-server-config-persistence-strategy.md) — resolves the runtime write-path question (infra D13): ephemeral `emptyDir`+seed for v1, Postgres config store next
 - [hosting-gke-distributed-not-vercel](../decisions/hosting-gke-distributed-not-vercel.md) — why GKE-distributed, alternatives rejected
 - [deployment-runtime-modes](deployment-runtime-modes.md) — superseded exploration (Vercel/serverless/embedded)
 - [connector-run-storage-redis-not-yaml](../decisions/connector-run-storage-redis-not-yaml.md) — run store in Redis (in-cluster here)
