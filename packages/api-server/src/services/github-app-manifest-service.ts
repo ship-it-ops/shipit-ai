@@ -22,6 +22,9 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { GitHubAppService } from './github-app-service.js';
 
+import { GsmSecretStore } from '../secrets/gsm-store.js';
+import type { LogicalSecret, SecretStore } from '../secrets/types.js';
+
 // Match GitHub's manifest schema, narrowed to the fields we substitute or
 // surface. The static template carries more keys than this (description,
 // permissions, events) — we pass those through untouched.
@@ -50,6 +53,11 @@ export interface ManifestServiceOptions {
   conversionEndpoint?: (code: string) => string;
   // Fetch implementation (testable seam — default to global fetch).
   fetchImpl?: typeof fetch;
+  // Optional secret store. When it's the GSM store, the exchange also
+  // persists the minted credentials durably (Workload Identity write
+  // path). File mode deliberately skips this so local behavior is
+  // byte-for-byte unchanged.
+  secretStore?: SecretStore;
 }
 
 export interface ConversionResult {
@@ -65,6 +73,10 @@ export interface ConversionResult {
   // into the GITHUB_WEBHOOK_SECRET env var themselves. The path is
   // surfaced so they can `export GITHUB_WEBHOOK_SECRET=$(cat ...)`.
   webhookSecretPath: string;
+  // True when the credentials were durably persisted to GSM (gsm store
+  // active). The callback page uses this to drop the "export
+  // GITHUB_WEBHOOK_SECRET=$(cat …)" manual step.
+  persistedToGsm: boolean;
 }
 
 // In-memory state token store. Map<token, { createdAt, target, nonce? }>.
@@ -92,6 +104,7 @@ export class GitHubAppManifestService {
   private keyDir: string;
   private conversionEndpoint: (code: string) => string;
   private fetchImpl: typeof fetch;
+  private secretStore?: SecretStore;
   private states = new Map<string, { createdAt: number; target: ManifestTarget; nonce?: string }>();
   // Keyed by the client-supplied `nonce` (uuid). The wizard generates
   // the nonce, hands it to the launch URL, the manifest service round-
@@ -113,6 +126,7 @@ export class GitHubAppManifestService {
       opts.conversionEndpoint ??
       ((code) => `https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`);
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.secretStore = opts.secretStore;
   }
 
   // Return the manifest JSON the launch endpoint POSTs to GitHub. Webhook
@@ -279,6 +293,25 @@ export class GitHubAppManifestService {
       ? `https://github.com/apps/${payload.slug}`
       : (payload.html_url ?? `https://github.com/apps/${payload.name ?? ''}`);
 
+    // Per-org (target='instance') Apps must never touch the global GSM
+    // containers — same invariant as the in-memory global App slot (see
+    // docs/agent/decisions/github-app-manifest-flow.md, target-routing
+    // extension). Writing an instance App's credentials to
+    // shipit-github-app-* would silently replace the shared App's
+    // credentials at next boot hydration.
+    let persistedToGsm = false;
+    if (target === 'global' && this.secretStore?.kind === 'gsm') {
+      await this.persistToGsm(this.secretStore, {
+        appId,
+        pem,
+        webhookSecret,
+        oauthClientId: payload.client_id ?? '',
+        oauthClientSecret: payload.client_secret ?? '',
+        keyPath,
+      });
+      persistedToGsm = true;
+    }
+
     if (target === 'global') {
       // Persist via the existing service so the in-memory config + the
       // YAML stay in sync (and the scheduler picks up the new credentials
@@ -313,7 +346,53 @@ export class GitHubAppManifestService {
       installUrl,
       privateKeyPath: keyPath,
       webhookSecretPath: secretPath,
+      persistedToGsm,
     };
+  }
+
+  // Persist the minted credentials to GSM. Empty values are skipped
+  // (GitHub omits webhook_secret when the manifest had no hook config).
+  // On failure we throw with the container name + recovery path: the App
+  // already exists on GitHub and the PEM is on disk, so the operator can
+  // re-run the wizard or upload the value manually.
+  // Partial state on failure is acceptable: the thrown error tells the
+  // operator to re-run the wizard, and a re-run overwrites every value
+  // idempotently.
+  private async persistToGsm(
+    store: SecretStore,
+    args: {
+      appId: string;
+      pem: string;
+      webhookSecret: string;
+      oauthClientId: string;
+      oauthClientSecret: string;
+      keyPath: string;
+    },
+  ): Promise<void> {
+    const writes: Array<[LogicalSecret, string, string | undefined]> = [
+      ['github-app-private-key', args.pem, undefined],
+      ['github-app-id', args.appId, 'GITHUB_APP_ID'],
+      ['github-webhook-secret', args.webhookSecret, 'GITHUB_WEBHOOK_SECRET'],
+      ['github-oauth-client-id', args.oauthClientId, 'GITHUB_OAUTH_CLIENT_ID'],
+      ['github-oauth-client-secret', args.oauthClientSecret, 'GITHUB_OAUTH_CLIENT_SECRET'],
+    ];
+    for (const [name, value, envVar] of writes) {
+      if (!value) continue;
+      try {
+        await store.write(name, value);
+      } catch (err) {
+        const container = store instanceof GsmSecretStore ? store.containerFor(name) : String(name);
+        throw new Error(
+          `GSM persistence failed for "${container}": ${(err as Error).message}. ` +
+            `The GitHub App was created and the key is on disk at ${args.keyPath} — ` +
+            `fix the pod's Secret Manager IAM and re-run the wizard, or upload the value manually.`,
+        );
+      }
+      // The running process sees fresh values immediately — no ESO
+      // round-trip (feature secrets aren't ESO-synced at all anymore).
+      if (envVar) process.env[envVar] = value;
+    }
+    process.env.GITHUB_APP_PRIVATE_KEY_PATH = args.keyPath;
   }
 
   // Drop expired state tokens AND unclaimed pending-instance entries.

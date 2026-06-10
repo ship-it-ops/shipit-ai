@@ -130,6 +130,7 @@ async function main() {
     appService: githubAppService,
     // Local-dev default; container deploys override.
     keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+    secretStore,
   });
 
   // Wire the BullMQ-backed scheduler whenever Redis is reachable.
