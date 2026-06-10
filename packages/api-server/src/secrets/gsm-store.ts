@@ -63,9 +63,11 @@ export class GsmSecretStore implements SecretStore {
       const text = typeof data === 'string' ? data : Buffer.from(data).toString('utf-8');
       return text.length > 0 ? text : null;
     } catch (err) {
-      // NOT_FOUND = the container exists but holds no version yet (or the
-      // container name is wrong — IAM makes those indistinguishable).
-      // That's the legitimate first-run state, not an error.
+      // NOT_FOUND (code 5): GSM returns this both when the container holds no
+      // version yet (legitimate first-run) and when the container name is wrong
+      // (typo or Terraform not applied yet). The two cases are indistinguishable
+      // at the API level, so we treat both as "nothing to hydrate". IAM denials
+      // come back as PERMISSION_DENIED (code 7) and are re-thrown below.
       if ((err as { code?: number }).code === GRPC_NOT_FOUND) return null;
       throw err;
     }
