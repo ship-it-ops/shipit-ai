@@ -82,4 +82,13 @@ describe('hydrateFromStore', () => {
     const result = await hydrateFromStore(fakeGsmStore({ 'github-app-private-key': PEM }), env);
     expect(result.pemPath).toBe(join(tmpDir, 'github-app.pem'));
   });
+
+  it('does not clobber GITHUB_APP_PRIVATE_KEY_PATH already set', async () => {
+    const env = {
+      SHIPIT_GITHUB_APP_KEY_DIR: tmpDir,
+      GITHUB_APP_PRIVATE_KEY_PATH: '/operator/my.pem',
+    } as NodeJS.ProcessEnv;
+    await hydrateFromStore(fakeGsmStore({ 'github-app-private-key': PEM }), env);
+    expect(env.GITHUB_APP_PRIVATE_KEY_PATH).toBe('/operator/my.pem');
+  });
 });

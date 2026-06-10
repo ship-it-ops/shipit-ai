@@ -42,6 +42,9 @@ export async function hydrateFromStore(
     if (value === null) continue;
     hydrated.push(name);
     const envVar = ENV_VAR_FOR[name]!;
+    // Falsy check is deliberate: empty-string env (e.g. a placeholder
+    // GITHUB_APP_ID="" from the chart ConfigMap) counts as unset and gets
+    // filled from GSM. Do not "fix" this to === undefined.
     if (!env[envVar]) env[envVar] = value;
   }
 
@@ -54,7 +57,9 @@ export async function hydrateFromStore(
     const appId = env.GITHUB_APP_ID;
     pemPath = join(keyDir, appId ? `github-app-${appId}.pem` : 'github-app.pem');
     // Exact bytes — the PEM round-trip contract. mode 0600 like the
-    // manifest service's own writes.
+    // manifest service's own writes. Unlike the env vars, the FILE is
+    // rewritten on every boot on purpose: a key rotated in GSM must land
+    // on disk; only the env-var pointer gets no-clobber treatment.
     writeFileSync(pemPath, pem, { encoding: 'utf-8', mode: 0o600 });
     chmodSync(pemPath, 0o600);
     if (!env.GITHUB_APP_PRIVATE_KEY_PATH) env.GITHUB_APP_PRIVATE_KEY_PATH = pemPath;

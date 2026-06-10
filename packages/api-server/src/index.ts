@@ -15,6 +15,7 @@ import {
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import { hydrateFromStore, makeSecretStore } from './secrets/index.js';
 
 export { createServer } from './server.js';
 export type { CreateServerOptions } from './server.js';
@@ -40,8 +41,33 @@ export type {
 export { SchemaService } from './services/schema-service.js';
 export { Neo4jService } from './services/neo4j-service.js';
 export type { GraphStats, NeighborhoodResult } from './services/neo4j-service.js';
+export {
+  makeSecretStore,
+  hydrateFromStore,
+  FileSecretStore,
+  GsmSecretStore,
+  SecretWriteForbiddenError,
+} from './secrets/index.js';
+export type { SecretStore, LogicalSecret } from './secrets/index.js';
 
 async function main() {
+  // Secret store + hydration MUST run before loadConfig(): in gsm mode
+  // hydration populates the env vars (GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_PATH,
+  // OAuth/OIDC secrets) that the chart-seeded config's ${ENV} placeholders
+  // reference. In file mode (default) this is a no-op.
+  const secretStore = makeSecretStore();
+  const hydration = await hydrateFromStore(secretStore);
+  if (hydration.hydrated.length > 0) {
+    console.log(
+      `Hydrated ${hydration.hydrated.length} secret(s) from GSM: ${hydration.hydrated.join(', ')}` +
+        (hydration.pemPath ? ` (PEM at ${hydration.pemPath})` : ''),
+    );
+  } else if (secretStore.kind === 'gsm') {
+    console.log(
+      'GSM secret store active; no secrets present yet (first run — use the onboarding wizard).',
+    );
+  }
+
   const config = loadConfig();
   const { neo4j, schema, api } = config.backend;
 
