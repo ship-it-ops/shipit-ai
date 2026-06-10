@@ -1,3 +1,4 @@
+export { hydrateFromStore, type HydrationResult } from './hydrate.js';
 export { FileSecretStore } from './file-store.js';
 export { GsmSecretStore, type GsmClientLike } from './gsm-store.js';
 export {

@@ -27,4 +27,10 @@ describe('makeSecretStore', () => {
       /Unknown SHIPIT_SECRET_STORE/,
     );
   });
+
+  it('whitespace-only SHIPIT_SECRET_STORE falls back to file mode', () => {
+    expect(makeSecretStore({ SHIPIT_SECRET_STORE: '   ' } as NodeJS.ProcessEnv)).toBeInstanceOf(
+      FileSecretStore,
+    );
+  });
 });
