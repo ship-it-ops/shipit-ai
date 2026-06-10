@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-10
 author: claude-session-2026-06-09
 tags: [secrets, gsm, onboarding, kubernetes, cross-repo]
 importance: core
@@ -27,10 +27,13 @@ endpoint → web-UI Instance tab → full verification.
 
 ## Status
 
-Plan approved 2026-06-09; implementation not started. Infra repo is building
-the matching IAM/WI/chart changes in parallel — the Q1–Q5 contract answers are
-in the spec's "Cross-repo follow-ups for infra" section and must ride in the
-PR description.
+Implemented 2026-06-10 on branch `setup-infra` (12 tasks, all reviewed; commits
+`c5786cc..` through the web-UI Instance tab + docs follow-ups). Review findings
+folded in along the way: instance-target GSM gating, `backend.mcp.apiKeySecret`
+export scrub, seed-config `GITHUB_OAUTH_CLIENT_SECRET` env-name fix. Remaining:
+PR + infra repo's matching IAM/WI/chart changes — the Q1–Q5 contract answers
+are in the spec's "Cross-repo follow-ups for infra" section and must ride in
+the PR description.
 
 ## Related
 

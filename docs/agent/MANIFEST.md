@@ -48,7 +48,7 @@ _(no in-flight work)_
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
-- [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | active | core | 2026-06-09 | 12-task TDD plan for GSM secrets + config export
+- [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
 
 ## Open Questions

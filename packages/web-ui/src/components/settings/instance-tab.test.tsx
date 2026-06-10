@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { clientConfig } from '@/lib/client-config';
 import { InstanceTab } from './instance-tab';
 
 vi.mock('@/lib/api', () => ({
@@ -42,6 +43,8 @@ describe('InstanceTab', () => {
   it('renders the config export download link', () => {
     render(<InstanceTab />);
     const link = screen.getByRole('link', { name: /export config/i });
-    expect(link).toHaveAttribute('href', '/api/config/export');
+    // Absolute against the configured api origin — the web-ui and api-server
+    // run on different origins in local dev, so a relative href would 404.
+    expect(link).toHaveAttribute('href', `${clientConfig.api.url}/api/config/export`);
   });
 });

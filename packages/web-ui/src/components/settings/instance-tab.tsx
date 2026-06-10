@@ -6,6 +6,7 @@
 // tabs (appearance/notifications): everything here is admin-scoped.
 import { useState } from 'react';
 import { Button, Card, Input } from '@ship-it-ui/ui';
+import { clientConfig } from '@/lib/client-config';
 import { updateOidcProvider } from '@/lib/api';
 
 export function InstanceTab() {
@@ -68,7 +69,8 @@ export function InstanceTab() {
             </Button>
             {status === 'saved' && (
               <span className="text-text-muted text-[12px]">
-                Saved. Takes effect on the next restart.
+                Saved — the secret is durable. Export the config below and commit it as the
+                deployment seed so the issuer/client ID survive redeploys, then restart.
               </span>
             )}
             {status === 'error' && <span className="text-danger text-[12px]">{error}</span>}
@@ -82,7 +84,7 @@ export function InstanceTab() {
           secrets) to commit as the seed config for the next deployment.
         </p>
         <Button variant="outline" asChild>
-          <a href="/api/config/export" download>
+          <a href={`${clientConfig.api.url}/api/config/export`} download>
             Export config
           </a>
         </Button>

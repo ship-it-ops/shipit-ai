@@ -54,7 +54,8 @@ wiped on every pod restart. Full spec:
   operator-managed and the store refuses writes to them client-side.
 - **Config export:** `GET /api/config/export` (admin-only) returns the raw
   `deepMerge(base, local)` YAML — pre-`${ENV}`-substitution so placeholders
-  survive — scrubbed of `webhookSecret` + `lastRuns`, for committing as the
+  survive — scrubbed of `webhookSecret` + `backend.mcp.apiKeySecret` +
+  `lastRuns`, for committing as the
   chart's next seed config. Credentials durable in GSM + wiring durable in the
   exported seed = a redeploy resumes where the instance left off.
 

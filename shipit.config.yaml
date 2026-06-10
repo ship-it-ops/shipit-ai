@@ -170,7 +170,7 @@ accessControl:
       github:
         enabled: false
         clientId: ${GITHUB_OAUTH_CLIENT_ID:-}
-        clientSecretEnv: GITHUB_OAUTH_SECRET
+        clientSecretEnv: GITHUB_OAUTH_CLIENT_SECRET
         # Optional GitHub-org allow-list — empty means any authenticated
         # GitHub user can sign in (which usually isn't what you want in
         # production). Add your org name(s) here to gate sign-in by org
