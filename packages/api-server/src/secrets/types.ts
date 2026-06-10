@@ -1,0 +1,84 @@
+// Logical secret taxonomy for the SecretStore abstraction. The GSM
+// container names are the Terraform-managed names from the infra repo
+// (Ship-It-Ops/shipit-ai-infra, terraform/modules/secret-manager) —
+// hard-mapped here per the Q1 contract decision, overridable per secret
+// via SHIPIT_GSM_SECRET_<LOGICAL_NAME> for emergencies. The app NEVER
+// creates containers, only adds versions to existing ones.
+//
+// Bootstrap secrets (neo4j-aura-password, session-secret) are
+// deliberately NOT writable: the pod's GCP service account has no
+// addVersion grant on them, and we fail closed client-side before IAM
+// would deny it. See docs/superpowers/specs/2026-06-09-gsm-secret-store-design.md.
+
+export type LogicalSecret =
+  | 'github-app-private-key'
+  | 'github-webhook-secret'
+  | 'github-oauth-client-secret'
+  | 'oidc-client-secret'
+  | 'github-app-id'
+  | 'github-oauth-client-id'
+  | 'neo4j-aura-password'
+  | 'session-secret';
+
+export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
+  'github-app-private-key': 'shipit-github-app-private-key',
+  'github-webhook-secret': 'shipit-github-webhook-secret',
+  'github-oauth-client-secret': 'shipit-github-oauth-client-secret',
+  'oidc-client-secret': 'shipit-oidc-client-secret',
+  'github-app-id': 'shipit-github-app-id',
+  'github-oauth-client-id': 'shipit-github-oauth-client-id',
+  'neo4j-aura-password': 'shipit-neo4j-aura-password',
+  'session-secret': 'shipit-session-secret',
+};
+
+// Which env var each logical secret is consumed through. The PEM has no
+// entry — it is consumed as a file via GITHUB_APP_PRIVATE_KEY_PATH, which
+// the boot hydration step sets after materializing the PEM from GSM.
+export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
+  'github-webhook-secret': 'GITHUB_WEBHOOK_SECRET',
+  'github-oauth-client-secret': 'GITHUB_OAUTH_CLIENT_SECRET',
+  'oidc-client-secret': 'OIDC_CLIENT_SECRET',
+  'github-app-id': 'GITHUB_APP_ID',
+  'github-oauth-client-id': 'GITHUB_OAUTH_CLIENT_ID',
+  'neo4j-aura-password': 'NEO4J_PASSWORD',
+  'session-secret': 'SHIPIT_SESSION_SECRET',
+};
+
+export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecret>([
+  'github-app-private-key',
+  'github-webhook-secret',
+  'github-oauth-client-secret',
+  'oidc-client-secret',
+  'github-app-id',
+  'github-oauth-client-id',
+]);
+
+export class SecretWriteForbiddenError extends Error {
+  constructor(name: LogicalSecret) {
+    super(
+      `Refusing to write bootstrap secret "${name}" — bootstrap secrets are operator-managed ` +
+        `(see scripts/bootstrap-secrets.md in the infra repo).`,
+    );
+    this.name = 'SecretWriteForbiddenError';
+  }
+}
+
+export function assertWritable(name: LogicalSecret): void {
+  if (!WRITABLE_SECRETS.has(name)) throw new SecretWriteForbiddenError(name);
+}
+
+// SHIPIT_GSM_SECRET_GITHUB_APP_PRIVATE_KEY etc. — logical name upper-snaked.
+export function gsmContainerFor(name: LogicalSecret, env: NodeJS.ProcessEnv): string {
+  const override = env[`SHIPIT_GSM_SECRET_${name.toUpperCase().replace(/-/g, '_')}`];
+  return override && override.trim() ? override.trim() : GSM_CONTAINER_DEFAULTS[name];
+}
+
+export interface SecretStore {
+  // 'file' keeps today's local behavior; 'gsm' is the GKE deployment.
+  readonly kind: 'file' | 'gsm';
+  // null = no value exists yet (first run) — never an error.
+  read(name: LogicalSecret): Promise<string | null>;
+  // Throws SecretWriteForbiddenError for bootstrap secrets.
+  // Callers must pass a non-empty value; writing an empty string is undefined behavior.
+  write(name: LogicalSecret, value: string): Promise<void>;
+}
