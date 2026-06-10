@@ -44,7 +44,11 @@ wiped on every pod restart. Full spec:
   `api-server`/ns `shipit` acked. One PR, app repo owns it.
 - **Scope:** manifest exchange also persists the conversion's
   `client_id`/`client_secret` (previously discarded — the storage path the
-  github-app-manifest-flow decision's revisit trigger anticipated). OIDC is
+  github-app-manifest-flow decision's revisit trigger anticipated). GSM
+  persistence is gated on `target === 'global'`: per-org (`target=instance`)
+  flows perform zero GSM writes, extending the existing "instance never touches
+  the global App slot" invariant to the GSM containers (review finding
+  2026-06-10). OIDC is
   **UI-entry + persist** (`PUT /api/auth/providers/oidc`, admin-only), not
   RFC 7591 DCR. Bootstrap secrets (Neo4j password, session secret) stay
   operator-managed and the store refuses writes to them client-side.

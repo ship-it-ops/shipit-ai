@@ -125,8 +125,8 @@ nothing about local dev changes.
 
 **GitHub App manifest exchange** (`github-app-manifest-service.ts`,
 `exchangeAndPersist`): keeps writing the PEM + webhook-secret sidecar to disk
-(local UX unchanged), and additionally — when the store supports writes (gsm) —
-persists:
+(local UX unchanged), and additionally — when the store supports writes (gsm)
+**and the exchange targets the global App slot** — persists:
 
 - `github-app-private-key` ← exact `payload.pem`
 - `github-webhook-secret` ← `payload.webhook_secret`
@@ -139,6 +139,15 @@ sees the values immediately (no ESO round-trip — ESO no longer carries feature
 secrets at all per Q2). GSM write failures surface on the wizard error page with
 the container name; the on-disk copy still exists so the operator can recover
 manually.
+
+**Instance-target gating (review finding, 2026-06-10):** per-org manifest flows
+(`target=instance`) perform **zero** GSM writes. The global GSM containers mirror
+the global App slot, and the existing invariant ("instance target never touches
+the global slot" — decision `github-app-manifest-flow`, target-routing extension)
+extends to them: writing an instance App's credentials to `shipit-github-app-*`
+would silently replace the shared App's credentials at the next boot hydration.
+Durable per-org App credentials are out of scope for v1 (would need per-instance
+containers).
 
 **OIDC settings** — new authenticated admin endpoint (`PUT
 /api/auth/providers/oidc`, admin-gated like the other config-mutating routes) plus
@@ -169,7 +178,9 @@ boots exactly where this one left off.
   serialized in.
 - **Scrubbing:** drop `connectors.github.app.webhookSecret` (config holds env-var
   _names_, never secret values — this field should always be empty, but the export
-  fails closed) and drop per-connector `lastRuns` (runtime history, not config;
+  fails closed), drop `backend.mcp.apiKeySecret` (a literal secret value the
+  shipped config tells operators to set in the local file — review finding
+  2026-06-10), and drop per-connector `lastRuns` (runtime history, not config;
   run history lives in Redis anyway).
 - A header comment in the exported YAML records the export timestamp and source
   ("exported from running instance — commit as the chart's seed config").
