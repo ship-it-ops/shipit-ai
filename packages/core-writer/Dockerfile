@@ -7,10 +7,13 @@ COPY packages/event-bus/ packages/event-bus/
 COPY packages/core-writer/ packages/core-writer/
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo build --filter=@shipit-ai/core-writer
+# Self-contained prod bundle: dist + real (de-symlinked) node_modules
+# including workspace deps. Copying the root node_modules instead leaves
+# Node unable to resolve anything (pnpm keeps real packages in the
+# .pnpm virtual store, reached only via per-package symlinks).
+RUN pnpm --filter=@shipit-ai/core-writer deploy --legacy --prod /out
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/packages/core-writer/dist ./dist
-COPY --from=builder /app/packages/core-writer/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /out ./
 CMD ["node", "dist/index.js"]

@@ -19,6 +19,16 @@ monorepo standalone runner paths) plus a new root `.dockerignore`. See
 [web-ui-dockerfile-three-layered-build-failure](../investigations/web-ui-dockerfile-three-layered-build-failure.md).
 All four images verified building locally; web-ui runner smoke-tested.
 
+Second cross-repo brief (2026-06-11): backend images crashed at runtime
+(`ERR_MODULE_NOT_FOUND`) — runtime stages of api-server / core-writer /
+mcp-server now use `pnpm deploy --legacy --prod` instead of copying the
+root `node_modules`. All three verified locally (import probes + boot to
+config stage). See
+[backend-images-runtime-module-not-found](../investigations/backend-images-runtime-module-not-found.md).
+
+PR #57 (`fix-docker`) carries the work; a Prettier-loop lint fix in the
+investigations doc is also pending commit.
+
 ## Why
 
 Infra repo's `build-images.yml` fails on `build:web-ui` with
