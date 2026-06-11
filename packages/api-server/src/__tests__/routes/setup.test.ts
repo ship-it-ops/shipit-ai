@@ -138,6 +138,8 @@ describe('setup mode server', () => {
     expect(body.error.code).toBe('SETUP_INCOMPLETE');
     expect(body.error.missing).toEqual(['provider']);
     expect(exitSpy).not.toHaveBeenCalled();
+    // A failed complete must NOT latch the deployment as set up.
+    expect(store.values.has('setup-completed')).toBe(false);
   });
 
   it('completes once the wizard persisted everything, then schedules the restart', async () => {
@@ -154,6 +156,9 @@ describe('setup mode server', () => {
       const res = await server.inject({ method: 'POST', url: '/api/setup/complete' });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ ok: true });
+      // One-way latch persisted so a later boot never reopens the wizard
+      // for this deployment (PR #59 review SC2).
+      expect(store.values.get('setup-completed')).toBe('true');
       expect(exitSpy).not.toHaveBeenCalled(); // reply flushes first
       vi.advanceTimersByTime(300);
       expect(exitSpy).toHaveBeenCalledWith(0);

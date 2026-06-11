@@ -95,6 +95,14 @@ export class SetupService {
     if (!boot.bootable) {
       return { ok: false, missing: boot.missing, messages: boot.messages };
     }
+    // One-way latch: with this version present, shouldEnterSetupMode()
+    // never reopens the wizard — a later secret loss on this deployment
+    // fails loud instead of exposing an unauthenticated admin surface
+    // (PR #59 review SC2). Written BEFORE the ok reply/restart so a crash
+    // in between can't leave a completed-but-unlatched deployment.
+    // FileSecretStore no-ops this write (dev-only forced mode), which is
+    // fine — the latch is only consulted for gsm-kind stores.
+    await this.secretStore.write('setup-completed', 'true');
     return { ok: true };
   }
 

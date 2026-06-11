@@ -35,8 +35,11 @@ GSM store is fresh; web-ui gained a public /setup wizard page) plus the
 core-writer `CMD dist/main.js` fix. See
 [setup-mode-first-boot](../decisions/setup-mode-first-boot.md). All
 builds/tests/lint green locally; manual forced-setup-mode boot verified.
-NOTE: needs infra Terraform for the `shipit-auth-admin-emails` GSM
-container before it works on-cluster.
+NOTE: needs infra Terraform for TWO GSM containers before it works
+on-cluster: `shipit-auth-admin-emails` and `shipit-setup-completed` (the
+latter added for PR #59 review finding SC2 — one-way latch preventing
+setup-mode re-entry on previously-secured deployments). If the infra
+brief was already sent with only one container, amend it.
 
 ## Why
 

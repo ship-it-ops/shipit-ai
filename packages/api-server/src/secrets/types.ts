@@ -18,6 +18,7 @@ export type LogicalSecret =
   | 'github-app-id'
   | 'github-oauth-client-id'
   | 'auth-admin-emails'
+  | 'setup-completed'
   | 'neo4j-aura-password'
   | 'session-secret';
 
@@ -29,6 +30,7 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
   'github-app-id': 'shipit-github-app-id',
   'github-oauth-client-id': 'shipit-github-oauth-client-id',
   'auth-admin-emails': 'shipit-auth-admin-emails',
+  'setup-completed': 'shipit-setup-completed',
   'neo4j-aura-password': 'shipit-neo4j-aura-password',
   'session-secret': 'shipit-session-secret',
 };
@@ -36,6 +38,9 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
 // Which env var each logical secret is consumed through. The PEM has no
 // entry — it is consumed as a file via GITHUB_APP_PRIVATE_KEY_PATH, which
 // the boot hydration step sets after materializing the PEM from GSM.
+// setup-completed has none either: it is the one-way "this deployment
+// finished first-run setup" latch, read directly from the store at boot
+// (never hydrated, never consumed via env).
 export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
   'github-webhook-secret': 'GITHUB_WEBHOOK_SECRET',
   'github-oauth-client-secret': 'GITHUB_OAUTH_CLIENT_SECRET',
@@ -59,6 +64,7 @@ export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecre
   'github-app-id',
   'github-oauth-client-id',
   'auth-admin-emails',
+  'setup-completed',
 ]);
 
 export class SecretWriteForbiddenError extends Error {

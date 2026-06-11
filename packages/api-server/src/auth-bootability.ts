@@ -117,6 +117,40 @@ export interface DerivedAuthConfig {
   derivedAdmins: boolean;
 }
 
+// The setup-mode trigger, extracted to a pure function so the one piece
+// of security-critical boot logic is directly unit-testable. Setup mode
+// is an UNAUTHENTICATED admin surface — every branch here is a security
+// decision:
+//
+//   - bootable      → never. Nothing to set up.
+//   - forced        → dev-only escape hatch (SHIPIT_FORCE_SETUP_MODE=1).
+//   - non-gsm store → never. Local/file deployments keep the loud error.
+//   - setupCompleted→ never. One-way latch written by /api/setup/complete;
+//     a previously-secured deployment that later loses a secret (rotation
+//     mishap, accidental delete) must fail LOUD, not silently reopen the
+//     wizard for whoever reaches the ingress first. (PR #59 review SC2.)
+//   - zero hydrated → first run, the state setup mode exists for.
+//   - wizard-fixable-only failures → mid-wizard pod restart (some secrets
+//     persisted, latch not yet written) — re-enter the wizard instead of
+//     crash-looping.
+export interface SetupModeDecision {
+  bootable: boolean;
+  missing: BootGate[];
+  storeKind: 'file' | 'gsm';
+  hydratedCount: number;
+  setupCompleted: boolean;
+  forced: boolean;
+}
+
+export function shouldEnterSetupMode(input: SetupModeDecision): boolean {
+  if (input.bootable) return false;
+  if (input.forced) return true;
+  if (input.storeKind !== 'gsm') return false;
+  if (input.setupCompleted) return false;
+  if (input.hydratedCount === 0) return true;
+  return input.missing.length > 0 && input.missing.every((gate) => WIZARD_FIXABLE_GATES.has(gate));
+}
+
 export function applyDerivedAuthConfig(
   config: Config,
   env: NodeJS.ProcessEnv,

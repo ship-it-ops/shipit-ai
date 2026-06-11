@@ -5,6 +5,8 @@ import {
   assertAuthConfigBootable,
   AuthConfigError,
   evaluateAuthBootability,
+  shouldEnterSetupMode,
+  type SetupModeDecision,
 } from '../auth-bootability.js';
 import { makeTestConfig } from './test-config.js';
 
@@ -93,6 +95,65 @@ describe('assertAuthConfigBootable', () => {
   it('does not throw for a bootable config', () => {
     const env = { SHIPIT_SESSION_SECRET: SESSION_SECRET } as NodeJS.ProcessEnv;
     expect(() => assertAuthConfigBootable(bootableAuthConfig(), env)).not.toThrow();
+  });
+});
+
+describe('shouldEnterSetupMode', () => {
+  // The genuinely-fresh GKE deploy: gsm store, nothing hydrated, the
+  // committed config failing on the wizard-fixable gates.
+  const FRESH: SetupModeDecision = {
+    bootable: false,
+    missing: ['provider', 'admins'],
+    storeKind: 'gsm',
+    hydratedCount: 0,
+    setupCompleted: false,
+    forced: false,
+  };
+
+  it('enters setup mode on a fresh gsm deployment', () => {
+    expect(shouldEnterSetupMode(FRESH)).toBe(true);
+  });
+
+  it('never enters setup mode when the config is bootable', () => {
+    expect(shouldEnterSetupMode({ ...FRESH, bootable: true, missing: [] })).toBe(false);
+  });
+
+  it('re-enters setup mode after a mid-wizard pod restart (partial secrets, latch unset)', () => {
+    // e.g. admin email persisted before the crash; provider still missing.
+    expect(shouldEnterSetupMode({ ...FRESH, missing: ['provider'], hydratedCount: 1 })).toBe(true);
+  });
+
+  it('REGRESSION (PR #59 SC2): a completed deployment that loses a secret fails loud, not setup', () => {
+    // Previously-secured deployment whose OAuth client secret vanished
+    // from GSM: the only failing gate is wizard-fixable, but the latch is
+    // set — reopening the wizard here would hand admin to whoever reaches
+    // the ingress first.
+    expect(
+      shouldEnterSetupMode({
+        ...FRESH,
+        missing: ['provider'],
+        hydratedCount: 3,
+        setupCompleted: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('the latch also vetoes the zero-hydrated branch (catastrophic secret wipe)', () => {
+    expect(shouldEnterSetupMode({ ...FRESH, setupCompleted: true })).toBe(false);
+  });
+
+  it('stays loud when any failing gate is operator-only', () => {
+    expect(
+      shouldEnterSetupMode({ ...FRESH, missing: ['provider', 'sessionSecret'], hydratedCount: 2 }),
+    ).toBe(false);
+  });
+
+  it('never triggers for file-kind stores', () => {
+    expect(shouldEnterSetupMode({ ...FRESH, storeKind: 'file' })).toBe(false);
+  });
+
+  it('the dev escape hatch forces setup mode regardless of store kind', () => {
+    expect(shouldEnterSetupMode({ ...FRESH, storeKind: 'file', forced: true })).toBe(true);
   });
 });
 

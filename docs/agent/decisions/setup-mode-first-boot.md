@@ -20,15 +20,23 @@ run. Cross-repo brief 2026-06-11.
 
 ## Decision
 
-1. **Trigger** (`packages/api-server/src/index.ts`): boot into setup mode
-   only when the bootability check fails AND (`gsm` store with zero
-   hydrated secrets, OR `gsm` store with every failing gate
+1. **Trigger** (`shouldEnterSetupMode` in
+   `packages/api-server/src/auth-bootability.ts`, a pure unit-tested
+   predicate): boot into setup mode only when the bootability check fails
+   AND the **`setup-completed` latch is unset** AND (`gsm` store with
+   zero hydrated secrets, OR `gsm` store with every failing gate
    wizard-fixable, OR `SHIPIT_FORCE_SETUP_MODE=1` dev escape hatch).
-   Gate taxonomy lives in `auth-bootability.ts`: `provider`/`admins` are
-   wizard-fixable; `allowedOrigins`/`sessionSecret` are operator-only and
-   always fail loud. The wizard-fixable widening exists so a pod restart
-   mid-wizard (secrets partially persisted) re-enters setup instead of
+   Gate taxonomy: `provider`/`admins` are wizard-fixable;
+   `allowedOrigins`/`sessionSecret` are operator-only and always fail
+   loud. The wizard-fixable widening exists so a pod restart mid-wizard
+   (secrets partially persisted) re-enters setup instead of
    crash-looping.
+   **The latch** (PR #59 review finding SC2): `/api/setup/complete`
+   writes the one-way `setup-completed` secret (GSM container
+   `shipit-setup-completed`) before replying; once set, setup mode can
+   never reopen — a previously-secured deployment that later loses a
+   secret (e.g. OAuth-client rotation mishap) fails loud instead of
+   exposing the unauthenticated wizard to an ingress-reaching attacker.
 2. **Surface**: in setup mode only `/api/health` (readiness, reports
    `mode: "setup"`), `/api/setup/*`, and the GitHub App manifest flow
    respond; everything else 401s `SETUP_MODE` (see
@@ -61,9 +69,12 @@ run. Cross-repo brief 2026-06-11.
   on a genuinely-fresh deployment claims admin. Bounded by the
   401-everything-else posture and the mode permanently ending at first
   successful complete.
-- **Infra dependency**: Terraform must create the
-  `shipit-auth-admin-emails` GSM container + pod GSA addVersion/access
-  grants before this works on-cluster.
+- **Infra dependency**: Terraform must create TWO GSM containers —
+  `shipit-auth-admin-emails` AND `shipit-setup-completed` — each with pod
+  GSA addVersion/access grants, before this works on-cluster.
+- Un-bricking a latched deployment that legitimately needs the wizard
+  again (e.g. operator wants to re-mint everything) is a deliberate
+  manual step: delete the `shipit-setup-completed` versions in GSM.
 - web-ui gained a public `/setup` page; login page probes `/api/health`
   and hands off to it when `mode === 'setup'`.
 

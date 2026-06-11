@@ -20,7 +20,7 @@ import { SetupService } from './services/setup-service.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
-  WIZARD_FIXABLE_GATES,
+  shouldEnterSetupMode,
 } from './auth-bootability.js';
 import { hydrateFromStore, makeSecretStore } from './secrets/index.js';
 
@@ -89,22 +89,22 @@ async function main() {
   applyDerivedAuthConfig(config, process.env, secretStore.kind);
   const boot = evaluateAuthBootability(config, process.env);
 
-  // SETUP MODE decision. Only the genuinely-fresh state qualifies:
-  //   - first run (GSM active, zero secrets present), or
-  //   - GSM active and every failing gate is wizard-fixable — covers a
-  //     pod restart mid-wizard (some secrets already persisted) that
-  //     would otherwise crash-loop with no way back into the wizard.
-  // Operator-only failures (allowedOrigins, session secret) and
-  // file-store deployments keep the loud AuthConfigError from
-  // createServer below.
-  const firstRunGsm = secretStore.kind === 'gsm' && hydration.hydrated.length === 0;
-  const wizardFixableOnly =
-    boot.missing.length > 0 && boot.missing.every((gate) => WIZARD_FIXABLE_GATES.has(gate));
-  // Dev-only escape hatch so the setup flow can be exercised without GSM.
-  const forcedSetup = process.env.SHIPIT_FORCE_SETUP_MODE === '1';
-  const setupMode =
-    !boot.bootable &&
-    (firstRunGsm || (secretStore.kind === 'gsm' && wizardFixableOnly) || forcedSetup);
+  // SETUP MODE decision — full predicate (and its security rationale)
+  // lives in shouldEnterSetupMode(); see auth-bootability.ts. The
+  // setup-completed latch is read straight from the store, not hydration:
+  // once a deployment has EVER completed setup, a later secret loss must
+  // fail loud instead of reopening the unauthenticated wizard.
+  const setupCompleted =
+    secretStore.kind === 'gsm' && (await secretStore.read('setup-completed')) !== null;
+  const setupMode = shouldEnterSetupMode({
+    bootable: boot.bootable,
+    missing: boot.missing,
+    storeKind: secretStore.kind,
+    hydratedCount: hydration.hydrated.length,
+    setupCompleted,
+    // Dev-only escape hatch so the setup flow can be exercised without GSM.
+    forced: process.env.SHIPIT_FORCE_SETUP_MODE === '1',
+  });
 
   // Relative paths inside `shipit.config.yaml` should be relative to the
   // config file's directory, not the process cwd. Turbo runs the api-server
