@@ -1,10 +1,11 @@
 # Agent Context
 
-Last updated: 2026-06-11 | Total notes: 41
+Last updated: 2026-06-11 | Total notes: 42
 
 ## Investigations
 
 - [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
+- [backend-images-runtime-module-not-found](investigations/backend-images-runtime-module-not-found.md) | investigation | completed | standard | 2026-06-11 | root node_modules copy broke resolution; pnpm deploy fixes
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.

@@ -13,11 +13,14 @@ COPY packages/connectors/ packages/connectors/
 COPY packages/api-server/ packages/api-server/
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo build --filter=@shipit-ai/api-server
+# Self-contained prod bundle: dist + real (de-symlinked) node_modules
+# including workspace deps. Copying the root node_modules instead leaves
+# Node unable to resolve anything (pnpm keeps real packages in the
+# .pnpm virtual store, reached only via per-package symlinks).
+RUN pnpm --filter=@shipit-ai/api-server deploy --legacy --prod /out
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/packages/api-server/dist ./dist
-COPY --from=builder /app/packages/api-server/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /out ./
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
