@@ -1,6 +1,10 @@
 # Agent Context
 
-Last updated: 2026-06-09 | Total notes: 38
+Last updated: 2026-06-11 | Total notes: 41
+
+## Investigations
+
+- [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -11,7 +15,7 @@ Last updated: 2026-06-09 | Total notes: 38
 
 <!-- always-read at session start -->
 
-_(no in-flight work)_
+- [web-ui-dockerfile-pnpm-fix](status/web-ui-dockerfile-pnpm-fix.md) | status | active | standard | 2026-06-10 | corepack enable moved to base stage; verifying build
 
 ## Decisions
 
@@ -67,3 +71,4 @@ _(no in-flight work)_
 - [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs
 - [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw
 - [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-07 | vitest 3→4 surfaces undeclared @types/node deps in five workspaces
+- [docker-copy-of-host-artifacts-poisons-image-builds](scars/docker-copy-of-host-artifacts-poisons-image-builds.md) | scar | active | core | 2026-06-11 | host node_modules/tsbuildinfo in COPY break image builds

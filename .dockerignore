@@ -1,0 +1,16 @@
+# Host installs and build outputs — images install/build for their own
+# platform; copying these in poisons the build (e.g. darwin-arm64 native
+# bindings inside an alpine image).
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+# Local-only config and secrets — must never enter an image layer.
+shipit.config.local.yaml
+**/.env
+**/.env.*
+
+.git
+**/*.log
