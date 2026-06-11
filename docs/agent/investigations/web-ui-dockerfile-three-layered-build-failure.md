@@ -46,8 +46,8 @@ the one before it:
   web-ui), then `pnpm install --frozen-lockfile`, then
   `pnpm turbo build --filter=@shipit-ai/web-ui`. Runner copies the
   standalone tree and runs `node packages/web-ui/server.js`.
-- Added root `.dockerignore` (node_modules, .next, dist, .turbo,
-  _.tsbuildinfo, shipit.config.local.yaml, .env_, .git, logs).
+- Added root `.dockerignore` (`node_modules`, `.next`, `dist`, `.turbo`,
+  `*.tsbuildinfo`, `shipit.config.local.yaml`, `.env*`, `.git`, logs).
 
 ## Prevention
 
