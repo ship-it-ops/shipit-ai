@@ -60,6 +60,16 @@ describe('hydrateFromStore', () => {
     expect(result.hydrated).toContain('github-app-private-key');
   });
 
+  it('hydrates the setup-wizard admin emails into SHIPIT_AUTH_ADMINS', async () => {
+    const env = { SHIPIT_GITHUB_APP_KEY_DIR: tmpDir } as NodeJS.ProcessEnv;
+    const result = await hydrateFromStore(
+      fakeGsmStore({ 'auth-admin-emails': 'admin@example.com' }),
+      env,
+    );
+    expect(env.SHIPIT_AUTH_ADMINS).toBe('admin@example.com');
+    expect(result.hydrated).toContain('auth-admin-emails');
+  });
+
   it('does not clobber env vars already set by the environment', async () => {
     const env = {
       SHIPIT_GITHUB_APP_KEY_DIR: tmpDir,

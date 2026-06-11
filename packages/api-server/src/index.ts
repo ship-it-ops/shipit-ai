@@ -16,6 +16,12 @@ import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
+import { SetupService } from './services/setup-service.js';
+import {
+  applyDerivedAuthConfig,
+  evaluateAuthBootability,
+  WIZARD_FIXABLE_GATES,
+} from './auth-bootability.js';
 import { hydrateFromStore, makeSecretStore } from './secrets/index.js';
 
 export { createServer } from './server.js';
@@ -75,7 +81,30 @@ async function main() {
   }
 
   const config = loadConfig();
-  const { neo4j, schema, api } = config.backend;
+
+  // Derive runtime auth state from what hydration put in the env (OAuth
+  // client present → providers.github.enabled, SHIPIT_AUTH_ADMINS →
+  // admins[]). This is what lets a deployment leave setup mode without a
+  // manual config edit — the committed yaml stays safe-by-default.
+  applyDerivedAuthConfig(config, process.env, secretStore.kind);
+  const boot = evaluateAuthBootability(config, process.env);
+
+  // SETUP MODE decision. Only the genuinely-fresh state qualifies:
+  //   - first run (GSM active, zero secrets present), or
+  //   - GSM active and every failing gate is wizard-fixable — covers a
+  //     pod restart mid-wizard (some secrets already persisted) that
+  //     would otherwise crash-loop with no way back into the wizard.
+  // Operator-only failures (allowedOrigins, session secret) and
+  // file-store deployments keep the loud AuthConfigError from
+  // createServer below.
+  const firstRunGsm = secretStore.kind === 'gsm' && hydration.hydrated.length === 0;
+  const wizardFixableOnly =
+    boot.missing.length > 0 && boot.missing.every((gate) => WIZARD_FIXABLE_GATES.has(gate));
+  // Dev-only escape hatch so the setup flow can be exercised without GSM.
+  const forcedSetup = process.env.SHIPIT_FORCE_SETUP_MODE === '1';
+  const setupMode =
+    !boot.bootable &&
+    (firstRunGsm || (secretStore.kind === 'gsm' && wizardFixableOnly) || forcedSetup);
 
   // Relative paths inside `shipit.config.yaml` should be relative to the
   // config file's directory, not the process cwd. Turbo runs the api-server
@@ -83,6 +112,55 @@ async function main() {
   // would otherwise miss the file that lives at the repo root.
   const configPaths = findConfigPaths();
   const configDir = dirname(configPaths.basePath);
+
+  if (setupMode) {
+    console.log(
+      'Booting in SETUP MODE — auth is not configured yet:\n' +
+        boot.messages.map((m) => `  - ${m}`).join('\n') +
+        '\nOnly /api/health and the setup wizard endpoints are served. ' +
+        'Open the web UI at /setup to complete first-run setup.',
+    );
+
+    // Minimal service set: just what the wizard needs. The manifest flow
+    // mints the GitHub App (incl. the OAuth client) and persists it via
+    // the secret store; everything else — Neo4j, Redis, scheduler,
+    // schema — waits for the post-setup restart.
+    const githubAppService = new GitHubAppService({
+      localConfigPath: configPaths.localPath,
+      appConfig: config.connectors.github.app,
+    });
+    const githubAppManifestService = new GitHubAppManifestService({
+      templatePath: resolve(configDir, 'config/github-app-manifest.json'),
+      appService: githubAppService,
+      keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+      secretStore,
+    });
+    const setupService = new SetupService({ secretStore });
+
+    const server = await createServer({
+      logger: true,
+      setupMode: true,
+      config,
+      setupService,
+      githubAppService,
+      githubAppManifestService,
+      localConfigPath: configPaths.localPath,
+      configPaths: { basePath: configPaths.basePath, localPath: configPaths.localPath },
+    });
+
+    await server.listen({ port: config.backend.api.port, host: '0.0.0.0' });
+    console.log(`ShipIt-AI API server listening on port ${config.backend.api.port} (setup mode)`);
+
+    const shutdownSetup = async () => {
+      await server.close();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdownSetup);
+    process.on('SIGINT', shutdownSetup);
+    return;
+  }
+
+  const { neo4j, schema, api } = config.backend;
   const schemaPath = isAbsolute(schema.path) ? schema.path : resolve(configDir, schema.path);
 
   const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
@@ -229,6 +307,10 @@ async function main() {
     githubAppService,
     githubAppManifestService,
     oidcSettingsService,
+    // Active-mode /api/setup/status (behind auth) — used by the wizard's
+    // post-restart poll and for ops debugging. The mutating setup routes
+    // 409 outside setup mode.
+    setupService: new SetupService({ secretStore }),
     configPaths: { basePath: configPaths.basePath, localPath },
     config,
     // The Redis client used by the session store reuses the run-store

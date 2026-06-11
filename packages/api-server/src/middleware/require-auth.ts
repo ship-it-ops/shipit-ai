@@ -68,6 +68,34 @@ const ANONYMOUS_PRINCIPAL: AuthPrincipal = {
   capabilities: [],
 };
 
+// First-run setup mode: ONLY these paths respond; everything else 401s
+// with SETUP_MODE — including the normal public allow-list (/api/auth/*,
+// /api/mcp/info), since none of it is usable before auth is configured.
+// /api/health stays up for the k8s readiness probe and the web-UI's mode
+// probe; the manifest paths are the GitHub App flow the wizard drives
+// (app-manifest-callback is where GitHub browser-redirects back to —
+// blocking it would dead-end the flow after App creation).
+const SETUP_PUBLIC_PATHS: ReadonlyArray<string> = [
+  '/api/health',
+  '/api/setup/',
+  '/api/connectors/github/manifest',
+  '/api/connectors/github/manifest/',
+  '/api/connectors/github/app-manifest-callback',
+];
+
+// The allow-listed setup routes get an admin-role principal: the manifest
+// flow and any future role checks on it should see the same authority the
+// wizard would have post-login. Bounded by the path allow-list above and
+// by setup mode itself only triggering on genuinely-fresh deployments.
+const SETUP_PRINCIPAL: AuthPrincipal = {
+  id: 'setup',
+  email: '',
+  displayName: 'First-run setup',
+  provider: 'setup',
+  role: 'admin',
+  capabilities: ['*'],
+};
+
 function buildDevFallbackPrincipal(config: Config | undefined): AuthPrincipal {
   const devUser = config?.frontend.devUser;
   const firstName = devUser?.firstName ?? 'Dev';
@@ -95,13 +123,17 @@ function contextFromPrincipal(
   };
 }
 
-function isPublicPath(url: string): boolean {
+function matchesAllowList(url: string, allowList: ReadonlyArray<string>): boolean {
   // Fastify's request.url includes the query string; strip it before
   // matching so /api/mcp/info?foo=bar still hits the allow-list.
   const path = url.split('?')[0] ?? url;
-  return PUBLIC_PATH_PREFIXES.some((prefix) =>
+  return allowList.some((prefix) =>
     prefix.endsWith('/') ? path.startsWith(prefix) : path === prefix,
   );
+}
+
+function isPublicPath(url: string): boolean {
+  return matchesAllowList(url, PUBLIC_PATH_PREFIXES);
 }
 
 async function resolveContext(
@@ -111,6 +143,26 @@ async function resolveContext(
   const config: Config | undefined = request.server.config;
   const authEnabled = config?.accessControl.auth.enabled ?? false;
   const requestId = request.id ?? randomUUID();
+
+  // Setup mode is checked FIRST — before the auth-disabled fallback and
+  // the normal public allow-list — so the only reachable surface on a
+  // fresh deployment is the wizard itself.
+  if (request.server.setupMode) {
+    if (matchesAllowList(request.url, SETUP_PUBLIC_PATHS)) {
+      return contextFromPrincipal(SETUP_PRINCIPAL, 'default', requestId);
+    }
+    request.log.warn(
+      { path: request.url.split('?')[0], code: 'SETUP_MODE' },
+      'auth: rejected request',
+    );
+    reply.status(401).send({
+      error: {
+        code: 'SETUP_MODE',
+        message: 'This deployment is in first-run setup mode. Complete setup at /setup.',
+      },
+    });
+    return null;
+  }
 
   if (!authEnabled) {
     return contextFromPrincipal(buildDevFallbackPrincipal(config), 'default', requestId);

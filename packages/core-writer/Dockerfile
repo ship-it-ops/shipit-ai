@@ -16,4 +16,4 @@ RUN pnpm --filter=@shipit-ai/core-writer deploy --legacy --prod /out
 FROM node:22-alpine
 WORKDIR /app
 COPY --from=builder /out ./
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/main.js"]

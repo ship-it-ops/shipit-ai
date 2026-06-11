@@ -17,6 +17,7 @@ export type LogicalSecret =
   | 'oidc-client-secret'
   | 'github-app-id'
   | 'github-oauth-client-id'
+  | 'auth-admin-emails'
   | 'neo4j-aura-password'
   | 'session-secret';
 
@@ -27,6 +28,7 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
   'oidc-client-secret': 'shipit-oidc-client-secret',
   'github-app-id': 'shipit-github-app-id',
   'github-oauth-client-id': 'shipit-github-oauth-client-id',
+  'auth-admin-emails': 'shipit-auth-admin-emails',
   'neo4j-aura-password': 'shipit-neo4j-aura-password',
   'session-secret': 'shipit-session-secret',
 };
@@ -40,6 +42,11 @@ export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
   'oidc-client-secret': 'OIDC_CLIENT_SECRET',
   'github-app-id': 'GITHUB_APP_ID',
   'github-oauth-client-id': 'GITHUB_OAUTH_CLIENT_ID',
+  // Not a secret in the classical sense — GSM is simply the only durable
+  // store in the v1 deployment (shipit.config.local.yaml is an ephemeral
+  // emptyDir; see docs/agent/decisions/api-server-config-persistence-strategy.md).
+  // CSV of admin emails captured by the first-run setup wizard.
+  'auth-admin-emails': 'SHIPIT_AUTH_ADMINS',
   'neo4j-aura-password': 'NEO4J_PASSWORD',
   'session-secret': 'SHIPIT_SESSION_SECRET',
 };
@@ -51,6 +58,7 @@ export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecre
   'oidc-client-secret',
   'github-app-id',
   'github-oauth-client-id',
+  'auth-admin-emails',
 ]);
 
 export class SecretWriteForbiddenError extends Error {

@@ -2,10 +2,11 @@
 
 import Image from 'next/image';
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Card, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph, type GlyphName } from '@ship-it-ui/icons';
 import { clientConfig } from '@/lib/client-config';
+import { fetchHealthMode } from '@/lib/setup';
 
 // The /login surface is reached by:
 //   - the edge middleware when an unauthenticated request hits a
@@ -64,6 +65,7 @@ function describeCallbackError(code: string | null): string | null {
 }
 
 function LoginInner() {
+  const router = useRouter();
   const params = useSearchParams();
   const redirectTo = params.get('redirect_to') ?? '/';
   const callbackError = describeCallbackError(params.get('error'));
@@ -73,19 +75,36 @@ function LoginInner() {
 
   useEffect(() => {
     let cancelled = false;
+
+    // Any failure to list providers can mean the api-server is in
+    // first-run SETUP MODE (it 401s /api/auth/providers there). Probe
+    // /api/health — which setup mode keeps public — before rendering a
+    // fallback error, and hand off to the setup wizard if so. Runs
+    // BEFORE the build-time no-providers hint: setup mode is the more
+    // specific, actionable diagnosis.
+    const settleVia = async (fallback: () => void) => {
+      const mode = await fetchHealthMode();
+      if (cancelled) return;
+      if (mode === 'setup') {
+        router.replace('/setup');
+        return;
+      }
+      fallback();
+    };
+
     (async () => {
       try {
         const res = await fetch(`${clientConfig.api.url}/api/auth/providers`, {
           credentials: 'include',
         });
         if (!res.ok) {
-          if (!cancelled) setState({ kind: 'server-error', status: res.status });
+          await settleVia(() => setState({ kind: 'server-error', status: res.status }));
           return;
         }
         const body = (await res.json()) as ProvidersResponse;
         if (cancelled) return;
         if (body.providers.length === 0) {
-          setState({ kind: 'no-providers' });
+          await settleVia(() => setState({ kind: 'no-providers' }));
         } else {
           setState({ kind: 'ready', providers: [...body.providers] });
         }
@@ -95,22 +114,25 @@ function LoginInner() {
         // Before declaring it an outage, consult the build-time YAML
         // hint: if the operator enabled auth but didn't enable any
         // provider, the api-server fails closed at boot (see
-        // assertAuthConfigBootable in api-server/src/server.ts). In that
-        // case the network failure is a symptom, not the root cause, and
-        // "no providers configured" is the actionable diagnosis.
+        // assertAuthConfigBootable in api-server/src/auth-bootability.ts).
+        // In that case the network failure is a symptom, not the root
+        // cause, and "no providers configured" is the actionable
+        // diagnosis.
         if (cancelled) return;
-        if (clientConfig.auth.enabled && clientConfig.auth.providersEnabled.length === 0) {
-          setState({ kind: 'no-providers' });
-          return;
-        }
-        const detail = err instanceof Error ? err.message : 'Unknown network error';
-        setState({ kind: 'unreachable', detail });
+        await settleVia(() => {
+          if (clientConfig.auth.enabled && clientConfig.auth.providersEnabled.length === 0) {
+            setState({ kind: 'no-providers' });
+            return;
+          }
+          const detail = err instanceof Error ? err.message : 'Unknown network error';
+          setState({ kind: 'unreachable', detail });
+        });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   // Move keyboard focus onto the first provider button as soon as the
   // buttons render — saves a Tab for keyboard users coming from the

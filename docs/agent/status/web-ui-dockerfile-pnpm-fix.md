@@ -29,6 +29,15 @@ config stage). See
 PR #57 (`fix-docker`) carries the work; a Prettier-loop lint fix in the
 investigations doc is also pending commit.
 
+Third cross-repo brief (2026-06-11): first-boot SETUP MODE implemented
+(api-server boots a wizard-only surface when auth is unconfigured and the
+GSM store is fresh; web-ui gained a public /setup wizard page) plus the
+core-writer `CMD dist/main.js` fix. See
+[setup-mode-first-boot](../decisions/setup-mode-first-boot.md). All
+builds/tests/lint green locally; manual forced-setup-mode boot verified.
+NOTE: needs infra Terraform for the `shipit-auth-admin-emails` GSM
+container before it works on-cluster.
+
 ## Why
 
 Infra repo's `build-images.yml` fails on `build:web-ui` with

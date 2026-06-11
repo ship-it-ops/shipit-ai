@@ -10,7 +10,10 @@
 // `user.capabilities` is the canonical, serializable shape (used in session
 // payloads, API responses, etc.).
 
-export type AuthProvider = 'oidc' | 'github' | 'dev-fallback' | 'mcp-token';
+// 'setup' is synthesized by the api-server's require-auth middleware for
+// the allow-listed routes served during first-run setup mode — it never
+// comes from an IdP and never outlives a setup-mode process.
+export type AuthProvider = 'oidc' | 'github' | 'dev-fallback' | 'mcp-token' | 'setup';
 
 export type AuthRole = 'admin' | 'member';
 

@@ -32,6 +32,9 @@ import reconciliationRoutes from './routes/reconciliation.js';
 import incidentEventsRoutes from './routes/incident-events.js';
 import mcpRoutes from './routes/mcp.js';
 import { configExportRoutes } from './routes/config-export.js';
+import setupRoutes from './routes/setup.js';
+import { assertAuthConfigBootable, AuthConfigError } from './auth-bootability.js';
+import type { SetupService } from './services/setup-service.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -67,55 +70,12 @@ export interface CreateServerOptions {
   // (CONFIG_EXPORT_DISABLED). Tests and deployments that don't need the
   // export can omit it.
   configPaths?: ConfigPaths;
-}
-
-class AuthConfigError extends Error {
-  constructor(message: string) {
-    super(`accessControl.auth: ${message}`);
-    this.name = 'AuthConfigError';
-  }
-}
-
-// Boot-time invariants that Zod can't easily express. Throwing here makes
-// a misconfigured production deployment fail loud at startup rather than
-// silently accepting requests without auth, or rejecting every request
-// because a critical knob is missing.
-function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv): void {
-  const auth = config.accessControl.auth;
-  if (!auth.enabled) return;
-
-  const oidcEnabled = auth.providers.oidc.enabled;
-  const githubEnabled = auth.providers.github.enabled;
-  if (!oidcEnabled && !githubEnabled) {
-    throw new AuthConfigError(
-      'auth is enabled but no provider is enabled. Set providers.oidc.enabled or providers.github.enabled to true.',
-    );
-  }
-
-  if (auth.admins.length === 0) {
-    throw new AuthConfigError(
-      'auth is enabled but admins[] is empty. Add at least one admin email so the first deployment is usable.',
-    );
-  }
-
-  // With `credentials: true` CORS (set below when auth is enabled), an
-  // empty allow-list means every browser request is rejected at the
-  // preflight stage — symptomatic of a misconfigured deploy and
-  // impossible to diagnose from request logs alone. Fail loud at boot
-  // instead, alongside the other "auth enabled but unusable" checks.
-  if (config.accessControl.web.allowedOrigins.length === 0) {
-    throw new AuthConfigError(
-      'auth is enabled but accessControl.web.allowedOrigins is empty. Add at least one origin (e.g. https://app.example.com) so the web-UI can reach the API.',
-    );
-  }
-
-  const secretEnv = auth.session.signingSecretEnv;
-  const secretValue = env[secretEnv];
-  if (!secretValue || secretValue.length < 32) {
-    throw new AuthConfigError(
-      `session signing secret env var "${secretEnv}" must be set and at least 32 characters long.`,
-    );
-  }
+  // First-run setup mode (see auth-bootability.ts and index.ts). Skips
+  // the bootability assert, session/provider/token wiring, and lets the
+  // require-auth middleware serve only the setup allow-list.
+  setupMode?: boolean;
+  // Backs the /api/setup routes; they return 503 when not wired.
+  setupService?: SetupService;
 }
 
 declare module 'fastify' {
@@ -123,6 +83,8 @@ declare module 'fastify' {
     config: Config;
     oidcSettingsService?: OidcSettingsService;
     configPaths?: ConfigPaths;
+    setupMode: boolean;
+    setupService?: SetupService;
   }
 }
 
@@ -131,12 +93,27 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     logger: opts.logger ?? false,
   });
 
+  const setupMode = opts.setupMode ?? false;
+  server.decorate('setupMode', setupMode);
+  if (opts.setupService) {
+    server.decorate('setupService', opts.setupService);
+  }
+
   if (opts.config) {
     server.decorate('config', opts.config);
-    assertAuthConfigBootable(opts.config, process.env);
+    // Setup mode exists precisely because this assert would fail on a
+    // fresh deployment — index.ts already evaluated the gates and decided
+    // the failure is wizard-fixable.
+    if (!setupMode) assertAuthConfigBootable(opts.config, process.env);
   }
 
   const authEnabled = opts.config?.accessControl.auth.enabled ?? false;
+  // Setup mode serves the wizard WITHOUT sessions, providers, or token
+  // auth even though auth.enabled is true in config — those are exactly
+  // the pieces that can't be constructed yet. CORS below intentionally
+  // stays on authEnabled: the browser-based wizard still needs the
+  // configured origins with credentials.
+  const enforceAuth = authEnabled && !setupMode;
 
   // Accept plain text bodies for YAML schema endpoints
   server.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, body, done) => {
@@ -167,11 +144,11 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     await server.register(cors, { origin: true, credentials: true });
   }
 
-  // Session + cookie plugins ride along when auth is enabled. The Redis
-  // session store reuses the api-server's existing ioredis client; tests
-  // and disabled-auth deployments skip the registration entirely so the
-  // boot path doesn't require Redis when auth isn't in play.
-  if (authEnabled) {
+  // Session + cookie plugins ride along when auth is enforced. The Redis
+  // session store reuses the api-server's existing ioredis client; tests,
+  // disabled-auth deployments, and setup mode skip the registration
+  // entirely so the boot path doesn't require Redis when auth isn't in play.
+  if (enforceAuth) {
     if (!opts.redis) {
       throw new AuthConfigError('redis client is required when auth.enabled is true.');
     }
@@ -332,8 +309,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
+  await server.register(setupRoutes, { prefix: '/api/setup' });
   await server.register(authRoutes, { prefix: '/api/auth' });
-  if (authEnabled) {
+  if (enforceAuth) {
     await server.register(tokenRoutes, { prefix: '/api/tokens' });
   }
   await server.register(connectorRoutes, { prefix: '/api/connectors' });
