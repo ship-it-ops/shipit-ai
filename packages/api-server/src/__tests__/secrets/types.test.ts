@@ -17,6 +17,8 @@ describe('secret taxonomy', () => {
       'oidc-client-secret': 'shipit-oidc-client-secret',
       'github-app-id': 'shipit-github-app-id',
       'github-oauth-client-id': 'shipit-github-oauth-client-id',
+      'auth-admin-emails': 'shipit-auth-admin-emails',
+      'setup-completed': 'shipit-setup-completed',
       'neo4j-aura-password': 'shipit-neo4j-aura-password',
       'session-secret': 'shipit-session-secret',
     });
@@ -28,6 +30,7 @@ describe('secret taxonomy', () => {
     expect(ENV_VAR_FOR['oidc-client-secret']).toBe('OIDC_CLIENT_SECRET');
     expect(ENV_VAR_FOR['github-app-id']).toBe('GITHUB_APP_ID');
     expect(ENV_VAR_FOR['github-oauth-client-id']).toBe('GITHUB_OAUTH_CLIENT_ID');
+    expect(ENV_VAR_FOR['auth-admin-emails']).toBe('SHIPIT_AUTH_ADMINS');
     expect(ENV_VAR_FOR['neo4j-aura-password']).toBe('NEO4J_PASSWORD');
     expect(ENV_VAR_FOR['session-secret']).toBe('SHIPIT_SESSION_SECRET');
     expect(ENV_VAR_FOR['github-app-private-key']).toBeUndefined();
@@ -39,6 +42,12 @@ describe('secret taxonomy', () => {
     expect(WRITABLE_SECRETS.has('github-app-private-key')).toBe(true);
     expect(() => assertWritable('github-app-id')).not.toThrow();
     expect(() => assertWritable('oidc-client-secret')).not.toThrow();
+    // The setup wizard writes the first admin email here.
+    expect(() => assertWritable('auth-admin-emails')).not.toThrow();
+    // /api/setup/complete writes the one-way completed latch.
+    expect(() => assertWritable('setup-completed')).not.toThrow();
+    // The latch is read directly from the store, never via env.
+    expect(ENV_VAR_FOR['setup-completed']).toBeUndefined();
   });
 
   it('resolves container names from hard-mapped defaults with per-secret env override', () => {

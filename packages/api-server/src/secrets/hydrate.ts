@@ -23,6 +23,7 @@ const ENV_HYDRATED: LogicalSecret[] = [
   'github-webhook-secret',
   'github-oauth-client-secret',
   'oidc-client-secret',
+  'auth-admin-emails',
 ];
 
 export interface HydrationResult {

@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-11 | Total notes: 42
+Last updated: 2026-06-11 | Total notes: 43
 
 ## Investigations
 
@@ -39,6 +39,7 @@ Last updated: 2026-06-11 | Total notes: 42
 - [api-server-config-persistence-strategy](decisions/api-server-config-persistence-strategy.md) | decision | active | core | 2026-06-07 | ephemeral emptyDir for v1, Postgres config store next
 - [image-build-owned-by-infra-repo](decisions/image-build-owned-by-infra-repo.md) | decision | active | core | 2026-06-07 | infra repo builds+publishes images; public app repo holds no GCP creds
 - [gsm-secret-store-and-config-export](decisions/gsm-secret-store-and-config-export.md) | decision | active | core | 2026-06-09 | SecretStore + boot hydration persists wizard credentials to GSM
+- [setup-mode-first-boot](decisions/setup-mode-first-boot.md) | decision | active | core | 2026-06-11 | first-boot setup mode: trigger, GSM derivation, restart flip
 
 ## Patterns
 

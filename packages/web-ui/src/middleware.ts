@@ -20,10 +20,13 @@ const AUTH_ENABLED = process.env.NEXT_PUBLIC_SHIPIT_AUTH_ENABLED === 'true';
 const COOKIE_NAME = process.env.NEXT_PUBLIC_SHIPIT_AUTH_COOKIE_NAME ?? 'shipit_sid';
 
 // Paths the middleware lets through even without a session. /login is
-// obvious; /api/* never hits this middleware anyway (matcher excludes
-// it) but the explicit list documents the contract; static asset paths
-// are handled by the matcher.
-const PUBLIC_PATHS: ReadonlyArray<string> = ['/login'];
+// obvious; /setup hosts the first-run setup wizard, which by definition
+// runs before anyone can have a session (the api-server gates it
+// server-side — outside setup mode every /api/setup mutation 409s);
+// /api/* never hits this middleware anyway (matcher excludes it) but the
+// explicit list documents the contract; static asset paths are handled
+// by the matcher.
+const PUBLIC_PATHS: ReadonlyArray<string> = ['/login', '/setup'];
 
 export function middleware(request: NextRequest): NextResponse {
   if (!AUTH_ENABLED) return NextResponse.next();
