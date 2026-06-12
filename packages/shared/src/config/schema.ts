@@ -420,6 +420,12 @@ export const configSchema = z.object({
     }),
     api: z.object({
       port: z.number().int().positive(),
+      // Honor X-Forwarded-* from a TLS-terminating proxy (Ingress / LB).
+      // Required when auth is on behind such a proxy: @fastify/session
+      // refuses to set the Secure session cookie when request.protocol
+      // reads 'http', which silently breaks login. Also keys rate limits
+      // on the real client IP instead of the proxy's.
+      trustProxy: z.boolean().default(false),
     }),
     schema: z.object({
       path: z.string(),

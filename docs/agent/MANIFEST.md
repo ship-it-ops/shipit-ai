@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-12 | Total notes: 45
+Last updated: 2026-06-12 | Total notes: 46
 
 ## Investigations
 
@@ -8,6 +8,7 @@ Last updated: 2026-06-12 | Total notes: 45
 - [backend-images-runtime-module-not-found](investigations/backend-images-runtime-module-not-found.md) | investigation | completed | standard | 2026-06-11 | root node_modules copy broke resolution; pnpm deploy fixes
 - [setup-wizard-manifest-launch-enoent](investigations/setup-wizard-manifest-launch-enoent.md) | investigation | completed | core | 2026-06-11 | manifest template JSON never reaches /data in cluster
 - [first-login-redirect-uri-and-missing-callback-urls](investigations/first-login-redirect-uri-and-missing-callback-urls.md) | investigation | completed | core | 2026-06-12 | path-only /api doubled redirect_uri; manifest lacked callback_urls
+- [login-loop-secure-cookie-trustproxy](investigations/login-loop-secure-cookie-trustproxy.md) | investigation | completed | core | 2026-06-12 | missing trustProxy silently dropped Secure session cookie
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.

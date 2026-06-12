@@ -37,6 +37,13 @@ export interface GitHubUserInfo {
   displayName: string;
   /** GitHub username — used for human display when name isn't set. */
   login: string;
+  /**
+   * Every verified email on the account (always includes `email`). Role
+   * and allow-list checks match against ALL of these — GitHub accounts
+   * routinely carry several verified addresses and the one the operator
+   * typed into the setup wizard may not be the GitHub primary.
+   */
+  verifiedEmails: ReadonlyArray<string>;
 }
 
 export interface GitHubAuthorizationStart {
@@ -112,7 +119,7 @@ export class GitHubProvider {
     const accessToken = tokenBody.access_token;
 
     const user = await this.fetchUser(accessToken);
-    const email = await this.resolveEmail(accessToken, user);
+    const { email, verifiedEmails } = await this.resolveEmails(accessToken, user);
     await this.enforceAllowedOrgs(accessToken);
 
     return {
@@ -120,6 +127,7 @@ export class GitHubProvider {
       email,
       displayName: user.name && user.name.length > 0 ? user.name : user.login,
       login: user.login,
+      verifiedEmails,
     };
   }
 
@@ -141,29 +149,48 @@ export class GitHubProvider {
     };
   }
 
-  private async resolveEmail(accessToken: string, user: { email: string | null }): Promise<string> {
-    // Public-profile email comes back on /user. Otherwise the OAuth grant
-    // gives us /user/emails which lists every verified address.
-    if (user.email && user.email.length > 0) return user.email;
+  // Identity email + the full verified set. /user/emails is always
+  // consulted (not just when the public-profile email is absent) because
+  // role/allow-list matching runs against every verified address. With a
+  // GitHub App OAuth client that endpoint needs the "Email addresses:
+  // Read-only" account permission — when it 403s we fall back to the
+  // public-profile email (GitHub only lets verified addresses be set
+  // public) so a missing permission doesn't block sign-in outright.
+  private async resolveEmails(
+    accessToken: string,
+    user: { email: string | null },
+  ): Promise<{ email: string; verifiedEmails: ReadonlyArray<string> }> {
+    const publicEmail = user.email && user.email.length > 0 ? user.email : null;
     const res = await fetch(GITHUB_USER_EMAILS_URL, {
       headers: this.apiHeaders(accessToken),
       signal: AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     });
     if (!res.ok) {
-      throw new Error(`GitHub /user/emails returned ${res.status}`);
+      if (publicEmail) {
+        return { email: publicEmail, verifiedEmails: [publicEmail] };
+      }
+      const permissionHint =
+        res.status === 403
+          ? ' — the GitHub App is missing the "Email addresses: Read-only" account permission'
+          : '';
+      throw new Error(`GitHub /user/emails returned ${res.status}${permissionHint}`);
     }
     const emails = (await res.json()) as Array<{
       email: string;
       primary: boolean;
       verified: boolean;
     }>;
-    const primary = emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified);
+    const verified = emails.filter((e) => e.verified).map((e) => e.email);
+    const primary =
+      emails.find((e) => e.primary && e.verified)?.email ?? verified[0] ?? publicEmail;
     if (!primary) {
       throw new GitHubAccessDeniedError(
         'No verified email on the GitHub account. Verify an email before signing in.',
       );
     }
-    return primary.email;
+    const email = publicEmail ?? primary;
+    const verifiedEmails = verified.includes(email) ? verified : [email, ...verified];
+    return { email, verifiedEmails };
   }
 
   private async enforceAllowedOrgs(accessToken: string): Promise<void> {

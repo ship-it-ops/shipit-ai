@@ -5,7 +5,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     backend: {
       neo4j: { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'test' },
       redis: { url: 'redis://localhost:6379' },
-      api: { port: 0 },
+      api: { port: 0, trustProxy: false },
       schema: { path: '/tmp/schema.yaml' },
       cypherQuery: { timeoutMs: 5000, rowLimit: 1000 },
       reconciliation: { threshold: 0.85 },

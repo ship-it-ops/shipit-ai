@@ -46,15 +46,22 @@ function buildLoginErrorRedirect(errorCode: string, redirectTo?: string): string
   return `/login?${params.toString()}`;
 }
 
-function resolveRole(email: string, admins: ReadonlyArray<string>): AuthRole {
-  const lowered = email.toLowerCase();
-  return admins.some((a) => a.toLowerCase() === lowered) ? 'admin' : 'member';
+// Role and allow-list checks take every email the IdP vouches for —
+// GitHub returns all verified addresses, OIDC just the one claim. Matching
+// any of them means the operator's wizard-entered admin email works even
+// when it isn't the user's GitHub primary.
+function resolveRole(emails: ReadonlyArray<string>, admins: ReadonlyArray<string>): AuthRole {
+  const lowered = emails.map((e) => e.toLowerCase());
+  return admins.some((a) => lowered.includes(a.toLowerCase())) ? 'admin' : 'member';
 }
 
-function emailPassesAllowList(email: string, allowList: ReadonlyArray<string>): boolean {
+function emailPassesAllowList(
+  emails: ReadonlyArray<string>,
+  allowList: ReadonlyArray<string>,
+): boolean {
   if (allowList.length === 0) return true;
-  const lowered = email.toLowerCase();
-  return allowList.some((a) => a.toLowerCase() === lowered);
+  const lowered = emails.map((e) => e.toLowerCase());
+  return allowList.some((a) => lowered.includes(a.toLowerCase()));
 }
 
 // Capabilities granted by role today. Real RBAC is a follow-up; until then
@@ -281,9 +288,15 @@ const authRoutes: FastifyPluginAsync = async (server) => {
       }
 
       try {
-        const principal = await resolvePrincipal(request, provider, code, state, stateRecord);
+        const { principal, candidateEmails } = await resolvePrincipal(
+          request,
+          provider,
+          code,
+          state,
+          stateRecord,
+        );
 
-        if (!emailPassesAllowList(principal.email, auth.allowList)) {
+        if (!emailPassesAllowList(candidateEmails, auth.allowList)) {
           // Email belongs to the user but they're not allow-listed. Log
           // it server-side for operators triaging access requests; do
           // not echo it to the browser response (proxies log response
@@ -315,7 +328,7 @@ const authRoutes: FastifyPluginAsync = async (server) => {
     code: string,
     state: string,
     stateRecord: { codeVerifier: string },
-  ): Promise<AuthPrincipal> {
+  ): Promise<{ principal: AuthPrincipal; candidateEmails: ReadonlyArray<string> }> {
     if (provider === 'oidc') {
       if (!oidc) throw new Error('OIDC provider not configured');
       // openid-client v6 reads the code+state out of the URL itself. We
@@ -327,27 +340,39 @@ const authRoutes: FastifyPluginAsync = async (server) => {
         `${request.protocol}://${request.headers.host ?? 'localhost'}`,
       );
       const userInfo = await oidc.exchange(currentUrl, state, stateRecord.codeVerifier);
-      const role = resolveRole(userInfo.email, auth!.admins);
+      const candidateEmails = [userInfo.email];
+      const role = resolveRole(candidateEmails, auth!.admins);
       return {
-        id: `oidc:${userInfo.sub}`,
-        email: userInfo.email,
-        displayName: userInfo.displayName,
-        provider: 'oidc',
-        role,
-        capabilities: capabilitiesForRole(role),
+        principal: {
+          id: `oidc:${userInfo.sub}`,
+          email: userInfo.email,
+          displayName: userInfo.displayName,
+          provider: 'oidc',
+          role,
+          capabilities: capabilitiesForRole(role),
+        },
+        candidateEmails,
       };
     }
 
     if (!github) throw new Error('GitHub provider not configured');
     const userInfo = await github.exchange(code);
-    const role = resolveRole(userInfo.email, auth!.admins);
+    // Belt-and-braces for injected test doubles that predate
+    // verifiedEmails — the real provider always populates it.
+    const candidateEmails = userInfo.verifiedEmails?.length
+      ? userInfo.verifiedEmails
+      : [userInfo.email];
+    const role = resolveRole(candidateEmails, auth!.admins);
     return {
-      id: `github:${userInfo.sub}`,
-      email: userInfo.email,
-      displayName: userInfo.displayName,
-      provider: 'github',
-      role,
-      capabilities: capabilitiesForRole(role),
+      principal: {
+        id: `github:${userInfo.sub}`,
+        email: userInfo.email,
+        displayName: userInfo.displayName,
+        provider: 'github',
+        role,
+        capabilities: capabilitiesForRole(role),
+      },
+      candidateEmails,
     };
   }
 };
