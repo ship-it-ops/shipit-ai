@@ -90,6 +90,7 @@ function buildMockGitHubProvider(): GitHubProvider & {
       email: 'gh-user@example.com',
       displayName: 'GH User',
       login: 'gh-user',
+      verifiedEmails: ['gh-user@example.com'],
     } as GitHubUserInfo,
     nextError: undefined as Error | undefined,
     startCalls: 0,
@@ -685,5 +686,149 @@ describe('/api/auth — single-origin ingress (path-only frontend.api.url)', () 
     expect(location.searchParams.get('redirect_uri')).toBe(
       'https://portal-demo.example.com/api/auth/callback/github',
     );
+  });
+});
+
+// Regression for the portal-demo login loop (2026-06-12): TLS terminates at
+// the GKE Ingress, so the pod sees plain HTTP. @fastify/session silently
+// skips Set-Cookie when cookie.secure is true and request.protocol !==
+// 'https' (fastifySession.js isInsecureConnection). Without trustProxy,
+// Fastify ignores X-Forwarded-Proto, every callback "succeeds" without a
+// session cookie, and the web-ui middleware bounces straight back to /login.
+describe('/api/auth — secure session cookie behind a TLS-terminating proxy', () => {
+  async function runLoginCallback(trustProxy: boolean): Promise<string | undefined> {
+    process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
+    const config = buildAuthConfig({
+      session: {
+        ttlHours: 12,
+        cookieName: 'shipit_sid',
+        sameSite: 'lax',
+        secure: true, // prod posture — forced true outside development
+        signingSecretEnv: 'SHIPIT_SESSION_SECRET',
+      },
+    });
+    config.accessControl.auth.providers.oidc.enabled = false;
+    config.backend.api.trustProxy = trustProxy;
+    const server = await createServer({
+      config,
+      redis: new RedisMock() as unknown as Redis,
+      githubProvider: buildMockGitHubProvider(),
+    });
+    await server.ready();
+    try {
+      await server.inject({
+        method: 'GET',
+        url: '/api/auth/login/github',
+        headers: { 'x-forwarded-proto': 'https' },
+      });
+      const callback = await server.inject({
+        method: 'GET',
+        url: '/api/auth/callback/github?code=gh-code&state=gh-state-stub',
+        headers: { 'x-forwarded-proto': 'https' },
+      });
+      expect(callback.statusCode).toBe(302);
+      const setCookie = callback.headers['set-cookie'];
+      return Array.isArray(setCookie) ? setCookie.join('; ') : setCookie;
+    } finally {
+      await server.close();
+      delete process.env.SHIPIT_SESSION_SECRET;
+    }
+  }
+
+  it('sets the session cookie when trustProxy honors X-Forwarded-Proto', async () => {
+    const cookie = await runLoginCallback(true);
+    expect(cookie).toContain('shipit_sid=');
+    expect(cookie).toContain('Secure');
+  });
+
+  it('documents the failure mode: no trustProxy → no cookie, silent login loop', async () => {
+    const cookie = await runLoginCallback(false);
+    expect(cookie).toBeUndefined();
+  });
+});
+
+// GitHub accounts routinely carry several verified emails (work + personal),
+// and the wizard captures whichever one the operator typed. Role and
+// allow-list decisions must match against ALL verified emails, not just the
+// resolved primary — otherwise an admin whose primary differs from the
+// wizard email silently lands as a read-only member (portal-demo,
+// 2026-06-12).
+describe('/api/auth — role and allow-list match ANY verified GitHub email', () => {
+  async function loginAs(
+    userInfo: GitHubUserInfo,
+    configTweak: (config: Config) => void = () => {},
+  ) {
+    process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
+    const github = buildMockGitHubProvider();
+    github.nextUserInfo = userInfo;
+    const config = buildAuthConfig();
+    config.accessControl.auth.providers.oidc.enabled = false;
+    configTweak(config);
+    const server = await createServer({
+      config,
+      redis: new RedisMock() as unknown as Redis,
+      githubProvider: github,
+    });
+    await server.ready();
+    try {
+      await server.inject({ method: 'GET', url: '/api/auth/login/github' });
+      const callback = await server.inject({
+        method: 'GET',
+        url: '/api/auth/callback/github?code=gh-code&state=gh-state-stub',
+      });
+      const cookie = cookieHeader(callback.headers['set-cookie']);
+      const me = await server.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+      return { callback, me };
+    } finally {
+      await server.close();
+      delete process.env.SHIPIT_SESSION_SECRET;
+    }
+  }
+
+  it('grants admin when a secondary verified email matches the admins list', async () => {
+    const { me } = await loginAs({
+      sub: 'gh-multi',
+      email: 'personal@example.com',
+      displayName: 'Multi Email',
+      login: 'multi',
+      verifiedEmails: ['personal@example.com', 'admin@example.com'],
+    });
+    const body = me.json();
+    expect(body.user.role).toBe('admin');
+    // Identity stays the resolved primary — only the role check widens.
+    expect(body.user.email).toBe('personal@example.com');
+  });
+
+  it('passes the allow-list when any verified email is allow-listed', async () => {
+    const { me } = await loginAs(
+      {
+        sub: 'gh-listed',
+        email: 'personal@example.com',
+        displayName: 'Listed',
+        login: 'listed',
+        verifiedEmails: ['personal@example.com', 'work@company.com'],
+      },
+      (config) => {
+        config.accessControl.auth.allowList = ['work@company.com'];
+      },
+    );
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.role).toBe('member');
+  });
+
+  it('still rejects when no verified email is allow-listed', async () => {
+    const { callback } = await loginAs(
+      {
+        sub: 'gh-out',
+        email: 'personal@example.com',
+        displayName: 'Outsider',
+        login: 'out',
+        verifiedEmails: ['personal@example.com'],
+      },
+      (config) => {
+        config.accessControl.auth.allowList = ['work@company.com'];
+      },
+    );
+    expect(callback.headers.location).toContain('error=NOT_ALLOWLISTED');
   });
 });

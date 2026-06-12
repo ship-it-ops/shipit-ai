@@ -92,6 +92,10 @@ declare module 'fastify' {
 export async function createServer(opts: CreateServerOptions = {}): Promise<FastifyInstance> {
   const server = Fastify({
     logger: opts.logger ?? false,
+    // Behind the GKE Ingress TLS terminates upstream; without this the
+    // session plugin sees request.protocol === 'http' and silently skips
+    // Set-Cookie for the Secure session cookie (login loops forever).
+    trustProxy: opts.config?.backend.api.trustProxy ?? false,
   });
 
   const setupMode = opts.setupMode ?? false;
