@@ -12,6 +12,7 @@ import { RedisSessionStore } from './services/auth/redis-session-store.js';
 import { AuthStateStore } from './services/auth/state-store.js';
 import { OidcProvider } from './services/auth/oidc-provider.js';
 import { GitHubProvider } from './services/auth/github-provider.js';
+import { resolvePublicBaseUrl } from './services/auth/public-base-url.js';
 import { TokenService } from './services/auth/token-service.js';
 import authRoutes from './routes/auth.js';
 import tokenRoutes from './routes/tokens.js';
@@ -182,10 +183,16 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     // Construct providers (or accept overrides from tests). The callback
     // URL is derived from frontend.api.url since that's the canonical
     // public origin the web-UI hits — operators register the same URL
-    // with their IdP. Provider modules are skipped when their respective
-    // `providers.<id>.enabled` flag is false so disabled providers don't
-    // need their secret env vars populated.
-    const publicBaseUrl = opts.config!.frontend.api.url.replace(/\/$/, '');
+    // with their IdP. Single-origin Ingress deployments set
+    // frontend.api.url to the path-only `/api`, so resolvePublicBaseUrl
+    // falls back to the CORS allow-list for the absolute origin GitHub /
+    // OIDC require in redirect_uri. Provider modules are skipped when
+    // their respective `providers.<id>.enabled` flag is false so disabled
+    // providers don't need their secret env vars populated.
+    const publicBaseUrl = resolvePublicBaseUrl(
+      opts.config!.frontend.api.url,
+      opts.config!.accessControl.web.allowedOrigins,
+    );
     const stateStore = new AuthStateStore(opts.redis);
     server.decorate('authStateStore', stateStore);
 
