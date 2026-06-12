@@ -100,7 +100,7 @@ Specifics:
   mode (`globalConfigured`). Per-org mode skips the picker because
   there's no global App to query — same code path as before. Per-org
   users enter their installation ID manually.
-- `config/github-app-manifest.json` already specifies `"public": false`,
+- `packages/api-server/config/github-app-manifest.json` already specifies `"public": false`,
   which matches the new default — no manifest change needed.
 
 ## Revisit Triggers

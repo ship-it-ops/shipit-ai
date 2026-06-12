@@ -56,7 +56,7 @@ describe('SetupPage', () => {
     setupLib.fetchHealthMode.mockResolvedValue('setup');
     render(<SetupPage />);
     expect(
-      await screen.findByRole('heading', { name: /set up this deployment/i }),
+      await screen.findByRole('heading', { name: /set up your shipit instance/i }),
     ).toBeInTheDocument();
     expect(await screen.findByLabelText(/administrator email/i)).toBeInTheDocument();
   });

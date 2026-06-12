@@ -14,7 +14,10 @@ import {
 } from './services/connector-run-store.js';
 import { SyncScheduler } from './services/sync-scheduler.js';
 import { GitHubAppService } from './services/github-app-service.js';
-import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
+import {
+  GitHubAppManifestService,
+  resolveManifestTemplatePath,
+} from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
 import {
@@ -130,7 +133,7 @@ async function main() {
       appConfig: config.connectors.github.app,
     });
     const githubAppManifestService = new GitHubAppManifestService({
-      templatePath: resolve(configDir, 'config/github-app-manifest.json'),
+      templatePath: resolveManifestTemplatePath(),
       appService: githubAppService,
       keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
       secretStore,
@@ -206,12 +209,12 @@ async function main() {
   });
 
   // Manifest service handles the "Create App from template" flow.
-  // Template lives in the repo at config/github-app-manifest.json;
-  // the manifest endpoint substitutes hook/redirect URLs at request
-  // time so each instance points at its own ingress.
-  const manifestTemplatePath = resolve(configDir, 'config/github-app-manifest.json');
+  // Template ships inside the api-server package (resolved relative to
+  // the module, env-overridable); the manifest endpoint substitutes
+  // hook/redirect URLs at request time so each instance points at its
+  // own ingress.
   const githubAppManifestService = new GitHubAppManifestService({
-    templatePath: manifestTemplatePath,
+    templatePath: resolveManifestTemplatePath(),
     appService: githubAppService,
     // Local-dev default; container deploys override.
     keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,

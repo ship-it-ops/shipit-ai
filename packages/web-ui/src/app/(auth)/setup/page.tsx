@@ -100,7 +100,7 @@ export default function SetupPage() {
         />
         <div className="space-y-1.5">
           <h1 className="text-text text-[22px] font-semibold tracking-tight">
-            Set up this deployment
+            Set up your ShipIt instance
           </h1>
           <p className="text-text-muted text-[13px] leading-relaxed">
             First-run setup: name an administrator and connect GitHub sign-in.

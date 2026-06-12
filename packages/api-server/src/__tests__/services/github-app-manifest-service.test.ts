@@ -1,8 +1,11 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { GitHubAppManifestService } from '../../services/github-app-manifest-service.js';
+import { join, resolve } from 'node:path';
+import {
+  GitHubAppManifestService,
+  resolveManifestTemplatePath,
+} from '../../services/github-app-manifest-service.js';
 import { GsmSecretStore, type GsmClientLike } from '../../secrets/gsm-store.js';
 import type { GitHubAppService } from '../../services/github-app-service.js';
 
@@ -233,5 +236,31 @@ describe('GitHubAppManifestService — GSM persistence', () => {
     expect(process.env.GITHUB_WEBHOOK_SECRET).toBeUndefined();
     expect(process.env.GITHUB_OAUTH_CLIENT_ID).toBeUndefined();
     expect(process.env.GITHUB_OAUTH_CLIENT_SECRET).toBeUndefined();
+  });
+});
+
+// The template must ship inside the api-server package: deployed images are
+// `pnpm deploy --prod` output and never contain the repo root, so resolving
+// the template relative to the config file's directory (the old behavior)
+// ENOENTs on-cluster — see
+// docs/agent/investigations/setup-wizard-manifest-launch-enoent.md.
+describe('resolveManifestTemplatePath', () => {
+  afterEach(() => {
+    delete process.env.SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE;
+  });
+
+  it('returns the SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE override, resolved to absolute', () => {
+    process.env.SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE = './somewhere/manifest.json';
+    expect(resolveManifestTemplatePath()).toBe(resolve('./somewhere/manifest.json'));
+  });
+
+  it('defaults to a template file shipped inside the api-server package', () => {
+    const path = resolveManifestTemplatePath();
+    expect(path).toContain(join('api-server', 'config', 'github-app-manifest.json'));
+    expect(existsSync(path)).toBe(true);
+    // Sanity-check it parses as a GitHub App manifest template.
+    const template = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    expect(template.name).toBeTruthy();
+    expect(template.default_permissions).toBeTruthy();
   });
 });
