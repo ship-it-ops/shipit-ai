@@ -56,6 +56,7 @@ interface RawManifest {
   default_events?: string[];
   hook_attributes?: { url: string; active?: boolean };
   redirect_url?: string;
+  callback_urls?: string[];
   [key: string]: unknown;
 }
 
@@ -160,7 +161,7 @@ export class GitHubAppManifestService {
   // URL, so we'd rather create the App without a webhook and let the
   // operator configure it later via the App settings (or by setting
   // GITHUB_WEBHOOK_PUBLIC_URL to a smee channel and re-running).
-  buildManifest(args: { webhookUrl: string; redirectUrl: string }): {
+  buildManifest(args: { webhookUrl: string; redirectUrl: string; callbackUrl: string }): {
     manifest: RawManifest;
     webhookOmitted: boolean;
     webhookOmissionReason?: string;
@@ -172,6 +173,10 @@ export class GitHubAppManifestService {
     const out: RawManifest = { ...template };
     delete (out as Record<string, unknown>).$comment;
     out.redirect_url = args.redirectUrl;
+    // OAuth sign-in callback. Without this the created App has no
+    // callback URL and the first login attempt dies on GitHub's "This
+    // GitHub App must be configured with a callback URL" error page.
+    out.callback_urls = [args.callbackUrl];
 
     const reason = checkWebhookUrlPublic(args.webhookUrl);
     if (reason) {

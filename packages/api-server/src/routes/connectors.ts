@@ -296,8 +296,8 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         },
       });
     }
-    const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
-    const result = svc.buildManifest({ webhookUrl, redirectUrl });
+    const { webhookUrl, redirectUrl, callbackUrl } = manifestUrlsFromRequest(server, request);
+    const result = svc.buildManifest({ webhookUrl, redirectUrl, callbackUrl });
     reply.header('Cache-Control', 'private, max-age=30');
     // For the JSON debug view, return the manifest + a sibling
     // `_warnings` array so curl users see why hook_attributes is absent.
@@ -342,8 +342,8 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           );
       }
 
-      const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
-      const built = svc.buildManifest({ webhookUrl, redirectUrl });
+      const { webhookUrl, redirectUrl, callbackUrl } = manifestUrlsFromRequest(server, request);
+      const built = svc.buildManifest({ webhookUrl, redirectUrl, callbackUrl });
       // Per-org card passes `target=instance&nonce=<uuid>` so the
       // callback knows NOT to write credentials to the global slot
       // (which would surprise users who picked per-org explicitly).
@@ -971,14 +971,17 @@ function escapeHtml(value: string): string {
 function manifestUrlsFromRequest(
   server: FastifyInstance,
   request: FastifyRequest,
-): { webhookUrl: string; redirectUrl: string } {
+): { webhookUrl: string; redirectUrl: string; callbackUrl: string } {
   const cfg = (server as unknown as { config?: Config }).config;
   const webhookUrl =
     cfg?.connectors.github.app.webhookPublicUrl ?? 'http://localhost:3001/api/webhooks/github';
   const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
   const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
   const redirectUrl = `${proto}://${host}/api/connectors/github/app-manifest-callback`;
-  return { webhookUrl, redirectUrl };
+  // OAuth sign-in callback the App must carry for "Sign in with GitHub"
+  // to work — must match the redirect_uri the GitHubProvider sends.
+  const callbackUrl = `${proto}://${host}/api/auth/callback/github`;
+  return { webhookUrl, redirectUrl, callbackUrl };
 }
 
 // HTML wrapper for the auto-submitting manifest form. Same-origin, served

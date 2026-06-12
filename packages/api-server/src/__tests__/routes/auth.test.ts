@@ -639,3 +639,51 @@ describe('PUT /api/auth/providers/oidc — OIDC settings endpoint', () => {
     }
   });
 });
+
+// Regression for the portal-demo first-login failure (2026-06-12): with the
+// single-origin Ingress config (frontend.api.url = '/api'), the server built
+// redirect_uri as the relative, doubled '/api/api/auth/callback/github' and
+// GitHub refused it. This boots the REAL GitHubProvider (no mock injection)
+// so the publicBaseUrl wiring in server.ts is what's under test.
+describe('/api/auth — single-origin ingress (path-only frontend.api.url)', () => {
+  let server: FastifyInstance;
+
+  beforeAll(async () => {
+    process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
+    process.env.TEST_GITHUB_CLIENT_SECRET = 'gh-secret';
+    const base = buildAuthConfig();
+    const config: Config = {
+      ...base,
+      frontend: { ...base.frontend, api: { url: '/api' } },
+      accessControl: {
+        ...base.accessControl,
+        auth: {
+          ...base.accessControl.auth,
+          providers: {
+            ...base.accessControl.auth.providers,
+            // OIDC off so only the GitHub provider is constructed for real.
+            oidc: { ...base.accessControl.auth.providers.oidc, enabled: false },
+          },
+        },
+        web: { allowedOrigins: ['https://portal-demo.example.com'] },
+      },
+    };
+    server = await createServer({ config, redis: new RedisMock() as unknown as Redis });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    delete process.env.SHIPIT_SESSION_SECRET;
+    delete process.env.TEST_GITHUB_CLIENT_SECRET;
+  });
+
+  it('sends an absolute redirect_uri derived from the allowed web origin', async () => {
+    const response = await server.inject({ method: 'GET', url: '/api/auth/login/github' });
+    expect(response.statusCode).toBe(302);
+    const location = new URL(response.headers.location as string);
+    expect(location.searchParams.get('redirect_uri')).toBe(
+      'https://portal-demo.example.com/api/auth/callback/github',
+    );
+  });
+});
