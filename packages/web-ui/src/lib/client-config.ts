@@ -56,6 +56,20 @@ function csv(value: string | undefined): ReadonlyArray<string> | null {
   return parts.length > 0 ? parts : null;
 }
 
+// SHIPIT_API_URL may arrive as an origin (http://localhost:3001), an origin
+// with the route prefix (https://x.com/api), or just the prefix (`/api` —
+// what the production image is built with: the single-origin Ingress serves
+// the API on the page's own origin, see the infra chart's
+// web-ui-deployment.yaml). Every call site appends `/api/...`, so strip
+// trailing slashes and one trailing `/api` segment: '/api' → '' (relative,
+// same-origin), 'http://localhost:3001' → unchanged. Without this, a
+// prefix-style value produces double-prefixed requests (`/api/api/...`)
+// that 404/401 on every deployment.
+export function normalizeApiBaseUrl(raw: string): string {
+  const noSlash = raw.replace(/\/+$/, '');
+  return noSlash.endsWith('/api') ? noSlash.slice(0, -'/api'.length) : noSlash;
+}
+
 // Each property reads `process.env.NEXT_PUBLIC_SHIPIT_*` *literally* so the
 // Next.js bundler inlines the value. Dynamic lookups like `process.env[k]`
 // would NOT be replaced and would resolve to undefined in the browser.
@@ -92,7 +106,9 @@ const authProvidersEnabled = (
 
 export const clientConfig: ClientConfig = Object.freeze({
   api: {
-    url: str(process.env.NEXT_PUBLIC_SHIPIT_API_URL) ?? 'http://localhost:3001',
+    url: normalizeApiBaseUrl(
+      str(process.env.NEXT_PUBLIC_SHIPIT_API_URL) ?? 'http://localhost:3001',
+    ),
   },
   auth: {
     enabled: process.env.NEXT_PUBLIC_SHIPIT_AUTH_ENABLED === 'true',

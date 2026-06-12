@@ -41,6 +41,16 @@ latter added for PR #59 review finding SC2 — one-way latch preventing
 setup-mode re-entry on previously-secured deployments). If the infra
 brief was already sent with only one container, amend it.
 
+First prod page-load (2026-06-11): login showed "401 listing providers"
+instead of redirecting to /setup. Root cause: web-ui treats
+SHIPIT_API_URL as a base and appends `/api/...`, but infra builds the
+image with SHIPIT_API_URL=/api (single-origin Ingress) → every browser
+call became `/api/api/...`, which setup-mode 401s. Fixed app-side:
+`normalizeApiBaseUrl` in web-ui client-config strips a trailing `/api`
+('/api' → '' → same-origin relative calls). Affects ALL web-ui API
+calls, not just setup mode. Same-day LB-wide 502s observed during
+diagnosis are infra-side NEG churn, separate.
+
 Fourth cross-repo brief (2026-06-11): core-writer ignored
 `NEO4J_DATABASE` — `Neo4jClient.getSession` hard-defaulted to db `neo4j`
 (absent on instance-ID-named Aura tiers) AND `main.ts` never passed the
