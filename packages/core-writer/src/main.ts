@@ -28,8 +28,16 @@ async function main(): Promise<void> {
       uri: config.backend.neo4j.uri,
       username: config.backend.neo4j.user,
       password: config.backend.neo4j.password,
+      // Shared config has no database field; NEO4J_DATABASE comes in via
+      // DEFAULT_CONFIG (like the other env-tunables below). Newer Aura
+      // tiers name the database after the instance ID — without this the
+      // client's session default of `neo4j` hits DatabaseNotFound.
+      database: DEFAULT_CONFIG.neo4j.database,
     });
-    console.log(`CoreWriter connected to Neo4j at ${config.backend.neo4j.uri}`);
+    console.log(
+      `CoreWriter connected to Neo4j at ${config.backend.neo4j.uri}` +
+        ` (db: ${DEFAULT_CONFIG.neo4j.database})`,
+    );
   } catch (err) {
     // Fail loudly — if we can't reach Neo4j there's nothing to do.
     console.error(`CoreWriter failed to connect to Neo4j: ${(err as Error).message}`);

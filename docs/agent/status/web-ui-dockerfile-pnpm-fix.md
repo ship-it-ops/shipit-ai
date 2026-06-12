@@ -41,6 +41,15 @@ latter added for PR #59 review finding SC2 — one-way latch preventing
 setup-mode re-entry on previously-secured deployments). If the infra
 brief was already sent with only one container, amend it.
 
+Fourth cross-repo brief (2026-06-11): core-writer ignored
+`NEO4J_DATABASE` — `Neo4jClient.getSession` hard-defaulted to db `neo4j`
+(absent on instance-ID-named Aura tiers) AND `main.ts` never passed the
+configured database into `connect()` (the brief missed that second leg —
+shared config has no database field; it rides in via core-writer's
+`DEFAULT_CONFIG`). Fixed both; verified locally in both directions
+(sentinel db name reaches the driver; default boots through migration +
+event-bus subscribe).
+
 ## Why
 
 Infra repo's `build-images.yml` fails on `build:web-ui` with
