@@ -219,7 +219,7 @@ function LoginBody({ state, firstButtonRef, onSignIn }: LoginBodyProps) {
           <>
             The web UI couldn&apos;t connect to the API server at{' '}
             <code className="bg-panel rounded px-1 py-[1px] font-mono text-[11.5px]">
-              {clientConfig.api.url}
+              {clientConfig.api.url || 'this origin'}
             </code>
             . Check that <code>pnpm start:backend</code> is running and reload this page.
           </>
