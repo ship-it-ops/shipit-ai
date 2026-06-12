@@ -1,5 +1,14 @@
 import { AuthConfigError } from '../../auth-bootability.js';
 
+// Trailing-slash strip without a regex: `/\/+$/` is CodeQL's
+// js/polynomial-redos pattern (config-controlled input, so low real risk,
+// but the scanning gate fails on it).
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end--;
+  return value.slice(0, end);
+}
+
 // Derive the absolute public base URL that OAuth redirect URIs are built
 // from. frontend.api.url is the canonical public origin, but behind a
 // single-origin Ingress it is the path-only value `/api` — prefixing that
@@ -12,7 +21,7 @@ export function resolvePublicBaseUrl(
   frontendApiUrl: string,
   allowedOrigins: ReadonlyArray<string>,
 ): string {
-  const raw = frontendApiUrl.trim().replace(/\/+$/, '');
+  const raw = stripTrailingSlashes(frontendApiUrl.trim());
   let parsed: URL | null = null;
   try {
     parsed = new URL(raw);
@@ -20,13 +29,13 @@ export function resolvePublicBaseUrl(
     parsed = null;
   }
   if (parsed && (parsed.protocol === 'http:' || parsed.protocol === 'https:')) {
-    const path = parsed.pathname.replace(/\/+$/, '').replace(/\/api$/, '');
+    const path = stripTrailingSlashes(parsed.pathname).replace(/\/api$/, '');
     return `${parsed.origin}${path}`;
   }
   // Path-only (single-origin Ingress): the web origin and the API origin
   // are the same host by construction, so the CORS allow-list holds the
   // absolute origin we need.
-  const origin = allowedOrigins[0]?.trim().replace(/\/+$/, '');
+  const origin = stripTrailingSlashes(allowedOrigins[0]?.trim() ?? '');
   if (!origin) {
     throw new AuthConfigError(
       `frontend.api.url ("${frontendApiUrl}") is not an absolute URL and ` +
