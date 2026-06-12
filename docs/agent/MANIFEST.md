@@ -1,11 +1,12 @@
 # Agent Context
 
-Last updated: 2026-06-11 | Total notes: 43
+Last updated: 2026-06-11 | Total notes: 44
 
 ## Investigations
 
 - [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
 - [backend-images-runtime-module-not-found](investigations/backend-images-runtime-module-not-found.md) | investigation | completed | standard | 2026-06-11 | root node_modules copy broke resolution; pnpm deploy fixes
+- [setup-wizard-manifest-launch-enoent](investigations/setup-wizard-manifest-launch-enoent.md) | investigation | completed | core | 2026-06-11 | manifest template JSON never reaches /data in cluster
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.

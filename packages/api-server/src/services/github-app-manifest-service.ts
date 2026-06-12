@@ -20,7 +20,26 @@ import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { GitHubAppService } from './github-app-service.js';
+
+// Default manifest template location. The template ships INSIDE this
+// package (packages/api-server/config/) and is resolved relative to this
+// module — NOT relative to the shipit.config.yaml directory. Deployed
+// images are `pnpm deploy --prod` output without the repo root, and the
+// on-cluster config volume only seeds shipit.config.yaml + the schema,
+// so a configDir-relative lookup ENOENTs in production (see
+// docs/agent/investigations/setup-wizard-manifest-launch-enoent.md).
+// Works from both src/services/ (tsx dev) and dist/services/ (built):
+// each sits two levels below the package root.
+//
+// SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE overrides for operators who want
+// to customize the App's permissions/events without rebuilding.
+export function resolveManifestTemplatePath(): string {
+  const override = process.env.SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE;
+  if (override) return resolve(override);
+  return fileURLToPath(new URL('../../config/github-app-manifest.json', import.meta.url));
+}
 
 import { GsmSecretStore } from '../secrets/gsm-store.js';
 import type { LogicalSecret, SecretStore } from '../secrets/types.js';
@@ -41,7 +60,8 @@ interface RawManifest {
 }
 
 export interface ManifestServiceOptions {
-  // Absolute path to the static manifest template (config/github-app-manifest.json).
+  // Absolute path to the static manifest template — callers should pass
+  // resolveManifestTemplatePath() outside of tests.
   templatePath: string;
   appService: GitHubAppService;
   // Where to write PEMs received from the conversion exchange. Defaults
