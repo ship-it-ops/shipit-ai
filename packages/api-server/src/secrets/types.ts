@@ -18,6 +18,7 @@ export type LogicalSecret =
   | 'github-app-id'
   | 'github-oauth-client-id'
   | 'auth-admin-emails'
+  | 'auth-allow-list-emails'
   | 'setup-completed'
   | 'neo4j-aura-password'
   | 'session-secret';
@@ -30,6 +31,7 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
   'github-app-id': 'shipit-github-app-id',
   'github-oauth-client-id': 'shipit-github-oauth-client-id',
   'auth-admin-emails': 'shipit-auth-admin-emails',
+  'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
   'setup-completed': 'shipit-setup-completed',
   'neo4j-aura-password': 'shipit-neo4j-aura-password',
   'session-secret': 'shipit-session-secret',
@@ -52,6 +54,10 @@ export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
   // emptyDir; see docs/agent/decisions/api-server-config-persistence-strategy.md).
   // CSV of admin emails captured by the first-run setup wizard.
   'auth-admin-emails': 'SHIPIT_AUTH_ADMINS',
+  // CSV of emails allowed to sign in (login guardrail). Operator-managed
+  // via gcloud (NOT writable by the app — absent from WRITABLE_SECRETS);
+  // a future settings-UI editor would move it there.
+  'auth-allow-list-emails': 'SHIPIT_AUTH_ALLOWLIST',
   'neo4j-aura-password': 'NEO4J_PASSWORD',
   'session-secret': 'SHIPIT_SESSION_SECRET',
 };

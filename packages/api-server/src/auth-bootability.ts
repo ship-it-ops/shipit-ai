@@ -115,6 +115,7 @@ export function assertAuthConfigBootable(config: Config, env: NodeJS.ProcessEnv)
 export interface DerivedAuthConfig {
   derivedGithubProvider: boolean;
   derivedAdmins: boolean;
+  derivedAllowList: boolean;
 }
 
 // The setup-mode trigger, extracted to a pure function so the one piece
@@ -157,7 +158,11 @@ export function applyDerivedAuthConfig(
   secretStoreKind: 'file' | 'gsm',
 ): DerivedAuthConfig {
   const auth = config.accessControl.auth;
-  const result: DerivedAuthConfig = { derivedGithubProvider: false, derivedAdmins: false };
+  const result: DerivedAuthConfig = {
+    derivedGithubProvider: false,
+    derivedAdmins: false,
+    derivedAllowList: false,
+  };
 
   if (
     secretStoreKind === 'gsm' &&
@@ -183,6 +188,20 @@ export function applyDerivedAuthConfig(
     if (admins.length > 0) {
       auth.admins = admins;
       result.derivedAdmins = true;
+    }
+  }
+
+  // Login guardrail: who may sign in at all. Same CSV/GSM pattern as
+  // admins — the list lives in the shipit-auth-allow-list-emails secret
+  // (operator-managed via gcloud) so it can change without a deploy.
+  // Empty/unset keeps allowList [] = everyone may sign in.
+  if (auth.allowList.length === 0 && env.SHIPIT_AUTH_ALLOWLIST) {
+    const allowList = env.SHIPIT_AUTH_ALLOWLIST.split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (allowList.length > 0) {
+      auth.allowList = allowList;
+      result.derivedAllowList = true;
     }
   }
 

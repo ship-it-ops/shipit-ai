@@ -831,4 +831,26 @@ describe('/api/auth — role and allow-list match ANY verified GitHub email', ()
     );
     expect(callback.headers.location).toContain('error=NOT_ALLOWLISTED');
   });
+
+  // Guardrail semantics: a non-empty allowList restricts who may sign in,
+  // but admins (matched via any verified email against admins[]) always
+  // pass — an operator must never lock themselves out of their own
+  // deployment by forgetting to add their email to the allow-list.
+  it('logs an admin in even when their email is not on a non-empty allowList', async () => {
+    const { me } = await loginAs(
+      {
+        sub: 'gh-admin',
+        email: 'admin@example.com',
+        displayName: 'Admin',
+        login: 'admin',
+        verifiedEmails: ['admin@example.com'],
+      },
+      (config) => {
+        // admins comes from buildAuthConfig: ['admin@example.com']
+        config.accessControl.auth.allowList = ['someone-else@example.com'];
+      },
+    );
+    expect(me.statusCode).toBe(200);
+    expect(me.json().user.role).toBe('admin');
+  });
 });

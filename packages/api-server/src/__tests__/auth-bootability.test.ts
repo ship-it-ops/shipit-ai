@@ -216,3 +216,33 @@ describe('applyDerivedAuthConfig', () => {
     expect(config.accessControl.auth.admins).toEqual(['configured@example.com']);
   });
 });
+
+// Mirrors the SHIPIT_AUTH_ADMINS derivation: the login allow-list lives in
+// GSM (operator-managed via gcloud, no app writes) and hydrates to
+// SHIPIT_AUTH_ALLOWLIST so the guardrail can change without a deploy.
+describe('applyDerivedAuthConfig — allow-list derivation', () => {
+  it('fills empty allowList from the SHIPIT_AUTH_ALLOWLIST CSV (any store kind)', () => {
+    const config = makeTestConfig();
+    const env = { SHIPIT_AUTH_ALLOWLIST: ' a@x.com , b@y.com ,' } as NodeJS.ProcessEnv;
+    const result = applyDerivedAuthConfig(config, env, 'file');
+    expect(result.derivedAllowList).toBe(true);
+    expect(config.accessControl.auth.allowList).toEqual(['a@x.com', 'b@y.com']);
+  });
+
+  it('never overrides a non-empty configured allowList', () => {
+    const config = makeTestConfig();
+    config.accessControl.auth.allowList = ['configured@example.com'];
+    const env = { SHIPIT_AUTH_ALLOWLIST: 'derived@example.com' } as NodeJS.ProcessEnv;
+    const result = applyDerivedAuthConfig(config, env, 'gsm');
+    expect(result.derivedAllowList).toBe(false);
+    expect(config.accessControl.auth.allowList).toEqual(['configured@example.com']);
+  });
+
+  it('treats a whitespace-only env value as unset', () => {
+    const config = makeTestConfig();
+    const env = { SHIPIT_AUTH_ALLOWLIST: ' , ' } as NodeJS.ProcessEnv;
+    const result = applyDerivedAuthConfig(config, env, 'file');
+    expect(result.derivedAllowList).toBe(false);
+    expect(config.accessControl.auth.allowList).toEqual([]);
+  });
+});
