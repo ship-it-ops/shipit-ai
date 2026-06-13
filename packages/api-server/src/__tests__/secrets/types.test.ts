@@ -18,6 +18,7 @@ describe('secret taxonomy', () => {
       'github-app-id': 'shipit-github-app-id',
       'github-oauth-client-id': 'shipit-github-oauth-client-id',
       'auth-admin-emails': 'shipit-auth-admin-emails',
+      'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
       'setup-completed': 'shipit-setup-completed',
       'neo4j-aura-password': 'shipit-neo4j-aura-password',
       'session-secret': 'shipit-session-secret',
@@ -31,6 +32,7 @@ describe('secret taxonomy', () => {
     expect(ENV_VAR_FOR['github-app-id']).toBe('GITHUB_APP_ID');
     expect(ENV_VAR_FOR['github-oauth-client-id']).toBe('GITHUB_OAUTH_CLIENT_ID');
     expect(ENV_VAR_FOR['auth-admin-emails']).toBe('SHIPIT_AUTH_ADMINS');
+    expect(ENV_VAR_FOR['auth-allow-list-emails']).toBe('SHIPIT_AUTH_ALLOWLIST');
     expect(ENV_VAR_FOR['neo4j-aura-password']).toBe('NEO4J_PASSWORD');
     expect(ENV_VAR_FOR['session-secret']).toBe('SHIPIT_SESSION_SECRET');
     expect(ENV_VAR_FOR['github-app-private-key']).toBeUndefined();
@@ -46,6 +48,9 @@ describe('secret taxonomy', () => {
     expect(() => assertWritable('auth-admin-emails')).not.toThrow();
     // /api/setup/complete writes the one-way completed latch.
     expect(() => assertWritable('setup-completed')).not.toThrow();
+    // The login allow-list is operator-managed via gcloud — the app only
+    // reads it, so writes are refused like bootstrap secrets.
+    expect(() => assertWritable('auth-allow-list-emails')).toThrow(SecretWriteForbiddenError);
     // The latch is read directly from the store, never via env.
     expect(ENV_VAR_FOR['setup-completed']).toBeUndefined();
   });

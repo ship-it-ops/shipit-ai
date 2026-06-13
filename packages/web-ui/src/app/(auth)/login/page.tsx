@@ -50,7 +50,14 @@ function describeCallbackError(code: string | null): string | null {
   if (!code) return null;
   switch (code) {
     case 'NOT_ALLOWLISTED':
-      return 'Your account is not on the access allow-list. Ask an administrator to add you.';
+      // Beta-mode guardrail (GSM-backed allow-list) — friendly copy, not
+      // a scary failure: the user authenticated fine, access just hasn't
+      // been granted yet.
+      return (
+        'ShipIt is currently in private beta and access is limited. ' +
+        'Your sign-in worked, but your account hasn’t been granted access yet — ' +
+        'reach out to your administrator to request it.'
+      );
     case 'ACCESS_DENIED':
       return 'Your account does not have access to this deployment.';
     case 'INVALID_STATE':

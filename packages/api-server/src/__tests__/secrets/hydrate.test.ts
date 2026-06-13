@@ -70,6 +70,16 @@ describe('hydrateFromStore', () => {
     expect(result.hydrated).toContain('auth-admin-emails');
   });
 
+  it('hydrates the login allow-list emails into SHIPIT_AUTH_ALLOWLIST', async () => {
+    const env = { SHIPIT_GITHUB_APP_KEY_DIR: tmpDir } as NodeJS.ProcessEnv;
+    const result = await hydrateFromStore(
+      fakeGsmStore({ 'auth-allow-list-emails': 'a@x.com,b@y.com' }),
+      env,
+    );
+    expect(env.SHIPIT_AUTH_ALLOWLIST).toBe('a@x.com,b@y.com');
+    expect(result.hydrated).toContain('auth-allow-list-emails');
+  });
+
   it('does not clobber env vars already set by the environment', async () => {
     const env = {
       SHIPIT_GITHUB_APP_KEY_DIR: tmpDir,

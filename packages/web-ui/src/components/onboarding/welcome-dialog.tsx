@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Button, Dialog } from '@ship-it-ui/ui';
-import { IconGlyph } from '@ship-it-ui/icons';
+import { IconGlyph, type GlyphName } from '@ship-it-ui/icons';
 
 // Stage C4 of the auth-and-rbac milestone. Shown after the first
 // successful sign-in (auth.enabled = true) so the user lands somewhere
@@ -43,7 +43,7 @@ export function WelcomeDialog({ open, onOpenChange, displayName }: WelcomeDialog
     >
       <div className="flex flex-col gap-4">
         <Tip
-          icon="catalog"
+          icon="document"
           title="The catalog is your home base"
           body="Browse services, find owners, jump to incident dashboards. The graph view lives one click away when you need to trace dependencies."
         />
@@ -70,7 +70,9 @@ function Tip({
   body,
   action,
 }: {
-  icon: string;
+  // GlyphName (not string) so an unregistered icon name fails the build
+  // instead of rendering IconGlyph's literal-text fallback (the "tal" bug).
+  icon: GlyphName;
   title: string;
   body: string;
   action?: { label: string; onClick: () => void };
@@ -78,7 +80,7 @@ function Tip({
   return (
     <div className="border-border flex items-start gap-3 rounded border p-3">
       <span className="text-accent shrink-0 pt-[2px]" aria-hidden>
-        <IconGlyph name={icon as never} size={16} />
+        <IconGlyph name={icon} size={16} />
       </span>
       <div className="min-w-0">
         <div className="text-text text-[13px] font-medium">{title}</div>

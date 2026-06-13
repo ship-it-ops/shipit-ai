@@ -296,7 +296,11 @@ const authRoutes: FastifyPluginAsync = async (server) => {
           stateRecord,
         );
 
-        if (!emailPassesAllowList(candidateEmails, auth.allowList)) {
+        // Admins bypass the allow-list: an operator must never lock
+        // themselves out of their own deployment by forgetting to add
+        // their email to the guardrail list. (Role is derived from
+        // admins[], matched against any verified email.)
+        if (principal.role !== 'admin' && !emailPassesAllowList(candidateEmails, auth.allowList)) {
           // Email belongs to the user but they're not allow-listed. Log
           // it server-side for operators triaging access requests; do
           // not echo it to the browser response (proxies log response
