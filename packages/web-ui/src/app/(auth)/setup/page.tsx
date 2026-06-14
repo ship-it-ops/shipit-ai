@@ -1,15 +1,15 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, Input, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
-import { buildManifestLaunchUrl } from '@/lib/api';
 import {
   fetchHealthMode,
   fetchSetupStatus,
   postSetupAdmin,
+  postSetupOAuth,
   postSetupComplete,
   type SetupGates,
 } from '@/lib/setup';
@@ -23,9 +23,11 @@ import {
 //
 // Flow:
 //   1. capture the first admin email   → POST /api/setup/admin (→ GSM)
-//   2. mint the GitHub App + OAuth client via the existing manifest
-//      launch flow (new tab → github.com → callback persists to GSM);
-//      poll GET /api/setup/status until the OAuth client appears
+//   2. capture the login OAuth App's client id/secret → POST
+//      /api/setup/oauth (→ GSM). "Sign in with GitHub" runs on a classic
+//      GitHub OAuth App the operator creates by hand (GitHub has no
+//      one-click manifest flow for OAuth Apps). The Connector Hub's GitHub
+//      App(s) for data sync are a separate concern set up later.
 //   3. POST /api/setup/complete → api-server validates + restarts into
 //      enforced auth; poll /api/health until mode flips → /login
 
@@ -318,52 +320,89 @@ function AdminEmailStep({ onDone }: { onDone: () => void }) {
 }
 
 function GitHubAppStep({ onDone }: { onDone: () => void }) {
-  const [launched, setLaunched] = useState(false);
-  const doneRef = useRef(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Same launch mechanics as the connector wizard
-  // (add-github-connector-wizard.tsx): the server hosts an auto-submitting
-  // HTML form at /manifest/launch; we open it in a new tab. The callback
-  // persists the App credentials — including the OAuth client — to the
-  // secret store, which flips the oauthClientPresent gate we poll for.
-  const launch = useCallback(() => {
-    window.open(buildManifestLaunchUrl({}), '_blank', 'noopener,noreferrer');
-    setLaunched(true);
-  }, []);
+  // The OAuth App's "Authorization callback URL" must match the
+  // redirect_uri the server sends at login. In the single-origin
+  // deployment that's this page's own origin + the auth callback path.
+  const callbackUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/auth/callback/github`
+      : '/api/auth/callback/github';
 
-  useEffect(() => {
-    if (!launched) return;
-    const timer = setInterval(async () => {
-      try {
-        const status = await fetchSetupStatus();
-        if (status.gates.oauthClientPresent && !doneRef.current) {
-          doneRef.current = true;
-          clearInterval(timer);
-          onDone();
-        }
-      } catch {
-        // Transient — keep polling.
-      }
-    }, STATUS_POLL_MS);
-    return () => clearInterval(timer);
-  }, [launched, onDone]);
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await postSetupOAuth(clientId, clientSecret);
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the OAuth client.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <p className="text-text-muted text-[12.5px] leading-relaxed">
-        Creates a GitHub App for this deployment (it carries the OAuth client used for &quot;Sign in
-        with GitHub&quot;). You&apos;ll be taken to github.com to confirm.
+        &quot;Sign in with GitHub&quot; uses a GitHub <strong>OAuth App</strong>. Create one under{' '}
+        <a
+          href="https://github.com/settings/applications/new"
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent underline"
+        >
+          Developer settings → OAuth Apps → New OAuth App
+        </a>
+        , set its <strong>Authorization callback URL</strong> to the value below, then paste the
+        Client ID and a generated Client Secret here.
       </p>
-      <div className="flex items-center gap-3">
-        <Button variant="primary" icon={<IconGlyph name="github" />} onClick={launch}>
-          {launched ? 'Reopen GitHub' : 'Create GitHub App'}
-        </Button>
-        {launched && (
-          <span className="text-text-dim flex items-center gap-2 text-[12px]">
-            <Spinner size="sm" /> Waiting for GitHub…
-          </span>
-        )}
+      <div className="bg-panel-2 border-border rounded border px-3 py-2">
+        <p className="text-text-dim text-[10px] tracking-[1.4px] uppercase">
+          Authorization callback URL
+        </p>
+        <code className="text-text text-[12px] break-all">{callbackUrl}</code>
       </div>
+      <form
+        className="space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Input
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          placeholder="Client ID (e.g. Ov23li…)"
+          aria-label="OAuth App Client ID"
+          disabled={busy}
+        />
+        <Input
+          type="password"
+          value={clientSecret}
+          onChange={(e) => setClientSecret(e.target.value)}
+          placeholder="Client secret"
+          aria-label="OAuth App Client secret"
+          disabled={busy}
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          icon={<IconGlyph name="github" />}
+          disabled={busy || clientId.trim() === '' || clientSecret.trim() === ''}
+        >
+          {busy ? 'Saving…' : 'Save OAuth client'}
+        </Button>
+      </form>
+      {error && (
+        <p role="alert" className="text-err text-[12px]">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

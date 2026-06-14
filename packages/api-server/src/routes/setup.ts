@@ -7,7 +7,7 @@
 //     post-restart wizard poll and ops debugging; the mutating routes
 //     409 SETUP_NOT_ACTIVE so a live deployment can never be "re-setup".
 import type { FastifyPluginAsync } from 'fastify';
-import { InvalidAdminEmailError } from '../services/setup-service.js';
+import { InvalidAdminEmailError, InvalidOAuthClientError } from '../services/setup-service.js';
 
 const setupRoutes: FastifyPluginAsync = async (server) => {
   server.get('/status', async (_request, reply) => {
@@ -59,6 +59,53 @@ const setupRoutes: FastifyPluginAsync = async (server) => {
         if (err instanceof InvalidAdminEmailError) {
           return reply.status(400).send({
             error: { code: 'INVALID_EMAIL', message: err.message },
+          });
+        }
+        throw err;
+      }
+      return { ok: true };
+    },
+  );
+
+  server.post<{ Body: { clientId?: unknown; clientSecret?: unknown } }>(
+    '/oauth',
+    { config: mutatingRateLimit },
+    async (request, reply) => {
+      const setupService = server.setupService;
+      if (!setupService) {
+        return reply.status(503).send({
+          error: { code: 'SETUP_DISABLED', message: 'Setup service is not wired.' },
+        });
+      }
+      if (!server.setupMode) {
+        return reply.status(409).send({
+          error: {
+            code: 'SETUP_NOT_ACTIVE',
+            message:
+              'This deployment has completed setup. Manage the login OAuth client via configuration.',
+          },
+        });
+      }
+      const { clientId, clientSecret } = request.body ?? {};
+      if (
+        typeof clientId !== 'string' ||
+        clientId.trim() === '' ||
+        typeof clientSecret !== 'string' ||
+        clientSecret.trim() === ''
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_OAUTH_CLIENT',
+            message: 'Body must include non-empty "clientId" and "clientSecret" strings.',
+          },
+        });
+      }
+      try {
+        await setupService.setOAuthClient(clientId, clientSecret);
+      } catch (err) {
+        if (err instanceof InvalidOAuthClientError) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_OAUTH_CLIENT', message: err.message },
           });
         }
         throw err;

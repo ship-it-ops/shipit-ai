@@ -56,7 +56,6 @@ interface RawManifest {
   default_events?: string[];
   hook_attributes?: { url: string; active?: boolean };
   redirect_url?: string;
-  callback_urls?: string[];
   [key: string]: unknown;
 }
 
@@ -161,7 +160,7 @@ export class GitHubAppManifestService {
   // URL, so we'd rather create the App without a webhook and let the
   // operator configure it later via the App settings (or by setting
   // GITHUB_WEBHOOK_PUBLIC_URL to a smee channel and re-running).
-  buildManifest(args: { webhookUrl: string; redirectUrl: string; callbackUrl: string }): {
+  buildManifest(args: { webhookUrl: string; redirectUrl: string }): {
     manifest: RawManifest;
     webhookOmitted: boolean;
     webhookOmissionReason?: string;
@@ -173,10 +172,11 @@ export class GitHubAppManifestService {
     const out: RawManifest = { ...template };
     delete (out as Record<string, unknown>).$comment;
     out.redirect_url = args.redirectUrl;
-    // OAuth sign-in callback. Without this the created App has no
-    // callback URL and the first login attempt dies on GitHub's "This
-    // GitHub App must be configured with a callback URL" error page.
-    out.callback_urls = [args.callbackUrl];
+    // No `callback_urls`: this manifest mints a CONNECTOR App only. User
+    // login ("Sign in with GitHub") is a separate, classic OAuth App
+    // provisioned via the setup wizard — see docs/agent/decisions/
+    // github-app-manifest-flow.md. Keeping the two apart means creating a
+    // connector App can never clobber the login OAuth client.
 
     const reason = checkWebhookUrlPublic(args.webhookUrl);
     if (reason) {
@@ -280,8 +280,9 @@ export class GitHubAppManifestService {
       html_url?: string;
       pem?: string;
       webhook_secret?: string | null;
-      client_id?: string;
-      client_secret?: string;
+      // GitHub also returns client_id/client_secret for the created App's
+      // OAuth, but the connector flow deliberately ignores them — login is
+      // a separate classic OAuth App provisioned in the setup wizard.
     };
     if (!payload.id || !payload.pem) {
       throw new Error(
@@ -330,8 +331,6 @@ export class GitHubAppManifestService {
         appId,
         pem,
         webhookSecret,
-        oauthClientId: payload.client_id ?? '',
-        oauthClientSecret: payload.client_secret ?? '',
         keyPath,
       });
       persistedToGsm = true;
@@ -389,17 +388,15 @@ export class GitHubAppManifestService {
       appId: string;
       pem: string;
       webhookSecret: string;
-      oauthClientId: string;
-      oauthClientSecret: string;
       keyPath: string;
     },
   ): Promise<void> {
+    // Connector credentials only — the OAuth client for login is owned by
+    // the setup wizard's classic OAuth App, never minted/overwritten here.
     const writes: Array<[LogicalSecret, string, string | undefined]> = [
       ['github-app-private-key', args.pem, undefined],
       ['github-app-id', args.appId, 'GITHUB_APP_ID'],
       ['github-webhook-secret', args.webhookSecret, 'GITHUB_WEBHOOK_SECRET'],
-      ['github-oauth-client-id', args.oauthClientId, 'GITHUB_OAUTH_CLIENT_ID'],
-      ['github-oauth-client-secret', args.oauthClientSecret, 'GITHUB_OAUTH_CLIENT_SECRET'],
     ];
     for (const [name, value, envVar] of writes) {
       if (!value) continue;

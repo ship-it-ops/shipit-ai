@@ -762,10 +762,11 @@ describe('GitHub App manifest flow', () => {
     expect(body.redirect_url).toBe(
       'https://shipit.local:3001/api/connectors/github/app-manifest-callback',
     );
-    // Without callback_urls the created App can't serve OAuth sign-in —
-    // GitHub errors with "This GitHub App must be configured with a
-    // callback URL" on the first login attempt (portal-demo, 2026-06-12).
-    expect(body.callback_urls).toEqual(['https://shipit.local:3001/api/auth/callback/github']);
+    // Connector-only manifest: NO login `callback_urls`. "Sign in with
+    // GitHub" runs on a separate classic OAuth App provisioned in the
+    // setup wizard, so a connector App never carries the login callback
+    // (and creating one can't clobber the login OAuth client).
+    expect(body.callback_urls).toBeUndefined();
     // Static fields from the template flow through untouched.
     expect(body.name).toBe('ShipIt-AI Test');
     expect(body.default_permissions).toEqual({ contents: 'read' });

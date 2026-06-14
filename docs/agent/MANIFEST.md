@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-14 | Total notes: 48
+Last updated: 2026-06-14 | Total notes: 50
 
 ## Investigations
 
@@ -20,7 +20,8 @@ Last updated: 2026-06-14 | Total notes: 48
 <!-- always-read at session start -->
 
 - [web-ui-dockerfile-pnpm-fix](status/web-ui-dockerfile-pnpm-fix.md) | status | active | standard | 2026-06-10 | corepack enable moved to base stage; verifying build
-- [github-owner-existence-precheck](status/github-owner-existence-precheck.md) | status | active | standard | 2026-06-14 | verify org exists before manifest launch; blocks personal-install trap
+- [github-owner-existence-precheck](status/github-owner-existence-precheck.md) | status | completed | standard | 2026-06-14 | verify org exists before manifest launch; shipped in 51d3dcf
+- [github-auth-connector-separation](status/github-auth-connector-separation.md) | status | active | core | 2026-06-14 | per-org claim resume + auth OAuth-App split from connector
 
 ## Decisions
 
@@ -45,6 +46,7 @@ Last updated: 2026-06-14 | Total notes: 48
 - [gsm-secret-store-and-config-export](decisions/gsm-secret-store-and-config-export.md) | decision | active | core | 2026-06-09 | SecretStore + boot hydration persists wizard credentials to GSM
 - [setup-mode-first-boot](decisions/setup-mode-first-boot.md) | decision | active | core | 2026-06-11 | first-boot setup mode: trigger, GSM derivation, restart flip
 - [gsm-backed-login-allowlist](decisions/gsm-backed-login-allowlist.md) | decision | active | core | 2026-06-12 | allow-list via GSM secret; admins always bypass
+- [auth-oauth-app-separate-from-connector](decisions/auth-oauth-app-separate-from-connector.md) | decision | active | core | 2026-06-14 | login = classic OAuth App; manifest flow connector-only
 
 ## Patterns
 

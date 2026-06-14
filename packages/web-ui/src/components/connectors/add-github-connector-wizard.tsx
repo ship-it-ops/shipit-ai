@@ -48,6 +48,12 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
+  readPendingGitHubApp,
+  writePendingGitHubApp,
+  markPendingGitHubAppClaimed,
+  clearPendingGitHubApp,
+} from '@/lib/pending-github-app';
+import {
   buildManifestLaunchUrl,
   checkGitHubOwner,
   fetchPendingInstanceApp,
@@ -379,10 +385,54 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       target: 'instance',
       nonce,
     });
+    // Persist the nonce + in-progress fields so the claim survives a fresh
+    // page load. If the user returns via the callback page's "Return to
+    // ShipIt-AI →" link (a brand-new tab/wizard) instead of switching back
+    // to this tab, the returning wizard restores these and claims the
+    // credentials from this same nonce. Without this the creds expire
+    // unclaimed in the server's 15-minute pending map.
+    writePendingGitHubApp({
+      nonce,
+      mode: 'per-org',
+      manifestOwner: owner,
+      connectorId,
+      name,
+      org,
+      scope,
+      entities,
+    });
     window.open(url, '_blank', 'noopener,noreferrer');
     setPerOrgNonce(nonce);
     setPerOrgPending(true);
   };
+
+  // Resume a per-org manifest flow that was started in another tab (or
+  // this one before a reload). When the dialog opens, if a non-stale
+  // pending record exists, restore the user's fields and either apply the
+  // already-claimed credentials or re-arm polling for the same nonce.
+  // Runs once per open transition.
+  useEffect(() => {
+    if (!open) return;
+    const pending = readPendingGitHubApp();
+    if (!pending || pending.mode !== 'per-org') return;
+    setMode('per-org');
+    setManifestOwner(pending.manifestOwner);
+    if (pending.connectorId) setConnectorId(pending.connectorId);
+    if (pending.name) setName(pending.name);
+    if (pending.org) setOrg(pending.org);
+    setScope(pending.scope);
+    setEntities(pending.entities);
+    if (pending.claimed) {
+      // Another tab already claimed (single-use); apply directly.
+      setOverrideAppId(pending.claimed.appId);
+      setOverrideKeyPath(pending.claimed.privateKeyPath);
+      setPerOrgPending(false);
+      setPerOrgNonce(null);
+    } else {
+      setPerOrgNonce(pending.nonce);
+      setPerOrgPending(true);
+    }
+  }, [open]);
 
   // Poll for pending-instance credentials. 2-second cadence matches the
   // global-App polling under the shared flow. Stops when credentials
@@ -390,21 +440,40 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   useEffect(() => {
     if (!perOrgPending || !perOrgNonce || !open) return;
     let cancelled = false;
+    const apply = (creds: { appId: string; appName: string; privateKeyPath: string }) => {
+      setOverrideAppId(creds.appId);
+      setOverrideKeyPath(creds.privateKeyPath);
+      setPerOrgPending(false);
+      setPerOrgNonce(null);
+      setProbeResult(null);
+      toast({
+        variant: 'ok',
+        title: 'GitHub App created',
+        description: `App ${creds.appName} (id ${creds.appId}) credentials attached. Continue the wizard.`,
+      });
+    };
     const handle = setInterval(() => {
       void (async () => {
         try {
           const creds = await fetchPendingInstanceApp(perOrgNonce);
-          if (cancelled || !creds) return;
-          setOverrideAppId(creds.appId);
-          setOverrideKeyPath(creds.privateKeyPath);
-          setPerOrgPending(false);
-          setPerOrgNonce(null);
-          setProbeResult(null);
-          toast({
-            variant: 'ok',
-            title: 'GitHub App created',
-            description: `App ${creds.appName} (id ${creds.appId}) credentials attached. Continue the wizard.`,
-          });
+          if (cancelled) return;
+          if (creds) {
+            // We won the single-use claim. Stash the credentials in the
+            // shared record so a sibling tab polling the same nonce (now
+            // 404ing) can still recover them.
+            const claimed = {
+              appId: creds.appId,
+              appName: creds.appName,
+              privateKeyPath: creds.privateKeyPath,
+            };
+            markPendingGitHubAppClaimed(claimed);
+            apply(claimed);
+            return;
+          }
+          // 404 = not stashed yet OR another tab already claimed it. Check
+          // the shared record for credentials a sibling tab recovered.
+          const claimed = readPendingGitHubApp()?.claimed;
+          if (claimed) apply(claimed);
         } catch {
           // Network blip — keep polling. The TTL on the pending entry
           // is 15 minutes; the user can cancel via the link below.
@@ -465,6 +534,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       // 3. Trigger initial sync.
       await triggerSync.mutateAsync(created.id);
 
+      // The per-org manifest flow is done — drop the cross-tab resume
+      // record so a later wizard open doesn't try to restore it.
+      clearPendingGitHubApp();
       toast({
         variant: 'ok',
         title: 'GitHub connector created',
@@ -597,6 +669,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         onClick={() => {
                           setPerOrgPending(false);
                           setPerOrgNonce(null);
+                          // Explicit abandon — drop the resume record so a
+                          // later open / sibling tab doesn't re-arm it.
+                          clearPendingGitHubApp();
                         }}
                         className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
                       >
