@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-14 | Total notes: 51
+Last updated: 2026-06-14 | Total notes: 52
 
 ## Investigations
 
@@ -48,6 +48,7 @@ Last updated: 2026-06-14 | Total notes: 51
 - [gsm-backed-login-allowlist](decisions/gsm-backed-login-allowlist.md) | decision | active | core | 2026-06-12 | allow-list via GSM secret; admins always bypass
 - [auth-oauth-app-separate-from-connector](decisions/auth-oauth-app-separate-from-connector.md) | decision | active | core | 2026-06-14 | login = classic OAuth App; manifest flow connector-only
 - [connector-apps-gsm-blob-durability](decisions/connector-apps-gsm-blob-durability.md) | decision | active | core | 2026-06-14 | per-org connectors durable via one GSM connector-apps blob
+- [mcp-token-auth-stage-2a](decisions/mcp-token-auth-stage-2a.md) | decision | active | core | 2026-06-14 | mcp-server enforces per-user bearer tokens; shared token crypto
 
 ## Patterns
 

@@ -83,6 +83,14 @@ export type {
   AuthRole,
   RequestContext,
 } from './auth/request-context.js';
+export {
+  TOKEN_PREFIX,
+  TOKEN_SEPARATOR,
+  splitToken,
+  hashSecret,
+  constantTimeEqual,
+  formatToken,
+} from './auth/token-crypto.js';
 
 // Config
 export {

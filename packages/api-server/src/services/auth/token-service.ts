@@ -1,4 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { formatToken, hashSecret, constantTimeEqual, splitToken } from '@shipit-ai/shared';
 import type { Neo4jService } from '../neo4j-service.js';
 
 // MCP/personal-access tokens. Each token is split into a public id and a
@@ -17,12 +18,9 @@ import type { Neo4jService } from '../neo4j-service.js';
 // they're transparently excluded from searchEntities / graph overview /
 // the catalog.
 
-const TOKEN_PREFIX = 'shipit_pat_';
-// `.` separates the id from the secret. Both halves are base64url (which
-// can include `_` and `-`), so `_` would be ambiguous and `-` is part of
-// the alphabet too; `.` is the only ASCII separator safe to use without
-// escaping the random bytes.
-const TOKEN_SEPARATOR = '.';
+// Token parse/hash/compare primitives live in @shipit-ai/shared so the
+// mcp-server validates against the same implementation. These byte sizes are
+// generation-only (minting happens here, not in the mcp-server).
 const TOKEN_ID_BYTES = 9; // 9 raw bytes → 12 base64url chars
 const TOKEN_SECRET_BYTES = 32; // 32 raw bytes → 43 base64url chars
 const SALT_BYTES = 16;
@@ -54,42 +52,6 @@ export interface TokenServiceOptions {
   now?: () => Date;
 }
 
-/**
- * Parse the `<id>.<secret>` payload from a `shipit_pat_<id>.<secret>`
- * token. The separator is `TOKEN_SEPARATOR` (`.`), chosen because it's
- * outside the base64url alphabet used for both id and secret, so an
- * indexOf split is unambiguous. Returns null on any malformed input so
- * the validate path can collapse "wrong prefix", "wrong shape", and
- * "wrong content" into the same "token invalid" branch.
- */
-function splitToken(plaintext: string): { id: string; secret: string } | null {
-  if (!plaintext.startsWith(TOKEN_PREFIX)) return null;
-  const rest = plaintext.slice(TOKEN_PREFIX.length);
-  const sep = rest.indexOf(TOKEN_SEPARATOR);
-  if (sep <= 0 || sep === rest.length - 1) return null;
-  const id = rest.slice(0, sep);
-  const secret = rest.slice(sep + 1);
-  return { id, secret };
-}
-
-function hashSecret(secret: string, salt: string): string {
-  return createHash('sha256').update(`${salt}.${secret}`).digest('hex');
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  // Both inputs in this codebase are SHA-256 hex digests (always 64
-  // characters), so any length mismatch means we're comparing a real
-  // hash against malformed input — not a timing oracle a real token
-  // could exploit. timingSafeEqual still requires equal-length buffers,
-  // so the early return below satisfies its precondition; if either
-  // input ever becomes variable-length we'd need to pad before
-  // comparing to avoid leaking the length.
-  const buf = Buffer.from(a);
-  const other = Buffer.from(b);
-  if (buf.length !== other.length) return false;
-  return timingSafeEqual(buf, other);
-}
-
 export class TokenService {
   private readonly neo4j: Neo4jService;
   private readonly now: () => Date;
@@ -108,7 +70,7 @@ export class TokenService {
     const secret = randomBytes(TOKEN_SECRET_BYTES).toString('base64url');
     const salt = randomBytes(SALT_BYTES).toString('base64url');
     const tokenHash = hashSecret(secret, salt);
-    const plaintext = `${TOKEN_PREFIX}${id}${TOKEN_SEPARATOR}${secret}`;
+    const plaintext = formatToken(id, secret);
     const createdAt = this.now().toISOString();
 
     await this.neo4j.runQuery(

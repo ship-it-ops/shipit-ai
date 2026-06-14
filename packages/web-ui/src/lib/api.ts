@@ -1050,8 +1050,10 @@ export async function fetchReconciliationStats(): Promise<ReconciliationStats> {
 }
 
 export interface McpServerInfo {
+  // True when the instance enforces sign-in (production) — the remote MCP
+  // surface then requires a per-user token. False in local/dev (auth off).
   authRequired: boolean;
-  transport: 'stdio';
+  transport: 'stdio' | 'http';
 }
 
 // ── OIDC provider ────────────────────────────────────────────────────────────
