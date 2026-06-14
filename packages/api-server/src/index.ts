@@ -7,6 +7,7 @@ import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
 import { SchemaService } from './services/schema-service.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
+import { ConnectorAppStore } from './services/connector-app-store.js';
 import {
   InMemoryConnectorRunStore,
   RedisConnectorRunStore,
@@ -194,10 +195,33 @@ async function main() {
     );
   }
 
+  // Durable connector store (GSM blob). On gsm deployments this is the
+  // authoritative home for runtime-created connectors + their per-org PEMs;
+  // committed config.connectors.instances is only a first-run seed. No-op in
+  // file/local mode, where the local filesystem already persists everything.
+  const connectorAppStore = new ConnectorAppStore({
+    store: secretStore,
+    keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+  });
+  // loadAndMaterialize writes any per-org PEMs back to disk and returns the
+  // instances. `null` = no blob yet (first run / file mode) → seed from the
+  // committed config; a (possibly empty) array = blob is authoritative.
+  const rehydratedConnectors = await connectorAppStore.loadAndMaterialize();
+  let initialConnectors = config.connectors.instances;
+  if (rehydratedConnectors !== null) {
+    initialConnectors = rehydratedConnectors;
+    console.log(`Rehydrated ${rehydratedConnectors.length} connector(s) from GSM connector-apps`);
+  } else if (secretStore.kind === 'gsm' && config.connectors.instances.length > 0) {
+    // First boot on gsm with committed connectors: seed the blob so future
+    // boots are blob-authoritative (and a runtime delete can't resurrect them).
+    await connectorAppStore.sync(config.connectors.instances);
+  }
+
   const connectorRegistry = new ConnectorRegistry({
     localConfigPath: localPath,
-    initial: config.connectors.instances,
+    initial: initialConnectors,
     runStore,
+    durableStore: connectorAppStore,
   });
 
   // GitHubAppService holds a live reference to the same object the

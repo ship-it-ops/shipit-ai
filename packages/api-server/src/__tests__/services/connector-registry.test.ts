@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -202,5 +202,50 @@ describe('ConnectorRegistry — persist() write serialization', () => {
       'gh-fresh',
       'gh-original',
     ]);
+  });
+});
+
+// The registry mirrors its full connector set into the durable store (GSM
+// blob) on every mutation so per-org connectors survive a restart. We assert
+// the hook fires with the current list — the ConnectorAppStore's own tests
+// cover the blob shape + PEM materialization.
+describe('ConnectorRegistry — durableStore sync', () => {
+  let tmpDir: string;
+  let yamlPath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-registry-durable-'));
+    yamlPath = join(tmpDir, 'shipit.config.local.yaml');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('calls durableStore.sync with the current connectors on create, update, and remove', async () => {
+    const sync = vi.fn().mockResolvedValue(undefined);
+    const registry = new ConnectorRegistry({
+      localConfigPath: yamlPath,
+      initial: [],
+      durableStore: { sync },
+    });
+
+    await registry.create({
+      id: 'gh-1',
+      type: 'github',
+      name: 'One',
+      installationId: '1',
+      org: 'org-1',
+    });
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(sync.mock.calls[0][0].map((c: { id: string }) => c.id)).toEqual(['gh-1']);
+
+    await registry.update('gh-1', { name: 'One (renamed)' }, undefined);
+    expect(sync).toHaveBeenCalledTimes(2);
+
+    await registry.remove('gh-1', undefined);
+    expect(sync).toHaveBeenCalledTimes(3);
+    // Last sync reflects the empty set so a deleted connector can't resurrect.
+    expect(sync.mock.calls[2][0]).toEqual([]);
   });
 });

@@ -20,6 +20,7 @@ describe('secret taxonomy', () => {
       'auth-admin-emails': 'shipit-auth-admin-emails',
       'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
       'setup-completed': 'shipit-setup-completed',
+      'connector-apps': 'shipit-connector-apps',
       'neo4j-aura-password': 'shipit-neo4j-aura-password',
       'session-secret': 'shipit-session-secret',
     });
@@ -53,6 +54,10 @@ describe('secret taxonomy', () => {
     expect(() => assertWritable('auth-allow-list-emails')).toThrow(SecretWriteForbiddenError);
     // The latch is read directly from the store, never via env.
     expect(ENV_VAR_FOR['setup-completed']).toBeUndefined();
+    // The connector-apps blob is app-written (durable per-org connectors) and
+    // consumed as a file blob, never via env.
+    expect(() => assertWritable('connector-apps')).not.toThrow();
+    expect(ENV_VAR_FOR['connector-apps']).toBeUndefined();
   });
 
   it('resolves container names from hard-mapped defaults with per-secret env override', () => {

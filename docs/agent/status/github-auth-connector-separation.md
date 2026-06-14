@@ -54,6 +54,17 @@ writes), `__tests__/routes/setup.test.ts` (oauth endpoint + active-mode 409).
   EMPTY version (NEVER disable/destroy — FAILED_PRECONDITION on `latest` crashes
   boot; store only treats NOT_FOUND as empty). Then rollout restart.
 
+## Follow-on (same branch, NOT yet committed): durable per-org connectors
+
+Implemented [connector-apps-gsm-blob-durability](../decisions/connector-apps-gsm-blob-durability.md):
+new `connector-apps` GSM blob + `ConnectorAppStore` (`services/connector-app-store.ts`),
+registry `durableStore` hook in `persistInner()`, boot rehydrate+merge in `index.ts`,
+secret taxonomy entry. api-server tests 281 passing (+8: connector-app-store, registry
+durable hook, types). Needs the infra brief
+[infra-connector-apps-secret](../briefs/infra-connector-apps-secret.md) (new GSM container
+
+- api-server write/read IAM) before it works on-cluster; app-side ships safely first.
+
 ## Blocked on
 
 User approval to commit (memory: never commit/push without explicit approval).
