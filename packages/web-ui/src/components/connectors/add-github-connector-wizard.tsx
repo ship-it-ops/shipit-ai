@@ -49,6 +49,7 @@ import {
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
   buildManifestLaunchUrl,
+  checkGitHubOwner,
   fetchPendingInstanceApp,
   GitHubAppNotConfiguredError,
   type ConnectorAppOverride,
@@ -132,6 +133,14 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // shared path (empty → personal account), required for the per-org
   // path (the App is scoped to this org).
   const [manifestOwner, setManifestOwner] = useState('');
+  // Result of the pre-launch GitHub existence check. `null` = not yet
+  // checked / cleared; otherwise an error message shown inline when the
+  // typed login doesn't exist on GitHub. We block the launch in that case
+  // because GitHub redirects a non-existent org to the user's PERSONAL
+  // App-creation page rather than 404ing. `ownerChecking` disables the
+  // button while the check is in flight.
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [ownerChecking, setOwnerChecking] = useState(false);
 
   // Per-org manifest flow state. The wizard generates `perOrgNonce`
   // when the user clicks "Create App on GitHub" in the per-org card;
@@ -310,9 +319,38 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // at /api/connectors/github/manifest/launch that contains the auto-
   // submitting form; we just open that URL in a new tab. Same-origin
   // means no popup-blocker issues and no async work inside the click.
-  const handleCreateFromTemplate = () => {
+  // Pre-launch guard: confirm the typed login actually exists on GitHub
+  // before opening the App-creation tab. Returns true when it's safe to
+  // proceed. GitHub silently redirects a non-existent org to the user's
+  // PERSONAL App-creation page instead of 404ing, so without this a typo
+  // drops them into creating the App on the wrong account. We block ONLY
+  // on a definitive "does not exist"; an inconclusive check (GitHub
+  // unreachable / rate-limited → exists: null) proceeds rather than
+  // trapping the user.
+  const ensureOwnerExists = async (owner: string): Promise<boolean> => {
+    setOwnerError(null);
+    setOwnerChecking(true);
+    try {
+      const result = await checkGitHubOwner(owner);
+      if (result.exists === false) {
+        setOwnerError(
+          `GitHub has no account named “${owner}”. Check the spelling — the org login is the slug after github.com/.`,
+        );
+        return false;
+      }
+      return true;
+    } finally {
+      setOwnerChecking(false);
+    }
+  };
+
+  const handleCreateFromTemplate = async () => {
+    const owner = manifestOwner.trim();
+    // Owner is optional on the shared path (blank → personal account);
+    // only verify when one was actually typed.
+    if (owner && !(await ensureOwnerExists(owner))) return;
     const url = buildManifestLaunchUrl({
-      ownerOrg: manifestOwner.trim() || undefined,
+      ownerOrg: owner || undefined,
     });
     // noopener+noreferrer keeps the new tab from accessing the wizard's
     // window via `opener` — defense in depth, github.com is trustworthy
@@ -326,9 +364,12 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // polling effect below — when the callback stashes credentials in
   // the pending-instance map, the next poll claims them and fills the
   // override fields. The user never has to copy-paste anything.
-  const handleCreateInstanceApp = () => {
+  const handleCreateInstanceApp = async () => {
     const owner = manifestOwner.trim();
     if (!owner) return;
+    // Per-org Apps are scoped to a real org — block the launch if the
+    // login doesn't exist so the user doesn't end up on personal.
+    if (!(await ensureOwnerExists(owner))) return;
     const nonce =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
@@ -508,7 +549,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         {...p}
                         placeholder="shipitops"
                         value={manifestOwner}
-                        onChange={(e) => setManifestOwner(e.target.value)}
+                        onChange={(e) => {
+                          setManifestOwner(e.target.value);
+                          setOwnerError(null);
+                        }}
                         disabled={perOrgPending}
                       />
                     )}
@@ -521,13 +565,22 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         : '— enter an org login first —'}
                     </code>
                   </p>
+                  {ownerError && (
+                    <p className="text-err text-[11px]" role="alert">
+                      {ownerError}
+                    </p>
+                  )}
                   <Button
                     onClick={handleCreateInstanceApp}
-                    disabled={!manifestOwner.trim() || perOrgPending}
+                    disabled={!manifestOwner.trim() || perOrgPending || ownerChecking}
                   >
                     {perOrgPending ? (
                       <>
                         <Spinner size="sm" /> Waiting for GitHub…
+                      </>
+                    ) : ownerChecking ? (
+                      <>
+                        <Spinner size="sm" /> Checking org…
                       </>
                     ) : (
                       'Create App on GitHub'
@@ -625,7 +678,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                           {...p}
                           placeholder="shipitops"
                           value={manifestOwner}
-                          onChange={(e) => setManifestOwner(e.target.value)}
+                          onChange={(e) => {
+                            setManifestOwner(e.target.value);
+                            setOwnerError(null);
+                          }}
                           disabled={manifestPending}
                         />
                       )}
@@ -657,10 +713,22 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         </>
                       )}
                     </p>
-                    <Button onClick={handleCreateFromTemplate} disabled={manifestPending}>
+                    {ownerError && (
+                      <p className="text-err text-[11px]" role="alert">
+                        {ownerError}
+                      </p>
+                    )}
+                    <Button
+                      onClick={handleCreateFromTemplate}
+                      disabled={manifestPending || ownerChecking}
+                    >
                       {manifestPending ? (
                         <>
                           <Spinner size="sm" /> Waiting for GitHub…
+                        </>
+                      ) : ownerChecking ? (
+                        <>
+                          <Spinner size="sm" /> Checking org…
                         </>
                       ) : (
                         'Create App on GitHub'

@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-12 | Total notes: 47
+Last updated: 2026-06-14 | Total notes: 48
 
 ## Investigations
 
@@ -20,6 +20,7 @@ Last updated: 2026-06-12 | Total notes: 47
 <!-- always-read at session start -->
 
 - [web-ui-dockerfile-pnpm-fix](status/web-ui-dockerfile-pnpm-fix.md) | status | active | standard | 2026-06-10 | corepack enable moved to base stage; verifying build
+- [github-owner-existence-precheck](status/github-owner-existence-precheck.md) | status | active | standard | 2026-06-14 | verify org exists before manifest launch; blocks personal-install trap
 
 ## Decisions
 
