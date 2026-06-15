@@ -156,6 +156,18 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // the credentials arrive (or the user cancels).
   const [perOrgPending, setPerOrgPending] = useState(false);
   const [perOrgNonce, setPerOrgNonce] = useState<string | null>(null);
+  // The App identity once the per-org manifest flow has created it (or
+  // its credentials were recovered from the cross-tab resume record).
+  // Drives a prominent "created & attached" confirmation in the per-org
+  // card. Without it the freshly-created credentials land silently in the
+  // collapsed "I already have an App — paste credentials manually" fields
+  // and the card looks untouched, so users think nothing happened.
+  // null = no manifest-created App yet (fresh, or manual paste).
+  const [perOrgCreatedApp, setPerOrgCreatedApp] = useState<{
+    appId: string;
+    appName: string;
+    keyPath: string;
+  } | null>(null);
 
   const [installationId, setInstallationId] = useState('');
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
@@ -221,6 +233,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     setManifestPending(false);
     setPerOrgPending(false);
     setPerOrgNonce(null);
+    setPerOrgCreatedApp(null);
     probe.reset();
     create.reset();
     updateGlobalApp.reset();
@@ -426,6 +439,11 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       // Another tab already claimed (single-use); apply directly.
       setOverrideAppId(pending.claimed.appId);
       setOverrideKeyPath(pending.claimed.privateKeyPath);
+      setPerOrgCreatedApp({
+        appId: pending.claimed.appId,
+        appName: pending.claimed.appName,
+        keyPath: pending.claimed.privateKeyPath,
+      });
       setPerOrgPending(false);
       setPerOrgNonce(null);
     } else {
@@ -443,6 +461,11 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     const apply = (creds: { appId: string; appName: string; privateKeyPath: string }) => {
       setOverrideAppId(creds.appId);
       setOverrideKeyPath(creds.privateKeyPath);
+      setPerOrgCreatedApp({
+        appId: creds.appId,
+        appName: creds.appName,
+        keyPath: creds.privateKeyPath,
+      });
       setPerOrgPending(false);
       setPerOrgNonce(null);
       setProbeResult(null);
@@ -485,6 +508,17 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       clearInterval(handle);
     };
   }, [perOrgPending, perOrgNonce, open, toast]);
+
+  // Discard a manifest-created App so the user can create or paste a
+  // different one. Drops the attached credentials and the cross-tab
+  // resume record so a later open / sibling tab doesn't re-apply them.
+  const discardPerOrgCreatedApp = () => {
+    setPerOrgCreatedApp(null);
+    setOverrideAppId('');
+    setOverrideKeyPath('');
+    setProbeResult(null);
+    clearPendingGitHubApp();
+  };
 
   // Accepts an explicit id so the installation picker can fire the probe
   // in the same tick as `setInstallationId` — React state updates haven't
@@ -599,85 +633,115 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                     polling effect above watches that slot and fills
                     the override fields below when the callback fires. */}
                 <div className="bg-panel-2 border-border flex flex-col gap-2 rounded border p-3">
-                  <div className="text-text text-[12px] font-medium">
-                    Create the App in this org{' '}
-                    <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
-                      Recommended
-                    </span>
-                  </div>
-                  <p className="text-text-muted text-[12px]">
-                    Opens GitHub with a pre-filled &ldquo;Register GitHub App&rdquo; form scoped to
-                    your org. The App stays private (&ldquo;Only on this account&rdquo;). After you
-                    click Create on GitHub, the wizard auto-fills the App ID and private- key path
-                    below.
-                  </p>
-                  <Field
-                    label="Org login"
-                    required
-                    hint="GitHub org login — the slug after github.com/, e.g. `shipitops`. The org must already exist and you must be an admin."
-                  >
-                    {(p) => (
-                      <Input
-                        {...p}
-                        placeholder="shipitops"
-                        value={manifestOwner}
-                        onChange={(e) => {
-                          setManifestOwner(e.target.value);
-                          setOwnerError(null);
-                        }}
-                        disabled={perOrgPending}
-                      />
-                    )}
-                  </Field>
-                  <p className="text-text-muted text-[11px]">
-                    Will open:{' '}
-                    <code className="text-text">
-                      {manifestOwner.trim()
-                        ? `github.com/organizations/${manifestOwner.trim()}/settings/apps/new`
-                        : '— enter an org login first —'}
-                    </code>
-                  </p>
-                  {ownerError && (
-                    <p className="text-err text-[11px]" role="alert">
-                      {ownerError}
-                    </p>
-                  )}
-                  <Button
-                    onClick={handleCreateInstanceApp}
-                    disabled={!manifestOwner.trim() || perOrgPending || ownerChecking}
-                  >
-                    {perOrgPending ? (
-                      <>
-                        <Spinner size="sm" /> Waiting for GitHub…
-                      </>
-                    ) : ownerChecking ? (
-                      <>
-                        <Spinner size="sm" /> Checking org…
-                      </>
-                    ) : (
-                      'Create App on GitHub'
-                    )}
-                  </Button>
-                  {perOrgPending && (
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-text-muted text-[11px]">
-                        A new tab is open at github.com. Complete the create flow there — this page
-                        polls every 2 s and auto-fills credentials below when ready.
+                  {perOrgCreatedApp ? (
+                    <Banner tone="ok">
+                      <div className="flex flex-col gap-2">
+                        <div className="text-text text-[12px] font-medium">
+                          App &ldquo;{perOrgCreatedApp.appName}&rdquo; created and attached
+                        </div>
+                        <p className="text-text-muted text-[12px]">
+                          Its credentials are attached to this connector. Click{' '}
+                          <strong>Next</strong> to continue.
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          <Row label="App ID" value={<code>{perOrgCreatedApp.appId}</code>} />
+                          <Row
+                            label="Private key"
+                            value={<code>{perOrgCreatedApp.keyPath}</code>}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={discardPerOrgCreatedApp}
+                          className="text-text-muted hover:text-text self-start text-[11px] underline"
+                        >
+                          Create a different App
+                        </button>
+                      </div>
+                    </Banner>
+                  ) : (
+                    <>
+                      <div className="text-text text-[12px] font-medium">
+                        Create the App in this org{' '}
+                        <span className="text-text-muted text-[10px] tracking-[1.4px] uppercase">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-text-muted text-[12px]">
+                        Opens GitHub with a pre-filled &ldquo;Register GitHub App&rdquo; form scoped
+                        to your org. The App stays private (&ldquo;Only on this account&rdquo;).
+                        After you click Create on GitHub, the wizard auto-fills the App ID and
+                        private- key path below.
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPerOrgPending(false);
-                          setPerOrgNonce(null);
-                          // Explicit abandon — drop the resume record so a
-                          // later open / sibling tab doesn't re-arm it.
-                          clearPendingGitHubApp();
-                        }}
-                        className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
+                      <Field
+                        label="Org login"
+                        required
+                        hint="GitHub org login — the slug after github.com/, e.g. `shipitops`. The org must already exist and you must be an admin."
                       >
-                        Cancel
-                      </button>
-                    </div>
+                        {(p) => (
+                          <Input
+                            {...p}
+                            placeholder="shipitops"
+                            value={manifestOwner}
+                            onChange={(e) => {
+                              setManifestOwner(e.target.value);
+                              setOwnerError(null);
+                            }}
+                            disabled={perOrgPending}
+                          />
+                        )}
+                      </Field>
+                      <p className="text-text-muted text-[11px]">
+                        Will open:{' '}
+                        <code className="text-text">
+                          {manifestOwner.trim()
+                            ? `github.com/organizations/${manifestOwner.trim()}/settings/apps/new`
+                            : '— enter an org login first —'}
+                        </code>
+                      </p>
+                      {ownerError && (
+                        <p className="text-err text-[11px]" role="alert">
+                          {ownerError}
+                        </p>
+                      )}
+                      <Button
+                        onClick={handleCreateInstanceApp}
+                        disabled={!manifestOwner.trim() || perOrgPending || ownerChecking}
+                      >
+                        {perOrgPending ? (
+                          <>
+                            <Spinner size="sm" /> Waiting for GitHub…
+                          </>
+                        ) : ownerChecking ? (
+                          <>
+                            <Spinner size="sm" /> Checking org…
+                          </>
+                        ) : (
+                          'Create App on GitHub'
+                        )}
+                      </Button>
+                      {perOrgPending && (
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-text-muted text-[11px]">
+                            A new tab is open at github.com. Complete the create flow there — this
+                            page polls every 2 s and auto-fills credentials below when ready.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPerOrgPending(false);
+                              setPerOrgNonce(null);
+                              // Explicit abandon — drop the resume record so a
+                              // later open / sibling tab doesn't re-arm it.
+                              clearPendingGitHubApp();
+                            }}
+                            className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
