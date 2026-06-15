@@ -316,10 +316,12 @@ const authRoutes: FastifyPluginAsync = async (server) => {
         request.session.principal = principal;
         request.session.org = 'default';
 
-        // Upsert the signed-in user into the graph. Best-effort and awaited
-        // only so a slow bus is bounded by the publish itself; it swallows
-        // its own errors and never throws, so login proceeds regardless.
-        await upsertLoginPerson(request, loginIdentity);
+        // Upsert the signed-in user into the graph. Fire-and-forget so the
+        // redirect is never coupled to event-bus/Redis latency — a slow or
+        // reconnecting Redis (ioredis offline queue) would otherwise stall the
+        // login redirect even though the publish swallows its own errors. The
+        // session principal is already set, so login itself always succeeds.
+        upsertLoginPerson(request, loginIdentity);
 
         return reply.redirect(sanitizeRedirect(stateRecord.redirectTo));
       } catch (err) {
@@ -409,24 +411,21 @@ const authRoutes: FastifyPluginAsync = async (server) => {
   }
 
   // Best-effort: publish the authenticated user as a Person so they show up in
-  // the catalog/graph alongside connector-sourced people. Wrapped so a bus or
-  // Redis failure can NEVER fail or delay a login — the session is already set
-  // by the time this runs. No-op when the event bus isn't wired (tests,
-  // Redis-less deployments).
-  async function upsertLoginPerson(
-    request: FastifyRequest,
-    identity: LoginIdentity,
-  ): Promise<void> {
+  // the catalog/graph alongside connector-sourced people. Fire-and-forget — the
+  // publish promise is intentionally NOT awaited by the caller so a bus/Redis
+  // stall can never fail OR delay a login (the session is already set by the
+  // time this runs). The `.catch` swallows + logs failures so the detached
+  // promise never rejects unhandled. No-op when the event bus isn't wired
+  // (tests, Redis-less deployments).
+  function upsertLoginPerson(request: FastifyRequest, identity: LoginIdentity): void {
     const bus = request.server.eventBus;
     if (!bus) return;
-    try {
-      await bus.publish([buildLoginPersonEntity(identity)], 'login');
-    } catch (err) {
+    void bus.publish([buildLoginPersonEntity(identity)], 'login').catch((err: unknown) => {
       request.log.warn(
         { err, provider: identity.provider },
         'login Person upsert failed (login still succeeded)',
       );
-    }
+    });
   }
 };
 
