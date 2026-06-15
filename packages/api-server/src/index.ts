@@ -7,6 +7,7 @@ import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
 import { SchemaService } from './services/schema-service.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
+import { ConnectorAppStore } from './services/connector-app-store.js';
 import {
   InMemoryConnectorRunStore,
   RedisConnectorRunStore,
@@ -194,10 +195,33 @@ async function main() {
     );
   }
 
+  // Durable connector store (GSM blob). On gsm deployments this is the
+  // authoritative home for runtime-created connectors + their per-org PEMs;
+  // committed config.connectors.instances is only a first-run seed. No-op in
+  // file/local mode, where the local filesystem already persists everything.
+  const connectorAppStore = new ConnectorAppStore({
+    store: secretStore,
+    keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+  });
+  // loadAndMaterialize writes any per-org PEMs back to disk and returns the
+  // instances. `null` = no blob yet (first run / file mode) → seed from the
+  // committed config; a (possibly empty) array = blob is authoritative.
+  const rehydratedConnectors = await connectorAppStore.loadAndMaterialize();
+  let initialConnectors = config.connectors.instances;
+  if (rehydratedConnectors !== null) {
+    initialConnectors = rehydratedConnectors;
+    console.log(`Rehydrated ${rehydratedConnectors.length} connector(s) from GSM connector-apps`);
+  } else if (secretStore.kind === 'gsm' && config.connectors.instances.length > 0) {
+    // First boot on gsm with committed connectors: seed the blob so future
+    // boots are blob-authoritative (and a runtime delete can't resurrect them).
+    await connectorAppStore.sync(config.connectors.instances);
+  }
+
   const connectorRegistry = new ConnectorRegistry({
     localConfigPath: localPath,
-    initial: config.connectors.instances,
+    initial: initialConnectors,
     runStore,
+    durableStore: connectorAppStore,
   });
 
   // GitHubAppService holds a live reference to the same object the
@@ -261,9 +285,14 @@ async function main() {
   // `per-org-github-app-override` for the broader pattern.
   const gh = config.connectors.github.app;
   let scheduler: SyncScheduler | null = null;
+  // Hoisted so the same client the scheduler publishes through is also handed
+  // to createServer — the login callback uses it to upsert the authenticated
+  // user as a Person (best-effort; see routes/auth.ts). null when Redis is
+  // absent or the client fails to construct.
+  let eventBus: BullMQEventBusClient | null = null;
   if (config.backend.redis.url) {
     try {
-      const eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
+      eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
       scheduler = new SyncScheduler({
         redisUrl: config.backend.redis.url,
         registry: connectorRegistry,
@@ -316,6 +345,9 @@ async function main() {
     setupService: new SetupService({ secretStore }),
     configPaths: { basePath: configPaths.basePath, localPath },
     config,
+    // Same client the scheduler publishes through; lets the login callback
+    // upsert the signed-in user as a Person. undefined when Redis is absent.
+    eventBus: eventBus ?? undefined,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two
     // ioredis instances for sibling concerns. When auth is disabled
@@ -341,6 +373,9 @@ async function main() {
   const shutdown = async () => {
     await server.close();
     if (scheduler) await scheduler.close();
+    // The event bus owns its own Queue + stream connections (the scheduler's
+    // close() only tears down the worker/queue it created), so close it here.
+    if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
     await neo4jService.close();
     process.exit(0);

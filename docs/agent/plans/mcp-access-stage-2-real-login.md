@@ -10,6 +10,13 @@ importance: standard
 
 # MCP Access Stage 2 — real login (remote transport + tokens)
 
+> **Status 2026-06-14:** 2b (HTTP transport), 2c (token API + Neo4j `_AccessToken`
+> TokenService), 2d (Settings → API Keys UI), and **2a (mcp-server bearer enforcement)** are
+> all implemented + tested app-side. Token crypto is shared via
+> `@shipit-ai/shared/auth/token-crypto`. See
+> [mcp-token-auth-stage-2a](../decisions/mcp-token-auth-stage-2a.md). Remaining: **deploy +
+> expose the mcp-server** (infra brief `briefs/infra-mcp-server-deploy.md`).
+
 ## Goal
 
 Today the MCP server is stdio-only and `backend.mcp.apiKeySecret` is wired in

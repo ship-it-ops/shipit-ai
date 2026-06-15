@@ -85,6 +85,24 @@ export class SetupService {
     this.env.SHIPIT_AUTH_ADMINS = trimmed;
   }
 
+  // Persist the login OAuth App's client id/secret. "Sign in with GitHub"
+  // runs on a classic OAuth App the operator creates by hand (GitHub has
+  // no manifest/one-click flow for OAuth Apps); the wizard collects the
+  // two values and stores them here. Same durability model as the admin
+  // email: GSM is the durable home, the env writes make the values visible
+  // to status()/complete() this process, and the next boot re-hydrates.
+  async setOAuthClient(clientId: string, clientSecret: string): Promise<void> {
+    const id = clientId.trim();
+    const secret = clientSecret.trim();
+    if (!id || !secret) {
+      throw new InvalidOAuthClientError();
+    }
+    await this.secretStore.write('github-oauth-client-id', id);
+    await this.secretStore.write('github-oauth-client-secret', secret);
+    this.env.GITHUB_OAUTH_CLIENT_ID = id;
+    this.env.GITHUB_OAUTH_CLIENT_SECRET = secret;
+  }
+
   // Re-validates against a FRESH config load + the derivation overlay —
   // i.e. exactly the decision the next boot will make. Returns the missing
   // gates instead of throwing so the route can 409 with actionable detail.
@@ -121,5 +139,12 @@ export class InvalidAdminEmailError extends Error {
   constructor(email: string) {
     super(`"${email}" is not a valid email address.`);
     this.name = 'InvalidAdminEmailError';
+  }
+}
+
+export class InvalidOAuthClientError extends Error {
+  constructor() {
+    super('Both an OAuth client ID and client secret are required.');
+    this.name = 'InvalidOAuthClientError';
   }
 }

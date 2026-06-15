@@ -8,6 +8,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { loadConfig, type McpServerConfig } from './config.js';
 import { createNeo4jClient, type Neo4jClient } from './neo4j-client.js';
 import { createMcpServer } from './server.js';
+import { authorizeMcpRequest } from './auth.js';
 
 export { createMcpServer } from './server.js';
 export { loadConfig } from './config.js';
@@ -44,6 +45,22 @@ async function startStdio(neo4j: Neo4jClient, config: McpServerConfig): Promise<
   await server.connect(transport);
 }
 
+// Write a JSON auth-rejection. 401s advertise `WWW-Authenticate: Bearer` so
+// compliant MCP clients know to attach a token. The message is generic — never
+// echo the presented token.
+function sendAuthError(
+  res: ServerResponse,
+  status: 401 | 403,
+  code: string,
+  message: string,
+): void {
+  if (res.headersSent) return;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (status === 401) headers['WWW-Authenticate'] = 'Bearer';
+  res.writeHead(status, headers);
+  res.end(JSON.stringify({ error: { code, message } }));
+}
+
 async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: number): Promise<void> {
   // Stateless mode: one transport + one server reused across requests. The
   // graph tools have no per-session state, so sharing avoids the cost of
@@ -77,6 +94,17 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
 
     if (url.pathname !== MCP_PATH) {
       res.writeHead(404).end('Not found');
+      return;
+    }
+
+    // Stage 2a auth gate: the network surface requires a per-user token
+    // (minted in the web UI's Settings → API Keys, stored as a Neo4j
+    // `_AccessToken`). stdio stays local-trust and never reaches here. Every
+    // MCP method (initialize/tools.list/tools.call) is gated — the check runs
+    // before the JSON-RPC transport sees the request.
+    const decision = await authorizeMcpRequest(req.headers.authorization, neo4j);
+    if (!decision.ok) {
+      sendAuthError(res, decision.status, decision.code, decision.message);
       return;
     }
 

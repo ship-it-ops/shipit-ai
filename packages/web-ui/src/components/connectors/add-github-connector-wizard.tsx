@@ -48,7 +48,14 @@ import {
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
+  readPendingGitHubApp,
+  writePendingGitHubApp,
+  markPendingGitHubAppClaimed,
+  clearPendingGitHubApp,
+} from '@/lib/pending-github-app';
+import {
   buildManifestLaunchUrl,
+  checkGitHubOwner,
   fetchPendingInstanceApp,
   GitHubAppNotConfiguredError,
   type ConnectorAppOverride,
@@ -132,6 +139,14 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // shared path (empty → personal account), required for the per-org
   // path (the App is scoped to this org).
   const [manifestOwner, setManifestOwner] = useState('');
+  // Result of the pre-launch GitHub existence check. `null` = not yet
+  // checked / cleared; otherwise an error message shown inline when the
+  // typed login doesn't exist on GitHub. We block the launch in that case
+  // because GitHub redirects a non-existent org to the user's PERSONAL
+  // App-creation page rather than 404ing. `ownerChecking` disables the
+  // button while the check is in flight.
+  const [ownerError, setOwnerError] = useState<string | null>(null);
+  const [ownerChecking, setOwnerChecking] = useState(false);
 
   // Per-org manifest flow state. The wizard generates `perOrgNonce`
   // when the user clicks "Create App on GitHub" in the per-org card;
@@ -310,9 +325,38 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // at /api/connectors/github/manifest/launch that contains the auto-
   // submitting form; we just open that URL in a new tab. Same-origin
   // means no popup-blocker issues and no async work inside the click.
-  const handleCreateFromTemplate = () => {
+  // Pre-launch guard: confirm the typed login actually exists on GitHub
+  // before opening the App-creation tab. Returns true when it's safe to
+  // proceed. GitHub silently redirects a non-existent org to the user's
+  // PERSONAL App-creation page instead of 404ing, so without this a typo
+  // drops them into creating the App on the wrong account. We block ONLY
+  // on a definitive "does not exist"; an inconclusive check (GitHub
+  // unreachable / rate-limited → exists: null) proceeds rather than
+  // trapping the user.
+  const ensureOwnerExists = async (owner: string): Promise<boolean> => {
+    setOwnerError(null);
+    setOwnerChecking(true);
+    try {
+      const result = await checkGitHubOwner(owner);
+      if (result.exists === false) {
+        setOwnerError(
+          `GitHub has no account named “${owner}”. Check the spelling — the org login is the slug after github.com/.`,
+        );
+        return false;
+      }
+      return true;
+    } finally {
+      setOwnerChecking(false);
+    }
+  };
+
+  const handleCreateFromTemplate = async () => {
+    const owner = manifestOwner.trim();
+    // Owner is optional on the shared path (blank → personal account);
+    // only verify when one was actually typed.
+    if (owner && !(await ensureOwnerExists(owner))) return;
     const url = buildManifestLaunchUrl({
-      ownerOrg: manifestOwner.trim() || undefined,
+      ownerOrg: owner || undefined,
     });
     // noopener+noreferrer keeps the new tab from accessing the wizard's
     // window via `opener` — defense in depth, github.com is trustworthy
@@ -326,9 +370,12 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   // polling effect below — when the callback stashes credentials in
   // the pending-instance map, the next poll claims them and fills the
   // override fields. The user never has to copy-paste anything.
-  const handleCreateInstanceApp = () => {
+  const handleCreateInstanceApp = async () => {
     const owner = manifestOwner.trim();
     if (!owner) return;
+    // Per-org Apps are scoped to a real org — block the launch if the
+    // login doesn't exist so the user doesn't end up on personal.
+    if (!(await ensureOwnerExists(owner))) return;
     const nonce =
       typeof crypto !== 'undefined' && 'randomUUID' in crypto
         ? crypto.randomUUID()
@@ -338,10 +385,54 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       target: 'instance',
       nonce,
     });
+    // Persist the nonce + in-progress fields so the claim survives a fresh
+    // page load. If the user returns via the callback page's "Return to
+    // ShipIt-AI →" link (a brand-new tab/wizard) instead of switching back
+    // to this tab, the returning wizard restores these and claims the
+    // credentials from this same nonce. Without this the creds expire
+    // unclaimed in the server's 15-minute pending map.
+    writePendingGitHubApp({
+      nonce,
+      mode: 'per-org',
+      manifestOwner: owner,
+      connectorId,
+      name,
+      org,
+      scope,
+      entities,
+    });
     window.open(url, '_blank', 'noopener,noreferrer');
     setPerOrgNonce(nonce);
     setPerOrgPending(true);
   };
+
+  // Resume a per-org manifest flow that was started in another tab (or
+  // this one before a reload). When the dialog opens, if a non-stale
+  // pending record exists, restore the user's fields and either apply the
+  // already-claimed credentials or re-arm polling for the same nonce.
+  // Runs once per open transition.
+  useEffect(() => {
+    if (!open) return;
+    const pending = readPendingGitHubApp();
+    if (!pending || pending.mode !== 'per-org') return;
+    setMode('per-org');
+    setManifestOwner(pending.manifestOwner);
+    if (pending.connectorId) setConnectorId(pending.connectorId);
+    if (pending.name) setName(pending.name);
+    if (pending.org) setOrg(pending.org);
+    setScope(pending.scope);
+    setEntities(pending.entities);
+    if (pending.claimed) {
+      // Another tab already claimed (single-use); apply directly.
+      setOverrideAppId(pending.claimed.appId);
+      setOverrideKeyPath(pending.claimed.privateKeyPath);
+      setPerOrgPending(false);
+      setPerOrgNonce(null);
+    } else {
+      setPerOrgNonce(pending.nonce);
+      setPerOrgPending(true);
+    }
+  }, [open]);
 
   // Poll for pending-instance credentials. 2-second cadence matches the
   // global-App polling under the shared flow. Stops when credentials
@@ -349,21 +440,40 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   useEffect(() => {
     if (!perOrgPending || !perOrgNonce || !open) return;
     let cancelled = false;
+    const apply = (creds: { appId: string; appName: string; privateKeyPath: string }) => {
+      setOverrideAppId(creds.appId);
+      setOverrideKeyPath(creds.privateKeyPath);
+      setPerOrgPending(false);
+      setPerOrgNonce(null);
+      setProbeResult(null);
+      toast({
+        variant: 'ok',
+        title: 'GitHub App created',
+        description: `App ${creds.appName} (id ${creds.appId}) credentials attached. Continue the wizard.`,
+      });
+    };
     const handle = setInterval(() => {
       void (async () => {
         try {
           const creds = await fetchPendingInstanceApp(perOrgNonce);
-          if (cancelled || !creds) return;
-          setOverrideAppId(creds.appId);
-          setOverrideKeyPath(creds.privateKeyPath);
-          setPerOrgPending(false);
-          setPerOrgNonce(null);
-          setProbeResult(null);
-          toast({
-            variant: 'ok',
-            title: 'GitHub App created',
-            description: `App ${creds.appName} (id ${creds.appId}) credentials attached. Continue the wizard.`,
-          });
+          if (cancelled) return;
+          if (creds) {
+            // We won the single-use claim. Stash the credentials in the
+            // shared record so a sibling tab polling the same nonce (now
+            // 404ing) can still recover them.
+            const claimed = {
+              appId: creds.appId,
+              appName: creds.appName,
+              privateKeyPath: creds.privateKeyPath,
+            };
+            markPendingGitHubAppClaimed(claimed);
+            apply(claimed);
+            return;
+          }
+          // 404 = not stashed yet OR another tab already claimed it. Check
+          // the shared record for credentials a sibling tab recovered.
+          const claimed = readPendingGitHubApp()?.claimed;
+          if (claimed) apply(claimed);
         } catch {
           // Network blip — keep polling. The TTL on the pending entry
           // is 15 minutes; the user can cancel via the link below.
@@ -424,6 +534,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       // 3. Trigger initial sync.
       await triggerSync.mutateAsync(created.id);
 
+      // The per-org manifest flow is done — drop the cross-tab resume
+      // record so a later wizard open doesn't try to restore it.
+      clearPendingGitHubApp();
       toast({
         variant: 'ok',
         title: 'GitHub connector created',
@@ -508,7 +621,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         {...p}
                         placeholder="shipitops"
                         value={manifestOwner}
-                        onChange={(e) => setManifestOwner(e.target.value)}
+                        onChange={(e) => {
+                          setManifestOwner(e.target.value);
+                          setOwnerError(null);
+                        }}
                         disabled={perOrgPending}
                       />
                     )}
@@ -521,13 +637,22 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         : '— enter an org login first —'}
                     </code>
                   </p>
+                  {ownerError && (
+                    <p className="text-err text-[11px]" role="alert">
+                      {ownerError}
+                    </p>
+                  )}
                   <Button
                     onClick={handleCreateInstanceApp}
-                    disabled={!manifestOwner.trim() || perOrgPending}
+                    disabled={!manifestOwner.trim() || perOrgPending || ownerChecking}
                   >
                     {perOrgPending ? (
                       <>
                         <Spinner size="sm" /> Waiting for GitHub…
+                      </>
+                    ) : ownerChecking ? (
+                      <>
+                        <Spinner size="sm" /> Checking org…
                       </>
                     ) : (
                       'Create App on GitHub'
@@ -544,6 +669,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         onClick={() => {
                           setPerOrgPending(false);
                           setPerOrgNonce(null);
+                          // Explicit abandon — drop the resume record so a
+                          // later open / sibling tab doesn't re-arm it.
+                          clearPendingGitHubApp();
                         }}
                         className="text-text-muted hover:text-text shrink-0 text-[11px] underline"
                       >
@@ -625,7 +753,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                           {...p}
                           placeholder="shipitops"
                           value={manifestOwner}
-                          onChange={(e) => setManifestOwner(e.target.value)}
+                          onChange={(e) => {
+                            setManifestOwner(e.target.value);
+                            setOwnerError(null);
+                          }}
                           disabled={manifestPending}
                         />
                       )}
@@ -657,10 +788,22 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                         </>
                       )}
                     </p>
-                    <Button onClick={handleCreateFromTemplate} disabled={manifestPending}>
+                    {ownerError && (
+                      <p className="text-err text-[11px]" role="alert">
+                        {ownerError}
+                      </p>
+                    )}
+                    <Button
+                      onClick={handleCreateFromTemplate}
+                      disabled={manifestPending || ownerChecking}
+                    >
                       {manifestPending ? (
                         <>
                           <Spinner size="sm" /> Waiting for GitHub…
+                        </>
+                      ) : ownerChecking ? (
+                        <>
+                          <Spinner size="sm" /> Checking org…
                         </>
                       ) : (
                         'Create App on GitHub'

@@ -296,8 +296,8 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         },
       });
     }
-    const { webhookUrl, redirectUrl, callbackUrl } = manifestUrlsFromRequest(server, request);
-    const result = svc.buildManifest({ webhookUrl, redirectUrl, callbackUrl });
+    const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
+    const result = svc.buildManifest({ webhookUrl, redirectUrl });
     reply.header('Cache-Control', 'private, max-age=30');
     // For the JSON debug view, return the manifest + a sibling
     // `_warnings` array so curl users see why hook_attributes is absent.
@@ -312,6 +312,76 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     }
     return result.manifest;
   });
+
+  // GET /api/connectors/github/owner-check?owner=<login> — does this
+  // GitHub account actually exist?
+  //
+  // Why this exists: the manifest/launch flow opens
+  // `github.com/organizations/<owner>/settings/apps/new`. For a
+  // non-existent org GitHub does NOT 404 — it silently redirects the user
+  // to their PERSONAL `/settings/apps/new`, so a typo'd org name drops
+  // them into creating the App on their own account with no warning. The
+  // wizard calls this endpoint before opening the tab and blocks the
+  // launch when `exists === false`.
+  //
+  // Unauthenticated `GET /users/{login}` covers both User and
+  // Organization accounts (the `type` field distinguishes them) and
+  // returns 404 for a login that doesn't exist. Per the product decision
+  // we block ONLY on existence, so the `type` is informational.
+  //
+  // Failure policy: if GitHub is unreachable or rate-limits us
+  // (unauthenticated 403), we return `exists: null` ("couldn't verify")
+  // rather than a hard error — the wizard then proceeds without blocking
+  // so a GitHub-side hiccup never traps onboarding.
+  server.get<{ Querystring: { owner?: string } }>(
+    '/github/owner-check',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const owner = (request.query.owner ?? '').trim();
+      if (!owner || !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(owner)) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'owner must be a GitHub login (letters, digits, dashes; max 39 chars).',
+        });
+      }
+      reply.header('Cache-Control', 'no-store');
+      try {
+        // 5s ceiling so a slow GitHub never hangs the wizard's button.
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 5000);
+        let res: Response;
+        try {
+          res = await fetch(`https://api.github.com/users/${encodeURIComponent(owner)}`, {
+            headers: {
+              Accept: 'application/vnd.github+json',
+              'User-Agent': 'shipit-ai-connector-wizard',
+            },
+            signal: ac.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (res.status === 404) {
+          return { owner, exists: false, type: null, htmlUrl: null };
+        }
+        if (res.ok) {
+          const body = (await res.json()) as { type?: string; html_url?: string };
+          return {
+            owner,
+            exists: true,
+            type: body.type ?? null,
+            htmlUrl: body.html_url ?? `https://github.com/${owner}`,
+          };
+        }
+        // 403 (rate limit), 5xx, anything else → unknown, don't block.
+        request.log.warn({ status: res.status, owner }, 'owner-check: GitHub returned non-OK');
+        return { owner, exists: null, type: null, htmlUrl: null };
+      } catch (err) {
+        request.log.warn({ err, owner }, 'owner-check: GitHub request failed');
+        return { owner, exists: null, type: null, htmlUrl: null };
+      }
+    },
+  );
 
   // GET /api/connectors/github/manifest/launch?owner=<org-or-blank> —
   // The real entry point. Returns an HTML page with an auto-submitting
@@ -342,8 +412,8 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           );
       }
 
-      const { webhookUrl, redirectUrl, callbackUrl } = manifestUrlsFromRequest(server, request);
-      const built = svc.buildManifest({ webhookUrl, redirectUrl, callbackUrl });
+      const { webhookUrl, redirectUrl } = manifestUrlsFromRequest(server, request);
+      const built = svc.buildManifest({ webhookUrl, redirectUrl });
       // Per-org card passes `target=instance&nonce=<uuid>` so the
       // callback knows NOT to write credentials to the global slot
       // (which would surprise users who picked per-org explicitly).
@@ -971,17 +1041,16 @@ function escapeHtml(value: string): string {
 function manifestUrlsFromRequest(
   server: FastifyInstance,
   request: FastifyRequest,
-): { webhookUrl: string; redirectUrl: string; callbackUrl: string } {
+): { webhookUrl: string; redirectUrl: string } {
   const cfg = (server as unknown as { config?: Config }).config;
   const webhookUrl =
     cfg?.connectors.github.app.webhookPublicUrl ?? 'http://localhost:3001/api/webhooks/github';
   const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
   const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
   const redirectUrl = `${proto}://${host}/api/connectors/github/app-manifest-callback`;
-  // OAuth sign-in callback the App must carry for "Sign in with GitHub"
-  // to work — must match the redirect_uri the GitHubProvider sends.
-  const callbackUrl = `${proto}://${host}/api/auth/callback/github`;
-  return { webhookUrl, redirectUrl, callbackUrl };
+  // No login callback here: the manifest mints a connector-only App. "Sign
+  // in with GitHub" uses a separate classic OAuth App configured in setup.
+  return { webhookUrl, redirectUrl };
 }
 
 // HTML wrapper for the auto-submitting manifest form. Same-origin, served

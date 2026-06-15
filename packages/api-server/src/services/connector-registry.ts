@@ -5,6 +5,7 @@ import { parseDocument } from 'yaml';
 import type { ConnectorInstanceConfig, GitHubConnectorConfig, LastRun } from '@shipit-ai/shared';
 import { connectorInstanceSchema } from '@shipit-ai/shared';
 import { InMemoryConnectorRunStore, type ConnectorRunStore } from './connector-run-store.js';
+import type { ConnectorDurableStore } from './connector-app-store.js';
 
 // ── ETag conflict ─────────────────────────────────────────────────────────
 // Mirrors SchemaVersionConflictError so the routes can map both to HTTP 409
@@ -88,6 +89,10 @@ export interface ConnectorRegistryOptions {
   // can construct a registry without Redis. Production wiring in
   // packages/api-server/src/index.ts supplies a RedisConnectorRunStore.
   runStore?: ConnectorRunStore;
+  // Optional durable mirror (GSM blob) for runtime-created connectors. When
+  // present, every persist() also writes the full connector set so per-org
+  // connectors + their PEMs survive a pod restart. No-op in file/local mode.
+  durableStore?: ConnectorDurableStore;
 }
 
 // Canonical-JSON serialization for hashing. JSON.stringify with sorted keys
@@ -135,6 +140,7 @@ export class ConnectorRegistry {
   private connectors = new Map<string, ConnectorInstanceConfig>();
   private runner: ConnectorRunner;
   private runStore: ConnectorRunStore;
+  private durableStore?: ConnectorDurableStore;
   // Serializes persist() so two concurrent writers can't read → serialize
   // → rename independently and silently drop one another's changes. The
   // wizard's POST /connectors → POST /:id/sync sequence hits this risk on
@@ -146,6 +152,7 @@ export class ConnectorRegistry {
     this.localConfigPath = opts.localConfigPath;
     this.runner = opts.runner ?? new NoopRunner();
     this.runStore = opts.runStore ?? new InMemoryConnectorRunStore();
+    this.durableStore = opts.durableStore;
     for (const c of opts.initial) {
       // Strip lastRuns from any legacy YAML that still carries it — runs
       // live in `runStore` now (Redis in prod, in-memory in tests). Keeping
@@ -364,6 +371,14 @@ export class ConnectorRegistry {
     );
     writeFileSync(tmp, next, 'utf-8');
     renameSync(tmp, this.localConfigPath);
+
+    // Mirror the full connector set into the durable store (GSM blob) so
+    // runtime-created connectors + their PEMs survive a restart. No-op in
+    // file/local mode; best-effort (the store swallows + logs its own errors,
+    // so a GSM hiccup never fails the mutation that just persisted to YAML).
+    if (this.durableStore) {
+      await this.durableStore.sync(this.list());
+    }
   }
 }
 

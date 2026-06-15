@@ -11,7 +11,19 @@ import type { SchemaService } from './schema-service.js';
 // Used by AUTHORITATIVE_ORDER when the schema doesn't carry a per-property
 // override list. Mirrors the order suggested in design doc §5 and matches the
 // seed-demo's source attribution.
-const DEFAULT_SOURCE_ORDER = ['backstage', 'kubernetes', 'github', 'datadog', 'jira', 'manual'];
+// `login` ranks just below `github` (mirrors core-writer's SOURCE_PRIORITY) so
+// the read/display path agrees with the writer on overlapping login-vs-github
+// claims. NB: the pre-existing `manual` disagreement between this list and the
+// writer's is a separate cleanup (see open-questions/manual-edit-write-path.md).
+const DEFAULT_SOURCE_ORDER = [
+  'backstage',
+  'kubernetes',
+  'github',
+  'login',
+  'datadog',
+  'jira',
+  'manual',
+];
 
 function pickByStrategy(
   claims: PropertyClaim[],

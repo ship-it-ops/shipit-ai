@@ -762,10 +762,11 @@ describe('GitHub App manifest flow', () => {
     expect(body.redirect_url).toBe(
       'https://shipit.local:3001/api/connectors/github/app-manifest-callback',
     );
-    // Without callback_urls the created App can't serve OAuth sign-in —
-    // GitHub errors with "This GitHub App must be configured with a
-    // callback URL" on the first login attempt (portal-demo, 2026-06-12).
-    expect(body.callback_urls).toEqual(['https://shipit.local:3001/api/auth/callback/github']);
+    // Connector-only manifest: NO login `callback_urls`. "Sign in with
+    // GitHub" runs on a separate classic OAuth App provisioned in the
+    // setup wizard, so a connector App never carries the login callback
+    // (and creating one can't clobber the login OAuth client).
+    expect(body.callback_urls).toBeUndefined();
     // Static fields from the template flow through untouched.
     expect(body.name).toBe('ShipIt-AI Test');
     expect(body.default_permissions).toEqual({ contents: 'read' });
@@ -1116,5 +1117,91 @@ describe('GitHub App manifest flow', () => {
       url: '/api/connectors/github/manifest/pending-instance/never-issued',
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+// owner-check backs the wizard's pre-launch guard: before opening the
+// `github.com/organizations/<owner>/settings/apps/new` tab, the wizard
+// confirms the org actually exists. GitHub redirects a non-existent org
+// to the user's PERSONAL App-creation page instead of 404ing, so without
+// this a typo silently lands users on the wrong account. We stub global
+// `fetch` so the suite never hits the real GitHub API.
+describe('GitHub owner-check endpoint', () => {
+  let server: FastifyInstance;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-owner-check-'));
+    const registry = new ConnectorRegistry({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      initial: [],
+    });
+    server = await createServer({ connectorRegistry: registry, config: makeTestConfig() });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    vi.restoreAllMocks();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns exists:true with type when GitHub finds the account', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ type: 'Organization', html_url: 'https://github.com/shipitops' }),
+        {
+          status: 200,
+        },
+      ),
+    );
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/owner-check?owner=shipitops',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ owner: 'shipitops', exists: true, type: 'Organization' });
+  });
+
+  it('returns exists:false when GitHub 404s the login', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('Not Found', { status: 404 }));
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/owner-check?owner=definitely-not-a-real-org',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ exists: false, type: null });
+  });
+
+  it('returns exists:null (do not block) when GitHub rate-limits or errors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('rate limited', { status: 403 }),
+    );
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/owner-check?owner=shipitops',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().exists).toBeNull();
+  });
+
+  it('returns exists:null (do not block) when the GitHub request throws', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('ENOTFOUND'));
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/owner-check?owner=shipitops',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().exists).toBeNull();
+  });
+
+  it('rejects a malformed owner with 400 before calling GitHub', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch');
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/owner-check?owner=' + encodeURIComponent('bad/slug!'),
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('VALIDATION_ERROR');
+    expect(spy).not.toHaveBeenCalled();
   });
 });

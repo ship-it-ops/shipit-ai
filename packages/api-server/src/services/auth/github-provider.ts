@@ -1,7 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import type { AuthConfig } from '@shipit-ai/shared';
 
-// "Sign in with GitHub" via a standard OAuth App (not GitHub App).
+// "Sign in with GitHub" via a standard OAuth App (NOT a GitHub App). The
+// OAuth App is created by the operator and its client id/secret are
+// captured in the first-run setup wizard — distinct from the GitHub App(s)
+// the Connector Hub mints for data sync. Keeping them separate means the
+// `user:email` scope below actually returns verified emails (a GitHub App
+// would need a dedicated account permission) and a connector App creation
+// can never overwrite the login client.
+//
 // Plain HTTP — the dance is small enough that pulling in @octokit/oauth-app
 // for it would just add layers between us and the protocol. Token storage
 // is short-lived and lives in process memory inside this exchange — the

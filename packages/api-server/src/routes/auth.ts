@@ -4,6 +4,7 @@ import type { OidcProvider } from '../services/auth/oidc-provider.js';
 import type { GitHubProvider } from '../services/auth/github-provider.js';
 import { GitHubAccessDeniedError } from '../services/auth/github-provider.js';
 import type { AuthStateStore } from '../services/auth/state-store.js';
+import { buildLoginPersonEntity, type LoginIdentity } from '../services/person-upsert.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -288,7 +289,7 @@ const authRoutes: FastifyPluginAsync = async (server) => {
       }
 
       try {
-        const { principal, candidateEmails } = await resolvePrincipal(
+        const { principal, candidateEmails, loginIdentity } = await resolvePrincipal(
           request,
           provider,
           code,
@@ -314,6 +315,14 @@ const authRoutes: FastifyPluginAsync = async (server) => {
 
         request.session.principal = principal;
         request.session.org = 'default';
+
+        // Upsert the signed-in user into the graph. Fire-and-forget so the
+        // redirect is never coupled to event-bus/Redis latency — a slow or
+        // reconnecting Redis (ioredis offline queue) would otherwise stall the
+        // login redirect even though the publish swallows its own errors. The
+        // session principal is already set, so login itself always succeeds.
+        upsertLoginPerson(request, loginIdentity);
+
         return reply.redirect(sanitizeRedirect(stateRecord.redirectTo));
       } catch (err) {
         if (err instanceof GitHubAccessDeniedError) {
@@ -332,7 +341,11 @@ const authRoutes: FastifyPluginAsync = async (server) => {
     code: string,
     state: string,
     stateRecord: { codeVerifier: string },
-  ): Promise<{ principal: AuthPrincipal; candidateEmails: ReadonlyArray<string> }> {
+  ): Promise<{
+    principal: AuthPrincipal;
+    candidateEmails: ReadonlyArray<string>;
+    loginIdentity: LoginIdentity;
+  }> {
     if (provider === 'oidc') {
       if (!oidc) throw new Error('OIDC provider not configured');
       // openid-client v6 reads the code+state out of the URL itself. We
@@ -356,6 +369,14 @@ const authRoutes: FastifyPluginAsync = async (server) => {
           capabilities: capabilitiesForRole(role),
         },
         candidateEmails,
+        // No GitHub login → email-keyed Person (best-effort; won't merge with
+        // a GitHub-connector Person). See services/person-upsert.ts.
+        loginIdentity: {
+          provider: 'oidc',
+          sub: userInfo.sub,
+          displayName: userInfo.displayName,
+          email: userInfo.email,
+        },
       };
     }
 
@@ -377,7 +398,34 @@ const authRoutes: FastifyPluginAsync = async (server) => {
         capabilities: capabilitiesForRole(role),
       },
       candidateEmails,
+      // GitHub login → login-keyed Person, identical to the connector's
+      // Person id, so the core-writer merges them (never duplicates).
+      loginIdentity: {
+        provider: 'github',
+        sub: userInfo.sub,
+        displayName: userInfo.displayName,
+        email: userInfo.email,
+        login: userInfo.login,
+      },
     };
+  }
+
+  // Best-effort: publish the authenticated user as a Person so they show up in
+  // the catalog/graph alongside connector-sourced people. Fire-and-forget — the
+  // publish promise is intentionally NOT awaited by the caller so a bus/Redis
+  // stall can never fail OR delay a login (the session is already set by the
+  // time this runs). The `.catch` swallows + logs failures so the detached
+  // promise never rejects unhandled. No-op when the event bus isn't wired
+  // (tests, Redis-less deployments).
+  function upsertLoginPerson(request: FastifyRequest, identity: LoginIdentity): void {
+    const bus = request.server.eventBus;
+    if (!bus) return;
+    void bus.publish([buildLoginPersonEntity(identity)], 'login').catch((err: unknown) => {
+      request.log.warn(
+        { err, provider: identity.provider },
+        'login Person upsert failed (login still succeeded)',
+      );
+    });
   }
 };
 

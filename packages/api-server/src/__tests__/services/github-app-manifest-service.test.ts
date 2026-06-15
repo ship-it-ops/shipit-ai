@@ -98,7 +98,7 @@ describe('GitHubAppManifestService — GSM persistence', () => {
     tmplPath = writeManifestTemplate(tmpDir);
   }
 
-  it('GSM mode persists all five values and updates process.env', async () => {
+  it('GSM mode persists the connector secrets and updates process.env (NOT the OAuth client)', async () => {
     setup();
     const { client, calls } = makeRecordingGsmClient();
     const store = new GsmSecretStore({ projectId: 'proj', env: {} as NodeJS.ProcessEnv, client });
@@ -125,16 +125,23 @@ describe('GitHubAppManifestService — GSM persistence', () => {
       }),
     );
 
+    // Connector secrets are written…
     expect(written.get('shipit-github-app-private-key')).toBe(conversionPayload.pem);
     expect(written.get('shipit-github-webhook-secret')).toBe('hush');
-    expect(written.get('shipit-github-oauth-client-secret')).toBe('oauth-s3cret');
     expect(written.get('shipit-github-app-id')).toBe('99');
-    expect(written.get('shipit-github-oauth-client-id')).toBe('Iv1.abc123');
+    // …but the login OAuth client is OWNED by the setup wizard's classic
+    // OAuth App and must NEVER be written by the connector manifest flow
+    // (otherwise creating a connector App would clobber login).
+    expect(written.has('shipit-github-oauth-client-id')).toBe(false);
+    expect(written.has('shipit-github-oauth-client-secret')).toBe(false);
 
     // process.env updated for the running process
     expect(process.env.GITHUB_WEBHOOK_SECRET).toBe('hush');
     expect(process.env.GITHUB_APP_ID).toBe('99');
     expect(process.env.GITHUB_APP_PRIVATE_KEY_PATH).toMatch(/github-app-99\.pem$/);
+    // The OAuth env vars stay untouched by the connector flow.
+    expect(process.env.GITHUB_OAUTH_CLIENT_ID).toBeUndefined();
+    expect(process.env.GITHUB_OAUTH_CLIENT_SECRET).toBeUndefined();
   });
 
   it('file mode / no store: persistedToGsm is false', async () => {

@@ -20,6 +20,11 @@ export type LogicalSecret =
   | 'auth-admin-emails'
   | 'auth-allow-list-emails'
   | 'setup-completed'
+  // Durable home for runtime-created connectors that don't live in the
+  // committed config: a single JSON blob of {connectorId → {instance, pem,
+  // webhookSecret}}. Written wholesale on connector mutations and rehydrated
+  // (instances + PEM files) at boot. See ConnectorAppStore.
+  | 'connector-apps'
   | 'neo4j-aura-password'
   | 'session-secret';
 
@@ -33,6 +38,7 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
   'auth-admin-emails': 'shipit-auth-admin-emails',
   'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
   'setup-completed': 'shipit-setup-completed',
+  'connector-apps': 'shipit-connector-apps',
   'neo4j-aura-password': 'shipit-neo4j-aura-password',
   'session-secret': 'shipit-session-secret',
 };
@@ -71,6 +77,7 @@ export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecre
   'github-oauth-client-id',
   'auth-admin-emails',
   'setup-completed',
+  'connector-apps',
 ]);
 
 export class SecretWriteForbiddenError extends Error {

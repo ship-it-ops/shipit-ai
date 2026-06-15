@@ -8,10 +8,15 @@ const mcpRoutes: FastifyPluginAsync = async (server) => {
   // UI one round-trip and lets future clients (CLI, plugins) discover
   // available tools from a single endpoint.
   server.get('/info', async () => {
-    const apiKeySecret = server.config?.backend.mcp.apiKeySecret ?? null;
+    // Auth posture follows the instance's login enforcement, NOT the legacy
+    // (never-enforced) backend.mcp.apiKeySecret flag. When auth is enabled
+    // (production), the remote MCP HTTP surface requires a per-user token —
+    // see packages/mcp-server Stage 2a — so the UI must tell users to mint one
+    // rather than showing a benign "dev mode" all-clear.
+    const authRequired = server.config?.accessControl.auth.enabled === true;
     return {
-      authRequired: apiKeySecret !== null,
-      transport: 'stdio' as const,
+      authRequired,
+      transport: 'http' as const,
       tools: MCP_TOOLS.map((t) => ({
         name: t.name,
         description: t.description,

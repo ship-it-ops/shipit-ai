@@ -142,12 +142,42 @@ describe('setup mode server', () => {
     expect(store.values.has('setup-completed')).toBe(false);
   });
 
-  it('completes once the wizard persisted everything, then schedules the restart', async () => {
-    // Simulate the manifest exchange: it writes the OAuth client to the
-    // store AND exports the env vars in-process.
-    env.GITHUB_OAUTH_CLIENT_ID = 'Iv1.abc';
-    env.GITHUB_OAUTH_CLIENT_SECRET = 'hush';
+  it('rejects an OAuth client missing id or secret', async () => {
+    for (const payload of [
+      { clientId: '', clientSecret: 'x' },
+      { clientId: 'Iv1.abc', clientSecret: '' },
+      { clientId: 'Iv1.abc' },
+      {},
+    ]) {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/setup/oauth',
+        payload,
+      });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_OAUTH_CLIENT');
+    }
+    // Nothing persisted → the gate stays closed.
+    expect(env.GITHUB_OAUTH_CLIENT_ID).toBeUndefined();
+  });
 
+  it('persists the OAuth client id/secret to the store and env (trimmed)', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/setup/oauth',
+      payload: { clientId: '  Ov23liABC  ', clientSecret: '  s3cret  ' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(store.values.get('github-oauth-client-id')).toBe('Ov23liABC');
+    expect(store.values.get('github-oauth-client-secret')).toBe('s3cret');
+    expect(env.GITHUB_OAUTH_CLIENT_ID).toBe('Ov23liABC');
+    expect(env.GITHUB_OAUTH_CLIENT_SECRET).toBe('s3cret');
+  });
+
+  it('completes once the wizard persisted everything, then schedules the restart', async () => {
+    // Admin (earlier test) + OAuth client (POST /api/setup/oauth above) are
+    // now both persisted → every gate is satisfied.
     const status = await server.inject({ method: 'GET', url: '/api/setup/status' });
     expect(status.json().ready).toBe(true);
 
@@ -206,6 +236,14 @@ describe('setup routes outside setup mode', () => {
     });
     expect(admin.statusCode).toBe(409);
     expect(admin.json().error.code).toBe('SETUP_NOT_ACTIVE');
+
+    const oauth = await server.inject({
+      method: 'POST',
+      url: '/api/setup/oauth',
+      payload: { clientId: 'Iv1.abc', clientSecret: 'late' },
+    });
+    expect(oauth.statusCode).toBe(409);
+    expect(oauth.json().error.code).toBe('SETUP_NOT_ACTIVE');
 
     const complete = await server.inject({ method: 'POST', url: '/api/setup/complete' });
     expect(complete.statusCode).toBe(409);

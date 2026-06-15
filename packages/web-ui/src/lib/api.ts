@@ -508,6 +508,33 @@ export async function fetchPendingInstanceApp(nonce: string): Promise<PendingIns
   return (await res.json()) as PendingInstanceApp;
 }
 
+// ── GitHub owner existence check ────────────────────────────────────────
+// The manifest/launch flow opens
+// `github.com/organizations/<owner>/settings/apps/new`. GitHub silently
+// redirects a non-existent org to the user's PERSONAL App-creation page
+// instead of 404ing, so a typo'd org name lands users on the wrong
+// account. The wizard calls this before opening the tab and refuses to
+// launch when `exists === false`. `exists === null` means GitHub couldn't
+// be reached/rate-limited us — the wizard proceeds rather than blocking.
+export interface GitHubOwnerCheck {
+  owner: string;
+  exists: boolean | null;
+  type: string | null;
+  htmlUrl: string | null;
+}
+
+export async function checkGitHubOwner(owner: string): Promise<GitHubOwnerCheck> {
+  const res = await fetchApi(
+    `${API_URL}/api/connectors/github/owner-check?owner=${encodeURIComponent(owner)}`,
+  );
+  if (!res.ok) {
+    // Treat any transport/validation failure as "unknown" so the wizard
+    // never hard-blocks on the pre-check itself.
+    return { owner, exists: null, type: null, htmlUrl: null };
+  }
+  return (await res.json()) as GitHubOwnerCheck;
+}
+
 // ── GitHub App installations picker ─────────────────────────────────────
 // Powers the wizard's Connect step: rather than asking the user to paste
 // an installation ID found by hand in GitHub's UI, the wizard renders
@@ -1023,8 +1050,10 @@ export async function fetchReconciliationStats(): Promise<ReconciliationStats> {
 }
 
 export interface McpServerInfo {
+  // True when the instance enforces sign-in (production) — the remote MCP
+  // surface then requires a per-user token. False in local/dev (auth off).
   authRequired: boolean;
-  transport: 'stdio';
+  transport: 'stdio' | 'http';
 }
 
 // ── OIDC provider ────────────────────────────────────────────────────────────

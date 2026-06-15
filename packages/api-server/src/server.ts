@@ -5,7 +5,7 @@ import session from '@fastify/session';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import type { Redis } from 'ioredis';
-import type { Config, ConfigPaths } from '@shipit-ai/shared';
+import type { Config, ConfigPaths, EventBusClient } from '@shipit-ai/shared';
 import { errorHandler } from './middleware/error-handler.js';
 import { registerRequireAuth } from './middleware/require-auth.js';
 import { RedisSessionStore } from './services/auth/redis-session-store.js';
@@ -77,6 +77,12 @@ export interface CreateServerOptions {
   setupMode?: boolean;
   // Backs the /api/setup routes; they return 503 when not wired.
   setupService?: SetupService;
+  // Event bus client, exposed to routes so the login callback can publish
+  // the authenticated user as a Person entity (see routes/auth.ts and
+  // services/person-upsert.ts). Production passes the same BullMQ client the
+  // SyncScheduler uses; routes treat it as best-effort and tolerate its
+  // absence (no publish when omitted, e.g. tests or Redis-less deployments).
+  eventBus?: EventBusClient;
 }
 
 declare module 'fastify' {
@@ -86,6 +92,7 @@ declare module 'fastify' {
     configPaths?: ConfigPaths;
     setupMode: boolean;
     setupService?: SetupService;
+    eventBus?: EventBusClient;
   }
 }
 
@@ -316,6 +323,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);
+  }
+  // Event bus is optional. When absent the login callback simply skips the
+  // best-effort Person upsert (decoration is conditional so Fastify's
+  // duplicate-decoration guard doesn't fire across multi-server tests).
+  if (opts.eventBus) {
+    server.decorate('eventBus', opts.eventBus);
   }
 
   // Register routes

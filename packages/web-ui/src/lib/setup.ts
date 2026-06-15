@@ -57,6 +57,26 @@ export async function postSetupAdmin(email: string): Promise<void> {
   }
 }
 
+// Persist the login OAuth App's client id/secret. "Sign in with GitHub"
+// runs on a classic OAuth App the operator creates by hand (GitHub has no
+// one-click manifest flow for OAuth Apps), so the wizard collects the two
+// values and posts them here; the server stores them in GSM and flips the
+// `oauthClientPresent` gate.
+export async function postSetupOAuth(clientId: string, clientSecret: string): Promise<void> {
+  const res = await fetch(`${clientConfig.api.url}/api/setup/oauth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ clientId, clientSecret }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    throw new Error(body?.error?.message ?? `POST /api/setup/oauth returned ${res.status}`);
+  }
+}
+
 export type SetupCompleteResult =
   | { ok: true }
   | { ok: false; missing: string[]; messages: string[] };

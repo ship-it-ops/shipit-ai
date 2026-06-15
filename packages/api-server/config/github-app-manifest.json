@@ -30,7 +30,6 @@
     "active": true
   },
   "redirect_url": "PLACEHOLDER_REDIRECT_URL",
-  "callback_urls": ["PLACEHOLDER_CALLBACK_URL"],
   "request_oauth_on_install": false,
   "setup_on_update": false
 }

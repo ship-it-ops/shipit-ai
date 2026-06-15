@@ -224,4 +224,10 @@ ADRs capture the architectural decisions behind the codebase and the trade-offs 
 
 ## License
 
-TBD
+This project is licensed under the [Elastic License 2.0](LICENSE) (ELv2).
+
+You may use, copy, modify, and redistribute the software, but you **may not**
+provide it to third parties as a hosted or managed service that gives users
+access to a substantial set of its features, and you may not circumvent any
+license-key functionality or remove licensing notices. See the [LICENSE](LICENSE)
+file for the full terms.

@@ -69,6 +69,9 @@ const SOURCE_PRIORITY = [
   'manual',
   'backstage',
   'github',
+  // Authenticated-login self-claims rank just below the GitHub connector, so
+  // the connector wins overlapping fields while login fills gaps it lacks.
+  'login',
   'kubernetes',
   'datadog',
   'jira',

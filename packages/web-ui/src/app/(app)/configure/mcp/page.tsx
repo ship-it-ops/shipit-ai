@@ -48,28 +48,33 @@ const CLIENTS: readonly ClientSpec[] = [
   },
 ];
 
-function buildSnippet(): string {
-  // All three clients use the same stdio MCP config shape today. Paths are
-  // intentionally generic — the user replaces `/path/to/ShipIt-AI` with
-  // wherever they checked out the repo.
+// Remote MCP config: all three clients reach the hosted server over HTTP via
+// the `mcp-remote` stdio bridge (broadest client support). When auth is
+// enforced, the user pastes a personal access token into the Authorization
+// header. `mcpUrl` is this instance's `/mcp` endpoint.
+function buildSnippet(mcpUrl: string, authRequired: boolean): string {
+  const args = ['-y', 'mcp-remote', mcpUrl];
+  if (authRequired) {
+    args.push('--header', 'Authorization: Bearer <PASTE_YOUR_TOKEN>');
+  }
   return JSON.stringify(
     {
       mcpServers: {
         'shipit-ai': {
-          command: 'node',
-          args: ['packages/mcp-server/dist/index.js'],
-          cwd: '/path/to/ShipIt-AI',
-          env: {
-            NEO4J_URI: 'bolt://localhost:7687',
-            NEO4J_USER: 'neo4j',
-            NEO4J_PASSWORD: 'shipit-dev',
-          },
+          command: 'npx',
+          args,
         },
       },
     },
     null,
     2,
   );
+}
+
+// Same-origin `/mcp` endpoint (single-origin Ingress). Falls back to the
+// documented path when rendered without a window (SSR).
+function mcpEndpointUrl(): string {
+  return typeof window !== 'undefined' ? `${window.location.origin}/mcp` : '/mcp';
 }
 
 export default function McpAccessPage() {
@@ -85,7 +90,7 @@ export default function McpAccessPage() {
     <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
       <Header />
       <AuthStatusBanner info={info} loading={isLoading} />
-      <ConnectionSection />
+      <ConnectionSection authRequired={info?.authRequired ?? false} />
       <ToolsSection />
     </div>
   );
@@ -107,7 +112,8 @@ function Header() {
         >
           Model Context Protocol
         </a>
-        . The server runs over stdio today and exposes {MCP_TOOLS.length} read-only graph tools.
+        . Connect a remote MCP client to this instance and it gets {MCP_TOOLS.length} read-only
+        graph tools.
       </p>
     </header>
   );
@@ -129,34 +135,39 @@ function AuthStatusBanner({
   }
   if (info.authRequired) {
     return (
-      <Banner tone="warn" icon={<IconGlyph name="warn" size={14} />}>
-        <strong>API key required.</strong> The server is configured with{' '}
-        <code className="font-mono">MCP_API_KEY_SECRET</code>. Per-user tokens are on the roadmap —
-        until then, every client shares the same secret. See{' '}
+      <Banner tone="accent" icon={<IconGlyph name="key" size={14} />}>
+        <strong>A personal access token is required.</strong> Mint one under{' '}
         <a href="/settings" className="underline">
           Settings → API Keys
-        </a>
-        .
+        </a>{' '}
+        (scope <code className="font-mono">mcp:invoke</code>) and paste it into the{' '}
+        <code className="font-mono">Authorization</code> header in the snippet below. Each token is
+        tied to your account and can be revoked anytime.
       </Banner>
     );
   }
   return (
     <Banner tone="ok" icon={<IconGlyph name="check" size={14} />}>
-      <strong>No authentication required (dev mode).</strong> Set{' '}
-      <code className="font-mono">MCP_API_KEY_SECRET</code> to require a shared API key.
+      <strong>No authentication required (local dev).</strong> This instance has sign-in disabled.
+      In production, sign-in is enforced and the MCP endpoint requires a per-user token.
     </Banner>
   );
 }
 
-function ConnectionSection() {
-  const snippet = buildSnippet();
+function ConnectionSection({ authRequired }: { authRequired: boolean }) {
+  const mcpUrl = mcpEndpointUrl();
+  const snippet = buildSnippet(mcpUrl, authRequired);
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-text text-[15px] font-semibold">Connection</h2>
       <p className="text-text-muted text-[12px]">
-        Paste the snippet into your MCP client&apos;s config, replacing{' '}
-        <code className="font-mono">/path/to/ShipIt-AI</code> with your local checkout path. The
-        config shape is identical across all three clients today; only the file location differs.
+        Paste the snippet into your MCP client&apos;s config. It connects to this instance at{' '}
+        <code className="font-mono">{mcpUrl}</code> over the{' '}
+        <code className="font-mono">mcp-remote</code> bridge.{' '}
+        {authRequired
+          ? 'Replace <PASTE_YOUR_TOKEN> with a token from Settings → API Keys.'
+          : 'No token needed on this instance (sign-in disabled).'}{' '}
+        The config shape is identical across all three clients; only the file location differs.
       </p>
       <Tabs defaultValue="claude-desktop" variant="pill">
         <TabsList className="w-fit">
