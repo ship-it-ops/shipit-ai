@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-14 | Total notes: 52
+Last updated: 2026-06-14 | Total notes: 54
 
 ## Investigations
 
@@ -22,6 +22,7 @@ Last updated: 2026-06-14 | Total notes: 52
 - [web-ui-dockerfile-pnpm-fix](status/web-ui-dockerfile-pnpm-fix.md) | status | active | standard | 2026-06-10 | corepack enable moved to base stage; verifying build
 - [github-owner-existence-precheck](status/github-owner-existence-precheck.md) | status | completed | standard | 2026-06-14 | verify org exists before manifest launch; shipped in 51d3dcf
 - [github-auth-connector-separation](status/github-auth-connector-separation.md) | status | active | core | 2026-06-14 | per-org claim resume + auth OAuth-App split from connector
+- [login-person-upsert-impl](status/login-person-upsert-impl.md) | status | active | core | 2026-06-14 | login upserts signed-in user as Person via event bus; implemented, uncommitted
 
 ## Decisions
 
@@ -61,6 +62,7 @@ Last updated: 2026-06-14 | Total notes: 52
 ## Plans
 
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
+- [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | active | core | 2026-06-14 | upsert logged-in user as a Person via event-bus on login
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export

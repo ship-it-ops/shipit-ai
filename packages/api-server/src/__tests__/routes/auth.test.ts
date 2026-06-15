@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import RedisMock from 'ioredis-mock';
 import type { Redis } from 'ioredis';
 import type { FastifyInstance } from 'fastify';
-import type { Config } from '@shipit-ai/shared';
+import type { CanonicalEntity, Config, EventBusClient } from '@shipit-ai/shared';
 import { createServer } from '../../server.js';
 import { makeTestConfig } from '../test-config.js';
 import type { OidcProvider } from '../../services/auth/oidc-provider.js';
@@ -109,6 +109,29 @@ function buildMockGitHubProvider(): GitHubProvider & {
     },
   };
   return mock as unknown as GitHubProvider & typeof mock;
+}
+
+// Records publish() calls so tests can assert what the login callback emitted.
+// `failNext` makes the next publish throw, exercising the best-effort guard.
+function buildMockEventBus(): EventBusClient & {
+  published: Array<{ events: CanonicalEntity[]; connectorId: string }>;
+  failNext: boolean;
+} {
+  const mock = {
+    published: [] as Array<{ events: CanonicalEntity[]; connectorId: string }>,
+    failNext: false,
+    async publish(events: CanonicalEntity[], connectorId: string) {
+      if (mock.failNext) {
+        mock.failNext = false;
+        throw new Error('simulated bus failure');
+      }
+      mock.published.push({ events, connectorId });
+    },
+    async subscribe() {},
+    async replay() {},
+    async close() {},
+  };
+  return mock;
 }
 
 function cookieHeader(setCookie: string | string[] | undefined): string {
@@ -638,6 +661,106 @@ describe('PUT /api/auth/providers/oidc — OIDC settings endpoint', () => {
       await srv.close();
       delete process.env.SHIPIT_SESSION_SECRET;
     }
+  });
+});
+
+// A successful interactive login upserts the user as a Person on the event
+// bus so they appear in the catalog/graph (plan: login-user-as-person-entity).
+// The publish is best-effort — a bus failure must never break login.
+describe('/api/auth — Person upsert on login', () => {
+  let server: FastifyInstance;
+  let redis: Redis;
+  let oidc: ReturnType<typeof buildMockOidcProvider>;
+  let github: ReturnType<typeof buildMockGitHubProvider>;
+  let eventBus: ReturnType<typeof buildMockEventBus>;
+
+  beforeAll(async () => {
+    process.env.SHIPIT_SESSION_SECRET = SIGNING_SECRET;
+    redis = new RedisMock() as unknown as Redis;
+    oidc = buildMockOidcProvider();
+    github = buildMockGitHubProvider();
+    eventBus = buildMockEventBus();
+    server = await createServer({
+      config: buildAuthConfig(),
+      redis,
+      oidcProvider: oidc,
+      githubProvider: github,
+      eventBus,
+    });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    delete process.env.SHIPIT_SESSION_SECRET;
+  });
+
+  beforeEach(() => {
+    eventBus.published.length = 0;
+    eventBus.failNext = false;
+  });
+
+  it('publishes a login-keyed Person for a GitHub login', async () => {
+    github.nextUserInfo = {
+      sub: 'gh-777',
+      email: 'admin@example.com',
+      displayName: 'Octo Admin',
+      login: 'Octo-Admin',
+      verifiedEmails: ['admin@example.com'],
+    };
+    await server.inject({ method: 'GET', url: '/api/auth/login/github' });
+    const callback = await server.inject({
+      method: 'GET',
+      url: '/api/auth/callback/github?code=gh-code&state=gh-state-stub',
+    });
+    expect(callback.statusCode).toBe(302);
+
+    expect(eventBus.published).toHaveLength(1);
+    const { events, connectorId } = eventBus.published[0];
+    expect(connectorId).toBe('login');
+    expect(events[0].nodes[0].id).toBe('shipit://person/default/octo-admin');
+    expect(events[0].nodes[0]._source_system).toBe('login');
+    const claimKeys = events[0].nodes[0]._claims.map((c) => c.property_key).sort();
+    expect(claimKeys).toEqual(['email', 'login', 'name']);
+  });
+
+  it('publishes an email-keyed Person for an OIDC login', async () => {
+    oidc.nextUserInfo = {
+      sub: 'oidc-sub-9',
+      email: 'admin@example.com',
+      displayName: 'OIDC Admin',
+    };
+    await server.inject({ method: 'GET', url: '/api/auth/login/oidc' });
+    const callback = await server.inject({
+      method: 'GET',
+      url: '/api/auth/callback/oidc?code=oidc-code&state=oidc-state-stub',
+    });
+    expect(callback.statusCode).toBe(302);
+
+    expect(eventBus.published).toHaveLength(1);
+    expect(eventBus.published[0].events[0].nodes[0].id).toBe(
+      'shipit://person/default/admin@example.com',
+    );
+  });
+
+  it('completes login even when the event-bus publish throws', async () => {
+    eventBus.failNext = true;
+    github.nextUserInfo = {
+      sub: 'gh-err',
+      email: 'admin@example.com',
+      displayName: 'Resilient',
+      login: 'resilient',
+      verifiedEmails: ['admin@example.com'],
+    };
+    await server.inject({ method: 'GET', url: '/api/auth/login/github' });
+    const callback = await server.inject({
+      method: 'GET',
+      url: '/api/auth/callback/github?code=gh-code&state=gh-state-stub',
+    });
+    // Session cookie is set and the user is redirected despite the failure.
+    expect(callback.statusCode).toBe(302);
+    expect(callback.headers['set-cookie']).toBeDefined();
+    expect(eventBus.published).toHaveLength(0);
   });
 });
 

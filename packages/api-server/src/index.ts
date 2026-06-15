@@ -285,9 +285,14 @@ async function main() {
   // `per-org-github-app-override` for the broader pattern.
   const gh = config.connectors.github.app;
   let scheduler: SyncScheduler | null = null;
+  // Hoisted so the same client the scheduler publishes through is also handed
+  // to createServer — the login callback uses it to upsert the authenticated
+  // user as a Person (best-effort; see routes/auth.ts). null when Redis is
+  // absent or the client fails to construct.
+  let eventBus: BullMQEventBusClient | null = null;
   if (config.backend.redis.url) {
     try {
-      const eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
+      eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
       scheduler = new SyncScheduler({
         redisUrl: config.backend.redis.url,
         registry: connectorRegistry,
@@ -340,6 +345,9 @@ async function main() {
     setupService: new SetupService({ secretStore }),
     configPaths: { basePath: configPaths.basePath, localPath },
     config,
+    // Same client the scheduler publishes through; lets the login callback
+    // upsert the signed-in user as a Person. undefined when Redis is absent.
+    eventBus: eventBus ?? undefined,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two
     // ioredis instances for sibling concerns. When auth is disabled
@@ -365,6 +373,9 @@ async function main() {
   const shutdown = async () => {
     await server.close();
     if (scheduler) await scheduler.close();
+    // The event bus owns its own Queue + stream connections (the scheduler's
+    // close() only tears down the worker/queue it created), so close it here.
+    if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
     await neo4jService.close();
     process.exit(0);

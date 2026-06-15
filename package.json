@@ -2,7 +2,7 @@
   "name": "shipit-ai",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT",
+  "license": "Elastic-2.0",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
