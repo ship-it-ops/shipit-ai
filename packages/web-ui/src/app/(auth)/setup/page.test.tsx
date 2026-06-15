@@ -13,12 +13,14 @@ const setupLib = {
   fetchHealthMode: vi.fn(),
   fetchSetupStatus: vi.fn(),
   postSetupAdmin: vi.fn(),
+  postSetupOAuth: vi.fn(),
   postSetupComplete: vi.fn(),
 };
 vi.mock('@/lib/setup', () => ({
   fetchHealthMode: (...args: unknown[]) => setupLib.fetchHealthMode(...args),
   fetchSetupStatus: (...args: unknown[]) => setupLib.fetchSetupStatus(...args),
   postSetupAdmin: (...args: unknown[]) => setupLib.postSetupAdmin(...args),
+  postSetupOAuth: (...args: unknown[]) => setupLib.postSetupOAuth(...args),
   postSetupComplete: (...args: unknown[]) => setupLib.postSetupComplete(...args),
 }));
 
@@ -72,7 +74,9 @@ describe('SetupPage', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     expect(setupLib.postSetupAdmin).toHaveBeenCalledWith('admin@example.com');
-    expect(await screen.findByRole('button', { name: /create github app/i })).toBeInTheDocument();
+    // GitHub step now collects a classic OAuth App's client id/secret.
+    expect(await screen.findByLabelText(/oauth app client id/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save oauth client/i })).toBeInTheDocument();
     expect(screen.getByText(/administrator captured/i)).toBeInTheDocument();
   });
 

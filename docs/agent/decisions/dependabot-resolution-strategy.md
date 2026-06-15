@@ -112,6 +112,48 @@ Dependabot opened 14 fresh PRs after the auth/RBAC merge (PR #48). Aggregated 8 
 - `packages/web-ui/next-env.d.ts` — auto-regenerated.
 - `pnpm-lock.yaml`.
 
+## Update 2026-06-14 — third round (on `more-prod-fixes`)
+
+2 open Dependabot security alerts (both **esbuild** `< 0.28.1`, high + low, transitive via
+vite/vitest/tsx) plus 6 open version-update PRs. Applied the safe set + the transitive
+override directly on `more-prod-fixes` (layers 1+2 of this decision); deferred the same
+upstream-blocked majors as the 2026-06-07 round.
+
+### Applied
+
+- **esbuild security (2 alerts):** added `"esbuild": "^0.28.1"` to the root `pnpm.overrides`
+  (now 17 entries). `pnpm-lock.yaml` collapses to a single `esbuild@0.28.1`; `pnpm audit` →
+  "No known vulnerabilities found".
+- **#56 production-patches group:** `ioredis ^5.11.1` (root + api-server + event-bus),
+  `next ^16.2.9` (web-ui), and the internal design-system bumps `@ship-it-ui/{ui 0.0.16,
+shipit 0.0.17, icons 0.0.12, cytoscape 0.0.16, graph-editor 0.0.11, next 0.0.14}`.
+- **#53 dev group:** `@types/react ^19.2.17` (web-ui).
+- Also fixed a stale `setup/page.test.tsx` assertion left by the auth-OAuth-App change
+  (`66bb8d7`) — it looked for the removed "Create GitHub App" button; now asserts the OAuth
+  client id/secret form + mocks `postSetupOAuth`. (The auth commit shipped without running
+  web-ui vitest; caught here by `turbo test`.)
+
+### Deferred (unchanged blockers — see 2026-06-07 round + the vitest-4 scar)
+
+- **#40 eslint 9→10**, **#43 @types/node 22→25**, **#46 @vitejs/plugin-react 4→6**,
+  **#47 vitest 3→4.** Same real upstream blockers; each needs its own scoped PR. The
+  @types/node + vitest-4 pair is the logical next one (declare `@types/node` in the five
+  Node-using workspaces, then bump both together).
+
+### Verification (this round)
+
+- `pnpm turbo typecheck` → 14/14; `pnpm turbo test` → 14/14 (web-ui setup test fixed);
+  `pnpm turbo build` → 9/9; `pnpm turbo lint` → 0 errors (18 pre-existing warnings);
+  `pnpm audit` → clean.
+
+### Critical files touched (this round)
+
+- `package.json` (root) — `ioredis`, new `esbuild` override.
+- `packages/api-server/package.json`, `packages/event-bus/package.json` — `ioredis`.
+- `packages/web-ui/package.json` — `next`, `@types/react`, 6× `@ship-it-ui/*`.
+- `packages/web-ui/src/app/(auth)/setup/page.test.tsx` — OAuth-form assertions.
+- `pnpm-lock.yaml`.
+
 ## Related
 
 - [github-connector-architecture-v1](github-connector-architecture-v1.md)
