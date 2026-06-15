@@ -9,6 +9,8 @@ Last updated: 2026-06-14 | Total notes: 54
 - [setup-wizard-manifest-launch-enoent](investigations/setup-wizard-manifest-launch-enoent.md) | investigation | completed | core | 2026-06-11 | manifest template JSON never reaches /data in cluster
 - [first-login-redirect-uri-and-missing-callback-urls](investigations/first-login-redirect-uri-and-missing-callback-urls.md) | investigation | completed | core | 2026-06-12 | path-only /api doubled redirect_uri; manifest lacked callback_urls
 - [login-loop-secure-cookie-trustproxy](investigations/login-loop-secure-cookie-trustproxy.md) | investigation | completed | core | 2026-06-12 | missing trustProxy silently dropped Secure session cookie
+- [portal-demo-502-node-recreation-neg-drain](investigations/portal-demo-502-node-recreation-neg-drain.md) | investigation | completed | core | 2026-06-15 | single-node recreation drained NEGs to 0; LB 502'd everything; self-healed
+- [per-org-manifest-created-app-invisible-confirmation](investigations/per-org-manifest-created-app-invisible-confirmation.md) | investigation | completed | core | 2026-06-15 | per-org App created+claimed OK but creds hidden in collapsed details; added ok-Banner
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
