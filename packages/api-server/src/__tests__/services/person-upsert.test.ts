@@ -15,8 +15,9 @@ describe('buildLoginPersonEntity — GitHub login', () => {
   it('keys the Person by the lowercased GitHub login (merges with the connector Person)', () => {
     const { nodes } = buildLoginPersonEntity(identity, FIXED_NOW);
     expect(nodes).toHaveLength(1);
-    // IDENTICAL to the connector's buildCanonicalId('Person','default', login)
-    // — this is what makes the core-writer merge instead of duplicate.
+    // IDENTICAL to the connector's buildPersonCanonicalId(login) (login
+    // 'GH-User' → '…/gh-user') — this shared lowercasing is what makes the
+    // core-writer merge instead of duplicate.
     expect(nodes[0].id).toBe('shipit://person/default/gh-user');
     expect(nodes[0].label).toBe('Person');
   });

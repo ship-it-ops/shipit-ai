@@ -16,6 +16,24 @@ export function buildScopedCanonicalId(
   return buildCanonicalId(label, namespace, `${scope}/${name}`);
 }
 
+/**
+ * Canonical id for a Person, keyed by GitHub login (or, for OIDC-only
+ * logins, email). The key is LOWERCASED here — GitHub logins are
+ * case-insensitive and globally unique, so two producers that disagree on
+ * casing must still resolve to the same node. The GitHub connector emits
+ * the login in GitHub's stored case (e.g. `Mohamed-E`) while the login
+ * upsert keys off the same login; without a shared lowercasing rule the
+ * two Person nodes never merge and the login's email never reaches the
+ * connector-pulled Person. This helper is the single source of truth both
+ * call so the casing can never drift again.
+ *
+ * `buildCanonicalId` only lowercases the LABEL segment, never the name —
+ * so the key must be lowercased here.
+ */
+export function buildPersonCanonicalId(loginOrEmail: string): string {
+  return buildCanonicalId('Person', 'default', loginOrEmail.toLowerCase());
+}
+
 export function parseCanonicalId(
   id: string,
 ): { label: string; namespace: string; name: string } | null {

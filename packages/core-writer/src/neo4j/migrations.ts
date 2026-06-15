@@ -122,3 +122,89 @@ export async function runCanonicalIdMigration(
 
   return { nodesDeleted, linkingKeysDeleted, idempotencyEntriesDeleted };
 }
+
+const PERSON_PREFIX = 'shipit://person/default/';
+
+/**
+ * Regex matching a Person canonical id whose login segment carries an
+ * uppercase letter — the pre-fix shape the connector emitted before Person
+ * ids were lowercased (`buildPersonCanonicalId`). Anchored — Cypher `=~`
+ * requires a full-string match.
+ */
+export function buildMixedCasePersonIdRegex(): string {
+  return `^shipit://person/default/.*[A-Z].*$`;
+}
+
+/**
+ * Regex matching `_IdempotencyLog` keys that reference a mixed-case Person
+ * id. Stored keys substitute `~` for every `:` (BullMQ 5; see the
+ * canonical-id idempotency note above), so the shape is
+ *   `<connector_id>~shipit~//person/default/<MixedCase>~<event_version>`
+ * The Person name segment has no slash (global, un-scoped), so `[^~]` keeps
+ * the match inside this one id.
+ */
+export function buildMixedCasePersonIdempotencyKeyRegex(): string {
+  return `.*~shipit~//person/default/[^~]*[A-Z][^~]*~.*`;
+}
+
+export interface PersonCaseMigrationStats {
+  nodesDeleted: number;
+  linkingKeysDeleted: number;
+  idempotencyEntriesDeleted: number;
+}
+
+/**
+ * One-shot cleanup for the Person login-case fix.
+ *
+ * Before the fix, the GitHub connector keyed Person ids by the login in
+ * GitHub's stored case (`shipit://person/default/Mohamed-E`) while the login
+ * upsert lowercased it (`…/mohamed-e`), so the two never merged and the
+ * login's email never reached the connector Person (see
+ * docs/agent/investigations/person-canonical-id-login-case-mismatch.md). The
+ * fix lowercases all Person ids, so the mixed-case nodes are now orphans that
+ * never regenerate. This deletes them (and their `_LinkingKey` /
+ * `_IdempotencyLog` entries); the next sync recreates the lowercase Person,
+ * which merges with the login Person.
+ *
+ * Matches zero rows once migrated — safe to run unconditionally every boot.
+ */
+export async function runPersonLoginCaseMigration(
+  client: Neo4jClient,
+): Promise<PersonCaseMigrationStats> {
+  const idRegex = buildMixedCasePersonIdRegex();
+
+  const toNum = (raw: unknown): number =>
+    typeof raw === 'object' && raw !== null && 'toNumber' in raw
+      ? (raw as { toNumber(): number }).toNumber()
+      : Number(raw ?? 0);
+
+  const nodesDeleted = await client.executeWrite(async (tx) => {
+    const result = await tx.run(
+      `MATCH (n) WHERE n.id STARTS WITH $prefix AND n.id =~ $regex
+       DETACH DELETE n RETURN count(n) AS deleted`,
+      { prefix: PERSON_PREFIX, regex: idRegex },
+    );
+    return toNum(result.records[0]?.get('deleted'));
+  });
+
+  const linkingKeysDeleted = await client.executeWrite(async (tx) => {
+    const result = await tx.run(
+      `MATCH (lk:_LinkingKey)
+       WHERE lk.canonical_id STARTS WITH $prefix AND lk.canonical_id =~ $regex
+       DELETE lk RETURN count(lk) AS deleted`,
+      { prefix: PERSON_PREFIX, regex: idRegex },
+    );
+    return toNum(result.records[0]?.get('deleted'));
+  });
+
+  const idempotencyEntriesDeleted = await client.executeWrite(async (tx) => {
+    const result = await tx.run(
+      `MATCH (i:_IdempotencyLog) WHERE i.key =~ $regex
+       DELETE i RETURN count(i) AS deleted`,
+      { regex: buildMixedCasePersonIdempotencyKeyRegex() },
+    );
+    return toNum(result.records[0]?.get('deleted'));
+  });
+
+  return { nodesDeleted, linkingKeysDeleted, idempotencyEntriesDeleted };
+}

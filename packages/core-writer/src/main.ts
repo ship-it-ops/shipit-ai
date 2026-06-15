@@ -17,7 +17,7 @@ import { Neo4jClient } from './neo4j/client.js';
 import { Neo4jNodeWriter } from './neo4j/node-writer.js';
 import { Neo4jLinkingKeyIndex } from './neo4j/linking-key-index.js';
 import { Neo4jIdempotencyChecker } from './neo4j/idempotency-checker.js';
-import { runCanonicalIdMigration } from './neo4j/migrations.js';
+import { runCanonicalIdMigration, runPersonLoginCaseMigration } from './neo4j/migrations.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -59,6 +59,17 @@ async function main(): Promise<void> {
       )
       .join('; ');
     console.log(`CoreWriter canonical-ID migration: ${summary}`);
+  }
+
+  // Cleanup for the Person login-case fix: drop orphaned mixed-case Person
+  // nodes so the next sync's lowercase Person merges with the login Person.
+  const personCaseStats = await runPersonLoginCaseMigration(neo4jClient);
+  if (personCaseStats.nodesDeleted > 0 || personCaseStats.idempotencyEntriesDeleted > 0) {
+    console.log(
+      `CoreWriter Person login-case migration: nodes=${personCaseStats.nodesDeleted} ` +
+        `linkingKeys=${personCaseStats.linkingKeysDeleted} ` +
+        `idempotency=${personCaseStats.idempotencyEntriesDeleted}`,
+    );
   }
 
   if (!config.backend.redis.url) {

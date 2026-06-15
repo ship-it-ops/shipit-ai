@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCanonicalId,
   buildScopedCanonicalId,
+  buildPersonCanonicalId,
   parseCanonicalId,
   isValidCanonicalId,
 } from '../identity/canonical-id.js';
@@ -56,6 +57,23 @@ describe('buildScopedCanonicalId', () => {
     const a = buildScopedCanonicalId('Repository', 'default', 'shipitops', 'infra');
     const b = buildScopedCanonicalId('Repository', 'default', 'cargocloud', 'infra');
     expect(a).not.toBe(b);
+  });
+});
+
+describe('buildPersonCanonicalId', () => {
+  it('lowercases the login so case never blocks a merge', () => {
+    // GitHub logins are case-insensitive + globally unique. A login with
+    // uppercase (the connector emits GitHub's stored case) must resolve to
+    // the same id as the login upsert (which keys off the same login).
+    expect(buildPersonCanonicalId('Mohamed-E')).toBe('shipit://person/default/mohamed-e');
+  });
+
+  it('matches across casings — connector and login Person ids converge', () => {
+    expect(buildPersonCanonicalId('Mohamed-E')).toBe(buildPersonCanonicalId('mohamed-e'));
+  });
+
+  it('leaves already-lowercase logins unchanged', () => {
+    expect(buildPersonCanonicalId('alice')).toBe('shipit://person/default/alice');
   });
 });
 
