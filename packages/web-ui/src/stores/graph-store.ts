@@ -17,7 +17,14 @@ interface GraphState {
   viewport: { zoom: number; pan: { x: number; y: number } };
   /** Live Cytoscape instance, published by GraphCanvas after mount. */
   cyInstance: Core | null;
+  /**
+   * True while a modal dialog (claims, blast radius) is open over the graph.
+   * The explore page reads this to hide the floating legend, which otherwise
+   * paints above the dialog's backdrop overlay.
+   */
+  dialogOpen: boolean;
   setSelectedNode: (nodeId: string | null) => void;
+  setDialogOpen: (open: boolean) => void;
   setFilters: (filters: Partial<GraphFilters>) => void;
   resetFilters: () => void;
   setLayout: (layout: LayoutType) => void;
@@ -38,7 +45,9 @@ export const useGraphStore = create<GraphState>((set) => ({
   layout: 'dagre',
   viewport: { zoom: 1, pan: { x: 0, y: 0 } },
   cyInstance: null,
+  dialogOpen: false,
   setSelectedNode: (nodeId) => set({ selectedNode: nodeId }),
+  setDialogOpen: (open) => set({ dialogOpen: open }),
   setFilters: (filters) => set((state) => ({ filters: { ...state.filters, ...filters } })),
   resetFilters: () => set({ filters: defaultFilters }),
   setLayout: (layout) => set({ layout }),

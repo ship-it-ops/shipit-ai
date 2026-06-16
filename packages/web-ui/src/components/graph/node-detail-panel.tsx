@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Badge, Button, Dialog, EmptyState, formatRelative } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
@@ -12,6 +12,7 @@ import {
 } from '@ship-it-ui/shipit';
 import type { GraphData } from '@/lib/api';
 import { useBlastRadius } from '@/lib/hooks/use-graph-data';
+import { useGraphStore } from '@/stores/graph-store';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 
 const APP_TYPE_TO_ENTITY: Record<string, EntityType> = {
@@ -57,6 +58,15 @@ function parseClaims(raw: unknown): Claim[] {
 export function NodeDetailPanel({ nodeId, graphData, onClose }: NodeDetailPanelProps) {
   const router = useRouter();
   const [dialog, setDialog] = useState<'claims' | 'blast' | null>(null);
+
+  // Tell the explore page when a dialog is open so it hides the floating graph
+  // legend — the legend's `backdrop-filter` makes it paint above the dialog's
+  // backdrop overlay otherwise. Reset on unmount (panel closed mid-dialog).
+  const setDialogOpen = useGraphStore((s) => s.setDialogOpen);
+  useEffect(() => {
+    setDialogOpen(dialog !== null);
+    return () => setDialogOpen(false);
+  }, [dialog, setDialogOpen]);
 
   const node = graphData.nodes.find((n) => n.data.id === nodeId);
 
