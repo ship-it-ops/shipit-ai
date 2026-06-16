@@ -694,6 +694,34 @@ export type ResolutionStrategy =
   | 'LATEST_TIMESTAMP'
   | 'MERGE_SET';
 
+export type VerificationStatus =
+  | 'UNVERIFIED'
+  | 'CORROBORATED'
+  | 'USER_VERIFIED'
+  | 'DISPUTED'
+  | 'STALE';
+
+export interface BreakdownTerm {
+  label: string;
+  delta: number;
+}
+
+export interface ConfidenceBreakdown {
+  base: number;
+  base_source: string;
+  decay: number;
+  corroboration: number;
+  corroboration_sources: string[];
+  conflict: number;
+  conflict_sources: string[];
+  ambiguity: number;
+  ambiguity_reason?: string;
+  verified: boolean;
+  verified_by?: string | null;
+  effective: number;
+  terms: BreakdownTerm[];
+}
+
 export interface ResolvedProperty {
   property_key: string;
   effective_value: unknown;
@@ -701,6 +729,10 @@ export interface ResolvedProperty {
   strategy: ResolutionStrategy;
   has_conflict: boolean;
   claims: PropertyClaim[];
+  confidence: number;
+  breakdown: ConfidenceBreakdown;
+  status: VerificationStatus;
+  needs_review: boolean;
 }
 
 export interface EntityClaims {
@@ -708,6 +740,17 @@ export interface EntityClaims {
   label: string;
   name: string;
   properties: ResolvedProperty[];
+}
+
+export interface ReviewQueueRow {
+  entityId: string;
+  name: string;
+  label: string;
+  propertyKey: string;
+  verifiedValue: unknown;
+  verifiedBy: string | null;
+  proposedValue: unknown;
+  proposedSource: string;
 }
 
 export interface ConflictRow {
@@ -723,6 +766,32 @@ export interface ConflictRow {
 
 export async function fetchEntityClaims(entityId: string): Promise<EntityClaims> {
   return apiFetch<EntityClaims>(`/api/claims/${encodeURIComponent(entityId)}`);
+}
+
+export async function verifyClaim(
+  entityId: string,
+  propertyKey: string,
+  value: unknown,
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>(
+    `/api/claims/${encodeURIComponent(entityId)}/${encodeURIComponent(propertyKey)}/verify`,
+    { method: 'POST', body: JSON.stringify({ value }) },
+  );
+}
+
+export async function fetchReviewQueue(): Promise<ReviewQueueRow[]> {
+  return apiFetch<ReviewQueueRow[]>('/api/claims/review-queue');
+}
+
+export async function resolveReview(
+  entityId: string,
+  propertyKey: string,
+  action: 'accept' | 'reject',
+): Promise<{ ok: true }> {
+  return apiFetch<{ ok: true }>('/api/claims/review/resolve', {
+    method: 'POST',
+    body: JSON.stringify({ entityId, propertyKey, action }),
+  });
 }
 
 // -- Schema Editor -----------------------------------------------------------

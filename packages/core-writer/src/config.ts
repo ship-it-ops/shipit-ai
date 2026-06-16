@@ -1,3 +1,6 @@
+import { DEFAULT_CONFIDENCE_TUNING } from '@shipit-ai/shared';
+import type { ConfidenceTuning } from '@shipit-ai/shared';
+
 export interface CoreWriterConfig {
   neo4j: {
     uri: string;
@@ -8,6 +11,8 @@ export interface CoreWriterConfig {
   batchSize: number;
   idempotencyTtlDays: number;
   defaultDecayRate: number;
+  /** Tunable constants for the per-field confidence engine. */
+  confidenceTuning: ConfidenceTuning;
 }
 
 export const DEFAULT_CONFIG: CoreWriterConfig = {
@@ -20,4 +25,5 @@ export const DEFAULT_CONFIG: CoreWriterConfig = {
   batchSize: 500,
   idempotencyTtlDays: 30,
   defaultDecayRate: 0.01,
+  confidenceTuning: DEFAULT_CONFIDENCE_TUNING,
 };

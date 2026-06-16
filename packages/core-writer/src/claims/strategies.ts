@@ -1,5 +1,5 @@
 import type { PropertyClaim, ResolutionStrategy, ClaimResolutionResult } from '@shipit-ai/shared';
-import { computeEffectiveConfidence } from '@shipit-ai/shared';
+import { computeEffectiveConfidence, sourceRank } from '@shipit-ai/shared';
 
 export function resolveClaims(
   claims: PropertyClaim[],
@@ -28,11 +28,14 @@ function resolveManualOverrideFirst(
   decayRate?: number,
   now?: Date,
 ): ClaimResolutionResult {
-  const manualClaim = claims.find((c) => c.source.startsWith('manual:'));
-  if (manualClaim) {
+  // A human attestation wins: `verified:<user>` outranks `manual:<user>`.
+  const override =
+    claims.find((c) => c.source.startsWith('verified:')) ??
+    claims.find((c) => c.source.startsWith('manual:'));
+  if (override) {
     return {
-      effective_value: manualClaim.value,
-      winning_claim: manualClaim,
+      effective_value: override.value,
+      winning_claim: override,
       strategy: 'MANUAL_OVERRIDE_FIRST',
       all_claims: claims,
     };
@@ -65,25 +68,10 @@ function resolveHighestConfidence(
   };
 }
 
-const SOURCE_PRIORITY = [
-  'manual',
-  'backstage',
-  'github',
-  // Authenticated-login self-claims rank just below the GitHub connector, so
-  // the connector wins overlapping fields while login fills gaps it lacks.
-  'login',
-  'kubernetes',
-  'datadog',
-  'jira',
-  'identity',
-];
-
 function resolveAuthoritativeOrder(claims: PropertyClaim[]): ClaimResolutionResult {
-  const sorted = [...claims].sort((a, b) => {
-    const aIdx = SOURCE_PRIORITY.findIndex((p) => a.source.startsWith(p));
-    const bIdx = SOURCE_PRIORITY.findIndex((p) => b.source.startsWith(p));
-    return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
-  });
+  // Ordering comes from the shared SOURCE_PRIORITY_ORDER registry (via sourceRank)
+  // so the writer and the api-server read path never disagree.
+  const sorted = [...claims].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
   const winner = sorted[0];
   return {
     effective_value: winner.value,
