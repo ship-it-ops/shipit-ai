@@ -49,6 +49,12 @@ function signed(n: number): string {
   return (r >= 0 ? '+' : '−') + Math.abs(r).toFixed(2);
 }
 
+/** Friendly source name for the compact view: `verified:web-ui` -> `verified`. */
+function sourceLabel(source: string): string {
+  const i = source.indexOf(':');
+  return i === -1 ? source : source.slice(0, i);
+}
+
 /** "0.90 base (github) − 0.02 decay + 0.03 corroborated by datadog = 0.91" */
 function BreakdownSentence({ breakdown }: { breakdown: ConfidenceBreakdown }) {
   const [first, ...rest] = breakdown.terms;
@@ -102,12 +108,58 @@ function ClaimRow({
   );
 }
 
-function PropertyBlock({ entityId, prop }: { entityId: string; prop: ResolvedProperty }) {
+function PropertyBlock({
+  entityId,
+  prop,
+  compact = false,
+}: {
+  entityId: string;
+  prop: ResolvedProperty;
+  compact?: boolean;
+}) {
   const queryClient = useQueryClient();
   const verify = useMutation({
     mutationFn: () => verifyClaim(entityId, prop.property_key, prop.effective_value),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['claims', entityId] }),
   });
+
+  // Compact view (catalog entity page): just the resolved value, status, and a
+  // confidence %. Drops the strategy text, breakdown sentence, and the raw
+  // per-source claim rows — the "Open in explorer" link surfaces those.
+  if (compact) {
+    const sources = Array.from(new Set(prop.claims.map((c) => sourceLabel(c.source))));
+    return (
+      <div className="border-border bg-panel-2 rounded-base flex flex-col gap-1.5 border p-3">
+        <div className="flex items-center gap-2">
+          <h3 className="text-text font-mono text-[13px]">{prop.property_key}</h3>
+          <Badge size="sm" variant={STATUS_VARIANT[prop.status]}>
+            {STATUS_LABEL[prop.status]}
+          </Badge>
+          {prop.needs_review && (
+            <Badge size="sm" variant="warn" icon={<IconGlyph name="warn" size={10} />}>
+              needs review
+            </Badge>
+          )}
+          <span className="text-text-muted ml-auto text-[12px]">
+            {(prop.confidence * 100).toFixed(0)}%
+          </span>
+        </div>
+        <div className="text-text font-mono text-[13px]">{fmt(prop.effective_value)}</div>
+        <div className="flex items-center gap-2">
+          <span className="text-text-dim text-[11px]">sources: {sources.join(' · ')}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            disabled={verify.isPending}
+            onClick={() => verify.mutate()}
+          >
+            {prop.status === 'USER_VERIFIED' ? 'Re-verify' : 'Verify'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section className="border-border bg-panel-2 rounded-base flex flex-col gap-3 border p-4">
@@ -165,6 +217,7 @@ function PropertyBlock({ entityId, prop }: { entityId: string; prop: ResolvedPro
 export function ClaimList({
   data,
   showHeader = true,
+  compact = false,
 }: {
   data: EntityClaims;
   /**
@@ -173,6 +226,12 @@ export function ClaimList({
    * header) passes `false` to avoid duplicating it.
    */
   showHeader?: boolean;
+  /**
+   * Compact rendering for the catalog entity page: value + status + confidence
+   * only, no per-source claim rows or strategy/breakdown detail. The Explorer
+   * (full detail) leaves this `false`.
+   */
+  compact?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -181,9 +240,9 @@ export function ClaimList({
           <p className="text-text-dim font-mono text-[11px]">{data.entityId}</p>
         </Card>
       )}
-      <div className="flex flex-col gap-3">
+      <div className={compact ? 'flex flex-col gap-2' : 'flex flex-col gap-3'}>
         {data.properties.map((p) => (
-          <PropertyBlock key={p.property_key} entityId={data.entityId} prop={p} />
+          <PropertyBlock key={p.property_key} entityId={data.entityId} prop={p} compact={compact} />
         ))}
       </div>
     </div>

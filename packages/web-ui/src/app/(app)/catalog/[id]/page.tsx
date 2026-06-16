@@ -264,7 +264,7 @@ export default function EntityDetailPage() {
 
           <Card
             title="Claims"
-            description="Every value this entity has, per source — with the resolved winner, confidence, and verification status."
+            description="Resolved value, confidence, and verification status per field. Open in explorer for the full per-source audit trail."
             actions={
               <Button
                 variant="ghost"
@@ -287,7 +287,7 @@ export default function EntityDetailPage() {
             ) : !claims.data || claims.data.properties.length === 0 ? (
               <p className="text-text-muted text-[12px]">No claims recorded for this entity.</p>
             ) : (
-              <ClaimList data={claims.data} showHeader={false} />
+              <ClaimList data={claims.data} showHeader={false} compact />
             )}
           </Card>
         </div>
