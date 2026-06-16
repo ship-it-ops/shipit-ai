@@ -52,6 +52,28 @@ describe('Cypher Generator', () => {
       const result = generateBlastRadiusCypher('node', 5, 'DOWNSTREAM');
       expect(result.query).toContain('*1..5');
     });
+
+    it('traverses ownership edges downstream so a team reaches its owned repos/services', () => {
+      // GitHub teams own repos via CODEOWNER_OF (and services via OWNS).
+      // Without these in the pattern, a Team node's blast radius is empty.
+      const result = generateBlastRadiusCypher(
+        'shipit://team/default/acme/platform',
+        3,
+        'DOWNSTREAM',
+      );
+      expect(result.query).toContain('OWNS');
+      expect(result.query).toContain('CODEOWNER_OF');
+    });
+
+    it('does NOT pull ownership edges into upstream traversal', () => {
+      // Downstream-only: a service should not surface its owning team upstream.
+      const result = generateBlastRadiusCypher(
+        'shipit://logical-service/default/acme/config',
+        3,
+        'UPSTREAM',
+      );
+      expect(result.query).not.toContain('CODEOWNER_OF');
+    });
   });
 
   describe('generateEntityDetailCypher', () => {

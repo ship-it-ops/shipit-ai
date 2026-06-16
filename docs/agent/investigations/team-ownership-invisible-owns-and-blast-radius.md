@@ -1,8 +1,8 @@
 ---
 type: investigation
-status: active
+status: fixed
 created: 2026-06-15
-updated: 2026-06-15
+updated: 2026-06-16
 author: claude-opus-4-8
 tags: [team-dashboard, blast-radius, codeowner, ownership, cypher, github-connector]
 importance: core
@@ -52,14 +52,33 @@ Note: `generateFindOwnersCypher` (same file, lines 81-82) DOES query both
 predate / missed it. Not a canonical-ID format mismatch (`members` works, so the
 Team node id matches its incoming edges fine).
 
-## Fix
+## Fix (shipped to working tree 2026-06-16, downstream-only ownership)
 
-- `team-service.ts`: change the two ownership matches to
-  `-[:OWNS|CODEOWNER_OF]->` (dedupe via `count(DISTINCT owned)` already present).
-- `generator.ts`: add `OWNS` and `CODEOWNER_OF` to the blast-radius edge pattern
-  (or a dedicated ownership pattern) so team→repo/service hops are traversable.
+The web-UI blast radius is **not** the mcp-server generator — it's
+`packages/api-server/src/services/neo4j-service.ts` `getBlastRadius()` (APOC
+`apoc.path.subgraphAll`). Both were fixed:
+
+- `team-service.ts`: both ownership matches → `-[:OWNS|CODEOWNER_OF]->`;
+  `getTeam` owned query gained `RETURN DISTINCT` (a node owned via both rel
+  types would otherwise list twice). `count(DISTINCT owned)` already dedupes the
+  list-page count.
+- `neo4j-service.ts` `getBlastRadius`: `relationshipFilter` changed from
+  `'<DEPENDS_ON|<CALLS|<MONITORS'` to
+  `'<DEPENDS_ON|<CALLS|<MONITORS|OWNS>|CODEOWNER_OF>'`. Ownership is **outbound
+  only** (`OWNS>`), so a team reaches what it owns but a service's blast radius
+  does not surface its owning team.
+- `mcp-server/src/cypher/generator.ts`: split into `DEPENDENCY_EDGE_PATTERN` +
+  `OWNERSHIP_EDGE_PATTERN`; DOWNSTREAM adds ownership, UPSTREAM and BOTH stay
+  dependency-only (BOTH is undirected, so ownership there would surface owners).
+- Tests: `api-server/.../team-service.test.ts`,
+  `api-server/.../blast-radius-ownership.test.ts`,
+  plus two cases in `mcp-server/.../cypher-generator.test.ts`. 380 pkg tests
+  green, both packages typecheck.
 - `on-call` on the dashboard is separately 0 because no on-call connector emits
-  `ON_CALL_FOR` in this demo — out of scope for this fix.
+  `ON_CALL_FOR` in this demo — out of scope, NOT fixed.
+
+Not yet committed/pushed/deployed (awaiting user approval). The deployed demo
+still shows the bug until a rebuild+deploy.
 
 ## Prevention
 

@@ -202,15 +202,24 @@ export class Neo4jService {
   /**
    * Blast radius — entities transitively affected if the start entity is down.
    *
-   * Walks *inbound* on the impact-bearing relationship types only:
+   * Walks *inbound* on the impact-bearing relationship types:
    * - `DEPENDS_ON` — declared service-to-service / repo-to-repo dependency
    * - `CALLS` — runtime call dependency
    * - `MONITORS` — monitors that would fire when this entity breaks
    *
-   * Other relationships (`IMPLEMENTED_BY`, `DEPLOYED_AS`, `OWNS`, `MEMBER_OF`,
-   * etc.) describe structure, not impact, and are excluded. Entities with no
-   * inbound impact edges (Person, Team, leaf Repositories) correctly return
-   * just themselves.
+   * Plus *outbound* on ownership edges so an owner (Team/Person) reaches the
+   * entities it is responsible for, and the impact walk continues from there:
+   * - `OWNS` — Team → LogicalService/Repository/Deployment (Backstage/seed)
+   * - `CODEOWNER_OF` — Team/Person → Repository (GitHub CODEOWNERS)
+   *
+   * Ownership is outbound-only (`OWNS>`, not `<OWNS`), so a service's blast
+   * radius does not pull in its owning team — ownership flows downstream from
+   * owner to owned, matching the "what does this team affect?" question. A
+   * leaf entity (a Person with no reports, a Repository nobody depends on)
+   * still correctly returns just itself.
+   *
+   * Other structural relationships (`IMPLEMENTED_BY`, `DEPLOYED_AS`,
+   * `MEMBER_OF`, etc.) are excluded.
    */
   async getBlastRadius(
     _ctx: RequestContext,
@@ -224,7 +233,7 @@ export class Neo4jService {
       `MATCH (start {id: $nodeId})
        CALL apoc.path.subgraphAll(start, {
          maxLevel: $depth,
-         relationshipFilter: '<DEPENDS_ON|<CALLS|<MONITORS',
+         relationshipFilter: '<DEPENDS_ON|<CALLS|<MONITORS|OWNS>|CODEOWNER_OF>',
          limit: $probeLimit
        })
        YIELD nodes, relationships

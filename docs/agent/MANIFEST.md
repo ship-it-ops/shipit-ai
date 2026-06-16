@@ -12,7 +12,7 @@ Last updated: 2026-06-15 | Total notes: 56
 - [portal-demo-502-node-recreation-neg-drain](investigations/portal-demo-502-node-recreation-neg-drain.md) | investigation | completed | core | 2026-06-15 | single-node recreation drained NEGs to 0; LB 502'd everything; self-healed
 - [per-org-manifest-created-app-invisible-confirmation](investigations/per-org-manifest-created-app-invisible-confirmation.md) | investigation | completed | core | 2026-06-15 | per-org App created+claimed OK but creds hidden in collapsed details; added ok-Banner
 - [person-canonical-id-login-case-mismatch](investigations/person-canonical-id-login-case-mismatch.md) | investigation | fixed | core | 2026-06-15 | connector keyed Person id by raw login (uppercase never merged); shared buildPersonCanonicalId lowercases both sides + core-writer migration
-- [team-ownership-invisible-owns-and-blast-radius](investigations/team-ownership-invisible-owns-and-blast-radius.md) | investigation | active | core | 2026-06-15 | team-service + blast-radius count only OWNS; GitHub ownership is CODEOWNER_OF
+- [team-ownership-invisible-owns-and-blast-radius](investigations/team-ownership-invisible-owns-and-blast-radius.md) | investigation | fixed | core | 2026-06-16 | team-service + web-UI blast-radius only walked OWNS; added CODEOWNER_OF (downstream-only); uncommitted
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
