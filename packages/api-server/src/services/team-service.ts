@@ -1,8 +1,13 @@
 // Phase 2: Team Dashboard backend.
 // Reads Team nodes and the relationships seeded by the GitHub connector / demo:
-//   (:Team)-[:OWNS]->(:LogicalService|:Repository|:Deployment)
+//   (:Team)-[:OWNS]->(:LogicalService|:Repository|:Deployment)        (Backstage/seed)
+//   (:Team)-[:CODEOWNER_OF]->(:Repository)                            (GitHub CODEOWNERS)
 //   (:Person)-[:MEMBER_OF]->(:Team)
 //   (:Person)-[:ON_CALL_FOR]->(:LogicalService)  (joined back to teams via OWNS)
+//
+// "Ownership" spans both OWNS and CODEOWNER_OF — the rel types marked
+// `semantics: 'ownership'` in the schema. GitHub-synced teams own repos via
+// CODEOWNER_OF only (no OWNS), so counting OWNS alone reports "0 owns".
 import type {
   OnCallAssignment,
   TeamDetail,
@@ -36,7 +41,7 @@ export class TeamService {
   async listTeams(): Promise<TeamSummary[]> {
     const records = await this.neo4j.runQuery(
       `MATCH (t:Team)
-       OPTIONAL MATCH (t)-[:OWNS]->(owned)
+       OPTIONAL MATCH (t)-[:OWNS|CODEOWNER_OF]->(owned)
        OPTIONAL MATCH (p:Person)-[:MEMBER_OF]->(t)
        OPTIONAL MATCH (oc:Person)-[:ON_CALL_FOR]->(svc)<-[:OWNS]-(t)
        WITH t,
@@ -72,8 +77,8 @@ export class TeamService {
     const props = t.properties;
 
     const ownedRecords = await this.neo4j.runQuery(
-      `MATCH (t:Team {id: $id})-[:OWNS]->(n)
-       RETURN n, labels(n) AS labels
+      `MATCH (t:Team {id: $id})-[:OWNS|CODEOWNER_OF]->(n)
+       RETURN DISTINCT n, labels(n) AS labels
        ORDER BY coalesce(n.tier, 99), n.name`,
       { id },
     );

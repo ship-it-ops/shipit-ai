@@ -1,4 +1,8 @@
-import neo4j, { type Driver, type Record as Neo4jRecord } from 'neo4j-driver';
+import neo4j, {
+  type Driver,
+  type ManagedTransaction,
+  type Record as Neo4jRecord,
+} from 'neo4j-driver';
 import type { RequestContext } from '@shipit-ai/shared';
 
 export interface GraphStats {
@@ -74,6 +78,21 @@ export class Neo4jService {
     try {
       const result = await session.run(cypher, params);
       return result.records;
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * Run `work` inside a single managed write transaction. Use this when a
+   * read-modify-write must be atomic — e.g. mutating a node's `_claims` array,
+   * where a write lock acquired early in the transaction serializes concurrent
+   * writers so neither silently clobbers the other.
+   */
+  async runInWriteTransaction<T>(work: (tx: ManagedTransaction) => Promise<T>): Promise<T> {
+    const session = this.driver.session();
+    try {
+      return await session.executeWrite(work);
     } finally {
       await session.close();
     }
@@ -202,15 +221,24 @@ export class Neo4jService {
   /**
    * Blast radius — entities transitively affected if the start entity is down.
    *
-   * Walks *inbound* on the impact-bearing relationship types only:
+   * Walks *inbound* on the impact-bearing relationship types:
    * - `DEPENDS_ON` — declared service-to-service / repo-to-repo dependency
    * - `CALLS` — runtime call dependency
    * - `MONITORS` — monitors that would fire when this entity breaks
    *
-   * Other relationships (`IMPLEMENTED_BY`, `DEPLOYED_AS`, `OWNS`, `MEMBER_OF`,
-   * etc.) describe structure, not impact, and are excluded. Entities with no
-   * inbound impact edges (Person, Team, leaf Repositories) correctly return
-   * just themselves.
+   * Plus *outbound* on ownership edges so an owner (Team/Person) reaches the
+   * entities it is responsible for, and the impact walk continues from there:
+   * - `OWNS` — Team → LogicalService/Repository/Deployment (Backstage/seed)
+   * - `CODEOWNER_OF` — Team/Person → Repository (GitHub CODEOWNERS)
+   *
+   * Ownership is outbound-only (`OWNS>`, not `<OWNS`), so a service's blast
+   * radius does not pull in its owning team — ownership flows downstream from
+   * owner to owned, matching the "what does this team affect?" question. A
+   * leaf entity (a Person with no reports, a Repository nobody depends on)
+   * still correctly returns just itself.
+   *
+   * Other structural relationships (`IMPLEMENTED_BY`, `DEPLOYED_AS`,
+   * `MEMBER_OF`, etc.) are excluded.
    */
   async getBlastRadius(
     _ctx: RequestContext,
@@ -224,7 +252,7 @@ export class Neo4jService {
       `MATCH (start {id: $nodeId})
        CALL apoc.path.subgraphAll(start, {
          maxLevel: $depth,
-         relationshipFilter: '<DEPENDS_ON|<CALLS|<MONITORS',
+         relationshipFilter: '<DEPENDS_ON|<CALLS|<MONITORS|OWNS>|CODEOWNER_OF>',
          limit: $probeLimit
        })
        YIELD nodes, relationships

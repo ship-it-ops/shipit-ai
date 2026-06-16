@@ -27,7 +27,14 @@ export type {
   CypherQueryError,
 } from './types/query-api.js';
 
-export type { ResolvedProperty, EntityClaims, ConflictRow } from './types/claims-api.js';
+export type {
+  ResolvedProperty,
+  EntityClaims,
+  ConflictRow,
+  VerificationStatus,
+  ConfidenceBreakdown,
+  BreakdownTerm,
+} from './types/claims-api.js';
 
 export type {
   SchemaSnapshot,
@@ -74,7 +81,31 @@ export { DEFAULT_SCHEMA } from './schema/defaults.js';
 export { DEFAULT_OWNERSHIP_REL_TYPES, getOwnershipRelTypes } from './schema/semantics.js';
 
 // Utilities
-export { computeEffectiveConfidence } from './utils/confidence.js';
+export {
+  computeEffectiveConfidence,
+  computeFieldConfidence,
+  deriveVerificationStatus,
+  decayLoss,
+  weeksSince,
+  DEFAULT_CONFIDENCE_TUNING,
+} from './utils/confidence.js';
+export type {
+  ConfidenceTuning,
+  FieldConfidenceOptions,
+  VerificationStatusInput,
+} from './utils/confidence.js';
+
+// Source reliability / independence registry
+export {
+  SOURCE_RELIABILITY,
+  SOURCE_PRIORITY_ORDER,
+  sourceKey,
+  getSourceReliability,
+  independenceGroup,
+  sourceRank,
+  isDerivedFrom,
+} from './config/source-reliability.js';
+export type { SourceReliabilityEntry } from './config/source-reliability.js';
 
 // Auth / request context
 export { SYSTEM_CONTEXT, hasCapability, buildCapabilitySet } from './auth/request-context.js';

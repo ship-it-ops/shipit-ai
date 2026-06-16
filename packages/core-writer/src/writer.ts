@@ -26,6 +26,12 @@ export interface NodeWriter {
   ): Promise<void>;
   writeEdge(edge: CanonicalEdge): Promise<void>;
   getExistingClaims(nodeId: string): Promise<CanonicalNode['_claims']>;
+  /**
+   * Refresh only a node's `_last_synced` timestamp without touching claims or
+   * properties. Used when an idempotent re-sync confirms an unchanged entity:
+   * the content write is skipped, but "last synced" should still advance.
+   */
+  touchLastSynced(nodeId: string, lastSynced: string): Promise<void>;
 }
 
 export class CoreWriter {
@@ -87,9 +93,25 @@ export class CoreWriter {
         try {
           const idempotencyKey = buildNodeIdempotencyKey(event.connector_id, node);
 
-          // Check idempotency
+          // Check idempotency first — on a steady-state re-sync most events are
+          // duplicates, so we avoid paying a reconcile lookup per known entity.
           if (await this.idempotency.isDuplicate(idempotencyKey)) {
             duplicatesSkipped++;
+            // Unchanged entity, but the connector re-confirmed it this run.
+            // Refresh only the freshness timestamp (cheap single-property write,
+            // no claim re-resolution) so the catalog "Synced" tracks the latest
+            // run and staleness reflects connector health, not content churn.
+            // Touch by node.id directly: GitHub canonical IDs are deterministic,
+            // so a re-synced entity's node.id IS its stored canonical id (a
+            // primary-key match), letting us skip reconcile on this hot path.
+            // Best effort — a touch failure must not fail the sync.
+            if (typeof node._last_synced === 'string') {
+              try {
+                await this.nodeWriter.touchLastSynced(node.id, node._last_synced);
+              } catch {
+                // non-critical: timestamp refresh failed, leave it stale
+              }
+            }
             continue;
           }
 

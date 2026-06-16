@@ -5,10 +5,18 @@ export interface CypherQuery {
 
 export type BlastRadiusDirection = 'DOWNSTREAM' | 'UPSTREAM' | 'BOTH';
 
-const DOWNSTREAM_EDGE_PATTERN =
+const DEPENDENCY_EDGE_PATTERN =
   'IMPLEMENTED_BY|DEPLOYED_AS|EMITS_TELEMETRY_AS|CALLS|DEPENDS_ON|BUILT_BY|TRIGGERS';
 
-const UPSTREAM_EDGE_PATTERN = DOWNSTREAM_EDGE_PATTERN;
+// Ownership edges are directional: an owner (Team/Person) points at what it
+// owns. Included downstream only so a Team reaches its owned repos/services
+// (GitHub teams own repos via CODEOWNER_OF, not OWNS); excluded upstream so a
+// service's blast radius does not surface its owning team.
+const OWNERSHIP_EDGE_PATTERN = 'OWNS|CODEOWNER_OF';
+
+const DOWNSTREAM_EDGE_PATTERN = `${DEPENDENCY_EDGE_PATTERN}|${OWNERSHIP_EDGE_PATTERN}`;
+
+const UPSTREAM_EDGE_PATTERN = DEPENDENCY_EDGE_PATTERN;
 
 export function generateBlastRadiusCypher(
   node: string,
@@ -20,7 +28,9 @@ export function generateBlastRadiusCypher(
     direction === 'UPSTREAM'
       ? `<-[:${UPSTREAM_EDGE_PATTERN}*1..${depth}]-`
       : direction === 'BOTH'
-        ? `-[:${DOWNSTREAM_EDGE_PATTERN}*1..${depth}]-`
+        ? // Undirected: ownership edges are excluded here (they would otherwise
+          // surface owners from the owned side); only dependency edges apply.
+          `-[:${DEPENDENCY_EDGE_PATTERN}*1..${depth}]-`
         : `-[:${DOWNSTREAM_EDGE_PATTERN}*1..${depth}]->`;
 
   let envFilter = '';

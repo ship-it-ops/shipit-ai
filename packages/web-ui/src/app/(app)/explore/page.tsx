@@ -19,7 +19,7 @@ import { useInitialGraphData } from '@/lib/hooks/use-graph-data';
 
 export default function GraphExplorerPage() {
   const [filterOpen, setFilterOpen] = useState(true);
-  const { selectedNode, setSelectedNode, cyInstance } = useGraphStore();
+  const { selectedNode, setSelectedNode, cyInstance, dialogOpen } = useGraphStore();
 
   const { data: graphData } = useInitialGraphData();
 
@@ -93,13 +93,18 @@ export default function GraphExplorerPage() {
           {graphData ? (
             <>
               <GraphCanvas data={graphData} onNodeClick={handleNodeClick} />
-              <div className="absolute right-5 bottom-5 z-10">
-                <GraphLegend
-                  entries={legendEntries}
-                  heading="Node types"
-                  className="bg-panel/95 border-border max-w-[180px] border shadow-lg backdrop-blur"
-                />
-              </div>
+              {/* Hidden while a dialog is open: the legend's `backdrop-filter`
+                  promotes it to its own compositing layer that paints above the
+                  dialog's backdrop overlay regardless of z-index. */}
+              {!dialogOpen && (
+                <div className="absolute right-5 bottom-5 z-10">
+                  <GraphLegend
+                    entries={legendEntries}
+                    heading="Node types"
+                    className="bg-panel/95 border-border max-w-[180px] border shadow-lg backdrop-blur"
+                  />
+                </div>
+              )}
             </>
           ) : (
             <div className="text-text-muted flex h-full items-center justify-center">

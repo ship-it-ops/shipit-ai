@@ -5,40 +5,44 @@
 // dashboard view.
 import type { PropertyClaim, ResolutionStrategy, ShipItSchema } from '@shipit-ai/shared';
 import type { ConflictRow, EntityClaims, ResolvedProperty } from '@shipit-ai/shared';
+import {
+  computeEffectiveConfidence,
+  computeFieldConfidence,
+  deriveVerificationStatus,
+  sourceKey,
+  sourceRank,
+  weeksSince,
+  DEFAULT_CONFIDENCE_TUNING,
+} from '@shipit-ai/shared';
 import type { Neo4jService } from './neo4j-service.js';
 import type { SchemaService } from './schema-service.js';
-
-// Used by AUTHORITATIVE_ORDER when the schema doesn't carry a per-property
-// override list. Mirrors the order suggested in design doc §5 and matches the
-// seed-demo's source attribution.
-// `login` ranks just below `github` (mirrors core-writer's SOURCE_PRIORITY) so
-// the read/display path agrees with the writer on overlapping login-vs-github
-// claims. NB: the pre-existing `manual` disagreement between this list and the
-// writer's is a separate cleanup (see open-questions/manual-edit-write-path.md).
-const DEFAULT_SOURCE_ORDER = [
-  'backstage',
-  'kubernetes',
-  'github',
-  'login',
-  'datadog',
-  'jira',
-  'manual',
-];
 
 function pickByStrategy(
   claims: PropertyClaim[],
   strategy: ResolutionStrategy,
+  now: Date,
 ): { winner: PropertyClaim | null; effective: unknown } {
   if (claims.length === 0) return { winner: null, effective: null };
 
   if (strategy === 'MANUAL_OVERRIDE_FIRST') {
-    const manual = claims.find((c) => c.source === 'manual');
-    if (manual) return { winner: manual, effective: manual.value };
-    return pickByStrategy(claims, 'HIGHEST_CONFIDENCE');
+    // Human attestation wins: `verified:<user>` outranks `manual:<user>`.
+    // Matches core-writer's resolveManualOverrideFirst (prefix match, not exact).
+    const override =
+      claims.find((c) => c.source.startsWith('verified:')) ??
+      claims.find((c) => c.source.startsWith('manual:'));
+    if (override) return { winner: override, effective: override.value };
+    return pickByStrategy(claims, 'HIGHEST_CONFIDENCE', now);
   }
 
   if (strategy === 'HIGHEST_CONFIDENCE') {
-    const w = [...claims].sort((a, b) => b.confidence - a.confidence)[0];
+    // Rank by DECAYED confidence so the read path matches the writer (previously
+    // this sorted on raw confidence — see open-questions/manual-edit-write-path.md).
+    const w = [...claims].sort((a, b) => {
+      const ea = computeEffectiveConfidence(a.confidence, a.ingested_at, now);
+      const eb = computeEffectiveConfidence(b.confidence, b.ingested_at, now);
+      if (eb !== ea) return eb - ea;
+      return b.ingested_at.localeCompare(a.ingested_at);
+    })[0];
     return { winner: w, effective: w.value };
   }
 
@@ -48,13 +52,9 @@ function pickByStrategy(
   }
 
   if (strategy === 'AUTHORITATIVE_ORDER') {
-    const ranked = [...claims].sort((a, b) => {
-      const ai = DEFAULT_SOURCE_ORDER.indexOf(a.source);
-      const bi = DEFAULT_SOURCE_ORDER.indexOf(b.source);
-      const aRank = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-      const bRank = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-      return aRank - bRank;
-    });
+    // Ordering from the shared SOURCE_PRIORITY_ORDER registry (via sourceRank),
+    // so the read path and the writer never disagree on source priority.
+    const ranked = [...claims].sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
     return { winner: ranked[0], effective: ranked[0].value };
   }
 
@@ -71,7 +71,25 @@ function pickByStrategy(
   }
 
   // Unknown strategy — fall back to highest confidence.
-  return pickByStrategy(claims, 'HIGHEST_CONFIDENCE');
+  return pickByStrategy(claims, 'HIGHEST_CONFIDENCE', now);
+}
+
+/**
+ * A verified field needs re-review when a non-verified claim asserts a DIFFERENT
+ * value and arrived after the verification — reality has drifted from the human's
+ * assertion. The verified value still shows; we surface the drift for adjudication.
+ */
+function computeNeedsReview(group: PropertyClaim[], winner: PropertyClaim): boolean {
+  const verified = group.find((c) => sourceKey(c.source) === 'verified');
+  if (!verified) return false;
+  const verifiedValue = verified.verified_value ?? verified.value;
+  const verifiedAt = verified.verified_at ?? verified.ingested_at;
+  return group.some(
+    (c) =>
+      sourceKey(c.source) !== 'verified' &&
+      JSON.stringify(c.value) !== JSON.stringify(verifiedValue) &&
+      c.ingested_at > verifiedAt,
+  );
 }
 
 function parseClaims(raw: unknown): PropertyClaim[] {
@@ -129,17 +147,114 @@ export class ClaimService {
       grouped.set(c.property_key, existing);
     }
 
+    const now = new Date();
+    const tuning = DEFAULT_CONFIDENCE_TUNING;
     const properties: ResolvedProperty[] = [];
     for (const [key, group] of grouped) {
       const strategy = strategyFor(schema, label, key);
-      const { winner, effective } = pickByStrategy(group, strategy);
+      const { winner, effective } = pickByStrategy(group, strategy, now);
+      const conflict = hasConflict(group);
+
+      if (!winner) {
+        // No claims to score — emit a degenerate-but-typed row.
+        properties.push({
+          property_key: key,
+          effective_value: effective,
+          winning_claim: null,
+          strategy,
+          has_conflict: conflict,
+          claims: group,
+          confidence: 0,
+          breakdown: {
+            base: 0,
+            base_source: 'none',
+            decay: 0,
+            corroboration: 0,
+            corroboration_sources: [],
+            conflict: 0,
+            conflict_sources: [],
+            ambiguity: 0,
+            verified: false,
+            verified_by: null,
+            effective: 0,
+            terms: [],
+          },
+          status: 'UNVERIFIED',
+          needs_review: false,
+        });
+        continue;
+      }
+
+      const breakdown = computeFieldConfidence(group, winner, { now, tuning });
+      const needsReview = computeNeedsReview(group, winner);
+      const isStale =
+        !breakdown.verified && weeksSince(winner.ingested_at, now) > tuning.staleWeeks;
+      const status = deriveVerificationStatus({
+        breakdown,
+        hasConflict: conflict,
+        isStale,
+        needsReview,
+      });
+
       properties.push({
         property_key: key,
         effective_value: effective,
         winning_claim: winner,
         strategy,
-        has_conflict: hasConflict(group),
+        has_conflict: conflict,
         claims: group,
+        confidence: breakdown.effective,
+        breakdown,
+        status,
+        needs_review: needsReview,
+      });
+    }
+
+    // Ownership clarity: GitHub ownership is modeled as CODEOWNER_OF edges, not a
+    // property claim, so it never appears in `_claims`. Surface a derived per-entity
+    // row whose confidence DROPS as the number of distinct owners rises — multiplicity
+    // is ambiguity, not corroboration. Individual edges stay high-confidence; the
+    // aggregate "who owns this?" is what gets less certain.
+    // See decisions/per-field-confidence-and-verification.md.
+    const ownerRecords = await this.neo4j.runQuery(
+      `MATCH (o)-[:CODEOWNER_OF]->(n {id: $id})
+       RETURN DISTINCT coalesce(o.name, o.login, o.id) AS name`,
+      { id: entityId },
+    );
+    if (ownerRecords.length > 0) {
+      const owners = ownerRecords.map((r) => String(r.get('name')));
+      const ownerCount = owners.length;
+      const ownerWinner = {
+        property_key: 'ownership_clarity',
+        value: ownerCount === 1 ? owners[0] : owners,
+        source: 'github',
+        source_id: `${entityId}#codeowners`,
+        ingested_at: now.toISOString(),
+        confidence: 0.95, // codeowner edge base confidence
+        evidence: null,
+      };
+      const ownerBreakdown = computeFieldConfidence([ownerWinner], ownerWinner, {
+        now,
+        tuning,
+        ambiguityCount: ownerCount,
+        ambiguityReason: `${ownerCount} codeowner${ownerCount === 1 ? '' : 's'}`,
+      });
+      properties.push({
+        property_key: 'ownership_clarity',
+        effective_value: ownerWinner.value,
+        winning_claim: ownerWinner,
+        strategy: 'MERGE_SET',
+        has_conflict: ownerCount > 1,
+        claims: [ownerWinner],
+        confidence: ownerBreakdown.effective,
+        breakdown: ownerBreakdown,
+        status: deriveVerificationStatus({
+          breakdown: ownerBreakdown,
+          hasConflict: ownerCount > 1,
+          isStale: false,
+          needsReview: false,
+        }),
+        needs_review: false,
       });
     }
 
