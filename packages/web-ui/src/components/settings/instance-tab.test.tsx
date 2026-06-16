@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { clientConfig } from '@/lib/client-config';
 import { InstanceTab } from './instance-tab';
@@ -8,7 +8,14 @@ vi.mock('@/lib/api', () => ({
 }));
 import { updateOidcProvider } from '@/lib/api';
 
+// Controllable current-user so we can exercise the admin gating on Config export.
+const { mockUser } = vi.hoisted(() => ({ mockUser: { role: 'admin' } }));
+vi.mock('@/lib/current-user', () => ({ useCurrentUser: () => mockUser }));
+
 describe('InstanceTab', () => {
+  beforeEach(() => {
+    mockUser.role = 'admin';
+  });
   it('submits OIDC settings and surfaces the restart notice', async () => {
     render(<InstanceTab />);
     fireEvent.change(screen.getByLabelText(/issuer url/i), {
@@ -40,11 +47,19 @@ describe('InstanceTab', () => {
     expect(await screen.findByText('Admin role required.')).toBeInTheDocument();
   });
 
-  it('renders the config export download link', () => {
+  it('renders the config export download link for admins', () => {
     render(<InstanceTab />);
     const link = screen.getByRole('link', { name: /export config/i });
     // Absolute against the configured api origin — the web-ui and api-server
     // run on different origins in local dev, so a relative href would 404.
     expect(link).toHaveAttribute('href', `${clientConfig.api.url}/api/config/export`);
+  });
+
+  it('hides the config export for non-admin users', () => {
+    mockUser.role = 'member';
+    render(<InstanceTab />);
+    expect(screen.queryByRole('link', { name: /export config/i })).not.toBeInTheDocument();
+    // The OIDC card is unaffected by this change.
+    expect(screen.getByLabelText(/issuer url/i)).toBeInTheDocument();
   });
 });

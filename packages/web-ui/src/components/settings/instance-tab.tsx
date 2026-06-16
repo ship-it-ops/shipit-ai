@@ -7,9 +7,13 @@
 import { useState } from 'react';
 import { Button, Card, Input } from '@ship-it-ui/ui';
 import { clientConfig } from '@/lib/client-config';
+import { useCurrentUser } from '@/lib/current-user';
 import { updateOidcProvider } from '@/lib/api';
 
 export function InstanceTab() {
+  // Config export is admin-only on the server (config-export route returns 403
+  // for non-admins); hide the affordance so members don't see a dead button.
+  const isAdmin = useCurrentUser().role === 'admin';
   const [issuerUrl, setIssuerUrl] = useState('');
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -78,17 +82,19 @@ export function InstanceTab() {
         </div>
       </Card>
 
-      <Card title="Config export">
-        <p className="text-text-muted mb-3 text-[12px]">
-          Download the instance&apos;s current configuration (connectors, scopes, wiring — no
-          secrets) to commit as the seed config for the next deployment.
-        </p>
-        <Button variant="outline" asChild>
-          <a href={`${clientConfig.api.url}/api/config/export`} download>
-            Export config
-          </a>
-        </Button>
-      </Card>
+      {isAdmin && (
+        <Card title="Config export">
+          <p className="text-text-muted mb-3 text-[12px]">
+            Download the instance&apos;s current configuration (connectors, scopes, wiring — no
+            secrets) to commit as the seed config for the next deployment.
+          </p>
+          <Button variant="outline" asChild>
+            <a href={`${clientConfig.api.url}/api/config/export`} download>
+              Export config
+            </a>
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }
