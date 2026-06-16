@@ -39,6 +39,22 @@ export async function mergeNode(
   });
 }
 
+/**
+ * Refresh only `_last_synced` on an existing node — no claim/property writes.
+ * Used on the idempotent-skip path so an unchanged-but-re-confirmed entity's
+ * "Synced" time advances. No-ops if the node doesn't exist yet (MATCH misses).
+ */
+export async function touchLastSynced(
+  tx: ManagedTransaction,
+  nodeId: string,
+  lastSynced: string,
+): Promise<void> {
+  await tx.run(`MATCH (n {id: $id}) SET n._last_synced = $lastSynced`, {
+    id: nodeId,
+    lastSynced,
+  });
+}
+
 export async function mergeEdge(tx: ManagedTransaction, edge: CanonicalEdge): Promise<void> {
   const query = `
     MATCH (from {id: $fromId})

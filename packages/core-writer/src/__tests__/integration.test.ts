@@ -151,6 +151,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
         writtenEdges.push({ type: edge.type, from: edge.from, to: edge.to });
       }),
       getExistingClaims: vi.fn().mockResolvedValue([]),
+      touchLastSynced: vi.fn().mockResolvedValue(undefined),
     };
 
     const linkingKeyIndex = new InMemoryLinkingKeyIndex();

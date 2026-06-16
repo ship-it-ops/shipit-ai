@@ -56,6 +56,7 @@ function createMockNodeWriter(): NodeWriter {
     writeNode: vi.fn().mockResolvedValue(undefined),
     writeEdge: vi.fn().mockResolvedValue(undefined),
     getExistingClaims: vi.fn().mockResolvedValue([]),
+    touchLastSynced: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -97,6 +98,27 @@ describe('CoreWriter', () => {
 
     // writeNode should only have been called once
     expect(nodeWriter.writeNode).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes _last_synced on an idempotent skip without re-writing the node', async () => {
+    const first = makeEnvelope([makeNode('repo-a')], []);
+    await writer.processEvent(first);
+
+    // Same entity, same _event_version (dedup hit), but a newer sync time —
+    // i.e. the connector re-confirmed an unchanged entity on a later run.
+    const resynced = makeNode('repo-a');
+    resynced._last_synced = '2026-06-16T12:00:00Z';
+    const result = await writer.processEvent(makeEnvelope([resynced], []));
+
+    expect(result.duplicatesSkipped).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    // Content write is skipped...
+    expect(nodeWriter.writeNode).toHaveBeenCalledTimes(1);
+    // ...but the freshness timestamp is bumped on the resolved canonical id.
+    expect(nodeWriter.touchLastSynced).toHaveBeenCalledWith(
+      'shipit://repository/default/org/repo-a',
+      '2026-06-16T12:00:00Z',
+    );
   });
 
   it('resolves claims and passes effective properties to writer', async () => {

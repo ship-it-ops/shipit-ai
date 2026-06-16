@@ -5,7 +5,7 @@
 import type { CanonicalEdge, CanonicalNode, PropertyClaim } from '@shipit-ai/shared';
 import type { NodeWriter } from '../writer.js';
 import { Neo4jClient } from './client.js';
-import { getExistingClaims, mergeEdge, mergeNode } from './queries.js';
+import { getExistingClaims, mergeEdge, mergeNode, touchLastSynced } from './queries.js';
 
 export class Neo4jNodeWriter implements NodeWriter {
   private readonly client: Neo4jClient;
@@ -35,6 +35,12 @@ export class Neo4jNodeWriter implements NodeWriter {
   async getExistingClaims(nodeId: string): Promise<PropertyClaim[]> {
     return this.client.executeRead(async (tx) => {
       return getExistingClaims(tx, nodeId);
+    }, this.database);
+  }
+
+  async touchLastSynced(nodeId: string, lastSynced: string): Promise<void> {
+    await this.client.executeWrite(async (tx) => {
+      await touchLastSynced(tx, nodeId, lastSynced);
     }, this.database);
   }
 }
