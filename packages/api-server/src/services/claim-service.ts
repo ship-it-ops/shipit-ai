@@ -210,6 +210,54 @@ export class ClaimService {
       });
     }
 
+    // Ownership clarity: GitHub ownership is modeled as CODEOWNER_OF edges, not a
+    // property claim, so it never appears in `_claims`. Surface a derived per-entity
+    // row whose confidence DROPS as the number of distinct owners rises — multiplicity
+    // is ambiguity, not corroboration. Individual edges stay high-confidence; the
+    // aggregate "who owns this?" is what gets less certain.
+    // See decisions/per-field-confidence-and-verification.md.
+    const ownerRecords = await this.neo4j.runQuery(
+      `MATCH (o)-[:CODEOWNER_OF]->(n {id: $id})
+       RETURN DISTINCT coalesce(o.name, o.login, o.id) AS name`,
+      { id: entityId },
+    );
+    if (ownerRecords.length > 0) {
+      const owners = ownerRecords.map((r) => String(r.get('name')));
+      const ownerCount = owners.length;
+      const ownerWinner = {
+        property_key: 'ownership_clarity',
+        value: ownerCount === 1 ? owners[0] : owners,
+        source: 'github',
+        source_id: `${entityId}#codeowners`,
+        ingested_at: now.toISOString(),
+        confidence: 0.95, // codeowner edge base confidence
+        evidence: null,
+      };
+      const ownerBreakdown = computeFieldConfidence([ownerWinner], ownerWinner, {
+        now,
+        tuning,
+        ambiguityCount: ownerCount,
+        ambiguityReason: `${ownerCount} codeowner${ownerCount === 1 ? '' : 's'}`,
+      });
+      properties.push({
+        property_key: 'ownership_clarity',
+        effective_value: ownerWinner.value,
+        winning_claim: ownerWinner,
+        strategy: 'MERGE_SET',
+        has_conflict: ownerCount > 1,
+        claims: [ownerWinner],
+        confidence: ownerBreakdown.effective,
+        breakdown: ownerBreakdown,
+        status: deriveVerificationStatus({
+          breakdown: ownerBreakdown,
+          hasConflict: ownerCount > 1,
+          isStale: false,
+          needsReview: false,
+        }),
+        needs_review: false,
+      });
+    }
+
     properties.sort(
       (a, b) =>
         Number(b.has_conflict) - Number(a.has_conflict) ||

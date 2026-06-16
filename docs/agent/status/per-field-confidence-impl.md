@@ -39,14 +39,19 @@ Full workspace green: `pnpm -r typecheck` EXIT 0; `pnpm -r test` EXIT 0 (api-ser
 shared 90, core-writer 67, web-ui 88, github 30, mcp 73, sdk 30, event-bus 20).
 web-ui lint 0 errors.
 
-## Deferred (documented in plan + decision)
+## Follow-ups landed (2026-06-16, second pass)
 
-- Ownership-clarity ambiguity wiring from CODEOWNER_OF edge count (engine + test exist;
-  read-path edge-count wiring not done). Relates to active investigation
-  [team-ownership-invisible-owns-and-blast-radius](../investigations/team-ownership-invisible-owns-and-blast-radius.md).
+- **Ownership-clarity wired live**: `claim-service.getClaimsForEntity` now counts
+  CODEOWNER_OF edges and appends a derived `ownership_clarity` row whose confidence
+  drops via the engine's ambiguity penalty (1 owner → 0.95, 5 → 0.65). Completes the
+  3rd original requirement end-to-end.
+- **Re-reviews tab**: added to the existing Reconciliation page (`pending | reviews |
+merges`) listing `/review-queue` with Keep-verified / Accept-new actions via
+  `resolveReview`. Verification conflicts are now actionable in the UI.
+
+## Still deferred (documented in plan + decision)
+
 - Write-time `<prop>_confidence` snapshot in core-writer (advisory; read path recomputes).
-- Reconciliation-tab UI surface for the re-review queue (API + queue done; dedicated UI
-  reuse of compare-drawer not yet wired — Verify lives in Claim Explorer).
 - Bayesian engine swap; per-property independence; RBAC on write endpoints.
 
 ## Blocked on
