@@ -13,8 +13,9 @@ import {
 } from '@ship-it-ui/ui';
 import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
-import { useBlastRadius, useGraphData } from '@/lib/hooks/use-graph-data';
+import { useBlastRadius, useEntityClaims, useGraphData } from '@/lib/hooks/use-graph-data';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
+import { ClaimList } from '@/components/claims/claim-list';
 
 const TYPE_BADGE_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
   LogicalService: 'accent',
@@ -51,6 +52,7 @@ export default function EntityDetailPage() {
 
   const { data, isLoading, error } = useGraphData(id ?? undefined, 1);
   const blast = useBlastRadius(id ?? undefined, 3, blastOpen);
+  const claims = useEntityClaims(id ?? undefined);
 
   const node = useMemo(
     () => (id ? data?.nodes.find((n) => n.data.id === id) : undefined),
@@ -259,6 +261,35 @@ export default function EntityDetailPage() {
               </div>
             )}
           </Card>
+
+          <Card
+            title="Claims"
+            description="Every value this entity has, per source — with the resolved winner, confidence, and verification status."
+            actions={
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<IconGlyph name="external" size={11} />}
+                onClick={() => router.push(`/operations/claims?entity=${encodeURIComponent(id)}`)}
+              >
+                Open in explorer
+              </Button>
+            }
+          >
+            {claims.isLoading ? (
+              <div className="flex justify-center py-6">
+                <Spinner />
+              </div>
+            ) : claims.error ? (
+              <p className="text-text-muted text-[12px]">
+                Couldn&apos;t load claims for this entity.
+              </p>
+            ) : !claims.data || claims.data.properties.length === 0 ? (
+              <p className="text-text-muted text-[12px]">No claims recorded for this entity.</p>
+            ) : (
+              <ClaimList data={claims.data} showHeader={false} />
+            )}
+          </Card>
         </div>
 
         <aside className="flex flex-col gap-6">
@@ -308,15 +339,6 @@ export default function EntityDetailPage() {
                 onClick={() => setBlastOpen(true)}
               >
                 Show blast radius
-              </Button>
-              <Button
-                fullWidth
-                variant="outline"
-                size="sm"
-                icon={<IconGlyph name="search" size={11} />}
-                onClick={() => router.push(`/operations/claims?entity=${encodeURIComponent(id)}`)}
-              >
-                Inspect claims
               </Button>
               <Button
                 fullWidth

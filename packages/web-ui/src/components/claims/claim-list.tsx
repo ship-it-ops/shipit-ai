@@ -162,12 +162,25 @@ function PropertyBlock({ entityId, prop }: { entityId: string; prop: ResolvedPro
   );
 }
 
-export function ClaimList({ data }: { data: EntityClaims }) {
+export function ClaimList({
+  data,
+  showHeader = true,
+}: {
+  data: EntityClaims;
+  /**
+   * Render the `name · label · id` header card. The standalone claim explorer
+   * wants it; embedding on the entity catalog page (which already shows the
+   * header) passes `false` to avoid duplicating it.
+   */
+  showHeader?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-3">
-      <Card title={`${data.name} · ${data.label}`} className="!p-3">
-        <p className="text-text-dim font-mono text-[11px]">{data.entityId}</p>
-      </Card>
+      {showHeader && (
+        <Card title={`${data.name} · ${data.label}`} className="!p-3">
+          <p className="text-text-dim font-mono text-[11px]">{data.entityId}</p>
+        </Card>
+      )}
       <div className="flex flex-col gap-3">
         {data.properties.map((p) => (
           <PropertyBlock key={p.property_key} entityId={data.entityId} prop={p} />
