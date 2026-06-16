@@ -58,6 +58,7 @@ export type {
 export {
   buildCanonicalId,
   buildScopedCanonicalId,
+  buildPersonCanonicalId,
   parseCanonicalId,
   isValidCanonicalId,
 } from './identity/canonical-id.js';

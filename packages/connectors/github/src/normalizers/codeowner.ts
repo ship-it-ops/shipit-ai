@@ -1,5 +1,5 @@
 import type { CanonicalEdge } from '@shipit-ai/shared';
-import { buildCanonicalId, buildScopedCanonicalId } from '@shipit-ai/shared';
+import { buildScopedCanonicalId, buildPersonCanonicalId } from '@shipit-ai/shared';
 import type { CodeownersEntry } from '../fetchers/codeowners.js';
 
 export function normalizeCodeowner(
@@ -25,7 +25,10 @@ export function normalizeCodeowner(
       ownerId = buildScopedCanonicalId('Team', 'default', teamOrg, teamSlug);
     } else {
       // Person stays unscoped — a GitHub login is globally unique.
-      ownerId = buildCanonicalId('Person', 'default', cleanOwner);
+      // Lowercased (buildPersonCanonicalId) so a CODEOWNERS entry written
+      // `@Mohamed-E` merges with team-membership's `@mohamed-e` and with
+      // the login-upsert Person instead of forking into a second node.
+      ownerId = buildPersonCanonicalId(cleanOwner);
     }
 
     edges.push({

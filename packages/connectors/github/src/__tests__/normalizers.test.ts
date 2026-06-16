@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildCanonicalId, buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import {
+  buildCanonicalId,
+  buildScopedCanonicalId,
+  buildPersonCanonicalId,
+  buildLinkingKey,
+} from '@shipit-ai/shared';
 import { normalizeRepository } from '../normalizers/repository.js';
 import { normalizeTeam } from '../normalizers/team.js';
 import { normalizePipeline } from '../normalizers/pipeline.js';
@@ -111,6 +116,30 @@ describe('normalizeTeam', () => {
     expect(result.nodes[1].id).toBe(buildCanonicalId('Person', 'default', 'alice'));
   });
 
+  it('lowercases the Person id for a mixed-case login so it merges with the login Person', () => {
+    // Regression: GitHub returns the login in its stored case (`Mohamed-E`).
+    // The connector must key the Person id off the LOWERCASED login so it
+    // resolves to the same node as the login upsert — otherwise the
+    // logged-in user never gets their email synced onto the pulled Person.
+    const team: GitHubTeam = {
+      ...mockTeam,
+      members: [
+        {
+          login: 'Mohamed-E',
+          avatar_url: 'https://avatars.githubusercontent.com/Mohamed-E',
+          html_url: 'https://github.com/Mohamed-E',
+          role: 'maintainer',
+        },
+      ],
+    };
+    const result = normalizeTeam(team, ORG);
+    const person = result.nodes.find((n) => n.label === 'Person')!;
+    expect(person.id).toBe('shipit://person/default/mohamed-e');
+    expect(person.id).toBe(buildPersonCanonicalId('Mohamed-E'));
+    // The display property keeps the original casing.
+    expect(person.properties.login).toBe('Mohamed-E');
+  });
+
   it('produces MEMBER_OF edges from Person to Team', () => {
     const result = normalizeTeam(mockTeam, ORG);
     expect(result.edges).toHaveLength(2);
@@ -209,6 +238,16 @@ describe('normalizeCodeowner', () => {
     const personEdge = result.edges.find((e) => e.from.includes('person'));
     expect(personEdge).toBeDefined();
     expect(personEdge!.from).toBe(buildCanonicalId('Person', 'default', 'alice'));
+  });
+
+  it('lowercases a mixed-case CODEOWNERS user so it does not fork from team membership', () => {
+    // `@Mohamed-E` in a CODEOWNERS file must resolve to the same Person id
+    // as team-membership's `@mohamed-e` and the login upsert.
+    const entry: CodeownersEntry = { ...mockEntry, owners: ['@Mohamed-E'] };
+    const result = normalizeCodeowner(entry, ORG);
+    const personEdge = result.edges.find((e) => e.from.includes('person'));
+    expect(personEdge!.from).toBe(buildPersonCanonicalId('Mohamed-E'));
+    expect(personEdge!.from).toBe('shipit://person/default/mohamed-e');
   });
 
   it('includes pattern in edge properties', () => {

@@ -4,16 +4,20 @@
 // and the core-writer reconciles it through the same path the GitHub
 // connector uses.
 //
-// The single load-bearing constraint is the canonical id. GitHub logins key
-// by `login` (lowercased) — IDENTICAL to the connector's Person id
-// (`buildCanonicalId('Person','default', login)`; see
-// connectors/github/src/normalizers/team.ts) — so the IdentityReconciler
+// The single load-bearing constraint is the canonical id. Both this path and
+// the connector build it via the shared `buildPersonCanonicalId(login)`,
+// which lowercases the login — so a GitHub login with uppercase
+// (`Mohamed-E`) produces the IDENTICAL id on both sides (see
+// connectors/github/src/normalizers/team.ts) and the IdentityReconciler
 // matches on the primary key and MERGES the two rather than creating a
-// duplicate. Login-sourced claims fill the gaps the connector lacks (`name`,
-// `email`) while overlapping claims (`login`) stay below the connector's
-// confidence so the connector keeps winning them.
+// duplicate. (Earlier this side lowercased but the connector did not, so
+// uppercase logins never merged — see
+// docs/agent/investigations/person-canonical-id-login-case-mismatch.md.)
+// Login-sourced claims fill the gaps the connector lacks (`name`, `email`)
+// while overlapping claims (`login`) stay below the connector's confidence so
+// the connector keeps winning them.
 import type { CanonicalEntity, CanonicalNode, PropertyClaim } from '@shipit-ai/shared';
-import { buildCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildPersonCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
 
 // Below the connector's 0.9 so overlapping claims (login) resolve to the
 // connector under the default HIGHEST_CONFIDENCE strategy; name/email are
@@ -64,12 +68,13 @@ export function buildLoginPersonEntity(
 
   // GitHub → login-keyed (merges with the connector Person). OIDC → email-keyed
   // (best-effort; will NOT merge with a GitHub-connector Person — documented
-  // limitation, fine for OIDC-only deployments).
+  // limitation, fine for OIDC-only deployments). buildPersonCanonicalId
+  // lowercases the key — the SAME helper the connector uses, so a GitHub
+  // login with uppercase (`Mohamed-E`) resolves to the identical id on both
+  // sides and the two Person nodes merge.
   const mergeKey =
-    identity.provider === 'github' && identity.login
-      ? identity.login.toLowerCase()
-      : identity.email.toLowerCase();
-  const id = buildCanonicalId('Person', 'default', mergeKey);
+    identity.provider === 'github' && identity.login ? identity.login : identity.email;
+  const id = buildPersonCanonicalId(mergeKey);
 
   // Linking key for THIS idp identity. Distinct from the connector's
   // `github://<org>/user/<login>`; the canonical id above is the strong merge
