@@ -18,30 +18,39 @@ declare module 'fastify' {
   }
 }
 
-function actorOf(request: {
-  session?: { principal?: { email?: string } };
-  query: unknown;
-}): string {
-  const sessionEmail = request.session?.principal?.email;
-  if (sessionEmail) return sessionEmail;
-  const q = request.query as { actor?: string } | undefined;
-  return q?.actor ?? 'web-ui';
+// Audit actor = the authenticated principal, never a client-supplied value.
+// `request.ctx` is populated by require-auth for every request (the resolution
+// ladder there falls back to a synthesized dev/system principal when auth is
+// disabled), so `ctx.user.email` is always the real acting identity. Trusting a
+// `?actor=` query param here would let any caller forge VerificationEvent.actor.
+function actorOf(request: { ctx: { user: { email: string } } }): string {
+  return request.ctx.user.email;
 }
+
+// Per-route rate limits on top of the global limiter (server.ts). CodeQL's
+// js/missing-rate-limiting heuristic flags authorization handlers that lack a
+// route-local limiter; these also write/read the graph and shouldn't be
+// hammerable. Mutating routes get a tighter bound than reads.
+const WRITE_RATE_LIMIT = { rateLimit: { max: 30, timeWindow: '1 minute' } };
+const READ_RATE_LIMIT = { rateLimit: { max: 120, timeWindow: '1 minute' } };
 
 const claimsRoutes: FastifyPluginAsync = async (server) => {
   const service = new ClaimService(server.neo4jService, server.schemaService);
   const verification = new VerificationService(server.neo4jService);
 
   // Static routes registered before the `/:entityId` param route so they win.
-  server.get<{ Querystring: { limit?: string } }>('/review-queue', async (request) => {
-    const limit = request.query.limit ? Math.min(Number(request.query.limit), 500) : 100;
-    return verification.listReviewQueue(limit);
-  });
+  server.get<{ Querystring: { limit?: string } }>(
+    '/review-queue',
+    { config: READ_RATE_LIMIT },
+    async (request) => {
+      const limit = request.query.limit ? Math.min(Number(request.query.limit), 500) : 100;
+      return verification.listReviewQueue(limit);
+    },
+  );
 
   server.post<{
     Body: { entityId: string; propertyKey: string; action: 'accept' | 'reject' };
-    Querystring: { actor?: string };
-  }>('/review/resolve', async (request, reply) => {
+  }>('/review/resolve', { config: WRITE_RATE_LIMIT }, async (request, reply) => {
     const { entityId, propertyKey, action } = request.body;
     if (action !== 'accept' && action !== 'reject') {
       return reply.status(400).send({
@@ -60,8 +69,7 @@ const claimsRoutes: FastifyPluginAsync = async (server) => {
   server.post<{
     Params: { entityId: string; propertyKey: string };
     Body: { value: unknown; evidence?: string | null };
-    Querystring: { actor?: string };
-  }>('/:entityId/:propertyKey/verify', async (request, reply) => {
+  }>('/:entityId/:propertyKey/verify', { config: WRITE_RATE_LIMIT }, async (request, reply) => {
     const entityId = decodeURIComponent(request.params.entityId);
     const propertyKey = decodeURIComponent(request.params.propertyKey);
     try {
@@ -79,16 +87,20 @@ const claimsRoutes: FastifyPluginAsync = async (server) => {
     }
   });
 
-  server.get<{ Params: { entityId: string } }>('/:entityId', async (request, reply) => {
-    const entityId = decodeURIComponent(request.params.entityId);
-    const result = await service.getClaimsForEntity(entityId);
-    if (!result) {
-      return reply.status(404).send({
-        error: { code: 'NOT_FOUND', message: `Entity ${entityId} not found` },
-      });
-    }
-    return result;
-  });
+  server.get<{ Params: { entityId: string } }>(
+    '/:entityId',
+    { config: READ_RATE_LIMIT },
+    async (request, reply) => {
+      const entityId = decodeURIComponent(request.params.entityId);
+      const result = await service.getClaimsForEntity(entityId);
+      if (!result) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: `Entity ${entityId} not found` },
+        });
+      }
+      return result;
+    },
+  );
 };
 
 export const conflictsRoutes: FastifyPluginAsync = async (server) => {
@@ -96,7 +108,7 @@ export const conflictsRoutes: FastifyPluginAsync = async (server) => {
 
   server.get<{
     Querystring: { label?: string; tier?: string; limit?: string };
-  }>('/', async (request) => {
+  }>('/', { config: READ_RATE_LIMIT }, async (request) => {
     const { label, tier, limit } = request.query;
     const tierNum = tier ? Number(tier) : undefined;
     return service.listConflicts({

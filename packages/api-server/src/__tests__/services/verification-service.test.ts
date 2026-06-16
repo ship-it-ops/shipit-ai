@@ -21,15 +21,9 @@ class FakeNeo4j {
   }
 
   async runQuery(cypher: string, params: Record<string, unknown> = {}) {
-    if (cypher.includes('SET n._claims')) {
-      const node = this.nodes.get(params.id as string);
-      if (node) node.properties._claims = params.claims;
-      return [];
-    }
-    if (cypher.includes('CREATE (v:VerificationEvent')) {
-      this.events.push({ ...params });
-      return [];
-    }
+    // `LIMIT 1` first: the locked-read (`SET n._claims_rev ... RETURN n ... LIMIT 1`)
+    // contains the substring `SET n._claims`, so it must be matched as a read
+    // before the claims-write branch.
     if (cypher.includes('LIMIT 1')) {
       const node = this.nodes.get(params.id as string);
       return node ? [record(node)] : [];
@@ -37,7 +31,30 @@ class FakeNeo4j {
     if (cypher.includes('n._claims IS NOT NULL')) {
       return [...this.nodes.values()].map(record);
     }
+    if (cypher.includes('CREATE (v:VerificationEvent')) {
+      this.events.push({ ...params });
+      return [];
+    }
+    if (cypher.includes('SET n._claims')) {
+      const node = this.nodes.get(params.id as string);
+      if (node) node.properties._claims = params.claims;
+      return [];
+    }
     return [];
+  }
+
+  // Mirror Neo4jService.runInWriteTransaction: hand `work` a tx whose `run`
+  // returns a { records } result (the shape the service reads).
+  async runInWriteTransaction<T>(
+    work: (tx: {
+      run: (c: string, p?: Record<string, unknown>) => Promise<{ records: unknown[] }>;
+    }) => Promise<T>,
+  ): Promise<T> {
+    return work({
+      run: async (cypher: string, p: Record<string, unknown> = {}) => ({
+        records: await this.runQuery(cypher, p),
+      }),
+    });
   }
 }
 function record(node: FakeNode) {

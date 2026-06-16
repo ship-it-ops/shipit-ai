@@ -1,4 +1,8 @@
-import neo4j, { type Driver, type Record as Neo4jRecord } from 'neo4j-driver';
+import neo4j, {
+  type Driver,
+  type ManagedTransaction,
+  type Record as Neo4jRecord,
+} from 'neo4j-driver';
 import type { RequestContext } from '@shipit-ai/shared';
 
 export interface GraphStats {
@@ -74,6 +78,21 @@ export class Neo4jService {
     try {
       const result = await session.run(cypher, params);
       return result.records;
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * Run `work` inside a single managed write transaction. Use this when a
+   * read-modify-write must be atomic — e.g. mutating a node's `_claims` array,
+   * where a write lock acquired early in the transaction serializes concurrent
+   * writers so neither silently clobbers the other.
+   */
+  async runInWriteTransaction<T>(work: (tx: ManagedTransaction) => Promise<T>): Promise<T> {
+    const session = this.driver.session();
+    try {
+      return await session.executeWrite(work);
     } finally {
       await session.close();
     }
