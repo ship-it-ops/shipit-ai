@@ -1,8 +1,8 @@
 ---
 type: open-question
-status: active
+status: answered
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-06-18
 author: claude-opus-4-7
 tags: [github, webhooks, secrets, p1]
 opened: 2026-05-20
@@ -12,6 +12,17 @@ importance: standard
 
 # How do per-org GitHub Apps carry their own webhook secret without putting it in YAML?
 
+> **ANSWERED (2026-06-18).** Receiver built as Cut A of
+> [github-webhook-receiver](../plans/github-webhook-receiver.md) (branch
+> next-release). Resolution: peek the unverified `installation.id` → connector →
+> read that App's per-App sidecar `github-app-<appId>.webhook-secret`
+> (materialized at boot from the `connector-apps` GSM blob), then HMAC-verify.
+> The global `GITHUB_WEBHOOK_SECRET` is used ONLY for connectors on the global
+> App — a per-org App is NEVER downgraded to it. None of options A/B/C: the GSM
+> blob already persists per-App secrets, so no env-var-name scheme was needed.
+> Full design + invariants in [webhook-receiver-design](../decisions/webhook-receiver-design.md).
+> Original analysis retained below.
+>
 > **STATUS UPDATE (2026-06-18) — storage half answered, receiver half still open.**
 > The original "how do we store per-App secrets without YAML" question has been
 > overtaken by reality: secrets are now persisted durably via a 0600 sidecar

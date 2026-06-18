@@ -36,7 +36,7 @@ export async function fetchCodeowners(
   };
 }
 
-async function fetchCodeownersFile(
+export async function fetchCodeownersFile(
   octokit: Octokit,
   org: string,
   repo: string,

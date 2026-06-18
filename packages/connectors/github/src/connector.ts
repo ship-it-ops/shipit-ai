@@ -19,6 +19,11 @@ import { fetchWorkflows } from './fetchers/workflows.js';
 import type { GitHubWorkflow } from './fetchers/workflows.js';
 import { fetchCodeowners } from './fetchers/codeowners.js';
 import type { CodeownersEntry } from './fetchers/codeowners.js';
+import {
+  fetchRepository,
+  fetchRepositoryWorkflows,
+  fetchRepositoryCodeowners,
+} from './fetchers/single-entity.js';
 import { normalizeRepository } from './normalizers/repository.js';
 import { normalizeTeam } from './normalizers/team.js';
 import { normalizePipeline } from './normalizers/pipeline.js';
@@ -124,6 +129,32 @@ export class GitHubConnector implements ShipItConnector {
     }
 
     return { nodes: allNodes, edges: allEdges };
+  }
+
+  // ── Targeted single-entity refetch (webhook receiver path, T7) ─────────
+  // These reuse the connector's authenticated octokit + org and the same
+  // normalize() type-sniffing path the full sync uses, so a webhook-driven
+  // refetch produces byte-identical canonical output to a poll. `authenticate`
+  // must have been called first (sets this.octokit + this.org).
+
+  // A `push` delivery → refetch the repo plus its CODEOWNERS, mirroring the
+  // poll path where both flow through normalize() together.
+  async refetchRepository(owner: string, name: string): Promise<CanonicalEntity> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated. Call authenticate() first.');
+    }
+    const repo = await fetchRepository(this.octokit, owner, name);
+    const codeowners = await fetchRepositoryCodeowners(this.octokit, owner, name);
+    return this.normalize([repo, ...codeowners]);
+  }
+
+  // A `workflow_run` delivery → refetch just the repo's workflows.
+  async refetchRepositoryWorkflows(owner: string, name: string): Promise<CanonicalEntity> {
+    if (!this.octokit) {
+      throw new Error('Not authenticated. Call authenticate() first.');
+    }
+    const workflows = await fetchRepositoryWorkflows(this.octokit, owner, name);
+    return this.normalize(workflows);
   }
 
   async sync(mode: 'full' | 'incremental'): Promise<SyncResult> {

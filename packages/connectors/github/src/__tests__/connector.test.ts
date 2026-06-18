@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import type { Octokit } from '@octokit/rest';
 import { GitHubConnector } from '../connector.js';
 import { parseCodeowners } from '../fetchers/codeowners.js';
+
+// Inject a stub octokit + org without going through authenticate() (which
+// would hit the network). Mirrors the private-field access the normalize
+// tests use.
+function withStubOctokit(connector: GitHubConnector, rest: Record<string, unknown>, org: string) {
+  (connector as unknown as { octokit: Octokit }).octokit = { rest } as unknown as Octokit;
+  (connector as unknown as { org: string }).org = org;
+}
 
 describe('GitHubConnector', () => {
   it('has correct manifest', () => {
@@ -80,6 +89,69 @@ describe('GitHubConnector', () => {
   it('fetch throws if not authenticated', async () => {
     const connector = new GitHubConnector();
     await expect(connector.fetch('Repository')).rejects.toThrow('Not authenticated');
+  });
+});
+
+describe('GitHubConnector targeted refetch', () => {
+  it('refetchRepository normalizes repo + codeowners through normalize()', async () => {
+    const connector = new GitHubConnector();
+    const get = vi.fn().mockResolvedValue({
+      data: {
+        name: 'my-repo',
+        full_name: 'test-org/my-repo',
+        html_url: 'https://github.com/test-org/my-repo',
+        default_branch: 'main',
+        visibility: 'private',
+        language: 'TypeScript',
+        topics: [],
+        archived: false,
+        description: null,
+      },
+    });
+    const getContent = vi.fn().mockResolvedValue({
+      data: { content: Buffer.from('*.ts @test-org/frontend\n', 'utf-8').toString('base64') },
+    });
+    withStubOctokit(connector, { repos: { get, getContent } }, 'test-org');
+
+    const result = await connector.refetchRepository('test-org', 'my-repo');
+
+    expect(get).toHaveBeenCalledWith({ owner: 'test-org', repo: 'my-repo' });
+    // Repository node from the repo, CODEOWNER_OF edge from codeowners.
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].label).toBe('Repository');
+    expect(result.edges.some((e) => e.type === 'CODEOWNER_OF')).toBe(true);
+  });
+
+  it('refetchRepositoryWorkflows normalizes workflows through normalize()', async () => {
+    const connector = new GitHubConnector();
+    const listRepoWorkflows = vi.fn().mockResolvedValue({
+      data: {
+        workflows: [
+          {
+            id: 1,
+            name: 'CI',
+            path: '.github/workflows/ci.yml',
+            state: 'active',
+            html_url: 'https://github.com/test-org/my-repo/actions/workflows/ci.yml',
+          },
+        ],
+      },
+    });
+    const listWorkflowRuns = vi.fn().mockResolvedValue({ data: { workflow_runs: [] } });
+    withStubOctokit(connector, { actions: { listRepoWorkflows, listWorkflowRuns } }, 'test-org');
+
+    const result = await connector.refetchRepositoryWorkflows('test-org', 'my-repo');
+
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].label).toBe('Pipeline');
+  });
+
+  it('refetch methods throw when not authenticated', async () => {
+    const connector = new GitHubConnector();
+    await expect(connector.refetchRepository('o', 'r')).rejects.toThrow('Not authenticated');
+    await expect(connector.refetchRepositoryWorkflows('o', 'r')).rejects.toThrow(
+      'Not authenticated',
+    );
   });
 });
 

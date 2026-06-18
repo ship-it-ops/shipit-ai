@@ -41,7 +41,7 @@ The 10 foundational choices, all in force as of v1:
 
 - `Repository`, `Team`, and `Pipeline` canonical IDs are now org-scoped (`shipit://<label>/default/<org>/<name>`) — see [canonical-id-org-namespacing](./canonical-id-org-namespacing.md). `Person` stays unscoped because GitHub logins are globally unique.
 - A leaked App private key reads every org the App is installed in. Mitigated by **per-org App override** (see [per-org-github-app-override](./per-org-github-app-override.md)) for orgs that need isolation.
-- The webhook secret is currently global; per-App webhook secrets are [open](../open-questions/per-app-webhook-secrets.md) for P1.
+- The webhook receiver now resolves per-App webhook secrets at receive time from the per-App sidecar (global secret only for the global App) — see [webhook-receiver-design](./webhook-receiver-design.md). Closes the former P1 [open question](../open-questions/per-app-webhook-secrets.md).
 
 ## Revisit Triggers
 

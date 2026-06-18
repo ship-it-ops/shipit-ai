@@ -67,9 +67,12 @@ export const lastRunSchema = z.object({
 // orgs that don't trust a shared App. Either field can be set independently;
 // the runner resolves each field individually with the global as fallback.
 //
-// Webhook secret intentionally absent: in P0 all installations share the
-// global `GITHUB_WEBHOOK_SECRET`. P1 will add per-App webhook secrets via an
-// env-var-name field once the webhook receiver lands and we need it.
+// Webhook secret intentionally absent from this override: a per-org App's
+// webhook secret is resolved at receive time from the per-App sidecar
+// (github-app-<appId>.webhook-secret, materialized at boot from the
+// connector-apps GSM blob), with the global `GITHUB_WEBHOOK_SECRET` used only
+// for connectors on the global App. See packages/api-server webhook-resolution.ts
+// and routes/webhooks.ts.
 const githubConnectorAppOverrideSchema = z
   .object({
     id: z.string().optional(),

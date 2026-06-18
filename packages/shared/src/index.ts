@@ -123,6 +123,7 @@ export {
   constantTimeEqual,
   formatToken,
 } from './auth/token-crypto.js';
+export { verifyGitHubWebhookSignature } from './auth/github-webhook.js';
 
 // Config
 export {

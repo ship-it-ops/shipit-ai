@@ -57,6 +57,9 @@ const PUBLIC_PATH_PREFIXES: ReadonlyArray<string> = [
   '/api/auth/callback/',
   '/api/auth/logout',
   '/api/mcp/info',
+  // GitHub webhook receiver: HMAC is the entire auth boundary (see
+  // routes/webhooks.ts). Exact match, no trailing slash — only POST /github.
+  '/api/webhooks/github',
 ];
 
 const ANONYMOUS_PRINCIPAL: AuthPrincipal = {
@@ -81,6 +84,10 @@ const SETUP_PUBLIC_PATHS: ReadonlyArray<string> = [
   '/api/connectors/github/manifest',
   '/api/connectors/github/manifest/',
   '/api/connectors/github/app-manifest-callback',
+  // GitHub webhook receiver: reachable during first-boot setup so the
+  // receiver 202s instead of 401-storming GitHub into auto-disabling the
+  // webhook before setup completes (see routes/webhooks.ts). HMAC still gates.
+  '/api/webhooks/github',
 ];
 
 // The allow-listed setup routes get an admin-role principal: the manifest

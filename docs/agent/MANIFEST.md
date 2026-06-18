@@ -25,7 +25,7 @@ Last updated: 2026-06-18 | Total notes: 59
 
 <!-- always-read at session start -->
 
-_None in flight. The `next-release` branch starts clean — all prior status entries shipped (#57, #67, #72, #74, #75) and were archived 2026-06-18._
+- [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A implemented + reviewed; all tests green, uncommitted
 
 ## Decisions
 
@@ -54,6 +54,7 @@ _None in flight. The `next-release` branch starts clean — all prior status ent
 - [connector-apps-gsm-blob-durability](decisions/connector-apps-gsm-blob-durability.md) | decision | active | core | 2026-06-14 | per-org connectors durable via one GSM connector-apps blob
 - [mcp-token-auth-stage-2a](decisions/mcp-token-auth-stage-2a.md) | decision | active | core | 2026-06-14 | mcp-server enforces per-user bearer tokens; shared token crypto
 - [per-field-confidence-and-verification](decisions/per-field-confidence-and-verification.md) | decision | active | core | 2026-06-15 | hybrid heuristic confidence engine + derived verification status; corroboration/ambiguity/verify
+- [webhook-receiver-design](decisions/webhook-receiver-design.md) | decision | active | core | 2026-06-18 | HMAC verify-first receiver; per-App secret no-downgrade; coalesced targeted refetch
 
 ## Patterns
 
@@ -65,6 +66,7 @@ _None in flight. The `next-release` branch starts clean — all prior status ent
 
 ## Plans
 
+- [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | active | core | 2026-06-18 | audited receiver: HMAC verify, per-App secret, coalesced refetch; Cut A/B split
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
 - [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | active | core | 2026-06-14 | upsert logged-in user as a Person via event-bus on login
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
@@ -74,7 +76,7 @@ _None in flight. The `next-release` branch starts clean — all prior status ent
 
 ## Open Questions
 
-- [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-06-18 | storage SOLVED via connector-apps blob; receiver + installation→secret lookup + HMAC still TODO
+- [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | answered | standard | 2026-06-18 | ANSWERED — receiver built (Cut A); per-App sidecar secret, no global downgrade
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
