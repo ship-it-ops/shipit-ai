@@ -63,8 +63,22 @@ decision (incl. runbook + smee.io dev note);
 [github-connector-architecture-v1](../decisions/github-connector-architecture-v1.md)
 consequence updated.
 
+## Post-commit hardening (2026-06-18, audit-driven, uncommitted)
+
+A ship-better-plans multi-persona audit (run against this code) found two real
+issues, now fixed on top of the committed Cut A:
+
+- **BLOCKER — dedup swallowed retries.** `markDeliverySeen` ran before `enqueue`;
+  an enqueue failure (→5xx) left the dedup key set so GitHub's redelivery was
+  202'd as a duplicate and the refetch was lost. Fix: `WebhookRefetchPort.releaseDelivery`
+  - the receiver catch path DELs the dedup key on post-verify failure. Regression
+    test added. See [scar](../scars/dedup-token-before-failable-side-effect-swallows-retry.md).
+- **MAJOR — pre-verify disk read on an unthrottled route.** `readPerAppSecret` now
+  caches by file mtime (rotation stays immediate). api-server tests 337 green.
+
 ## State
 
-Committed to `next-release` (2026-06-18). NOT pushed, NO PR (user: "don't open a
-PR"). Cut B (spec 6) is the next PR. When this merges + deploys, archive this
-status entry.
+Cut A committed to `next-release` (commit aa43558). The audit-driven fixes above
+are IMPLEMENTED but UNCOMMITTED (pending approval). NOT pushed beyond aa43558, NO
+PR (user: "don't open a PR"). Cut B (spec 6) is the next PR. When this merges +
+deploys, archive this status entry.

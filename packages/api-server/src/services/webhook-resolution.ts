@@ -6,7 +6,7 @@
 //   2. which webhook secret verifies a delivery, with a HARD downgrade guard:
 //      a per-org (App-overridden) connector NEVER falls back to the global
 //      secret. See INV-3 in docs/agent/plans/github-webhook-receiver.md.
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 import { resolveAppCredentials, type AppLike, type GitHubConnectorConfig } from '@shipit-ai/shared';
@@ -69,14 +69,32 @@ function keyDirFromEnv(env: NodeJS.ProcessEnv): string {
   return isAbsolute(raw) ? raw : resolvePath(raw);
 }
 
+// Per-App secret cache keyed by sidecar path, invalidated by file mtime. The
+// webhook route is unthrottled (HMAC is the gate) and resolves the secret on
+// EVERY delivery BEFORE verification, so an uncached readFileSync per request is
+// a pre-auth amplification vector. Caching by mtime removes the content read
+// from the hot path while keeping rotation immediate: a rewrite changes mtime →
+// cache miss → re-read. statSync remains (cheap; page-cached inode).
+const perAppSecretCache = new Map<string, { mtimeMs: number; secret: string | null }>();
+
 // The per-App sidecar written at boot by ConnectorAppStore.loadAndMaterialize
 // (and by the manifest flow): <keyDir>/github-app-<appId>.webhook-secret, with
 // a trailing newline. Read + trim; returns null when absent/empty.
 function readPerAppSecret(appId: string, env: NodeJS.ProcessEnv): string | null {
   const path = join(keyDirFromEnv(env), `github-app-${appId}.webhook-secret`);
-  if (!existsSync(path)) return null;
-  const s = readFileSync(path, 'utf-8').trim();
-  return s.length > 0 ? s : null;
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    perAppSecretCache.delete(path);
+    return null; // no sidecar present
+  }
+  const cached = perAppSecretCache.get(path);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.secret;
+  const raw = readFileSync(path, 'utf-8').trim();
+  const secret = raw.length > 0 ? raw : null;
+  perAppSecretCache.set(path, { mtimeMs, secret });
+  return secret;
 }
 
 // Resolve the webhook secret used to verify a delivery for a given connector.

@@ -85,6 +85,7 @@ Last updated: 2026-06-18 | Total notes: 59
 
 ## Scars
 
+- [dedup-token-before-failable-side-effect-swallows-retry](scars/dedup-token-before-failable-side-effect-swallows-retry.md) | scar | active | core | 2026-06-18 | set a dedup token before a failable+retried step → release it on failure or the retry is lost
 - [redis-memory-limit-below-dataset-oomkills](scars/redis-memory-limit-below-dataset-oomkills.md) | scar | active | core | 2026-06-17 | empty UI + healthy app = check redis-0 OOMKilled before suspecting data loss
 - [web-ui-cannot-import-mcp-server-root](scars/web-ui-cannot-import-mcp-server-root.md) | scar | active | core | 2026-05-31 | workspace root barrels drag node:fs into web-ui bundle
 - [github-app-manifest-is-post-not-get](scars/github-app-manifest-is-post-not-get.md) | scar | active | core | 2026-05-22 | GitHub App manifest requires POST form not manifest_url GET

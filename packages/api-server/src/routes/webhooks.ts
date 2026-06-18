@@ -16,6 +16,12 @@ import {
 // it; tests inject a fake. Kept minimal so a Redis-less unit server can run.
 export interface WebhookRefetchPort {
   markDeliverySeen(id: string): Promise<boolean>;
+  // Release a previously-marked delivery id so a redelivery is NOT deduped.
+  // Called on the post-verify failure path: if we marked the delivery seen and
+  // then enqueue failed (→ 5xx), GitHub redelivers — but the dedup key would
+  // otherwise swallow it as a duplicate and the refetch would be lost. Releasing
+  // the key keeps the "5xx means recoverable" contract intact.
+  releaseDelivery(id: string): Promise<void>;
   enqueue(job: {
     connectorId: string;
     owner: string;
@@ -281,6 +287,23 @@ const webhookRoutes: FastifyPluginAsync = async (server) => {
       } catch (err) {
         // POST-verify failure (enqueue rejected, etc.) → 5xx so GitHub
         // redelivers. Never a 2xx (INV-2), never 429 (INV-5).
+        //
+        // CRITICAL: we already marked this delivery seen (STEP 7) before the
+        // failure. If we leave the dedup key set, GitHub's redelivery (well
+        // inside the 600s TTL) would hit STEP 7, see the key, and 202 it as a
+        // duplicate — permanently losing the refetch. Release the key so the
+        // redelivery is processed. Best-effort: a failed release just means the
+        // redelivery dedups (degrades to the polling backstop), never worse.
+        if (server.webhookRefetch) {
+          try {
+            await server.webhookRefetch.releaseDelivery(deliveryId);
+          } catch (releaseErr) {
+            log.error(
+              { code: 'delivery_release_failed', deliveryId, err: (releaseErr as Error).message },
+              'webhook: failed to release dedup key after processing failure',
+            );
+          }
+        }
         log.error(
           { code: 'webhook_processing_failed', event, deliveryId, err: (err as Error).message },
           'webhook: processing failed after verification',

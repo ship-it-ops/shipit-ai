@@ -15,9 +15,14 @@ vi.mock('bullmq', () => ({
 }));
 
 const mockRedisSet = vi.fn();
+const mockRedisDel = vi.fn();
 const mockRedisDisconnect = vi.fn();
 vi.mock('ioredis', () => ({
-  Redis: vi.fn().mockImplementation(() => ({ set: mockRedisSet, disconnect: mockRedisDisconnect })),
+  Redis: vi.fn().mockImplementation(() => ({
+    set: mockRedisSet,
+    del: mockRedisDel,
+    disconnect: mockRedisDisconnect,
+  })),
 }));
 
 import { Queue } from 'bullmq';
@@ -82,6 +87,12 @@ describe('WebhookRefetchQueue', () => {
     expect(ex).toBe('EX');
     expect(ttl).toBeGreaterThan(0);
     expect(nx).toBe('NX');
+  });
+
+  it('releaseDelivery DELs the same dedup key markDeliverySeen would set', async () => {
+    const queue = makeQueue();
+    await queue.releaseDelivery('d-1');
+    expect(mockRedisDel).toHaveBeenCalledWith('wh~delivery~d-1');
   });
 
   it('close() tears down worker, queue, and the dedup redis client', async () => {

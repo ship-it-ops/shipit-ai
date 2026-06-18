@@ -65,10 +65,14 @@ function fakeRefetch() {
       seen.add(id);
       return true;
     }),
+    releaseDelivery: vi.fn(async (id: string) => {
+      seen.delete(id);
+    }),
   } satisfies WebhookRefetchPort & {
     seen: Set<string>;
     enqueue: ReturnType<typeof vi.fn>;
     markDeliverySeen: ReturnType<typeof vi.fn>;
+    releaseDelivery: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -312,6 +316,28 @@ describe('POST /api/webhooks/github — verify → dedup → enqueue', () => {
     expect(res.statusCode).toBe(500);
     expect(res.statusCode).not.toBe(429);
     expect(res.json().error.code).toBe('WEBHOOK_PROCESSING_FAILED');
+  });
+
+  // Regression for the audit BLOCKER: marking the delivery seen BEFORE enqueue
+  // meant an enqueue failure (→ 5xx) left the dedup key set, so GitHub's
+  // redelivery was swallowed as a duplicate and the refetch was lost. The catch
+  // path must release the key so the redelivery is reprocessed.
+  it('releases the dedup key on enqueue failure so a redelivery is reprocessed', async () => {
+    refetch.enqueue.mockRejectedValueOnce(new Error('redis down'));
+    const body = pushPayload();
+    const signature = sign(body, PER_APP_SECRET);
+
+    const first = await inject(server, { event: 'push', delivery: 'd-retry', signature, body });
+    expect(first.statusCode).toBe(500);
+    expect(refetch.releaseDelivery).toHaveBeenCalledWith('d-retry');
+    expect(refetch.seen.has('d-retry')).toBe(false);
+
+    // GitHub redelivers the SAME id; enqueue now succeeds → must NOT be deduped.
+    const second = await inject(server, { event: 'push', delivery: 'd-retry', signature, body });
+    expect(second.statusCode).toBe(202);
+    expect(refetch.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ connectorId: 'conn-acme', kind: 'repo' }),
+    );
   });
 
   it('does not 429 a verified burst (rate limiting disabled on the route)', async () => {

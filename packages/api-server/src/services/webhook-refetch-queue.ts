@@ -153,6 +153,16 @@ export class WebhookRefetchQueue {
     return result === 'OK';
   }
 
+  // Release a delivery's dedup key so a redelivery is processed rather than
+  // swallowed as a duplicate. The receiver calls this when post-verify
+  // processing (e.g. enqueue) fails AFTER the delivery was marked seen — without
+  // it, GitHub's redelivery would dedup against the still-set key and the
+  // refetch would be lost.
+  async releaseDelivery(deliveryId: string): Promise<void> {
+    const key = `wh~delivery~${sanitizeIdPart(deliveryId)}`;
+    await this.redis.del(key);
+  }
+
   // Release worker, queue, and the dedup redis client so the API exits cleanly
   // on SIGTERM. Idempotent.
   async close(): Promise<void> {
