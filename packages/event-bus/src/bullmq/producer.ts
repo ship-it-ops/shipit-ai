@@ -8,6 +8,7 @@ import type {
   EventEnvelope,
 } from '@shipit-ai/shared';
 import type { ResolvedConfig } from '../config.js';
+import { FAILED_JOB_RETENTION } from './retention.js';
 
 const EVENT_LOG_STREAM = 'shipit-event-log';
 
@@ -76,6 +77,11 @@ export class EventBusProducer {
   constructor(config: ResolvedConfig) {
     this.queue = new Queue(config.queueName, {
       connection: { host: config.redisHost, port: config.redisPort, maxRetriesPerRequest: null },
+      // Bound retention so Redis doesn't grow forever (2026-06-17 OOM
+      // incident). Completed event jobs are removed immediately — the
+      // event-log stream is the audit trail — but failed jobs are kept a
+      // bounded window for debugging instead of the old `removeOnFail: false`.
+      defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
     });
     this.streamRedis = new Redis(config.redisPort, config.redisHost, {
       maxRetriesPerRequest: null,
@@ -91,8 +97,7 @@ export class EventBusProducer {
       data: env,
       opts: {
         jobId: env.idempotency_key,
-        removeOnComplete: true,
-        removeOnFail: false,
+        // Retention inherited from the queue's defaultJobOptions.
       },
     }));
 
