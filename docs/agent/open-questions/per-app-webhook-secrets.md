@@ -12,6 +12,28 @@ importance: standard
 
 # How do per-org GitHub Apps carry their own webhook secret without putting it in YAML?
 
+> **STATUS UPDATE (2026-06-18) — storage half answered, receiver half still open.**
+> The original "how do we store per-App secrets without YAML" question has been
+> overtaken by reality: secrets are now persisted durably via a 0600 sidecar
+> file `~/.shipit/keys/github-app-<id>.webhook-secret` (written at manifest
+> creation, `github-app-manifest-service.ts:294,307`) **and** a per-connector
+> `webhookSecret` field inside the `connector-apps` GSM blob
+> (`connector-app-store.ts:34-40,102-106,169-176`). This is a 4th mechanism, not
+> options A/B/C — closest to C but without libsodium (relies on file mode 0600 +
+> GSM-at-rest). The schema still carries a stale comment promising the Option-B
+> `webhookSecretEnv` field (`shared/src/config/schema.ts:70-72`) that was never
+> added.
+>
+> **Still open / still the live blocker:** the webhook **receiver** does not
+> exist. `GitHubConnector.handleWebhook` is an empty stub
+> (`connectors/github/src/connector.ts:165`), there is no `POST
+/api/webhooks/github` route, and no HMAC/signature verification anywhere. To
+> close this: (1) build the receiver + verify body; (2) add an
+> `installation.id → connector → webhookSecret` lookup — the blob is keyed by
+> connector id, NOT installation id, so an index is needed; (3) HMAC-verify with
+> the resolved secret. The original A/B/C "lookup mechanism" decision is now moot
+> for storage but the receiver's resolution path still needs designing.
+
 ## Context
 
 V1 ships per-org App overrides for ID + private-key path ([per-org-github-app-override](../decisions/per-org-github-app-override.md)). Webhook ingestion is P1 — when it lands, the receiver needs to verify each delivery's HMAC signature with the **correct App's** webhook secret.

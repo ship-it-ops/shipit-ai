@@ -74,7 +74,7 @@ _None in flight. The `next-release` branch starts clean — all prior status ent
 
 ## Open Questions
 
-- [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-05-20 | per-org App webhook secret lookup needed for P1
+- [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | active | standard | 2026-06-18 | storage SOLVED via connector-apps blob; receiver + installation→secret lookup + HMAC still TODO
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
