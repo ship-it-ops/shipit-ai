@@ -3,6 +3,7 @@ import { Redis } from 'ioredis';
 import type { EventEnvelope } from '@shipit-ai/shared';
 import type { ResolvedConfig } from '../config.js';
 import { EVENT_LOG_STREAM } from './producer.js';
+import { FAILED_JOB_RETENTION } from './retention.js';
 
 export class EventBusReplay {
   private readonly queue: Queue;
@@ -12,6 +13,8 @@ export class EventBusReplay {
   constructor(config: ResolvedConfig) {
     this.queue = new Queue(config.queueName, {
       connection: { host: config.redisHost, port: config.redisPort, maxRetriesPerRequest: null },
+      // Same bounded retention as the producer (see retention.ts).
+      defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
     });
     this.redis = new Redis(config.redisPort, config.redisHost, { maxRetriesPerRequest: null });
     this.batchSize = config.batchSize;
@@ -45,8 +48,7 @@ export class EventBusReplay {
             // BullMQ 5 forbids `:` in custom job IDs (see producer.ts).
             // The replay prefix uses `~` for the same reason.
             jobId: `replay~${envelope.idempotency_key}`,
-            removeOnComplete: true,
-            removeOnFail: false,
+            // Retention inherited from the queue's defaultJobOptions.
           },
         };
       });

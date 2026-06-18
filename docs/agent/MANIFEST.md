@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-15 | Total notes: 56
+Last updated: 2026-06-17 | Total notes: 59
 
 ## Investigations
 
@@ -14,6 +14,7 @@ Last updated: 2026-06-15 | Total notes: 56
 - [person-canonical-id-login-case-mismatch](investigations/person-canonical-id-login-case-mismatch.md) | investigation | fixed | core | 2026-06-15 | connector keyed Person id by raw login (uppercase never merged); shared buildPersonCanonicalId lowercases both sides + core-writer migration
 - [team-ownership-invisible-owns-and-blast-radius](investigations/team-ownership-invisible-owns-and-blast-radius.md) | investigation | fixed | core | 2026-06-16 | team-service + web-UI blast-radius only walked OWNS; added CODEOWNER_OF (downstream-only); uncommitted
 - [last-synced-frozen-by-idempotency-dedup](investigations/last-synced-frozen-by-idempotency-dedup.md) | investigation | fixed | core | 2026-06-16 | \_last_synced frozen by idempotency skip; now bump timestamp on skip; content-change suppression still open
+- [redis-oom-crashloop-data-appears-gone](investigations/redis-oom-crashloop-data-appears-gone.md) | investigation | completed | core | 2026-06-17 | redis dataset 246MB > 256Mi limit OOMKilled; UI looked empty; data intact
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -29,6 +30,7 @@ Last updated: 2026-06-15 | Total notes: 56
 - [github-auth-connector-separation](status/github-auth-connector-separation.md) | status | active | core | 2026-06-14 | per-org claim resume + auth OAuth-App split from connector
 - [login-person-upsert-impl](status/login-person-upsert-impl.md) | status | active | core | 2026-06-14 | login upserts signed-in user as Person via event bus; implemented, uncommitted
 - [per-field-confidence-impl](status/per-field-confidence-impl.md) | status | active | core | 2026-06-15 | per-field confidence engine + verification; implemented, all tests green, uncommitted
+- [redis-job-retention-impl](status/redis-job-retention-impl.md) | status | active | core | 2026-06-17 | bounded BullMQ retention + cleanup script; implemented, all tests green, uncommitted
 
 ## Decisions
 
@@ -82,9 +84,11 @@ Last updated: 2026-06-15 | Total notes: 56
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
+- [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | active | standard | 2026-06-17 | redis dataset 246MB — bound BullMQ job retention so it stops growing
 
 ## Scars
 
+- [redis-memory-limit-below-dataset-oomkills](scars/redis-memory-limit-below-dataset-oomkills.md) | scar | active | core | 2026-06-17 | empty UI + healthy app = check redis-0 OOMKilled before suspecting data loss
 - [web-ui-cannot-import-mcp-server-root](scars/web-ui-cannot-import-mcp-server-root.md) | scar | active | core | 2026-05-31 | workspace root barrels drag node:fs into web-ui bundle
 - [github-app-manifest-is-post-not-get](scars/github-app-manifest-is-post-not-get.md) | scar | active | core | 2026-05-22 | GitHub App manifest requires POST form not manifest_url GET
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files

@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq';
 import { GitHubConnector, authenticateGitHubApp } from '@shipit-ai/connector-github';
 import { ConnectorHarness } from '@shipit-ai/connector-sdk';
+import { COMPLETED_JOB_RETENTION, FAILED_JOB_RETENTION } from '@shipit-ai/event-bus';
 import {
   resolveAppCredentials,
   type AppLike,
@@ -91,7 +92,16 @@ export class SyncScheduler implements ConnectorRunner {
 
     const queueName = opts.queueName ?? DEFAULT_QUEUE;
     const connection = parseRedisUrl(opts.redisUrl);
-    this.queue = new Queue(queueName, { connection });
+    // Bound retention so completed/failed sync jobs don't accumulate in Redis
+    // forever (2026-06-17 OOM incident). Applies to both the repeatable
+    // `poll:` jobs and one-shot `manual:` jobs added below.
+    this.queue = new Queue(queueName, {
+      connection,
+      defaultJobOptions: {
+        removeOnComplete: COMPLETED_JOB_RETENTION,
+        removeOnFail: FAILED_JOB_RETENTION,
+      },
+    });
     this.worker = new Worker(
       queueName,
       async (job: Job) => this.processJob(job as Job<SyncJobData>),

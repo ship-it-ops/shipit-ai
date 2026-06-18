@@ -48,12 +48,14 @@ vi.mock('bullmq', () => {
   return { Queue, Worker };
 });
 
+import { Queue } from 'bullmq';
 import { resolveConfig, DEFAULT_CONFIG } from '../config.js';
 import type { ResolvedConfig } from '../config.js';
 import { EventBusProducer, buildIdempotencyKey, EVENT_LOG_STREAM } from '../bullmq/producer.js';
 import { EventBusConsumer } from '../bullmq/consumer.js';
 import { EventBusReplay } from '../bullmq/replay.js';
 import { BullMQEventBusClient } from '../bullmq/client.js';
+import { FAILED_JOB_RETENTION } from '../bullmq/retention.js';
 import type { CanonicalEntity, CanonicalNode, EventEnvelope } from '@shipit-ai/shared';
 
 // ── Test fixtures ─────────────────────────────────────────────────────
@@ -165,7 +167,19 @@ describe('EventBusProducer', () => {
     expect(jobs[0].opts.jobId).toBe('github-shipitops~shipit~//LogicalService/github/graph-api~1');
     expect(jobs[0].data.connector_id).toBe('github-shipitops');
     expect(jobs[0].data.payload).toEqual(entity);
-    expect(jobs[0].opts.removeOnComplete).toBe(true);
+    // Retention now lives in the queue's defaultJobOptions, not per-job —
+    // per-job opts carry only the dedup jobId.
+    expect(jobs[0].opts.removeOnComplete).toBeUndefined();
+    expect(jobs[0].opts.removeOnFail).toBeUndefined();
+  });
+
+  it('constructs its queue with bounded retention (completed immediate, failed 7d/5k)', () => {
+    new EventBusProducer(TEST_CONFIG);
+    const lastCall = vi.mocked(Queue).mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe('shipit-events');
+    expect(lastCall?.[1]).toMatchObject({
+      defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
+    });
   });
 
   it('creates one envelope per node', async () => {
@@ -335,6 +349,15 @@ describe('EventBusReplay', () => {
 
     expect(mockAddBulk).not.toHaveBeenCalled();
     await replay.close();
+  });
+
+  it('constructs its queue with bounded failed-job retention', () => {
+    new EventBusReplay(TEST_CONFIG);
+    const lastCall = vi.mocked(Queue).mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe('shipit-events');
+    expect(lastCall?.[1]).toMatchObject({
+      defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
+    });
   });
 });
 
