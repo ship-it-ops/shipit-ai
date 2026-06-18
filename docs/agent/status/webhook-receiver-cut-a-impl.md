@@ -63,7 +63,7 @@ decision (incl. runbook + smee.io dev note);
 [github-connector-architecture-v1](../decisions/github-connector-architecture-v1.md)
 consequence updated.
 
-## Post-commit hardening (2026-06-18, audit-driven, uncommitted)
+## Post-commit hardening (2026-06-18, audit-driven, committed b46dcc7)
 
 A ship-better-plans multi-persona audit (run against this code) found two real
 issues, now fixed on top of the committed Cut A:
@@ -78,7 +78,6 @@ issues, now fixed on top of the committed Cut A:
 
 ## State
 
-Cut A committed to `next-release` (commit aa43558). The audit-driven fixes above
-are IMPLEMENTED but UNCOMMITTED (pending approval). NOT pushed beyond aa43558, NO
-PR (user: "don't open a PR"). Cut B (spec 6) is the next PR. When this merges +
-deploys, archive this status entry.
+Cut A committed to `next-release` (aa43558); audit-driven hardening committed
+(b46dcc7). Both pushed to `origin/next-release`. NO PR (user: "don't open a PR").
+Cut B (spec 6) is the next PR. When this merges + deploys, archive this entry.
