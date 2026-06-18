@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-14
 updated: 2026-06-14
 author: claude-session-2026-06-14
@@ -10,6 +10,11 @@ tags: [auth, oauth, github, connectors, setup, wizard]
 ---
 
 # Per-org claim resume + auth/connector App separation
+
+> **SHIPPED & DEPLOYED** (#67, 2026-06). Archived. Follow-on durable per-org
+> connectors (connector-apps GSM blob) still needs the infra brief
+> [infra-connector-apps-secret](../briefs/infra-connector-apps-secret.md) to be
+> fully wired on-cluster — tracked there, not here.
 
 ## Scope
 

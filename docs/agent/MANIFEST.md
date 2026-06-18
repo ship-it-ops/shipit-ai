@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-17 | Total notes: 59
+Last updated: 2026-06-18 | Total notes: 59
 
 ## Investigations
 
@@ -25,12 +25,7 @@ Last updated: 2026-06-17 | Total notes: 59
 
 <!-- always-read at session start -->
 
-- [web-ui-dockerfile-pnpm-fix](status/web-ui-dockerfile-pnpm-fix.md) | status | active | standard | 2026-06-10 | corepack enable moved to base stage; verifying build
-- [github-owner-existence-precheck](status/github-owner-existence-precheck.md) | status | completed | standard | 2026-06-14 | verify org exists before manifest launch; shipped in 51d3dcf
-- [github-auth-connector-separation](status/github-auth-connector-separation.md) | status | active | core | 2026-06-14 | per-org claim resume + auth OAuth-App split from connector
-- [login-person-upsert-impl](status/login-person-upsert-impl.md) | status | active | core | 2026-06-14 | login upserts signed-in user as Person via event bus; implemented, uncommitted
-- [per-field-confidence-impl](status/per-field-confidence-impl.md) | status | active | core | 2026-06-15 | per-field confidence engine + verification; implemented, all tests green, uncommitted
-- [redis-job-retention-impl](status/redis-job-retention-impl.md) | status | active | core | 2026-06-17 | bounded BullMQ retention + cleanup script; implemented, all tests green, uncommitted
+_None in flight. The `next-release` branch starts clean — all prior status entries shipped (#57, #67, #72, #74, #75) and were archived 2026-06-18._
 
 ## Decisions
 
@@ -84,7 +79,7 @@ Last updated: 2026-06-17 | Total notes: 59
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
-- [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | active | standard | 2026-06-17 | redis dataset 246MB — bound BullMQ job retention so it stops growing
+- [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — BullMQ retention bounds shipped #75 + deployed; bigkeys verify pending
 
 ## Scars
 

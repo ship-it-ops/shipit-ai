@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-17
 updated: 2026-06-17
 author: claude-session-2026-06-17
@@ -10,6 +10,8 @@ tags: [redis, bullmq, retention, oom, event-bus, sync-scheduler]
 ---
 
 # Bounded BullMQ job retention — implemented, uncommitted
+
+> **SHIPPED & DEPLOYED** (#75, 2026-06). Archived.
 
 ## Scope
 
