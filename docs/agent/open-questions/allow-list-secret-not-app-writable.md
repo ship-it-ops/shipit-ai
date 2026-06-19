@@ -1,6 +1,6 @@
 ---
 type: open-question
-status: active
+status: answered
 created: 2026-06-18
 updated: 2026-06-18
 author: claude-session-2026-06-18-portal-settings
@@ -11,6 +11,14 @@ importance: standard
 ---
 
 # Login allow-list secret is not app-writable — needs an infra IAM grant
+
+> **ANSWERED (2026-06-18).** Infra IAM grant (addVersion on
+> `shipit-auth-allow-list-emails`) has been made (confirmed by maintainer).
+> App-side shipped: `auth-allow-list-emails` added to `WRITABLE_SECRETS` and
+> `PUT /api/settings/allowlist` enabled (Admin Portal Settings,
+> [admin-portal-settings](../plans/admin-portal-settings.md)). NOTE: no
+> self-lockout guardrail on the allow-list — admins bypass it (routes/auth.ts);
+> the UI confirms before saving an empty list (which allows everyone).
 
 ## Context
 

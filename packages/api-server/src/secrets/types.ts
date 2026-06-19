@@ -60,9 +60,9 @@ export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
   // emptyDir; see docs/agent/decisions/api-server-config-persistence-strategy.md).
   // CSV of admin emails captured by the first-run setup wizard.
   'auth-admin-emails': 'SHIPIT_AUTH_ADMINS',
-  // CSV of emails allowed to sign in (login guardrail). Operator-managed
-  // via gcloud (NOT writable by the app — absent from WRITABLE_SECRETS);
-  // a future settings-UI editor would move it there.
+  // CSV of emails allowed to sign in (login guardrail). App-writable via the
+  // admin Portal Settings allow-list editor (SettingsService.setAllowlist),
+  // now that the infra addVersion grant is in place (see WRITABLE_SECRETS).
   'auth-allow-list-emails': 'SHIPIT_AUTH_ALLOWLIST',
   'neo4j-aura-password': 'NEO4J_PASSWORD',
   'session-secret': 'SHIPIT_SESSION_SECRET',
@@ -76,6 +76,10 @@ export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecre
   'github-app-id',
   'github-oauth-client-id',
   'auth-admin-emails',
+  // Login allow-list. Now app-writable: the infra grant (addVersion on
+  // shipit-auth-allow-list-emails for the pod's GCP service account) is in
+  // place, enabling the admin Portal Settings allow-list editor.
+  'auth-allow-list-emails',
   'setup-completed',
   'connector-apps',
 ]);

@@ -163,6 +163,36 @@ export class WebhookRefetchQueue {
     await this.redis.del(key);
   }
 
+  // Record the most recent VERIFIED delivery for a connector. Stored on the
+  // dedup redis client under a per-connector key with NO TTL (it's a "latest"
+  // marker the admin settings view reads back, not a transient dedup key). The
+  // receiver calls this best-effort post-verify.
+  async recordVerifiedDelivery(rec: {
+    connectorId: string;
+    event: string;
+    deliveryId: string;
+    ts: string;
+  }): Promise<void> {
+    const key = `wh~lastverified~${sanitizeIdPart(rec.connectorId)}`;
+    await this.redis.set(key, JSON.stringify(rec));
+  }
+
+  // Read back the last verified delivery for a connector. Returns null when
+  // none has been recorded or the stored value is unparseable.
+  async getLastVerifiedDelivery(
+    connectorId: string,
+  ): Promise<{ event: string; deliveryId: string; ts: string } | null> {
+    const key = `wh~lastverified~${sanitizeIdPart(connectorId)}`;
+    const raw = await this.redis.get(key);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as { event: string; deliveryId: string; ts: string };
+      return { event: parsed.event, deliveryId: parsed.deliveryId, ts: parsed.ts };
+    } catch {
+      return null;
+    }
+  }
+
   // Release worker, queue, and the dedup redis client so the API exits cleanly
   // on SIGTERM. Idempotent.
   async close(): Promise<void> {

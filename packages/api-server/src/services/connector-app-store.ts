@@ -124,6 +124,26 @@ export class ConnectorAppStore implements ConnectorDurableStore {
     }
   }
 
+  // Write (or rotate) a per-App webhook secret. Persists the sidecar
+  // <keyDir>/github-app-<appId>.webhook-secret (mode 0600, trailing newline so
+  // it matches what loadAndMaterialize writes and resolveWebhookSecret trims),
+  // then re-syncs the GSM blob so the new secret survives a pod restart.
+  //
+  // The sidecar write is the durable source of truth on disk (file mode + the
+  // hot-path resolveWebhookSecret read both rely on it); sync() folds it into
+  // the connector-apps blob for gsm deployments and no-ops in file mode.
+  async setWebhookSecret(
+    appId: string,
+    secret: string,
+    connectors: ConnectorInstanceConfig[],
+  ): Promise<void> {
+    mkdirSync(this.keyDir, { recursive: true, mode: 0o700 });
+    const secretPath = join(this.keyDir, `github-app-${appId}.webhook-secret`);
+    writeFileSync(secretPath, secret + '\n', { encoding: 'utf-8', mode: 0o600 });
+    chmodSync(secretPath, 0o600);
+    await this.sync(connectors);
+  }
+
   // Read the blob, materialize per-org PEM + webhook sidecar files to keyDir,
   // and return the connector instances. Returns `null` when there is no blob
   // (first run / file mode / missing GSM container) so the caller can fall

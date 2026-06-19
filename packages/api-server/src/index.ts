@@ -23,6 +23,7 @@ import {
 } from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
+import { SettingsService } from './services/settings-service.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
@@ -375,6 +376,18 @@ async function main() {
     );
   }
 
+  // Backs the admin /api/settings hub. Holds the same live globalApp reference
+  // (gh) + stores + registry + refetch port the rest of the server uses, so a
+  // webhook-secret/allow-list write is visible to the receiver without a
+  // restart.
+  const settingsService = new SettingsService({
+    secretStore,
+    globalApp: gh,
+    registry: connectorRegistry,
+    connectorAppStore,
+    webhookRefetch: webhookRefetch ?? undefined,
+  });
+
   const server = await createServer({
     logger: true,
     neo4jService,
@@ -383,6 +396,7 @@ async function main() {
     githubAppService,
     githubAppManifestService,
     oidcSettingsService,
+    settingsService,
     // Active-mode /api/setup/status (behind auth) — used by the wizard's
     // post-restart poll and for ops debugging. The mutating setup routes
     // 409 outside setup mode.

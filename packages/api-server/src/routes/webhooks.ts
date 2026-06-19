@@ -28,6 +28,21 @@ export interface WebhookRefetchPort {
     repo: string;
     kind: 'repo' | 'workflows';
   }): Promise<void>;
+  // Record the most recent VERIFIED delivery for a connector so the admin
+  // Portal Settings webhook view can show "last verified delivery: <ts>".
+  // Best-effort and observability-only — a failure here must never change the
+  // delivery's HTTP response (the receiver wraps the call accordingly).
+  recordVerifiedDelivery(rec: {
+    connectorId: string;
+    event: string;
+    deliveryId: string;
+    ts: string;
+  }): Promise<void>;
+  // Read back the last verified delivery for a connector (null when none has
+  // been recorded, e.g. a fresh deployment).
+  getLastVerifiedDelivery(
+    connectorId: string,
+  ): Promise<{ event: string; deliveryId: string; ts: string } | null>;
 }
 
 // ~2 MB cap — tightened from the global 5 MB. A normal push/workflow_run
@@ -217,6 +232,31 @@ const webhookRoutes: FastifyPluginAsync = async (server) => {
         }
 
         const connector = matched.connector;
+
+        // ── Record last-verified-delivery (observability only) ───────────
+        // Now that the signature has verified, stamp the connector's
+        // last-verified marker so the admin Portal Settings webhook view can
+        // confirm a delivery actually landed. Best-effort: a record failure
+        // (Redis down) must NEVER change the delivery's response — swallow it.
+        if (server.webhookRefetch) {
+          try {
+            await server.webhookRefetch.recordVerifiedDelivery({
+              connectorId: connector.id,
+              event,
+              deliveryId,
+              ts: new Date().toISOString(),
+            });
+          } catch (recordErr) {
+            log.warn(
+              {
+                code: 'last_verified_record_failed',
+                deliveryId,
+                err: (recordErr as Error).message,
+              },
+              'webhook: failed to record last-verified-delivery (non-fatal)',
+            );
+          }
+        }
 
         // ── STEP 9 (early): disabled connector → ack, no enqueue ─────────
         if (!connector.enabled) {

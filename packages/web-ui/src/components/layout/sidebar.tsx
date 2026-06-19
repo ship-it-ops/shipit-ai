@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar as DSSidebar, NavItem, NavSection } from '@ship-it-ui/ui';
 import { type GlyphName, IconGlyph } from '@ship-it-ui/icons';
 import { useUIStore } from '@/stores/ui-store';
+import { useCurrentUser } from '@/lib/current-user';
 import { fetchReconciliationStats, type ReconciliationStats } from '@/lib/api';
 
 interface NavLink {
@@ -15,6 +16,8 @@ interface NavLink {
   glyph: GlyphName;
   /** Optional trailing badge — e.g., 'P2' for Phase 2. */
   badge?: string;
+  /** Only render for admins. Cosmetic — the routes are server-gated too. */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -67,6 +70,7 @@ const navGroups: NavGroup[] = [
       { label: 'Audit Log', href: '/admin/audit', glyph: 'file' },
       { label: 'Access Control', href: '/admin/access', glyph: 'settings' },
       { label: 'Agent Activity', href: '/admin/agent-activity', glyph: 'sparkle' },
+      { label: 'Settings', href: '/settings', glyph: 'settings', adminOnly: true },
     ],
   },
 ];
@@ -152,6 +156,9 @@ function SidebarNavItem({
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const pathname = usePathname();
+  // Fails closed: while identity loads `role` is '' so admin-only items stay
+  // hidden until we know the user is an admin.
+  const isAdmin = useCurrentUser().role === 'admin';
   const width = sidebarCollapsed ? 64 : 240;
 
   const { data: reconStats } = useQuery<ReconciliationStats>({
@@ -164,16 +171,22 @@ export function Sidebar() {
   });
   const pendingCount = reconStats?.pending ?? 0;
 
-  // Override the Reconciliation nav entry's badge with the pending count when
-  // it's non-zero — otherwise keep the static "P2" so users know it's gated.
-  const decoratedGroups = navGroups.map((g) => ({
-    ...g,
-    items: g.items.map((item) =>
-      item.href === '/operations/reconciliation' && pendingCount > 0
-        ? { ...item, badge: String(pendingCount) }
-        : item,
-    ),
-  }));
+  // Drop admin-only entries for non-admins, then override the Reconciliation
+  // nav entry's badge with the pending count when it's non-zero — otherwise
+  // keep the static "P2" so users know it's gated.
+  const decoratedGroups = navGroups
+    .map((g) => ({
+      ...g,
+      items: g.items
+        .filter((item) => !item.adminOnly || isAdmin)
+        .map((item) =>
+          item.href === '/operations/reconciliation' && pendingCount > 0
+            ? { ...item, badge: String(pendingCount) }
+            : item,
+        ),
+    }))
+    // A group whose items all got filtered out shouldn't render a bare label.
+    .filter((g) => g.items.length > 0);
 
   const allHrefs = decoratedGroups.flatMap((g) => g.items.map((i) => i.href));
   const activeHref = pickActiveHref(pathname, allHrefs);

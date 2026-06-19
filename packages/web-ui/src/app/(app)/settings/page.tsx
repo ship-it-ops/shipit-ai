@@ -4,8 +4,16 @@ import { Badge, Card, Checkbox, Tabs, TabsList, Tab, TabsContent } from '@ship-i
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { ApiKeysTab } from '@/components/settings/api-keys-tab';
 import { InstanceTab } from '@/components/settings/instance-tab';
+import { WebhooksTab } from '@/components/settings/webhooks-tab';
+import { AccessTab } from '@/components/settings/access-tab';
+import { useCurrentUser } from '@/lib/current-user';
 
 export default function SettingsPage() {
+  // Admin-only sections (GitHub Webhooks, Login & Access) are hidden for
+  // non-admins. This is cosmetic — every /api/settings endpoint is
+  // server-gated (403 FORBIDDEN) — and fails closed while identity loads.
+  const isAdmin = useCurrentUser().role === 'admin';
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
       <header>
@@ -21,6 +29,8 @@ export default function SettingsPage() {
           <Tab value="notifications">Notifications</Tab>
           <Tab value="api-keys">API Keys</Tab>
           <Tab value="instance">Instance</Tab>
+          {isAdmin && <Tab value="webhooks">GitHub Webhooks</Tab>}
+          {isAdmin && <Tab value="access">Login &amp; Access</Tab>}
         </TabsList>
 
         <TabsContent value="appearance" className="mt-4 flex flex-col gap-4">
@@ -71,6 +81,18 @@ export default function SettingsPage() {
         <TabsContent value="instance" className="mt-4">
           <InstanceTab />
         </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="webhooks" className="mt-4">
+            <WebhooksTab />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="access" className="mt-4">
+            <AccessTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -15,11 +15,13 @@ vi.mock('bullmq', () => ({
 }));
 
 const mockRedisSet = vi.fn();
+const mockRedisGet = vi.fn();
 const mockRedisDel = vi.fn();
 const mockRedisDisconnect = vi.fn();
 vi.mock('ioredis', () => ({
   Redis: vi.fn().mockImplementation(() => ({
     set: mockRedisSet,
+    get: mockRedisGet,
     del: mockRedisDel,
     disconnect: mockRedisDisconnect,
   })),
@@ -93,6 +95,42 @@ describe('WebhookRefetchQueue', () => {
     const queue = makeQueue();
     await queue.releaseDelivery('d-1');
     expect(mockRedisDel).toHaveBeenCalledWith('wh~delivery~d-1');
+  });
+
+  it('recordVerifiedDelivery SETs a per-connector key (no TTL) with the JSON record', async () => {
+    const queue = makeQueue();
+    const rec = {
+      connectorId: 'conn-a',
+      event: 'push',
+      deliveryId: 'd-9',
+      ts: '2026-06-18T00:00:00Z',
+    };
+    await queue.recordVerifiedDelivery(rec);
+
+    expect(mockRedisSet).toHaveBeenCalledTimes(1);
+    const [key, val, ...rest] = mockRedisSet.mock.calls[0];
+    expect(key).toBe('wh~lastverified~conn-a');
+    expect(JSON.parse(val)).toEqual(rec);
+    // No EX/NX args — this is a durable "latest" marker, not a dedup key.
+    expect(rest).toEqual([]);
+  });
+
+  it('getLastVerifiedDelivery GETs the same key and parses the record', async () => {
+    const queue = makeQueue();
+    mockRedisGet.mockResolvedValueOnce(
+      JSON.stringify({ event: 'workflow_run', deliveryId: 'd-7', ts: '2026-06-18T01:00:00Z' }),
+    );
+    const got = await queue.getLastVerifiedDelivery('conn-b');
+    expect(mockRedisGet).toHaveBeenCalledWith('wh~lastverified~conn-b');
+    expect(got).toEqual({ event: 'workflow_run', deliveryId: 'd-7', ts: '2026-06-18T01:00:00Z' });
+  });
+
+  it('getLastVerifiedDelivery returns null when the key is absent or unparseable', async () => {
+    const queue = makeQueue();
+    mockRedisGet.mockResolvedValueOnce(null);
+    expect(await queue.getLastVerifiedDelivery('conn-none')).toBeNull();
+    mockRedisGet.mockResolvedValueOnce('not-json{');
+    expect(await queue.getLastVerifiedDelivery('conn-bad')).toBeNull();
   });
 
   it('close() tears down worker, queue, and the dedup redis client', async () => {

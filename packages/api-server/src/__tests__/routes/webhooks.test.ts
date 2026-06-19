@@ -57,9 +57,11 @@ function fakeRegistry(connectors: GitHubConnectorConfig[]): ConnectorRegistry {
 function fakeRefetch() {
   const seen = new Set<string>();
   const enqueue = vi.fn(async () => {});
+  const lastVerified = new Map<string, { event: string; deliveryId: string; ts: string }>();
   return {
     enqueue,
     seen,
+    lastVerified,
     markDeliverySeen: vi.fn(async (id: string) => {
       if (seen.has(id)) return false;
       seen.add(id);
@@ -68,11 +70,26 @@ function fakeRefetch() {
     releaseDelivery: vi.fn(async (id: string) => {
       seen.delete(id);
     }),
+    recordVerifiedDelivery: vi.fn(
+      async (rec: { connectorId: string; event: string; deliveryId: string; ts: string }) => {
+        lastVerified.set(rec.connectorId, {
+          event: rec.event,
+          deliveryId: rec.deliveryId,
+          ts: rec.ts,
+        });
+      },
+    ),
+    getLastVerifiedDelivery: vi.fn(
+      async (connectorId: string) => lastVerified.get(connectorId) ?? null,
+    ),
   } satisfies WebhookRefetchPort & {
     seen: Set<string>;
+    lastVerified: Map<string, { event: string; deliveryId: string; ts: string }>;
     enqueue: ReturnType<typeof vi.fn>;
     markDeliverySeen: ReturnType<typeof vi.fn>;
     releaseDelivery: ReturnType<typeof vi.fn>;
+    recordVerifiedDelivery: ReturnType<typeof vi.fn>;
+    getLastVerifiedDelivery: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -193,6 +210,37 @@ describe('POST /api/webhooks/github — verify → dedup → enqueue', () => {
       repo: 'widgets',
       kind: 'repo',
     });
+  });
+
+  it('records the last-verified-delivery on a verified delivery', async () => {
+    const body = pushPayload();
+    const res = await inject(server, {
+      event: 'push',
+      delivery: 'd-verified-1',
+      signature: sign(body, PER_APP_SECRET),
+      body,
+    });
+    expect(res.statusCode).toBe(202);
+    expect(refetch.recordVerifiedDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectorId: 'conn-acme',
+        event: 'push',
+        deliveryId: 'd-verified-1',
+      }),
+    );
+    expect(refetch.lastVerified.get('conn-acme')?.deliveryId).toBe('d-verified-1');
+  });
+
+  it('does NOT record last-verified on a bad signature (records only post-verify)', async () => {
+    const body = pushPayload();
+    const res = await inject(server, {
+      event: 'push',
+      delivery: 'd-badsig-record',
+      signature: sign(body, 'the-wrong-secret'),
+      body,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(refetch.recordVerifiedDelivery).not.toHaveBeenCalled();
   });
 
   it('valid workflow_run → 202 and enqueues a workflows refetch', async () => {

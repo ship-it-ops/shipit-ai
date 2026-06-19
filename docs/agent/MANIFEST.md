@@ -25,7 +25,8 @@ Last updated: 2026-06-18 | Total notes: 59
 
 <!-- always-read at session start -->
 
-- [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A implemented + reviewed; all tests green, uncommitted
+- [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
+- [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
 
 ## Decisions
 
@@ -82,7 +83,7 @@ Last updated: 2026-06-18 | Total notes: 59
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
-- [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | active | standard | 2026-06-18 | allow-list edit needs infra IAM grant (addVersion on shipit-auth-allow-list-emails)
+- [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — BullMQ retention bounds shipped #75 + deployed; bigkeys verify pending
 
 ## Scars
