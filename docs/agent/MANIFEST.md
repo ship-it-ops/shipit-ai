@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-19 | Total notes: 62
+Last updated: 2026-06-19 | Total notes: 63
 
 ## Investigations
 
@@ -91,6 +91,7 @@ Last updated: 2026-06-19 | Total notes: 62
 
 ## Scars
 
+- [pnpm-install-under-live-next-dev-serves-stale-bundle](scars/pnpm-install-under-live-next-dev-serves-stale-bundle.md) | scar | active | core | 2026-06-19 | empty/blank local web-ui right after pnpm install = stale next dev serving old node_modules; restart before suspecting data loss
 - [tailwind-spacing-screen-key-shadows-h-screen](scars/tailwind-spacing-screen-key-shadows-h-screen.md) | scar | active | core | 2026-06-18 | a `--spacing-screen` @theme key shadows Tailwind's reserved h-screen → 100vh becomes 16px, shell collapses
 - [dedup-token-before-failable-side-effect-swallows-retry](scars/dedup-token-before-failable-side-effect-swallows-retry.md) | scar | active | core | 2026-06-18 | set a dedup token before a failable+retried step → release it on failure or the retry is lost
 - [redis-memory-limit-below-dataset-oomkills](scars/redis-memory-limit-below-dataset-oomkills.md) | scar | active | core | 2026-06-17 | empty UI + healthy app = check redis-0 OOMKilled before suspecting data loss
