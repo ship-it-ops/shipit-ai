@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-19 | Total notes: 67
+Last updated: 2026-06-19 | Total notes: 68
 
 ## Investigations
 
@@ -70,6 +70,7 @@ Last updated: 2026-06-19 | Total notes: 67
 
 ## Plans
 
+- [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | active | core | 2026-06-19 | prioritized integration-test gaps (10 areas, P0-P2) mapped to scars; Wave A/#1 (Neo4j DELETE migrations) next
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)

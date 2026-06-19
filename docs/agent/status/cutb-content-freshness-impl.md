@@ -50,12 +50,16 @@ api-server 375 (person determinism + sensitivity). All other packages typecheck-
 - Criterion 3 (out-of-order skip) holds for **timestamped entities only**; hashless
   entities are last-writer-wins (documented, accepted).
 
-## KNOWN TEST GAP (audit test-strategist-010)
+## Cypher coverage — CLOSED (was audit test-strategist-010)
 
-The actual `mergeNode` Cypher (the atomic CAS) is **not** covered by an automated test —
-the core-writer harness mocks `neo4j-driver` and has no testcontainers. The SEMANTICS are
-covered by a stateful NodeWriter double, but the Cypher itself must be validated against a
-real Neo4j manually (or via a future integration harness). Verify on-cluster after deploy.
+The actual `mergeNode`/`touchLastSynced` Cypher is now covered by a Neo4j-backed
+integration test: `packages/core-writer/src/__tests__/freshness-guard.integration.test.ts`
+(`pnpm --filter @shipit-ai/core-writer test:integration`). Env-gated on `NEO4J_TEST_URI`
+(skips in the default unit run; stays Docker-free). Validated against a real Neo4j 5 — 7/7
+pass, including the **lossless-Integer legacy-`1` round-trip** (the data-migrations-001/002
+concern), strict-`>` reject, equal-version-different-content write, and monotonic touch.
+A dedicated CI `integration` job (Neo4j service container, runs on every PR/push, gates
+`claude-review`) was added to `.github/workflows/ci.yml`.
 
 ## ROLLOUT runbook (audit data-migrations-007)
 

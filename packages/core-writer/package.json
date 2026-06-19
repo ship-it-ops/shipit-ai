@@ -17,6 +17,7 @@
     "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run freshness-guard.integration",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
