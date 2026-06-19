@@ -50,9 +50,15 @@ instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-wri
 
 ## Status
 
-Roadmap only. Wave A/#1 is the recommended next build (highest data-loss risk; reuses the existing
-Neo4j integration harness + CI `integration` job). Each wave gets gated behind its env flag so the
-default unit run stays Docker-free.
+- **#1 (Neo4j DELETE migrations) — DONE** (2026-06-19): `migrations.integration.test.ts`, 6 tests,
+  validated against real Neo4j (blast radius, DETACH-DELETE relationship handling, `_LinkingKey`/
+  `_IdempotencyLog` old-vs-new, idempotent rerun, Person prefix-guard). Runs in the CI `integration` job.
+- Next: #6, #7 (rest of Wave A — reuse the same Neo4j harness), then Wave B (Redis+BullMQ).
+- **Isolation rule (learned):** real-DB integration files MUST run serially — vitest parallelizes
+  files and they clobber a shared DB. `core-writer test:integration` uses `--no-file-parallelism`;
+  any new wave sharing a backend must do the same or isolate per-DB. See
+  [scar](../scars/integration-tests-sharing-a-db-must-run-serially.md).
+- Each wave stays gated behind its env flag so the default unit run is Docker-free.
 
 ## Related
 
