@@ -70,7 +70,7 @@ const navGroups: NavGroup[] = [
       { label: 'Audit Log', href: '/admin/audit', glyph: 'file' },
       { label: 'Access Control', href: '/admin/access', glyph: 'settings' },
       { label: 'Agent Activity', href: '/admin/agent-activity', glyph: 'sparkle' },
-      { label: 'Settings', href: '/settings', glyph: 'settings', adminOnly: true },
+      { label: 'Settings', href: '/admin/settings', glyph: 'settings', adminOnly: true },
     ],
   },
 ];

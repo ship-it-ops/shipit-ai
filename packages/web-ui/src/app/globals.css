@@ -47,7 +47,10 @@
   --color-purple: var(--color-purple);
   --color-pink: var(--color-pink);
 
-  --color-on-accent: #0a0a0b;
+  /* Bridge the text-on-accent utility to a theme-aware var (defined below).
+     Was a hardcoded literal, which baked near-black into every colored button
+     regardless of theme — illegible on light theme's dark accent. */
+  --color-on-accent: var(--color-on-accent);
 
   --color-ok-fg: var(--color-ok-fg);
   --color-warn-fg: var(--color-warn-fg);
@@ -114,6 +117,21 @@
   --z-popover: var(--z-popover);
   --z-toast: var(--z-toast);
   --z-tooltip: var(--z-tooltip);
+}
+
+/*
+ * Theme-aware foreground for colored surfaces (accent / ok / err buttons +
+ * badges, which all use the `text-on-accent` utility). The DS ships no
+ * on-accent token, so we define it here per theme:
+ *   - dark theme: accent/ok/err are LIGHT (oklch ~0.82) → near-black text;
+ *   - light theme: accent/ok/err are DARK (oklch ~0.45-0.55) → white text.
+ * Fixes the dark-button/black-text contrast bug in light mode.
+ */
+:root {
+  --color-on-accent: #0a0a0b;
+}
+[data-theme='light'] {
+  --color-on-accent: #ffffff;
 }
 
 @layer base {
