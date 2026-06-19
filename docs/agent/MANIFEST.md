@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-18 | Total notes: 62
+Last updated: 2026-06-19 | Total notes: 62
 
 ## Investigations
 
@@ -27,8 +27,8 @@ Last updated: 2026-06-18 | Total notes: 62
 
 - [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
 - [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
-- [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-18 | shipped on-accent contrast fix + admin/user settings split; DS on-accent token upstream still TODO
-- [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-18 | bumped all 7 @ship-it-ui/\* to latest + bridge re-sync; tests/build green, uncommitted
+- [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
+- [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
 
 ## Decisions
 
@@ -69,7 +69,7 @@ Last updated: 2026-06-18 | Total notes: 62
 
 ## Plans
 
-- [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | active | standard | 2026-06-18 | handoff prompt for ship-it-design: theme-aware on-accent token + rename colliding `screen` spacing key
+- [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
 - [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | active | core | 2026-06-18 | audited receiver: HMAC verify, per-App secret, coalesced refetch; Cut A/B split
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login

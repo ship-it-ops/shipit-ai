@@ -66,12 +66,33 @@ and light (shell 1064px, sidebar full height, content visible). See
 [scar](../scars/tailwind-spacing-screen-key-shadows-h-screen.md). The DS's own
 `globals.base.css` ships `--spacing-screen` too — flag for the upstream DS prompt.
 
-## Not yet done
+## Committed + pushed
 
-- Deeper visual eyeball of accent-filled buttons/Banner contrast on a page that
-  exercises them (Home is mostly outline buttons) — optional.
-- Commit/push — awaiting user approval.
+Committed `01b77ec` and pushed to `origin/next-release` (2026-06-18). No PR.
+The DS-side upstream fixes are queued in
+[ds-upstream-theming-prompt](../plans/ds-upstream-theming-prompt.md).
+
+## Follow-up upgrade — DS shipped our fixes (2026-06-19, uncommitted)
+
+The DS released our two upstream fixes. Bumped to ui 0.0.20, tokens 0.0.9,
+shipit 0.0.21, cytoscape 0.0.20, graph-editor 0.0.15, next 0.0.18 (icons
+unchanged 0.0.14). Then **dropped BOTH local divergences** in `globals.css`:
+
+- **on-accent**: removed the local `:root`/`[data-theme='light']`
+  `--color-on-accent` blocks. tokens.css 0.0.9 now ships the theme-aware token
+  (`#0a0a0b` dark / `#ffffff` light); the `@theme inline` bridge line stays and
+  resolves to it. Verified end-to-end: a `bg-accent text-on-accent` button
+  computes white text on dark-teal in light, near-black on bright-teal in dark.
+- **screen→gutter**: the DS renamed the spacing key (`screen`→`gutter`), so the
+  collision is gone. Re-added the bridge as `--spacing-gutter`/`--spacing-gutter-lg`
+  (replacing the omission warning). Verified `.h-screen{height:100vh}` in the
+  built CSS — no `screen-pad` override.
+
+Verified: typecheck clean, lint 0 errors, 100 tests, next build OK; live prod
+server (port 3001) renders correctly in both themes (shell full-height, on-accent
+contrast correct). globals.css now carries NO local DS divergence.
 
 ## Related
 
 - [web-ui-theme-onaccent-and-settings-split](./web-ui-theme-onaccent-and-settings-split.md)
+- [ds-upstream-theming-prompt](../plans/ds-upstream-theming-prompt.md) — the DS change that shipped

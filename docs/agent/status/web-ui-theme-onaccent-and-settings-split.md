@@ -26,18 +26,13 @@ tags: [web-ui, theme, design-system, tokens, settings, follow-up]
    to user prefs (Appearance, Notifications, API Keys). Sidebar entry repointed
    to `/admin/settings`; breadcrumb + page-level admin gate + test added.
 
-## FOLLOW-UP — not done: upstream a theme-aware `--color-on-accent` to the DS
+## FOLLOW-UP — DONE: theme-aware `--color-on-accent` upstreamed to the DS
 
-The on-accent fix is a **local divergence**. The durable home is the design
-system's token package, `@ship-it-ui/tokens` (`styles/tokens.css`): add a
-theme-aware `--color-on-accent` next to `--color-accent` (dark → near-black,
-light → white), exactly as the DS already does for `--color-accent-text`. Then
-this app can drop the local override in `globals.css`.
-
-**Why it wasn't done here:** the DS packages (`@ship-it-ui/ui@0.0.16`,
-`@ship-it-ui/tokens@0.0.7`) are **external published npm packages** in
-`node_modules/.pnpm/…` — NOT workspace packages in this repo — so a DS edit must
-be made in the separate `@ship-it-ui` repo, not here.
+RESOLVED 2026-06-19. The DS shipped the theme-aware `--color-on-accent` token in
+`@ship-it-ui/tokens@0.0.9` (`#0a0a0b` dark / `#ffffff` light, in `tokens.css`),
+via the handoff prompt. On the DS bump to ui 0.0.20 / tokens 0.0.9, this app
+**dropped the local `--color-on-accent` override** — globals.css now carries no
+DS divergence for on-accent. See [ds-upgrade-to-latest](./ds-upgrade-to-latest.md).
 
 ## Architectural context for future agents (web-ui theming)
 

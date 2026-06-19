@@ -49,9 +49,9 @@
   --color-purple: var(--color-purple);
   --color-pink: var(--color-pink);
 
-  /* Bridge the text-on-accent utility to a theme-aware var (defined below).
-     Was a hardcoded literal, which baked near-black into every colored button
-     regardless of theme — illegible on light theme's dark accent. */
+  /* text-on-accent foreground. Now a theme-aware token shipped by the DS
+     (@ship-it-ui/tokens: #0a0a0b dark / #ffffff light) — the local per-theme
+     override was removed once the DS upstreamed it. */
   --color-on-accent: var(--color-on-accent);
 
   --color-ok-fg: var(--color-ok-fg);
@@ -144,13 +144,12 @@
   --spacing-row-lg: var(--row-h-lg);
   --spacing-tabbar: var(--tabbar-h);
   --spacing-navbar: var(--navbar-h);
-  /* NOTE: the DS bridge also defines `--spacing-screen`/`--spacing-screen-lg`
-     (for `p-screen`). DO NOT add them here: a spacing key named `screen`
-     collides with Tailwind's reserved viewport keyword and emits a second
-     `height: var(--spacing-screen)` on `.h-screen`/`.min-h-screen`/`.w-screen`,
-     silently overriding `100vh` with the 16px pad → the app shell (`flex
-     h-screen`) collapses to 16px. The app uses `h-screen` and not `p-screen`,
-     so we omit them. (Footgun lives upstream in the DS too — flag for fix.) */
+  /* Screen-edge padding (`p-gutter`). The DS renamed this key from `screen` to
+     `gutter` (DS ui 0.0.20) — the old `screen` key collided with Tailwind's
+     reserved viewport keyword and shadowed `h-screen`/`w-screen` (100vh → 16px).
+     `gutter` is safe; see scars/tailwind-spacing-screen-key-shadows-h-screen.md. */
+  --spacing-gutter: var(--screen-pad);
+  --spacing-gutter-lg: var(--screen-pad-lg);
 
   /* Mobile — bumped type scale (text-m-body, text-m-h1, …). */
   --text-m-eyebrow: var(--font-size-m-eyebrow);
@@ -166,21 +165,6 @@
   --radius-m-tab: var(--radius-m-tab);
   --radius-m-card: var(--radius-m-card);
   --radius-m-sheet: var(--radius-m-sheet);
-}
-
-/*
- * Theme-aware foreground for colored surfaces (accent / ok / err buttons +
- * badges, which all use the `text-on-accent` utility). The DS ships no
- * on-accent token, so we define it here per theme:
- *   - dark theme: accent/ok/err are LIGHT (oklch ~0.82) → near-black text;
- *   - light theme: accent/ok/err are DARK (oklch ~0.45-0.55) → white text.
- * Fixes the dark-button/black-text contrast bug in light mode.
- */
-:root {
-  --color-on-accent: #0a0a0b;
-}
-[data-theme='light'] {
-  --color-on-accent: #ffffff;
 }
 
 @layer base {
