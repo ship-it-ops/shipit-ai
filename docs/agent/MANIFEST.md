@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-18 | Total notes: 59
+Last updated: 2026-06-18 | Total notes: 62
 
 ## Investigations
 
@@ -27,6 +27,8 @@ Last updated: 2026-06-18 | Total notes: 59
 
 - [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
 - [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
+- [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-18 | shipped on-accent contrast fix + admin/user settings split; DS on-accent token upstream still TODO
+- [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-18 | bumped all 7 @ship-it-ui/\* to latest + bridge re-sync; tests/build green, uncommitted
 
 ## Decisions
 
@@ -67,6 +69,7 @@ Last updated: 2026-06-18 | Total notes: 59
 
 ## Plans
 
+- [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | active | standard | 2026-06-18 | handoff prompt for ship-it-design: theme-aware on-accent token + rename colliding `screen` spacing key
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
 - [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | active | core | 2026-06-18 | audited receiver: HMAC verify, per-App secret, coalesced refetch; Cut A/B split
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
@@ -88,6 +91,7 @@ Last updated: 2026-06-18 | Total notes: 59
 
 ## Scars
 
+- [tailwind-spacing-screen-key-shadows-h-screen](scars/tailwind-spacing-screen-key-shadows-h-screen.md) | scar | active | core | 2026-06-18 | a `--spacing-screen` @theme key shadows Tailwind's reserved h-screen → 100vh becomes 16px, shell collapses
 - [dedup-token-before-failable-side-effect-swallows-retry](scars/dedup-token-before-failable-side-effect-swallows-retry.md) | scar | active | core | 2026-06-18 | set a dedup token before a failable+retried step → release it on failure or the retry is lost
 - [redis-memory-limit-below-dataset-oomkills](scars/redis-memory-limit-below-dataset-oomkills.md) | scar | active | core | 2026-06-17 | empty UI + healthy app = check redis-0 OOMKilled before suspecting data loss
 - [web-ui-cannot-import-mcp-server-root](scars/web-ui-cannot-import-mcp-server-root.md) | scar | active | core | 2026-05-31 | workspace root barrels drag node:fs into web-ui bundle

@@ -71,7 +71,7 @@ export function ConnectorCard({ connector, runtime, onClick }: ConnectorCardProp
           aria-hidden
           className="bg-panel-2 grid h-16 w-16 shrink-0 place-items-center rounded-md"
         >
-          <DynamicIconGlyph name={connector.type} kind="connector" size={36} />
+          <DynamicIconGlyph name={connector.type} kind="logo" size={36} />
         </span>
         <div className="flex flex-col items-center gap-[2px]">
           <span className="text-text line-clamp-2 text-[14px] leading-tight font-medium">
