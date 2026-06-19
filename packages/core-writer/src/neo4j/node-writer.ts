@@ -20,10 +20,11 @@ export class Neo4jNodeWriter implements NodeWriter {
     node: CanonicalNode,
     mergedClaims: PropertyClaim[],
     effectiveProperties: Record<string, unknown>,
-  ): Promise<void> {
-    await this.client.executeWrite(async (tx) => {
-      await mergeNode(tx, node, mergedClaims, effectiveProperties);
+  ): Promise<{ written: boolean }> {
+    const written = await this.client.executeWrite(async (tx) => {
+      return mergeNode(tx, node, mergedClaims, effectiveProperties);
     }, this.database);
+    return { written };
   }
 
   async writeEdge(edge: CanonicalEdge): Promise<void> {

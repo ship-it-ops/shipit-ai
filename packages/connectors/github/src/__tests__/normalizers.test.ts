@@ -27,7 +27,19 @@ describe('normalizeRepository', () => {
     topics: ['backend', 'payments'],
     archived: false,
     description: 'Payment processing API',
+    updated_at: '2026-06-01T00:00:00Z',
+    pushed_at: '2026-06-19T00:00:00Z',
   };
+
+  it('sets _event_version to the max source timestamp epoch (pushed_at wins)', () => {
+    const result = normalizeRepository(mockRepo, ORG);
+    expect(result.nodes[0]._event_version).toBe(Date.parse('2026-06-19T00:00:00Z'));
+  });
+
+  it('falls back to a content-hash version when timestamps are absent (partial projection)', () => {
+    const result = normalizeRepository({ ...mockRepo, updated_at: null, pushed_at: null }, ORG);
+    expect(String(result.nodes[0]._event_version)).toMatch(/^ch_[0-9a-f]+$/);
+  });
 
   it('produces a CanonicalNode with label=Repository', () => {
     const result = normalizeRepository(mockRepo, ORG);
@@ -170,6 +182,7 @@ describe('normalizePipeline', () => {
     html_url: 'https://github.com/shipitops/graph-api/actions/workflows/ci.yml',
     repo_name: 'graph-api',
     repo_full_name: 'shipitops/graph-api',
+    updated_at: '2026-02-01T00:00:00Z',
     recent_runs: [
       {
         id: 1,
@@ -179,6 +192,18 @@ describe('normalizePipeline', () => {
       },
     ],
   };
+
+  it('sets _event_version to the latest run created_at epoch', () => {
+    const result = normalizePipeline(mockWorkflow, ORG);
+    expect(result.nodes[0]._event_version).toBe(Date.parse('2026-02-28T10:00:00Z'));
+  });
+
+  it('falls back to workflow updated_at, then content hash, when there are no runs', () => {
+    const noRuns = normalizePipeline({ ...mockWorkflow, recent_runs: [] }, ORG);
+    expect(noRuns.nodes[0]._event_version).toBe(Date.parse('2026-02-01T00:00:00Z'));
+    const noTs = normalizePipeline({ ...mockWorkflow, recent_runs: [], updated_at: null }, ORG);
+    expect(String(noTs.nodes[0]._event_version)).toMatch(/^ch_[0-9a-f]+$/);
+  });
 
   it('produces Pipeline node', () => {
     const result = normalizePipeline(mockWorkflow, ORG);

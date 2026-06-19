@@ -31,6 +31,8 @@ export async function fetchRepository(
     topics: repo.topics ?? [],
     archived: repo.archived ?? false,
     description: repo.description ?? null,
+    updated_at: repo.updated_at ?? null,
+    pushed_at: repo.pushed_at ?? null,
   };
 }
 
@@ -79,6 +81,7 @@ export async function fetchRepositoryWorkflows(
       html_url: wf.html_url,
       repo_name: name,
       repo_full_name: `${owner}/${name}`,
+      updated_at: wf.updated_at ?? null,
       recent_runs: recentRuns,
     });
   }

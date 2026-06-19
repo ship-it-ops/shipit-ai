@@ -9,7 +9,13 @@ export interface CanonicalNode {
   _source_org: string; // e.g., 'github/shipitops'
   _source_id: string; // Linking key from source system
   _last_synced: string; // ISO 8601
-  _event_version: number | string; // Monotonic integer or ISO 8601 only
+  // Freshness/ORDERING token (Cut B). Either a comparable epoch-ms number (entities
+  // with a source timestamp — Repository/Pipeline) OR an opaque, sentinel-prefixed
+  // (`ch_…`) content hash for entities without one (Team/Person — unorderable,
+  // last-writer-wins). The core-writer's atomic in-Cypher guard skips a write only
+  // when this is a number strictly less than the stored value. NOT the dedup key —
+  // that is a separate content fingerprint (see shared `deriveNodeContentHash`).
+  _event_version: number | string;
 }
 
 export interface CanonicalEdge {

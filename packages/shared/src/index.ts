@@ -95,6 +95,15 @@ export type {
   VerificationStatusInput,
 } from './utils/confidence.js';
 
+// Event-version (freshness/ordering token) + content-dedup-key helpers
+export {
+  deriveTimeVersion,
+  deriveContentVersion,
+  deriveNodeContentHash,
+  isContentVersion,
+  CONTENT_VERSION_PREFIX,
+} from './utils/event-version.js';
+
 // Source reliability / independence registry
 export {
   SOURCE_RELIABILITY,

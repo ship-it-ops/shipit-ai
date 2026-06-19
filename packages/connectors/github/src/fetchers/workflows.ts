@@ -9,6 +9,9 @@ export interface GitHubWorkflow {
   html_url: string;
   repo_name: string;
   repo_full_name: string;
+  // Workflow definition's last-modified time — a fallback freshness signal for
+  // `_event_version` when there are no recent runs. Nullable.
+  updated_at: string | null;
   recent_runs: GitHubWorkflowRun[];
 }
 
@@ -69,6 +72,7 @@ export async function fetchWorkflows(
           html_url: wf.html_url,
           repo_name: repoName,
           repo_full_name: `${org}/${repoName}`,
+          updated_at: wf.updated_at ?? null,
           recent_runs: recentRuns,
         });
       }

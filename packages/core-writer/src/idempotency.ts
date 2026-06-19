@@ -1,4 +1,5 @@
 import type { CanonicalNode, EventEnvelope } from '@shipit-ai/shared';
+import { deriveNodeContentHash } from '@shipit-ai/shared';
 
 /**
  * Build an idempotency key from an event envelope.
@@ -10,10 +11,21 @@ export function buildIdempotencyKey(envelope: EventEnvelope): string {
 
 /**
  * Build an idempotency key for a specific node within a connector event.
- * Format: {connector_id}:{node_id}:{event_version}
+ *
+ * Cut B (Option B): the key is the node's CONTENT fingerprint, NOT `_event_version`.
+ * `_event_version` is now purely the ordering token (epoch / content hash) used by
+ * the writer's freshness guard; if it were also the dedup key, a content change that
+ * did not advance the timestamp (e.g. a Pipeline run-status transition while
+ * `last_run.created_at` is unchanged) would be deduped away and never reach the
+ * guard — the original suppression bug. Hashing content means any genuine change
+ * yields a new key and is processed, while true re-syncs of unchanged content dedup.
+ *
+ * MUST stay in lock-step with `event-bus` `producer.ts buildIdempotencyKey`
+ * (same `deriveNodeContentHash`) so the BullMQ jobId layer and the `_IdempotencyLog`
+ * layer agree on what is a duplicate.
  */
 export function buildNodeIdempotencyKey(connectorId: string, node: CanonicalNode): string {
-  return `${connectorId}:${node.id}:${node._event_version}`;
+  return `${connectorId}:${node.id}:${deriveNodeContentHash(node)}`;
 }
 
 export interface IdempotencyChecker {

@@ -40,13 +40,26 @@ describe('buildLoginPersonEntity — GitHub login', () => {
     expect(byKey.login.value).toBe('GH-User');
   });
 
-  it('sets login provenance and a date-bucket event version, no edges', () => {
+  it('sets login provenance and a content-hash event version, no edges', () => {
     const { nodes, edges } = buildLoginPersonEntity(identity, FIXED_NOW);
     expect(nodes[0]._source_system).toBe('login');
     expect(nodes[0]._source_org).toBe('login');
     expect(nodes[0]._source_id).toBe('idp://github/12345');
-    expect(nodes[0]._event_version).toBe('2026-06-14');
+    // Cut B: ordering token is a stable, opaque content hash (ch_ prefix).
+    expect(String(nodes[0]._event_version)).toMatch(/^ch_[0-9a-f]+$/);
     expect(edges).toEqual([]);
+  });
+
+  it('event version is deterministic across different `now` (no timestamp folded in)', () => {
+    const a = buildLoginPersonEntity(identity, new Date('2026-06-14T00:00:00Z'));
+    const b = buildLoginPersonEntity(identity, new Date('2026-09-30T23:59:59Z'));
+    expect(a.nodes[0]._event_version).toBe(b.nodes[0]._event_version);
+  });
+
+  it('event version changes when the profile changes', () => {
+    const base = buildLoginPersonEntity(identity, FIXED_NOW);
+    const renamed = buildLoginPersonEntity({ ...identity, displayName: 'Ada L.' }, FIXED_NOW);
+    expect(base.nodes[0]._event_version).not.toBe(renamed.nodes[0]._event_version);
   });
 
   it('mirrors name/email/login into top-level properties', () => {

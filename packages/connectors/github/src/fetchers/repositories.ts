@@ -11,6 +11,11 @@ export interface GitHubRepo {
   topics: string[];
   archived: boolean;
   description: string | null;
+  // Source freshness signals for `_event_version` (Cut B). `pushed_at` advances on
+  // pushes (the `push` webhook), `updated_at` on metadata edits; the normalizer
+  // takes the max. Nullable — a partial projection must not fabricate a timestamp.
+  updated_at: string | null;
+  pushed_at: string | null;
 }
 
 export async function fetchRepositories(
@@ -38,6 +43,8 @@ export async function fetchRepositories(
     topics: repo.topics ?? [],
     archived: repo.archived ?? false,
     description: repo.description ?? null,
+    updated_at: repo.updated_at ?? null,
+    pushed_at: repo.pushed_at ?? null,
   }));
 
   return {

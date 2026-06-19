@@ -146,6 +146,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     nodeWriter = {
       writeNode: vi.fn().mockImplementation(async (node, claims, effectiveProps) => {
         writtenNodes.set(node.id, { node, claims, effectiveProps });
+        return { written: true };
       }),
       writeEdge: vi.fn().mockImplementation(async (edge) => {
         writtenEdges.push({ type: edge.type, from: edge.from, to: edge.to });

@@ -7,19 +7,24 @@ import type {
   CanonicalNode,
   EventEnvelope,
 } from '@shipit-ai/shared';
+import { deriveNodeContentHash } from '@shipit-ai/shared';
 import type { ResolvedConfig } from '../config.js';
 import { FAILED_JOB_RETENTION } from './retention.js';
 
 const EVENT_LOG_STREAM = 'shipit-event-log';
 
 function buildIdempotencyKey(connectorId: string, node: CanonicalNode): string {
-  // BullMQ 5 rejects `:` in custom job IDs — it reserves the colon for
-  // its internal `bull:<queue>:<key>` keyspace and `Queue.addBulk` throws
-  // synchronously if any opts.jobId contains one. Canonical IDs use the
-  // `shipit://...` URI scheme so the natural format would carry several
-  // colons per entity. We substitute `~` globally; the key is opaque to
-  // downstream consumers (used only for dedup + replay correlation).
-  return `${connectorId}:${node.id}:${node._event_version}`.replace(/:/g, '~');
+  // Cut B (Option B): dedup on the node's CONTENT fingerprint, not `_event_version`
+  // (which is now only the ordering token). A content change that does not advance
+  // the source timestamp must still get a fresh key and reach the writer's freshness
+  // guard. MUST match core-writer `idempotency.ts buildNodeIdempotencyKey` (same
+  // `deriveNodeContentHash`) so the queue layer and the _IdempotencyLog agree.
+  //
+  // BullMQ 5 rejects `:` in custom job IDs — it reserves the colon for its internal
+  // `bull:<queue>:<key>` keyspace and `Queue.addBulk` throws synchronously if any
+  // opts.jobId contains one. Canonical IDs use the `shipit://...` URI scheme, and the
+  // content hash is hex (colon-free); we substitute `~` globally to be safe.
+  return `${connectorId}:${node.id}:${deriveNodeContentHash(node)}`.replace(/:/g, '~');
 }
 
 function buildEdgeBatchIdempotencyKey(connectorId: string, edges: CanonicalEdge[]): string {

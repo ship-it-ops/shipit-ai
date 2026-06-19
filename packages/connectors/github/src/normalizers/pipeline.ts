@@ -1,5 +1,10 @@
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
-import { buildScopedCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import {
+  buildScopedCanonicalId,
+  buildLinkingKey,
+  deriveTimeVersion,
+  deriveContentVersion,
+} from '@shipit-ai/shared';
 import type { GitHubWorkflow } from '../fetchers/workflows.js';
 
 function makeClaim(key: string, value: unknown, sourceId: string): PropertyClaim {
@@ -30,19 +35,28 @@ export function normalizePipeline(
 
   const lastRun = workflow.recent_runs[0] ?? null;
 
+  const properties = {
+    name: workflow.name,
+    path: workflow.path,
+    state: workflow.state,
+    url: workflow.html_url,
+    repo_name: workflow.repo_name,
+    last_run_status: lastRun?.status ?? null,
+    last_run_conclusion: lastRun?.conclusion ?? null,
+    last_run_at: lastRun?.created_at ?? null,
+  };
+
+  // Freshness/ordering token: latest run's created_at (advances on each run — the
+  // `workflow_run` webhook signal), falling back to the workflow definition's
+  // updated_at, then to a stable content hash when neither timestamp is present.
+  const eventVersion =
+    deriveTimeVersion(lastRun?.created_at ?? null, workflow.updated_at) ??
+    deriveContentVersion(properties);
+
   const node: CanonicalNode = {
     id: buildScopedCanonicalId('Pipeline', 'default', org, pipelineName),
     label: 'Pipeline',
-    properties: {
-      name: workflow.name,
-      path: workflow.path,
-      state: workflow.state,
-      url: workflow.html_url,
-      repo_name: workflow.repo_name,
-      last_run_status: lastRun?.status ?? null,
-      last_run_conclusion: lastRun?.conclusion ?? null,
-      last_run_at: lastRun?.created_at ?? null,
-    },
+    properties,
     _claims: [
       makeClaim('name', workflow.name, sourceId),
       makeClaim('path', workflow.path, sourceId),
@@ -53,7 +67,7 @@ export function normalizePipeline(
     _source_org: `github/${org}`,
     _source_id: sourceId,
     _last_synced: now,
-    _event_version: 1,
+    _event_version: eventVersion,
   };
 
   const repoId = buildScopedCanonicalId('Repository', 'default', org, workflow.repo_name);

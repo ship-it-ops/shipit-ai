@@ -33,6 +33,8 @@ describe('fetchRepository', () => {
         topics: ['platform'],
         archived: false,
         description: 'A repo',
+        updated_at: '2026-06-01T00:00:00Z',
+        pushed_at: '2026-06-19T00:00:00Z',
       },
     });
     const octokit = stubOctokit({ repos: { get } });
@@ -53,6 +55,8 @@ describe('fetchRepository', () => {
       topics: ['platform'],
       archived: false,
       description: 'A repo',
+      updated_at: '2026-06-01T00:00:00Z',
+      pushed_at: '2026-06-19T00:00:00Z',
     });
   });
 

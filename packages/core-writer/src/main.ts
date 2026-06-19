@@ -88,9 +88,28 @@ async function main(): Promise<void> {
   await writer.start(eventBus);
   console.log(`CoreWriter subscribed to event bus at ${config.backend.redis.url}`);
 
+  // Reclaim expired _IdempotencyLog entries on a daily interval. Cut B's
+  // content-derived dedup keys mean a churning entity accrues one log node per
+  // distinct version; this reaper (previously never scheduled) bounds growth at
+  // ~the idempotency TTL window. Best-effort; failures are logged, not fatal.
+  const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const runCleanup = async (): Promise<void> => {
+    try {
+      const deleted = await idempotency.cleanupExpired();
+      if (deleted > 0)
+        console.log(`CoreWriter idempotency cleanup: removed ${deleted} expired keys`);
+    } catch (err) {
+      console.error(`CoreWriter idempotency cleanup failed: ${(err as Error).message}`);
+    }
+  };
+  void runCleanup();
+  const cleanupTimer = setInterval(() => void runCleanup(), CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref?.();
+
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`CoreWriter received ${signal}, shutting down...`);
     try {
+      clearInterval(cleanupTimer);
       await writer.stop();
       await eventBus.close();
       await neo4jClient.close();

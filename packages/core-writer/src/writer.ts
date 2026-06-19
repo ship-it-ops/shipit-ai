@@ -15,15 +15,24 @@ export interface WriteResult {
   nodesWritten: number;
   edgesWritten: number;
   duplicatesSkipped: number;
+  /**
+   * Nodes the freshness guard REJECTED because a strictly-newer version is
+   * already stored (an out-of-order/stale delivery). Distinct from
+   * `duplicatesSkipped` (unchanged content) so silent suppression is observable
+   * and a spike (clock skew, a stale backfill) is distinguishable from healthy dedup.
+   */
+  freshnessSkipped: number;
   errors: string[];
 }
 
 export interface NodeWriter {
+  /** Returns `{ written: false }` when the freshness guard rejected the write
+   *  (a strictly-newer version is already stored). */
   writeNode(
     node: CanonicalNode,
     mergedClaims: CanonicalNode['_claims'],
     effectiveProperties: Record<string, unknown>,
-  ): Promise<void>;
+  ): Promise<{ written: boolean }>;
   writeEdge(edge: CanonicalEdge): Promise<void>;
   getExistingClaims(nodeId: string): Promise<CanonicalNode['_claims']>;
   /**
@@ -57,7 +66,15 @@ export class CoreWriter {
     this.config = config;
     this.batchProcessor = new BatchProcessor(
       async (batch) => {
-        await this.processBatch(batch);
+        // The subscribed (event-bus) path would otherwise discard the WriteResult.
+        // Surface a one-line summary whenever a batch did something noteworthy so
+        // freshness-skips (silent content suppression) and errors are observable.
+        const r = await this.processBatch(batch);
+        if (r.freshnessSkipped > 0 || r.errors.length > 0) {
+          console.warn(
+            `[CoreWriter] batch: ${r.nodesWritten} written, ${r.duplicatesSkipped} dup, ${r.freshnessSkipped} freshness-skipped, ${r.errors.length} errors`,
+          );
+        }
       },
       { batchSize: config.batchSize },
     );
@@ -82,6 +99,7 @@ export class CoreWriter {
     let nodesWritten = 0;
     let edgesWritten = 0;
     let duplicatesSkipped = 0;
+    let freshnessSkipped = 0;
     const errors: string[] = [];
 
     for (const event of batch) {
@@ -129,16 +147,35 @@ export class CoreWriter {
             node._claims,
           );
 
-          // Write node with resolved claims and effective properties
+          // Write node with resolved claims and effective properties. The
+          // atomic in-Cypher freshness guard may REJECT this when a strictly-newer
+          // version is already stored (out-of-order/stale delivery).
           const nodeToWrite: CanonicalNode = {
             ...node,
             id: reconciliation.canonicalId,
           };
-          await this.nodeWriter.writeNode(nodeToWrite, mergedClaims, effectiveProperties);
+          const { written } = await this.nodeWriter.writeNode(
+            nodeToWrite,
+            mergedClaims,
+            effectiveProperties,
+          );
 
-          // Record idempotency
+          // Record idempotency in BOTH cases: an accepted write must not
+          // reprocess, and a guard-rejected stale delivery must be short-circuited
+          // so a BullMQ retry / stream replay of the same payload does not re-run
+          // the reconcile + guard every time.
           await this.idempotency.record(idempotencyKey);
-          nodesWritten++;
+
+          if (written) {
+            nodesWritten++;
+          } else {
+            // Freshness guard rejected (older than stored). Do NOT touchLastSynced
+            // — moving "Synced" forward for content we refused to write would lie.
+            freshnessSkipped++;
+            console.warn(
+              `[CoreWriter] freshness-skip ${nodeToWrite.id} incoming _event_version=${String(node._event_version)} not newer than stored`,
+            );
+          }
         } catch (err) {
           errors.push(
             `Error writing node ${node.id}: ${err instanceof Error ? err.message : String(err)}`,
@@ -167,6 +204,6 @@ export class CoreWriter {
       for (const e of errors.slice(0, 5)) console.error('[CoreWriter]', e);
       if (errors.length > 5) console.error(`[CoreWriter] (+${errors.length - 5} more)`);
     }
-    return { nodesWritten, edgesWritten, duplicatesSkipped, errors };
+    return { nodesWritten, edgesWritten, duplicatesSkipped, freshnessSkipped, errors };
   }
 }
