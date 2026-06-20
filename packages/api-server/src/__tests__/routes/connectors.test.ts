@@ -784,6 +784,27 @@ describe('GitHub App manifest flow', () => {
     expect(body.default_permissions).toEqual({ contents: 'read' });
   });
 
+  it('GET /manifest derives the callback from x-forwarded-host over the internal Host (behind a proxy)', async () => {
+    // Behind a TLS-terminating proxy the pod's Host is the internal service
+    // address; the public hostname GitHub must redirect back to arrives in
+    // x-forwarded-host. If the callback used the internal Host, GitHub's
+    // redirect after App creation would 404 — the first-login redirect_uri
+    // failure mode. manifestUrlsFromRequest must prefer x-forwarded-host.
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest',
+      headers: {
+        host: 'api-server.internal.svc:3001',
+        'x-forwarded-host': 'portal.public.example.com',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().redirect_url).toBe(
+      'https://portal.public.example.com/api/connectors/github/app-manifest-callback',
+    );
+  });
+
   it('GET /manifest/launch returns auto-submitting HTML form posting to github.com', async () => {
     const res = await server.inject({
       method: 'GET',

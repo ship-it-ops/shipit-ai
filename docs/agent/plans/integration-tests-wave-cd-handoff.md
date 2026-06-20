@@ -143,7 +143,17 @@ state, which is what the sad paths target. Original guidance below.
   authorize and exchange; prod-mode forced-secure cookie delivery.
 - **Cost:** medium-high.
 
-### #8 — GitHub App manifest acceptance + forwarded-header callbacks [P2, onboarding-only]
+### #8 — GitHub App manifest acceptance + forwarded-header callbacks [P2] — ✅ DONE (2026-06-20)
+
+**Shipped:** the exchange/persist path was already well covered; this filled the three named gaps.
+`buildManifest` now wraps a request-time template-read failure in a CLEAR error (names the path +
+`SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE` override) instead of a raw ENOENT → cryptic 500 (small production
+change). Tests: `github-app-manifest-service.test.ts` adds the ENOENT clear-error, buildManifest URL
+substitution, the conversion POST shape (POST to `api.github.com/app-manifests/<code>/conversions` with
+the GitHub API headers), and a non-2xx (`HTTP 422`) rejection; `connectors.test.ts` adds the
+**x-forwarded-host over internal Host** callback derivation (the proxy redirect_uri 404 case). All in
+the default unit suite (no real dep — a stub GitHub server wasn't needed; the mock-fetch seam suffices).
+**This is the last roadmap item — all 10 prioritized gaps are now closed.** Original guidance below.
 
 - **Purpose:** first-run setup-wizard breakage: manifest template `ENOENT` at request time in the built
   image; `x-forwarded-host` deriving a wrong callback URL; GitHub rejecting the manifest. Maps to
@@ -160,8 +170,9 @@ state, which is what the sad paths target. Original guidance below.
 
 ## Recommended order
 
-~~**#5 GSM**~~ ✅ DONE → ~~**#3 NoopRunner**~~ ✅ DONE → ~~**#9 OIDC**~~ ✅ DONE → **#8 manifest**
-(NEXT — onboarding-only, last item).
+~~**#5 GSM**~~ ✅ DONE → ~~**#3 NoopRunner**~~ ✅ DONE → ~~**#9 OIDC**~~ ✅ DONE → ~~**#8 manifest**~~
+✅ DONE. **All 10 prioritized roadmap items are closed.** Only the two cheap UNIT follow-ups below
+remain.
 
 ## Cheap UNIT follow-ups (NOT integration — deep-dive flagged)
 

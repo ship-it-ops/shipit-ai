@@ -99,8 +99,17 @@ empty`), so the store's `text.length > 0 ? : null` branch is UNREACHABLE from re
     defensive code, locked by a synthetic-payload unit test. **PERMISSION_DENIED (code 7)** stays
     unit-only — unexercisable with self-owned throwaway secrets. The live RPCs occasionally flake on a
     gRPC deadline; just re-run (no retry logic added, since local-opt-in).
-- **Wave D — OIDC (#9 OIDC half) — DONE** (2026-06-20), runs in the DEFAULT unit suite (no real dep —
-  CI-enforced):
+- **Wave D — fake GitHub/IdP (#8 + #9) — DONE** (2026-06-20), runs in the DEFAULT unit suite (no real
+  dep — CI-enforced):
+  - **#8 manifest acceptance + forwarded-header callback** — the manifest exchange/persist path was
+    already well covered; this filled the three named gaps: `buildManifest` now wraps a request-time
+    template-read failure in a CLEAR error naming the path + `SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE`
+    override (was a raw ENOENT → cryptic 500; the setup-wizard-manifest-launch scar) — locked by a test;
+    `github-app-manifest-service.test.ts` also adds buildManifest URL substitution + the conversion POST
+    shape (POST to `api.github.com/app-manifests/<code>/conversions` with the GitHub API headers) + a
+    non-2xx rejection surfacing `HTTP 422`; `connectors.test.ts` adds the **x-forwarded-host** case —
+    the callback derives from `x-forwarded-host` over the internal `Host` (the proxy redirect_uri 404
+    failure mode). Small production change: the buildManifest read-error wrap.
   - **#9 OIDC exchange/PKCE** — `api-server/src/__tests__/services/auth/oidc-provider.test.ts` (8):
     drives the REAL `OidcProvider` (openid-client v6) against a `vi.stubGlobal('fetch')` IdP — discovery,
     token, userinfo, jwks — with a Node-crypto RS256-signed id_token (no `jose` dep, no server, no
