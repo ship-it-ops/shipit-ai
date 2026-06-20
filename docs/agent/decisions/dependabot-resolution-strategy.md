@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-06-07
+updated: 2026-06-20
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -152,6 +152,66 @@ shipit 0.0.17, icons 0.0.12, cytoscape 0.0.16, graph-editor 0.0.11, next 0.0.14}
 - `packages/api-server/package.json`, `packages/event-bus/package.json` — `ioredis`.
 - `packages/web-ui/package.json` — `next`, `@types/react`, 6× `@ship-it-ui/*`.
 - `packages/web-ui/src/app/(auth)/setup/page.test.tsx` — OAuth-form assertions.
+- `pnpm-lock.yaml`.
+
+## Update 2026-06-20 — fourth round (on `next-release`, pre-PR sweep)
+
+6 open Dependabot version PRs (#40, #43, #46, #47, #70, #71) + 9 open security alerts
+(3 high / 6 moderate: vite, undici, hono — all transitive). Applied layers 1+2 directly on
+`next-release`; deferred the same four upstream-blocked majors. **`ci.yml` was deliberately NOT
+touched** this round so the Claude-Code PR review runs against an unchanged workflow (user
+constraint).
+
+### Applied — security overrides (layer 2), `pnpm audit` → clean
+
+- `hono ^4.12.25` (was `^4.12.18`), `undici ^7.28.0` (NEW), `form-data ^4.0.6` (NEW),
+  `js-yaml ^4.2.0` (NEW), `@babel/core ^7.29.6` (NEW — surfaced via `@vitejs/plugin-react` only
+  after the round), and `vite` bumped to close GHSA-fx2h-pf6j-xcff + GHSA-v6wh-96g9-6wx3.
+- **`vite` is pinned EXACT (`"vite": "7.3.5"`, not `^7.3.5`).** With the caret form pnpm refused to
+  re-resolve off the cached `7.3.3` (no `7.3.4` exists; the patched line jumps 7.3.3→7.3.5) even
+  under `pnpm install --force` / `pnpm update vite -r`. The exact pin forces it. Revisit-trigger: a
+  later vitest/vite consumer that needs `vite > 7.3.5` will conflict with the pin — bump the pin then.
+
+### Applied — safe version bumps (layer 1)
+
+- **#70 dev group:** `prettier ^3.8.4`, `turbo ^2.9.18` (root); `tailwindcss ^4.3.1`,
+  `@tailwindcss/postcss ^4.3.1`, `eslint-config-next ^16.2.9`, `axe-core ^4.12.1` (web-ui).
+- **#71 production-patches:** `bullmq ^5.78.1` (api-server + event-bus). The PR's `@ship-it-ui/*` and
+  `next` bumps were already EXCEEDED on `next-release` (local DS upgrade), so they were skipped (no
+  downgrade); #71 effectively reduces to bullmq.
+
+### Deferred — same real upstream/toolchain blockers (each needs its own scoped PR)
+
+- **#40 eslint 9→10:** STILL blocked — empirically reproduced `TypeError: scopeManager.addGlobals is
+not a function`. `eslint-config-next@16.2.9` pulls `eslint-plugin-import@2.32.0` whose peer caps at
+  `eslint ^9`. Revisit when eslint-plugin-import ships eslint-10 support.
+- **#43 @types/node 22→25 + #47 vitest 3→4:** STILL blocked, and **the scar's prescribed fix is
+  INSUFFICIENT at these versions.** Adding `@types/node` to every Node-API workspace (per
+  [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](../scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md))
+  did NOT restore typecheck under `vitest@4.1.9` + TypeScript `6.0.3` — `shared` still failed with
+  `Cannot find namespace 'NodeJS'` / `Cannot find name 'node:fs'` in both src and test files, with
+  `@types/node` at BOTH 22 and 25 and correctly symlinked into the workspace. `vitest@3.2.6` is the
+  proven-green baseline. **Crucially, vitest itself carries no open advisory** — the vulnerable
+  transitive is `vite`, closed independently via the override above — so staying on vitest 3 costs no
+  security coverage. Revisit: needs a dedicated investigation into vitest-4's type-resolution under
+  pnpm-10 + TS-6 (the 2026-06-07 fix recipe no longer holds).
+- **#46 @vitejs/plugin-react 4→6:** STILL blocked — needs vite 8, and we now pin `vite 7.3.5` for the
+  security fix. plugin-react 6 is only used by web-ui's vitest config, so it's coupled to the
+  vitest-4/vite-8 upgrade above. Revisit alongside #47.
+
+### Verification (this round)
+
+- `pnpm audit` → **No known vulnerabilities found** (all 9 alerts closed via overrides).
+- `pnpm turbo typecheck` → 14/14; `pnpm turbo test` → 14/14; `pnpm turbo build` → 9/9;
+  `pnpm turbo lint` → 0 errors (18 pre-existing warnings).
+- `ci.yml` unchanged; `next-env.d.ts` restored after the build flip.
+
+### Critical files touched (this round)
+
+- `package.json` (root) — prettier, turbo; overrides: hono, vite (exact), +undici, +form-data,
+  +js-yaml, +@babel/core.
+- `packages/web-ui/package.json` — tailwindcss, @tailwindcss/postcss, eslint-config-next, axe-core.
+- `packages/api-server/package.json`, `packages/event-bus/package.json` — bullmq.
 - `pnpm-lock.yaml`.
 
 ## Related
