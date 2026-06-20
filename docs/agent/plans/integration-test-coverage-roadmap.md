@@ -99,9 +99,26 @@ empty`), so the store's `text.length > 0 ? : null` branch is UNREACHABLE from re
     defensive code, locked by a synthetic-payload unit test. **PERMISSION_DENIED (code 7)** stays
     unit-only — unexercisable with self-owned throwaway secrets. The live RPCs occasionally flake on a
     gRPC deadline; just re-run (no retry logic added, since local-opt-in).
+- **Wave D — OIDC (#9 OIDC half) — DONE** (2026-06-20), runs in the DEFAULT unit suite (no real dep —
+  CI-enforced):
+  - **#9 OIDC exchange/PKCE** — `api-server/src/__tests__/services/auth/oidc-provider.test.ts` (8):
+    drives the REAL `OidcProvider` (openid-client v6) against a `vi.stubGlobal('fetch')` IdP — discovery,
+    token, userinfo, jwks — with a Node-crypto RS256-signed id_token (no `jose` dep, no server, no
+    HTTPS). Covers `startAuthorization` (PKCE S256 challenge, distinct state/verifier per call,
+    redirect_uri), `exchange` PKCE round trip (asserts the token request carried code + `code_verifier`
+    - the SAME `redirect_uri` as authorize — the first-login redirect_uri scar), state-mismatch reject,
+      wrong-`aud` reject, expired-id_token reject, userinfo-missing-email error, name→email displayName
+      fallback.
+  - **Finding:** openid-client does NOT verify the id_token SIGNATURE for the direct authorization-code
+    token call (OIDC Core §3.1.3.7 — the TLS channel is trusted); it enforces the CLAIMS (iss/aud/exp/
+    iat) + state. So a "tampered signature" test is moot; the sad paths target claims instead.
+  - **#9 cookie/proxy half was ALREADY DONE** — the trustProxy forced-secure-cookie login-loop is
+    covered in `routes/auth.test.ts` ("secure session cookie behind a TLS-terminating proxy", both the
+    fix and the silent failure mode). #9 is therefore fully closed.
 - Env gating: Neo4j suites on `NEO4J_TEST_URI`, Redis suites on `REDIS_TEST_URL`, GSM suites on
-  `GSM_TEST_PROJECT`; default `pnpm test` skips all (Docker/creds-free). CI integration job provides
-  Neo4j+APOC and Redis services; GSM is local-only (no CI creds).
+  `GSM_TEST_PROJECT`; default `pnpm test` skips all real-dep suites (Docker/creds-free) but RUNS the
+  OIDC suite (it's fetch-stubbed, no real dep). CI integration job provides Neo4j+APOC and Redis
+  services; GSM is local-only (no CI creds).
 - **Isolation rule (learned):** real-DB integration files MUST run serially — vitest parallelizes
   files and they clobber a shared DB. `core-writer test:integration` uses `--no-file-parallelism`;
   any new wave sharing a backend must do the same or isolate per-DB. See

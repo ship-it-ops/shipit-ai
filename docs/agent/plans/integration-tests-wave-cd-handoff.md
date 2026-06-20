@@ -117,7 +117,19 @@ operators want a probe signal beyond the boot warning. Original guidance kept be
   function, or a focused server-boot harness.
 - **Cost:** low-medium.
 
-### #9 — login behind real proxy / OIDC exchange [P2, do if you have OIDC users]
+### #9 — login behind real proxy / OIDC exchange [P2] — ✅ DONE (2026-06-20)
+
+**Shipped:** `api-server/src/__tests__/services/auth/oidc-provider.test.ts` (8) — drives the REAL
+`OidcProvider` (openid-client v6) against `vi.stubGlobal('fetch')` (discovery/token/userinfo/jwks)
+with a Node-crypto RS256-signed id_token. No stub HTTP server, no HTTPS, no `jose` dep — openid-client
+uses global fetch, so the github-provider.test.ts stub pattern works. Covers startAuthorization
+(PKCE/state/redirect_uri), the exchange PKCE round trip (token request carries code + code_verifier +
+matching redirect_uri), and sad paths (state mismatch, wrong aud, expired token, missing email claim).
+Runs in the DEFAULT unit suite (CI-enforced — no real dep). **The cookie/proxy half was already done**
+in `routes/auth.test.ts` (trustProxy forced-secure-cookie login-loop, both fix + failure mode), so #9
+is fully closed. **Finding:** openid-client does NOT verify the id_token signature on the direct code-
+flow token call (OIDC Core §3.1.3.7 — trusts the TLS channel); it enforces the claims (iss/aud/exp) +
+state, which is what the sad paths target. Original guidance below.
 
 - **Purpose:** "nobody can log in." The prod forced-secure-cookie + SameSite behind a TLS-terminating
   proxy (the bounce loop), and the OIDC `exchange()`/PKCE path which has NO real test (only an injected
@@ -148,8 +160,8 @@ operators want a probe signal beyond the boot warning. Original guidance kept be
 
 ## Recommended order
 
-~~**#5 GSM**~~ ✅ DONE → ~~**#3 NoopRunner**~~ ✅ DONE → **#9 OIDC** (NEXT — if OIDC users) → **#8
-manifest** (onboarding-only).
+~~**#5 GSM**~~ ✅ DONE → ~~**#3 NoopRunner**~~ ✅ DONE → ~~**#9 OIDC**~~ ✅ DONE → **#8 manifest**
+(NEXT — onboarding-only, last item).
 
 ## Cheap UNIT follow-ups (NOT integration — deep-dive flagged)
 
