@@ -61,8 +61,21 @@ instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-wri
     APOC traversal incl. the **CODEOWNER_OF** direction (the shipped ownership bug), `getGraphStats`/
     `getOverview`/`searchEntities` `_`-internal-label exclusion. CI Neo4j service gets `NEO4J_PLUGINS=["apoc"]`.
   - All validated against real Neo4j 5 + APOC 5.26 (20 core-writer + 5 api-server).
-- Next: **Wave B (Redis+BullMQ)** — one harness retires #2/#3/#4/#10 (incl. the two remaining P0s:
-  the colon-throw and the silent NoopRunner degradation).
+- **Wave B (Redis+BullMQ) — mostly DONE** (2026-06-19), in the CI `integration` job (added a `redis:7`
+  service + `REDIS_TEST_URL`):
+  - **#2 event-bus round trip** — `event-bus/event-bus.integration.test.ts` (2): real producer→BullMQ→
+    consumer delivery of a colon-laden `shipit://` id (proves the `:`→`~` rewrite against real BullMQ);
+    real `new Queue('a:b:c')` throws (the colon scar itself).
+  - **#10 RedisConnectorRunStore** — `api-server/connector-run-store.integration.test.ts` (4): LPUSH/LTRIM
+    FIFO cap, limit, `listManyLatest` pipeline tuple parsing, clear.
+  - **#4 webhook delivery-dedup** — `api-server/webhook-refetch-dedup.integration.test.ts` (3): real SET-NX
+    once-true-then-false, `releaseDelivery` DEL re-opens it, last-verified record/read round trip.
+  - Validated against real Redis 7 (event-bus 2 + api-server 7).
+  - **Remaining (#3):** the sync-scheduler's silent `catch→NoopRunner` boot-degradation — needs the
+    server boot wiring (index.ts) exercised, not just a queue construct; deferred (its colon-throw half is
+    already guarded by #2's queue-name assertion). Worth a focused boot-level test later.
+- Env gating: Neo4j suites on `NEO4J_TEST_URI`, Redis suites on `REDIS_TEST_URL`; default `pnpm test`
+  skips both (Docker-free). CI integration job provides both services + APOC.
 - **Isolation rule (learned):** real-DB integration files MUST run serially — vitest parallelizes
   files and they clobber a shared DB. `core-writer test:integration` uses `--no-file-parallelism`;
   any new wave sharing a backend must do the same or isolate per-DB. See
