@@ -198,15 +198,21 @@ export async function getExistingClaims(
 /**
  * Sanitize a label/type for safe use in Cypher.
  * Only allows alphanumeric and underscore characters.
+ *
+ * Exported for unit testing: this output is interpolated DIRECTLY into Cypher
+ * (`MERGE (n:${sanitizeLabel(...)} ...)`), unlike property values which go
+ * through bound parameters — so its behavior is injection-relevant and locked
+ * by tests in queries.test.ts.
  */
-function sanitizeLabel(label: string): string {
+export function sanitizeLabel(label: string): string {
   return label.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
 /**
  * Sanitize properties for Neo4j (convert non-primitive values to JSON strings).
+ * Exported for unit testing.
  */
-function sanitizeProperties(props: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeProperties(props: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     if (key.startsWith('_')) continue; // Skip internal properties

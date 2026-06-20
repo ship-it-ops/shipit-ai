@@ -1,6 +1,6 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-19
 updated: 2026-06-20
 author: claude-session-2026-06-19-cutb-exec
@@ -37,8 +37,9 @@ prioritizes where real-dependency integration tests buy the most reliability.
 
 config loader, token-crypto, claims resolver/strategies, HMAC math (`auth/github-webhook.ts`),
 string-similarity, confidence, `shouldEnterSetupMode`, `public-base-url`. Two **cheap unit** follow-ups
-instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-writer/.../queries.ts`
-`sanitizeLabel`/`sanitizeProperties` (zero coverage; `sanitizeLabel` output is interpolated into Cypher).
+done instead (2026-06-20): `shared/src/__tests__/find-root.test.ts` (5 — SHIPIT_CONFIG override +
+walk-up + throw) and `core-writer/src/__tests__/queries.test.ts` (10 — `sanitizeLabel`/
+`sanitizeProperties`, both now `export`ed; locks the Cypher-label whitelist).
 
 ## Sequencing
 

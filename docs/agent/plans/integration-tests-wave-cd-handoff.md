@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-19
-updated: 2026-06-19
+updated: 2026-06-20
 author: claude-session-2026-06-19-cutb-exec
 branch: next-release
 tags: [testing, integration-tests, handoff, gsm, oidc, manifest, scheduler, reliability]
@@ -174,11 +174,17 @@ the default unit suite (no real dep — a stub GitHub server wasn't needed; the 
 ✅ DONE. **All 10 prioritized roadmap items are closed.** Only the two cheap UNIT follow-ups below
 remain.
 
-## Cheap UNIT follow-ups (NOT integration — deep-dive flagged)
+## Cheap UNIT follow-ups (NOT integration — deep-dive flagged) — ✅ DONE (2026-06-20)
 
-- `shared/.../find-root.ts` — `SHIPIT_CONFIG` missing-file / walk-up (no test today).
-- `core-writer/.../neo4j/queries.ts` — `sanitizeLabel`/`sanitizeProperties` (zero coverage;
-  `sanitizeLabel` output is interpolated directly into Cypher → injection-shaped risk).
+- ~~`shared/.../find-root.ts` — `SHIPIT_CONFIG` missing-file / walk-up~~ ✅ `shared/src/__tests__/find-root.test.ts`
+  (5): SHIPIT_CONFIG override (resolved-absolute + sibling local + no existence check), walk-up from a
+  nested dir to the ancestor, and the actionable "ran from the wrong dir" throw.
+- ~~`core-writer/.../neo4j/queries.ts` — `sanitizeLabel`/`sanitizeProperties`~~ ✅ `core-writer/src/__tests__/queries.test.ts`
+  (10): both fns `export`ed for testing; locks the `[A-Za-z0-9_]` whitelist (every Cypher metacharacter
+  → `_`, injection attempt neutralized, unicode mapped) and the property coercion (JSON-stringify
+  objects, null/undefined→null, drop `_`-prefixed keys).
+
+**The integration-test roadmap is now fully complete — all 10 prioritized gaps + both unit follow-ups.**
 
 ## Related
 

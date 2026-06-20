@@ -30,7 +30,6 @@ Last updated: 2026-06-20 | Total notes: 72
 - [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
 - [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
 - [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); committed 5e2c2c2; rollout/rollback runbook
-- [integration-tests-next](status/integration-tests-next.md) | status | active | core | 2026-06-20 | integration roadmap ALL 10 items DONE; #5/#3/#9 committed (ee370d3/2944be7/77da7ff); #8 green UNCOMMITTED; only 2 cheap unit follow-ups left
 - [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
 
 ## Decisions
@@ -72,8 +71,8 @@ Last updated: 2026-06-20 | Total notes: 72
 
 ## Plans
 
-- [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | active | core | 2026-06-20 | HANDOFF: harness recipe + per-item guide; #5/#3/#9/#8 ALL DONE; only 2 cheap unit follow-ups remain
-- [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | active | core | 2026-06-20 | prioritized integration-test gaps (10 areas, P0-P2) mapped to scars; ALL 10 done (Waves A+B+C+D); 2 unit follow-ups left
+- [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
+- [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
