@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-19 | Total notes: 70
+Last updated: 2026-06-19 | Total notes: 72
 
 ## Investigations
 
@@ -29,7 +29,8 @@ Last updated: 2026-06-19 | Total notes: 70
 - [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
 - [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
 - [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
-- [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); typecheck/tests green; uncommitted; rollout/rollback runbook
+- [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); committed 5e2c2c2; rollout/rollback runbook
+- [integration-tests-next](status/integration-tests-next.md) | status | active | core | 2026-06-19 | integration roadmap Waves A+B done (34 tests); HANDOFF ready for #5/#3/#9/#8 — see wave-cd handoff plan
 - [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
 
 ## Decisions
@@ -71,7 +72,8 @@ Last updated: 2026-06-19 | Total notes: 70
 
 ## Plans
 
-- [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | active | core | 2026-06-19 | prioritized integration-test gaps (10 areas, P0-P2) mapped to scars; Wave A/#1 (Neo4j DELETE migrations) next
+- [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | active | core | 2026-06-19 | HANDOFF: harness recipe + per-item guide to finish integration roadmap (#5 GSM, #3 NoopRunner, #9 OIDC, #8 manifest)
+- [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | active | core | 2026-06-19 | prioritized integration-test gaps (10 areas, P0-P2) mapped to scars; Waves A+B done, C/D+#3 remain
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
