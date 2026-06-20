@@ -50,10 +50,19 @@ instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-wri
 
 ## Status
 
-- **#1 (Neo4j DELETE migrations) — DONE** (2026-06-19): `migrations.integration.test.ts`, 6 tests,
-  validated against real Neo4j (blast radius, DETACH-DELETE relationship handling, `_LinkingKey`/
-  `_IdempotencyLog` old-vs-new, idempotent rerun, Person prefix-guard). Runs in the CI `integration` job.
-- Next: #6, #7 (rest of Wave A — reuse the same Neo4j harness), then Wave B (Redis+BullMQ).
+- **Wave A — DONE** (2026-06-19), all in the CI `integration` job:
+  - **#1 Neo4j DELETE migrations** — `core-writer/migrations.integration.test.ts` (6): blast radius,
+    DETACH-DELETE relationship handling, `_LinkingKey`/`_IdempotencyLog` old-vs-new, idempotent rerun,
+    Person prefix-guard.
+  - **#6 Neo4j storage round-trip** — `core-writer/neo4j-storage.integration.test.ts` (7): linking-key
+    register/lookup MERGE-upsert + case sensitivity, `mergeEdge` SILENT no-op on a missing endpoint,
+    `_claims` JSON round-trip, idempotency record/isDuplicate + `cleanupExpired` lossless-Integer count.
+  - **#7 api-server APOC read path** — `api-server/neo4j-service.integration.test.ts` (5): `getBlastRadius`
+    APOC traversal incl. the **CODEOWNER_OF** direction (the shipped ownership bug), `getGraphStats`/
+    `getOverview`/`searchEntities` `_`-internal-label exclusion. CI Neo4j service gets `NEO4J_PLUGINS=["apoc"]`.
+  - All validated against real Neo4j 5 + APOC 5.26 (20 core-writer + 5 api-server).
+- Next: **Wave B (Redis+BullMQ)** — one harness retires #2/#3/#4/#10 (incl. the two remaining P0s:
+  the colon-throw and the silent NoopRunner degradation).
 - **Isolation rule (learned):** real-DB integration files MUST run serially — vitest parallelizes
   files and they clobber a shared DB. `core-writer test:integration` uses `--no-file-parallelism`;
   any new wave sharing a backend must do the same or isolate per-DB. See

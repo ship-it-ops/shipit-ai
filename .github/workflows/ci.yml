@@ -99,6 +99,8 @@ jobs:
         image: neo4j:5
         env:
           NEO4J_AUTH: neo4j/testpassword
+          # api-server read-path tests use apoc.path.subgraphAll.
+          NEO4J_PLUGINS: '["apoc"]'
         ports:
           - 7687:7687
           - 7474:7474
@@ -108,6 +110,10 @@ jobs:
           --health-timeout 10s
           --health-retries 10
           --health-start-period 40s
+    env:
+      NEO4J_TEST_URI: bolt://localhost:7687
+      NEO4J_TEST_USER: neo4j
+      NEO4J_TEST_PASSWORD: testpassword
     steps:
       - uses: actions/checkout@v6
 
@@ -120,12 +126,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Run Neo4j-backed integration tests
+      - name: core-writer integration (Neo4j)
         run: pnpm --filter @shipit-ai/core-writer run test:integration
-        env:
-          NEO4J_TEST_URI: bolt://localhost:7687
-          NEO4J_TEST_USER: neo4j
-          NEO4J_TEST_PASSWORD: testpassword
+
+      - name: api-server integration (Neo4j + APOC)
+        run: pnpm --filter @shipit-ai/api-server run test:integration
 
   build:
     name: Build
