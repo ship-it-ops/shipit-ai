@@ -64,7 +64,15 @@ full prioritized table and the scar mapping.
 
 ## Remaining items (purpose + how to build each)
 
-### #5 — GSM secret store + boot hydration [P1, do FIRST — "pod won't boot" class]
+### #5 — GSM secret store + boot hydration [P1] — ✅ DONE (2026-06-20)
+
+**Shipped:** `api-server/src/__tests__/secrets/{gsm-store,hydrate}.integration.test.ts` (5+3), validated
+against real GCP `ship-it-ai-portal`. Gated on `GSM_TEST_PROJECT` + ADC; **NOT CI-enforced** (no GCP
+creds in CI). Throwaway `shipit-itest-*` containers via the raw admin client, deleted in `afterAll`.
+Findings: real GCM rejects empty payloads (so the store's zero-length branch is unreachable, kept
+defensive + unit-locked); PERMISSION_DENIED(7) stays unit-only (unexercisable with self-owned secrets);
+live RPCs occasionally flake — just re-run. See the roadmap Wave C block. Original guidance below kept
+for reference.
 
 - **Purpose:** the api-server CRASHES on startup if it can't read secrets from Google Secret
   Manager. Unit tests fake the client with invented numeric codes, so the real gRPC contract is
@@ -128,7 +136,7 @@ full prioritized table and the scar mapping.
 
 ## Recommended order
 
-**#5 GSM** (before next deploy) → **#3 NoopRunner** (cheap, silent-sync risk) → **#9 OIDC** (if OIDC
+~~**#5 GSM**~~ ✅ DONE → **#3 NoopRunner** (NEXT — cheap, silent-sync risk) → **#9 OIDC** (if OIDC
 users) → **#8 manifest** (onboarding-only).
 
 ## Cheap UNIT follow-ups (NOT integration — deep-dive flagged)

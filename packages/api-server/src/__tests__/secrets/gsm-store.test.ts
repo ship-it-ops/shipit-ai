@@ -43,6 +43,17 @@ describe('GsmSecretStore', () => {
     expect(await store.read('oidc-client-secret')).toBeNull();
   });
 
+  it('treats a zero-length payload as null (defensive — real GSM rejects empty payloads)', async () => {
+    // Real Secret Manager refuses to store an empty payload (INVALID_ARGUMENT), so
+    // this branch is unreachable in production — see gsm-store.integration.test.ts.
+    // Covered here with a synthetic empty payload to lock the `length > 0 ? : null` arm.
+    const client = makeClient({
+      accessSecretVersion: vi.fn().mockResolvedValue([{ payload: { data: Buffer.alloc(0) } }]),
+    });
+    const store = new GsmSecretStore({ projectId: 'proj', env: {} as NodeJS.ProcessEnv, client });
+    expect(await store.read('oidc-client-secret')).toBeNull();
+  });
+
   it('propagates non-NOT_FOUND errors (e.g. PERMISSION_DENIED) so boot fails loudly', async () => {
     const client = makeClient({
       accessSecretVersion: vi

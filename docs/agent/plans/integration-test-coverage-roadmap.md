@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-06-19
-updated: 2026-06-19
+updated: 2026-06-20
 author: claude-session-2026-06-19-cutb-exec
 tags: [testing, integration-tests, reliability, neo4j, redis, bullmq, gsm, roadmap]
 importance: core
@@ -74,8 +74,26 @@ instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-wri
   - **Remaining (#3):** the sync-scheduler's silent `catch→NoopRunner` boot-degradation — needs the
     server boot wiring (index.ts) exercised, not just a queue construct; deferred (its colon-throw half is
     already guarded by #2's queue-name assertion). Worth a focused boot-level test later.
-- Env gating: Neo4j suites on `NEO4J_TEST_URI`, Redis suites on `REDIS_TEST_URL`; default `pnpm test`
-  skips both (Docker-free). CI integration job provides both services + APOC.
+- **Wave C — GSM (#5) — DONE** (2026-06-20), validated against real GCP `ship-it-ai-portal`; **NOT
+  CI-enforced** (CI has no GCP creds) — local-opt-in, gated on `GSM_TEST_PROJECT` + ADC:
+  - **#5 GSM store** — `api-server/src/__tests__/secrets/gsm-store.integration.test.ts` (5): real
+    `accessSecretVersion` happy read + latest-of-many; real grpc **NOT_FOUND (code 5)** → null for both
+    a versionless container AND an absent container (the value the unit suite could only fake); multiline
+    PEM byte-for-byte through the store's own write→read path.
+  - **#5 boot hydration** — `hydrate.integration.test.ts` (3): real GSM read → env populated + PEM
+    materialized to disk (exact bytes, `0o600`, `github-app-<id>.pem`); operator pre-set env wins
+    (no-clobber); empty-string env treated as unset and filled.
+  - Run: `GSM_TEST_PROJECT=ship-it-ai-portal pnpm --filter @shipit-ai/api-server run test:integration`
+    (needs `gcloud auth application-default login`). Throwaway `shipit-itest-<pid>-*` containers created
+    via the raw admin client and DELETED in `afterAll` (verified 0 strays, robust even on failure).
+  - **Findings:** real GCM **rejects empty payloads** (`INVALID_ARGUMENT: Secret Payload cannot be
+empty`), so the store's `text.length > 0 ? : null` branch is UNREACHABLE from real GSM — kept as
+    defensive code, locked by a synthetic-payload unit test. **PERMISSION_DENIED (code 7)** stays
+    unit-only — unexercisable with self-owned throwaway secrets. The live RPCs occasionally flake on a
+    gRPC deadline; just re-run (no retry logic added, since local-opt-in).
+- Env gating: Neo4j suites on `NEO4J_TEST_URI`, Redis suites on `REDIS_TEST_URL`, GSM suites on
+  `GSM_TEST_PROJECT`; default `pnpm test` skips all (Docker/creds-free). CI integration job provides
+  Neo4j+APOC and Redis services; GSM is local-only (no CI creds).
 - **Isolation rule (learned):** real-DB integration files MUST run serially — vitest parallelizes
   files and they clobber a shared DB. `core-writer test:integration` uses `--no-file-parallelism`;
   any new wave sharing a backend must do the same or isolate per-DB. See
