@@ -30,7 +30,22 @@ plumbed end-to-end (BullMQ repeatable jobs) and editable post-setup via a raw
 cron input; this adds the wizard field, the 30-min default, the friendly picker,
 and the warning. Plan: `~/.claude/plans/for-the-github-and-wondrous-ullman.md`.
 
+## State
+
+Implemented; all tests green (web-ui 117, api-server 376, shared 116), typecheck
+
+- lint clean. **Uncommitted** — awaiting explicit commit approval.
+
+* Backend default `*/15`→`*/30` (schema.ts, connector-registry.ts) + new
+  `isCrontabShape` refine on `schedule` (rejects malformed cron with a 400).
+* New `web-ui/src/lib/schedule.ts` (presets, `DEFAULT_SCHEDULE`,
+  `cronToMinutes`, `isTooFrequent`, `scheduleLabel`) + `ScheduleField` component
+  (preset Select + Custom-cron Input + non-blocking warn Banner under 15 min).
+* Wired into the wizard Configure step (now submits `schedule`, shows it in
+  Review) and the detail-drawer Settings tab.
+
 ## Notes
 
 - Shared surfaces (connector schema + registry) also touched by Portal Settings /
   webhook receiver work — coordinate before large schema edits.
+- `ScheduleField` is GitHub-agnostic; future connector kinds reuse it as-is.

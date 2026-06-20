@@ -220,7 +220,7 @@ export class ConnectorRegistry {
     // `type` ends up duplicated by TypeScript.
     const parsed = parseConnectorInstance({
       enabled: input.enabled ?? true,
-      schedule: input.schedule ?? '*/15 * * * *',
+      schedule: input.schedule ?? '*/30 * * * *',
       scope: input.scope ?? {
         repos: { include: ['**'], exclude: [] },
         teams: { include: ['**'], exclude: [] },

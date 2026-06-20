@@ -72,7 +72,7 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(body.type).toBe('github');
     expect(body.org).toBe('shipitops');
     // Defaults from Zod should be filled in
-    expect(body.schedule).toBe('*/15 * * * *');
+    expect(body.schedule).toBe('*/30 * * * *');
     expect(body.scope.cappedAt).toBe(100);
     // No App override unless caller asked for one — verifies the registry
     // doesn't materialize an empty `app: {}` that would leak into YAML.
@@ -120,6 +120,18 @@ describe('Connector routes (CRUD + ETag)', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
+  });
+
+  it('POST /api/connectors rejects a malformed cron schedule', async () => {
+    // The schema's cron-shape refine guards BullMQ from a garbage pattern that
+    // would otherwise throw at scheduler start time. A 4-field string is invalid.
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { ...validPayload, id: 'github-bad-cron', schedule: 'not a cron' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
   });
 
   it('PATCH /api/connectors/:id with app:null clears the override', async () => {

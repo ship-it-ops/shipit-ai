@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-19 | Total notes: 69
+Last updated: 2026-06-19 | Total notes: 70
 
 ## Investigations
 
@@ -30,6 +30,7 @@ Last updated: 2026-06-19 | Total notes: 69
 - [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
 - [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
 - [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); typecheck/tests green; uncommitted; rollout/rollback runbook
+- [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
 
 ## Decisions
 
