@@ -71,9 +71,17 @@ instead: `shared/.../find-root.ts` (SHIPIT_CONFIG missing/walk-up) and `core-wri
   - **#4 webhook delivery-dedup** — `api-server/webhook-refetch-dedup.integration.test.ts` (3): real SET-NX
     once-true-then-false, `releaseDelivery` DEL re-opens it, last-verified record/read round trip.
   - Validated against real Redis 7 (event-bus 2 + api-server 7).
-  - **Remaining (#3):** the sync-scheduler's silent `catch→NoopRunner` boot-degradation — needs the
-    server boot wiring (index.ts) exercised, not just a queue construct; deferred (its colon-throw half is
-    already guarded by #2's queue-name assertion). Worth a focused boot-level test later.
+  - **#3 sync-scheduler NoopRunner boot-degradation — DONE** (2026-06-20): extracted the inline
+    `index.ts` scheduler wiring into a testable `services/sync-runtime.ts` (`wireSyncRuntime`), then
+    tested the silent-degradation seam. `sync-runtime.test.ts` (4, unit, no Redis): happy-path routes a
+    triggered sync to the live scheduler; a scheduler-construction throw keeps the API up AND reports
+    `degraded:true` + warns (loud, not silent) with the registry left on its inert NoopRunner; a LATER
+    resource throw doesn't swap the runner and releases what already constructed; no-Redis disables syncs
+    without degrading. `sync-runtime.integration.test.ts` (2, REDIS_TEST_URL): a REAL `new Queue('a:b:c')`
+    colon throw is caught → degraded (a mock can't catch this); happy path stands up scheduler+webhook+bus
+    against real Redis and a triggered sync really enqueues. Refactor also fixed a latent partial-init bug:
+    the runner is now swapped only after all three resources construct (was: registry pointed at a
+    half-initialized scheduler if webhook-queue construction threw). Validated against real Redis 7.
 - **Wave C — GSM (#5) — DONE** (2026-06-20), validated against real GCP `ship-it-ai-portal`; **NOT
   CI-enforced** (CI has no GCP creds) — local-opt-in, gated on `GSM_TEST_PROJECT` + ADC:
   - **#5 GSM store** — `api-server/src/__tests__/secrets/gsm-store.integration.test.ts` (5): real

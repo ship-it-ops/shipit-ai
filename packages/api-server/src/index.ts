@@ -1,7 +1,6 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { Redis } from 'ioredis';
 import { findConfigPaths, type GitHubConnectorConfig } from '@shipit-ai/shared';
-import { BullMQEventBusClient } from '@shipit-ai/event-bus';
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
@@ -13,8 +12,7 @@ import {
   RedisConnectorRunStore,
   type ConnectorRunStore,
 } from './services/connector-run-store.js';
-import { SyncScheduler } from './services/sync-scheduler.js';
-import { WebhookRefetchQueue } from './services/webhook-refetch-queue.js';
+import { wireSyncRuntime } from './services/sync-runtime.js';
 import { resolveWebhookSecret } from './services/webhook-resolution.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import {
@@ -314,55 +312,20 @@ async function main() {
   // See docs/agent/patterns/live-reference-for-hot-reload.md and ADR
   // `per-org-github-app-override` for the broader pattern.
   const gh = config.connectors.github.app;
-  let scheduler: SyncScheduler | null = null;
-  let webhookRefetch: WebhookRefetchQueue | null = null;
-  // Hoisted so the same client the scheduler publishes through is also handed
-  // to createServer — the login callback uses it to upsert the authenticated
-  // user as a Person (best-effort; see routes/auth.ts). null when Redis is
-  // absent or the client fails to construct.
-  let eventBus: BullMQEventBusClient | null = null;
-  if (config.backend.redis.url) {
-    try {
-      eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
-      scheduler = new SyncScheduler({
-        redisUrl: config.backend.redis.url,
-        registry: connectorRegistry,
-        eventBus,
-        // Live reference, not a snapshot — see live-reference-for-hot-reload
-        // in docs/agent/patterns/.
-        globalApp: gh,
-        concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
-      });
-      // Replace the registry's NoopRunner with the live scheduler so
-      // future create/update/delete drives BullMQ jobs.
-      connectorRegistry.setRunner(scheduler);
-      console.log('SyncScheduler attached to ConnectorRegistry');
-
-      // Coalesced webhook refetch worker. Shares the same redisUrl, registry,
-      // eventBus and live globalApp reference as the scheduler. Its own
-      // BullMQ queue (`shipit-webhook-refetch`) + dedup redis client.
-      webhookRefetch = new WebhookRefetchQueue({
-        redisUrl: config.backend.redis.url,
-        registry: connectorRegistry,
-        eventBus,
-        // Live reference — see live-reference-for-hot-reload in
-        // docs/agent/patterns/.
-        globalApp: gh,
-        concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
-      });
-      console.log('WebhookRefetchQueue attached');
-    } catch (err) {
-      // Don't let a broken scheduler take down the API. Operators see a
-      // warning in logs; the UI surfaces sync failures separately.
-      console.warn(
-        `SyncScheduler init failed (continuing with no-op runner): ${(err as Error).message}`,
-      );
-    }
-  } else {
-    console.warn(
-      'No Redis URL configured — connectors will accept CRUD writes but syncs will not run. Set backend.redis.url to enable.',
-    );
-  }
+  // Wiring extracted to wireSyncRuntime so its silent-degradation arm is
+  // testable (see services/sync-runtime.ts + its tests). It constructs the
+  // event bus, scheduler and webhook-refetch queue, swaps the registry's
+  // NoopRunner for the live scheduler on success, and keeps the API up (on the
+  // NoopRunner) if any of that throws. `eventBus` is shared with createServer
+  // so the login callback upserts the authenticated user as a Person.
+  const { eventBus, scheduler, webhookRefetch } = wireSyncRuntime({
+    redisUrl: config.backend.redis.url,
+    registry: connectorRegistry,
+    // Live reference, not a snapshot — see live-reference-for-hot-reload
+    // in docs/agent/patterns/.
+    globalApp: gh,
+    concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
+  });
 
   try {
     await schemaService.loadSchema();

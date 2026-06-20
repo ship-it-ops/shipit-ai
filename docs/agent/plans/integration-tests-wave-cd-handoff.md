@@ -90,7 +90,19 @@ for reference.
   fidelity through write-then-read-latest.
 - **Cost:** highest (real GCP/emulator). Worth it before the next cluster deploy.
 
-### #3 — sync-scheduler `NoopRunner` boot-degradation [P0-ish, cheap-ish]
+### #3 — sync-scheduler `NoopRunner` boot-degradation [P0-ish] — ✅ DONE (2026-06-20)
+
+**Shipped:** extracted the inline `index.ts` wiring (was ~L316-365) into `services/sync-runtime.ts`
+(`wireSyncRuntime`) — a sync function defaulting to the real constructors but accepting injectable
+factories + logger, returning `{ eventBus, scheduler, webhookRefetch, degraded }`. Tests:
+`__tests__/services/sync-runtime.test.ts` (4 unit, no Redis) + `sync-runtime.integration.test.ts`
+(2, gated `REDIS_TEST_URL`). The integration test does a REAL `new Queue('shipit:sync:github')` colon
+throw through `wireSyncRuntime` and asserts it degrades to the NoopRunner (a mock can't catch this);
+the happy path stands the scheduler+webhook+bus up against real Redis and proves a triggered sync
+enqueues onto the live scheduler. Refactor also fixed a latent partial-init bug (runner swapped only
+after all three resources construct; resources released on a mid-wiring throw). Validated against real
+Redis 7. `degraded:true` is returned but NOT yet surfaced to a health endpoint — a future follow-up if
+operators want a probe signal beyond the boot warning. Original guidance kept below.
 
 - **Purpose:** if the scheduler can't build its BullMQ queue (e.g. a colon sneaks back into the queue
   name), the boot code swallows the error into a `NoopRunner` → connectors show "syncing…" forever,
@@ -136,8 +148,8 @@ for reference.
 
 ## Recommended order
 
-~~**#5 GSM**~~ ✅ DONE → **#3 NoopRunner** (NEXT — cheap, silent-sync risk) → **#9 OIDC** (if OIDC
-users) → **#8 manifest** (onboarding-only).
+~~**#5 GSM**~~ ✅ DONE → ~~**#3 NoopRunner**~~ ✅ DONE → **#9 OIDC** (NEXT — if OIDC users) → **#8
+manifest** (onboarding-only).
 
 ## Cheap UNIT follow-ups (NOT integration — deep-dive flagged)
 
