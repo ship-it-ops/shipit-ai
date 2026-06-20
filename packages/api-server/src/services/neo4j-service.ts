@@ -38,13 +38,31 @@ export interface NeighborhoodResult {
  */
 const MAX_BLAST_RADIUS_NODES = 200;
 
+// Audit/event nodes the app writes for its own bookkeeping. They are real
+// graph nodes but NOT user-facing catalog entities: VerificationEvent (`ve:…`,
+// verification-service), MergeEvent + ReconciliationCandidate (`rc:…`,
+// reconciliation-service). Core-writer bookkeeping uses a `_` label prefix
+// (caught below); these predate that convention and have no `name`/`id` shape,
+// so without an explicit exclusion they leaked into the catalog as nameless
+// "Service" rows. Keep this list in sync with those services' CREATE clauses.
+const INTERNAL_EVENT_LABELS = ['VerificationEvent', 'MergeEvent', 'ReconciliationCandidate'];
+// Cypher list literal, inlined into predicates so no call site needs an extra param.
+const INTERNAL_EVENT_LABELS_CYPHER = `[${INTERNAL_EVENT_LABELS.map((l) => `'${l}'`).join(', ')}]`;
+
 // Labels beginning with `_` are core-writer bookkeeping (`_LinkingKey`,
 // `_IdempotencyLog`) — they have no canonical `id` property and no
 // `name`, so leaking them into the graph explorer crashes Cytoscape with
 // `Can not create element with invalid string ID '`. They also don't
 // belong in dashboard counts. Every user-facing graph query filters them
-// out via this predicate.
-const EXCLUDE_INTERNAL_LABELS = "NONE(l IN labels(n) WHERE l STARTS WITH '_')";
+// (and the audit/event labels above) out via this predicate.
+const EXCLUDE_INTERNAL_LABELS = `NONE(l IN labels(n) WHERE l STARTS WITH '_' OR l IN ${INTERNAL_EVENT_LABELS_CYPHER})`;
+
+// JS mirror of the predicate above, for read paths that filter in application
+// code rather than Cypher (the APOC neighborhood traversal has no relationship
+// filter, so it would otherwise pull a verified entity's `[:VERIFIES]`-linked
+// audit nodes into the graph view).
+const isInternalNodeLabel = (label: string): boolean =>
+  label.startsWith('_') || INTERNAL_EVENT_LABELS.includes(label);
 
 /**
  * Project `_last_synced_age_seconds` onto a node's properties. Computed
@@ -111,7 +129,7 @@ export class Neo4jService {
     // explorer; the internal nodes still count toward Neo4j's storage but
     // not toward the user-facing graph.
     const nodeCountsResult = await this.runQuery(
-      "CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count",
+      `CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' AND NOT label IN ${INTERNAL_EVENT_LABELS_CYPHER} RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count`,
     );
     const edgeCountsResult = await this.runQuery(
       'CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count',
@@ -172,6 +190,10 @@ export class Neo4jService {
 
     const nodesMap = new Map<string, CytoscapeNode>();
     const edges: CytoscapeEdge[] = [];
+    // Audit/bookkeeping nodes (`ve:`/`rc:` events, `_`-internal) reachable via
+    // unfiltered traversal — drop them and any edge that touches them so the
+    // graph view matches the catalog's user-facing entity set.
+    const excludedIds = new Set<string>();
 
     for (const record of records) {
       const nodes = record.get('nodes') as Array<{
@@ -187,6 +209,10 @@ export class Neo4jService {
 
       for (const node of nodes) {
         const id = String(node.properties.id ?? node.properties.name ?? '');
+        if (node.labels.some(isInternalNodeLabel)) {
+          excludedIds.add(id);
+          continue;
+        }
         const nodeLabel = node.labels[0] ?? 'Unknown';
         if (!nodesMap.has(id)) {
           nodesMap.set(id, {
@@ -204,11 +230,14 @@ export class Neo4jService {
       }
 
       for (const rel of rels) {
+        const source = String(rel.source);
+        const target = String(rel.target);
+        if (excludedIds.has(source) || excludedIds.has(target)) continue;
         edges.push({
           data: {
             ...rel.props,
-            source: String(rel.source),
-            target: String(rel.target),
+            source,
+            target,
             type: rel.type,
           },
         });

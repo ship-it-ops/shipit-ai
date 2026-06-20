@@ -118,4 +118,60 @@ describe.skipIf(!URI)('Neo4jService read path — integration (APOC)', () => {
       expect(names.every((id) => !id.includes('lk'))).toBe(true);
     });
   });
+
+  // Regression: audit/event nodes (VerificationEvent `ve:…`, MergeEvent /
+  // ReconciliationCandidate `rc:…`) predate the `_`-label convention, so the
+  // prefix-only exclusion let them leak into the catalog as nameless "Service"
+  // rows with no env/tier/owner. They must be filtered from every user-facing read.
+  describe('audit-node exclusion (ve:/rc: events must not surface as entities)', () => {
+    const seedWithAudit = () =>
+      svc.runQuery(
+        `CREATE (s:Repository {id:$owned, name:'owned'})
+         CREATE (:VerificationEvent {id:'ve:test-verify', entityId:$owned, property_key:'tier', kind:'verify', actor:'alice'})
+         CREATE (:MergeEvent {id:'rc:test-merge'})
+         CREATE (:ReconciliationCandidate {id:'rc:test-candidate'})`,
+        ID,
+      );
+
+    const isAuditId = (id: string) => id.startsWith('ve:') || id.startsWith('rc:');
+
+    it('getOverview omits VerificationEvent / MergeEvent / ReconciliationCandidate nodes', async () => {
+      await seedWithAudit();
+      const ids = idset(await svc.getOverview(SYSTEM_CONTEXT, 100));
+      expect(ids.has(ID.owned)).toBe(true);
+      expect([...ids].some(isAuditId)).toBe(false);
+    });
+
+    it('searchEntities never returns audit nodes (even when the id matches the query)', async () => {
+      await seedWithAudit();
+      const results = await svc.searchEntities(SYSTEM_CONTEXT, { q: 'test', limit: 25 });
+      const ids = results.map((r) =>
+        String((r.get('n') as { properties: { id: unknown } }).properties.id),
+      );
+      expect(ids.every((id) => !isAuditId(id))).toBe(true);
+    });
+
+    it('getGraphStats does not count audit labels', async () => {
+      await seedWithAudit();
+      const stats = await svc.getGraphStats(SYSTEM_CONTEXT);
+      expect(Object.keys(stats.nodesByLabel)).not.toEqual(
+        expect.arrayContaining(['VerificationEvent', 'MergeEvent', 'ReconciliationCandidate']),
+      );
+      expect(stats.nodeCount).toBe(1); // only the Repository; 3 audit nodes excluded
+    });
+
+    it('getNeighborhood drops the [:VERIFIES]-linked audit node and its edge', async () => {
+      // The neighborhood traversal has no relationship filter, so an entity's
+      // inbound VerificationEvent is reachable and must be filtered in code.
+      await svc.runQuery(
+        `CREATE (s:Repository {id:$owned, name:'owned'})
+         CREATE (v:VerificationEvent {id:'ve:nbr', entityId:$owned})
+         CREATE (v)-[:VERIFIES]->(s)`,
+        ID,
+      );
+      const result = await svc.getNeighborhood(SYSTEM_CONTEXT, ID.owned, 2);
+      expect(result.nodes.map((n) => String(n.data.id))).toEqual([ID.owned]);
+      expect(result.edges.some((e) => e.data.type === 'VERIFIES')).toBe(false);
+    });
+  });
 });
