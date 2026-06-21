@@ -86,6 +86,65 @@ jobs:
 
       - run: pnpm turbo test --force
 
+  integration:
+    name: Integration (Neo4j)
+    runs-on: ubuntu-latest
+    # Neo4j-backed tests that exercise real Cypher (the core-writer freshness
+    # guard's atomic compare-and-set + lossless-Integer round-trip) — behaviour
+    # the mocked unit suite structurally cannot cover. Runs on every PR/push
+    # alongside the unit `test` job; the suite is env-gated (NEO4J_TEST_URI), so
+    # locally and in the unit job it simply skips.
+    services:
+      neo4j:
+        image: neo4j:5
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+          # api-server read-path tests use apoc.path.subgraphAll.
+          NEO4J_PLUGINS: '["apoc"]'
+        ports:
+          - 7687:7687
+          - 7474:7474
+        options: >-
+          --health-cmd "cypher-shell -u neo4j -p testpassword 'RETURN 1'"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 10
+          --health-start-period 40s
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NEO4J_TEST_URI: bolt://localhost:7687
+      NEO4J_TEST_USER: neo4j
+      NEO4J_TEST_PASSWORD: testpassword
+      REDIS_TEST_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: core-writer integration (Neo4j)
+        run: pnpm --filter @shipit-ai/core-writer run test:integration
+
+      - name: event-bus integration (Redis/BullMQ)
+        run: pnpm --filter @shipit-ai/event-bus run test:integration
+
+      - name: api-server integration (Neo4j + APOC, Redis)
+        run: pnpm --filter @shipit-ai/api-server run test:integration
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -139,7 +198,7 @@ jobs:
   claude-review:
     name: Claude Code Review
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, build, docker]
+    needs: [lint, typecheck, test, integration, build, docker]
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
