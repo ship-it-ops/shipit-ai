@@ -388,7 +388,11 @@ describe('POST /api/webhooks/github — verify → dedup → enqueue', () => {
     );
   });
 
-  it('does not 429 a verified burst (rate limiting disabled on the route)', async () => {
+  it('does not 429 a verified burst (the route rate limit is generous enough for redeliveries) — INV-5', async () => {
+    // The route carries a deliberately HIGH per-IP rate limit (max 1000/min) so
+    // a burst of verified GitHub redeliveries is never 429'd into a non-2xx
+    // storm (which would make GitHub auto-disable the webhook). 250 well-formed
+    // signed deliveries all 200 — comfortably inside the ceiling.
     const body = pingPayload();
     const signature = sign(body, PER_APP_SECRET);
     for (let i = 0; i < 250; i++) {

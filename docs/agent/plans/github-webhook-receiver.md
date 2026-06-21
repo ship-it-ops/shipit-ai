@@ -181,6 +181,12 @@ name)`. **Confirm** they project the exact shape the `connector.ts` `normalize`
 - **Rate limiter:** the in-memory per-pod limiter can 429 redelivery bursts (INV-5).
   Either disable rate-limiting on this route (HMAC is the gate) or use a Redis-backed
   limit keyed on `installation_id`.
+  - **Resolved 2026-06-20 (PR #76):** Cut A first disabled it (`rateLimit: false`), but
+    CodeQL `js/missing-rate-limiting` (high) flags an authorized route with no limit. Switched
+    to a deliberately HIGH per-IP ceiling (`{ rateLimit: { max: 1000, timeWindow: '1 minute' } }`)
+    — satisfies CodeQL while staying far above any realistic GitHub delivery rate, so INV-5 holds
+    in practice (the handler itself still never returns 429; only the plugin could, under abuse).
+    A Redis-backed per-`installation_id` limit remains the stronger long-term option.
 - **Ingress check:** `matchesAllowList` is exact-equality for non-slash entries
   (`require-auth.ts:131`); one char of `/api` drift = 401 storm (ref single-origin
   `/api`-doubling history). Integration-test **through the Ingress**, not just

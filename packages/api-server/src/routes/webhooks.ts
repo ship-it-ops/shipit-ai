@@ -101,10 +101,15 @@ const webhookRoutes: FastifyPluginAsync = async (server) => {
     '/github',
     {
       bodyLimit: WEBHOOK_BODY_LIMIT,
-      // INV-5: a burst of VERIFIED redeliveries must never be 429'd into a
-      // non-2xx storm that makes GitHub auto-disable the webhook. HMAC is the
-      // gate, so rate limiting is disabled on this route.
-      config: { rateLimit: false },
+      // A deliberately HIGH per-IP rate limit: it backstops an unauthenticated
+      // flood (CodeQL js/missing-rate-limiting) without endangering INV-5 — a
+      // burst of VERIFIED redeliveries must not be 429'd into a non-2xx storm
+      // that makes GitHub auto-disable the webhook. HMAC stays the real gate
+      // (bad signatures are 401'd cheaply against an mtime-cached secret); this
+      // ceiling only bounds abuse. It's set well above any realistic GitHub
+      // delivery rate because GitHub delivers from a small set of source IPs
+      // that share one bucket, so a low limit would clip legitimate traffic.
+      config: { rateLimit: { max: 1000, timeWindow: '1 minute' } },
     },
     async (request, reply) => {
       const log = request.log;
