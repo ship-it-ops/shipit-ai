@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+// Structural validation for a 5-field crontab string (minute hour dom month dow).
+// Each field is a comma-separated list of: `*`, `*/n` step, `a-b` range,
+// `a-b/n` ranged step, or a plain integer. This rejects obvious garbage before
+// the string reaches BullMQ (which would otherwise throw at scheduler start);
+// it is deliberately permissive about value ranges — not a full semantic check.
+const CRON_FIELD = /^(\*|\d+|\d+-\d+)(\/\d+)?(,(\*|\d+|\d+-\d+)(\/\d+)?)*$/;
+export function isCrontabShape(value: string): boolean {
+  const fields = value.trim().split(/\s+/);
+  return fields.length === 5 && fields.every((f) => CRON_FIELD.test(f));
+}
+
 // ── Connector instance config ──────────────────────────────────────────────
 // One entry per configured upstream system (e.g. one GitHub org = one
 // instance). Persisted under connectors.instances[] in shipit.config.local.yaml
@@ -67,9 +78,12 @@ export const lastRunSchema = z.object({
 // orgs that don't trust a shared App. Either field can be set independently;
 // the runner resolves each field individually with the global as fallback.
 //
-// Webhook secret intentionally absent: in P0 all installations share the
-// global `GITHUB_WEBHOOK_SECRET`. P1 will add per-App webhook secrets via an
-// env-var-name field once the webhook receiver lands and we need it.
+// Webhook secret intentionally absent from this override: a per-org App's
+// webhook secret is resolved at receive time from the per-App sidecar
+// (github-app-<appId>.webhook-secret, materialized at boot from the
+// connector-apps GSM blob), with the global `GITHUB_WEBHOOK_SECRET` used only
+// for connectors on the global App. See packages/api-server webhook-resolution.ts
+// and routes/webhooks.ts.
 const githubConnectorAppOverrideSchema = z
   .object({
     id: z.string().optional(),
@@ -89,8 +103,13 @@ const githubConnectorSchema = z.object({
   installationId: z.string().min(1),
   org: z.string().min(1),
   app: githubConnectorAppOverrideSchema,
-  // Crontab string, e.g. "*/15 * * * *". Polling fallback for missed webhooks.
-  schedule: z.string().default('*/15 * * * *'),
+  // Crontab string, e.g. "*/30 * * * *". Polling fallback for missed webhooks.
+  // 5-field crontab only. The shape check rejects obviously malformed input so
+  // a bad string can't reach BullMQ and throw at scheduler start time; it is a
+  // structural check, not full semantic cron validation.
+  schedule: z.string().default('*/30 * * * *').refine(isCrontabShape, {
+    message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "*/30 * * * *".',
+  }),
   scope: githubScopeSchema.default({
     repos: { include: ['**'], exclude: [] },
     teams: { include: ['**'], exclude: [] },

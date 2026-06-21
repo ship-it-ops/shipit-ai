@@ -1,7 +1,6 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { Redis } from 'ioredis';
-import { findConfigPaths } from '@shipit-ai/shared';
-import { BullMQEventBusClient } from '@shipit-ai/event-bus';
+import { findConfigPaths, type GitHubConnectorConfig } from '@shipit-ai/shared';
 import { loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { Neo4jService } from './services/neo4j-service.js';
@@ -13,7 +12,8 @@ import {
   RedisConnectorRunStore,
   type ConnectorRunStore,
 } from './services/connector-run-store.js';
-import { SyncScheduler } from './services/sync-scheduler.js';
+import { wireSyncRuntime } from './services/sync-runtime.js';
+import { resolveWebhookSecret } from './services/webhook-resolution.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import {
   GitHubAppManifestService,
@@ -21,6 +21,7 @@ import {
 } from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
+import { SettingsService } from './services/settings-service.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
@@ -42,6 +43,11 @@ export {
 } from './services/connector-run-store.js';
 export type { ConnectorRunStore } from './services/connector-run-store.js';
 export { SyncScheduler } from './services/sync-scheduler.js';
+export { WebhookRefetchQueue } from './services/webhook-refetch-queue.js';
+export type {
+  WebhookRefetchJob,
+  WebhookRefetchQueueOptions,
+} from './services/webhook-refetch-queue.js';
 export { GitHubAppService, GitHubAppVersionConflictError } from './services/github-app-service.js';
 export type { GitHubAppStatus } from './services/github-app-service.js';
 export { GitHubAppManifestService } from './services/github-app-manifest-service.js';
@@ -224,6 +230,28 @@ async function main() {
     durableStore: connectorAppStore,
   });
 
+  // Boot readiness assertion (spec 4): warn LOUDLY for any connector that
+  // resolves a GitHub App id but has neither a materialized per-App webhook
+  // secret nor an applicable global secret. Such a connector's deliveries will
+  // 202-without-action (no resolvable secret) instead of being verified —
+  // "should-exist-but-missing". Non-fatal; the receiver still boots.
+  for (const connector of connectorRegistry.list()) {
+    if (connector.type !== 'github') continue;
+    const resolved = resolveWebhookSecret(
+      connector as GitHubConnectorConfig,
+      config.connectors.github.app,
+      process.env,
+    );
+    if (resolved.appId && resolved.source === 'none') {
+      console.warn(
+        `WEBHOOK SECRET MISSING: connector "${connector.id}" resolves App id ${resolved.appId} ` +
+          `but has no materialized per-App webhook secret and no usable global secret ` +
+          `(reason=${resolved.reason}). Its webhook deliveries will be acknowledged without ` +
+          `verification/refetch until the secret is materialized.`,
+      );
+    }
+  }
+
   // GitHubAppService holds a live reference to the same object the
   // scheduler will receive as `globalApp`, so a PUT to /github/app
   // propagates without a server restart.
@@ -284,40 +312,20 @@ async function main() {
   // See docs/agent/patterns/live-reference-for-hot-reload.md and ADR
   // `per-org-github-app-override` for the broader pattern.
   const gh = config.connectors.github.app;
-  let scheduler: SyncScheduler | null = null;
-  // Hoisted so the same client the scheduler publishes through is also handed
-  // to createServer — the login callback uses it to upsert the authenticated
-  // user as a Person (best-effort; see routes/auth.ts). null when Redis is
-  // absent or the client fails to construct.
-  let eventBus: BullMQEventBusClient | null = null;
-  if (config.backend.redis.url) {
-    try {
-      eventBus = new BullMQEventBusClient({ redisUrl: config.backend.redis.url });
-      scheduler = new SyncScheduler({
-        redisUrl: config.backend.redis.url,
-        registry: connectorRegistry,
-        eventBus,
-        // Live reference, not a snapshot — see live-reference-for-hot-reload
-        // in docs/agent/patterns/.
-        globalApp: gh,
-        concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
-      });
-      // Replace the registry's NoopRunner with the live scheduler so
-      // future create/update/delete drives BullMQ jobs.
-      connectorRegistry.setRunner(scheduler);
-      console.log('SyncScheduler attached to ConnectorRegistry');
-    } catch (err) {
-      // Don't let a broken scheduler take down the API. Operators see a
-      // warning in logs; the UI surfaces sync failures separately.
-      console.warn(
-        `SyncScheduler init failed (continuing with no-op runner): ${(err as Error).message}`,
-      );
-    }
-  } else {
-    console.warn(
-      'No Redis URL configured — connectors will accept CRUD writes but syncs will not run. Set backend.redis.url to enable.',
-    );
-  }
+  // Wiring extracted to wireSyncRuntime so its silent-degradation arm is
+  // testable (see services/sync-runtime.ts + its tests). It constructs the
+  // event bus, scheduler and webhook-refetch queue, swaps the registry's
+  // NoopRunner for the live scheduler on success, and keeps the API up (on the
+  // NoopRunner) if any of that throws. `eventBus` is shared with createServer
+  // so the login callback upserts the authenticated user as a Person.
+  const { eventBus, scheduler, webhookRefetch } = wireSyncRuntime({
+    redisUrl: config.backend.redis.url,
+    registry: connectorRegistry,
+    // Live reference, not a snapshot — see live-reference-for-hot-reload
+    // in docs/agent/patterns/.
+    globalApp: gh,
+    concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
+  });
 
   try {
     await schemaService.loadSchema();
@@ -331,6 +339,18 @@ async function main() {
     );
   }
 
+  // Backs the admin /api/settings hub. Holds the same live globalApp reference
+  // (gh) + stores + registry + refetch port the rest of the server uses, so a
+  // webhook-secret/allow-list write is visible to the receiver without a
+  // restart.
+  const settingsService = new SettingsService({
+    secretStore,
+    globalApp: gh,
+    registry: connectorRegistry,
+    connectorAppStore,
+    webhookRefetch: webhookRefetch ?? undefined,
+  });
+
   const server = await createServer({
     logger: true,
     neo4jService,
@@ -339,6 +359,7 @@ async function main() {
     githubAppService,
     githubAppManifestService,
     oidcSettingsService,
+    settingsService,
     // Active-mode /api/setup/status (behind auth) — used by the wizard's
     // post-restart poll and for ops debugging. The mutating setup routes
     // 409 outside setup mode.
@@ -348,6 +369,9 @@ async function main() {
     // Same client the scheduler publishes through; lets the login callback
     // upsert the signed-in user as a Person. undefined when Redis is absent.
     eventBus: eventBus ?? undefined,
+    // Coalesced webhook refetch port. undefined when Redis is absent — the
+    // receiver still verifies HMAC and 202s without enqueueing.
+    webhookRefetch: webhookRefetch ?? undefined,
     // The Redis client used by the session store reuses the run-store
     // connection when present so a single deployment doesn't open two
     // ioredis instances for sibling concerns. When auth is disabled
@@ -373,6 +397,7 @@ async function main() {
   const shutdown = async () => {
     await server.close();
     if (scheduler) await scheduler.close();
+    if (webhookRefetch) await webhookRefetch.close();
     // The event bus owns its own Queue + stream connections (the scheduler's
     // close() only tears down the worker/queue it created), so close it here.
     if (eventBus) await eventBus.close();

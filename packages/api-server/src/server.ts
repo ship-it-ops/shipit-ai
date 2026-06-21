@@ -33,9 +33,12 @@ import reconciliationRoutes from './routes/reconciliation.js';
 import incidentEventsRoutes from './routes/incident-events.js';
 import mcpRoutes from './routes/mcp.js';
 import { configExportRoutes } from './routes/config-export.js';
+import { portalSettingsRoutes } from './routes/portal-settings.js';
 import setupRoutes from './routes/setup.js';
+import webhookRoutes, { type WebhookRefetchPort } from './routes/webhooks.js';
 import { assertAuthConfigBootable, AuthConfigError } from './auth-bootability.js';
 import type { SetupService } from './services/setup-service.js';
+import type { SettingsService } from './services/settings-service.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -77,12 +80,20 @@ export interface CreateServerOptions {
   setupMode?: boolean;
   // Backs the /api/setup routes; they return 503 when not wired.
   setupService?: SetupService;
+  // Backs the admin /api/settings hub (webhook secrets, OAuth client, admin
+  // emails, allow-list). Optional: the routes return 503 when not wired.
+  settingsService?: SettingsService;
   // Event bus client, exposed to routes so the login callback can publish
   // the authenticated user as a Person entity (see routes/auth.ts and
   // services/person-upsert.ts). Production passes the same BullMQ client the
   // SyncScheduler uses; routes treat it as best-effort and tolerate its
   // absence (no publish when omitted, e.g. tests or Redis-less deployments).
   eventBus?: EventBusClient;
+  // Coalesced async refetch port for the GitHub webhook receiver. Optional:
+  // when absent the receiver still verifies HMAC but logs + 202s on the
+  // dedup/enqueue steps (so Redis-less unit servers don't break). Production
+  // injects a WebhookRefetchQueue (see index.ts).
+  webhookRefetch?: WebhookRefetchPort;
 }
 
 declare module 'fastify' {
@@ -92,7 +103,9 @@ declare module 'fastify' {
     configPaths?: ConfigPaths;
     setupMode: boolean;
     setupService?: SetupService;
+    settingsService?: SettingsService;
     eventBus?: EventBusClient;
+    webhookRefetch?: WebhookRefetchPort;
   }
 }
 
@@ -109,6 +122,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   server.decorate('setupMode', setupMode);
   if (opts.setupService) {
     server.decorate('setupService', opts.setupService);
+  }
+  // Settings service backs the admin /api/settings hub. Conditional decoration
+  // so Fastify's duplicate-decoration guard doesn't fire across multi-server
+  // tests; the routes 503 when it's absent.
+  if (opts.settingsService) {
+    server.decorate('settingsService', opts.settingsService);
   }
 
   if (opts.config) {
@@ -330,6 +349,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.eventBus) {
     server.decorate('eventBus', opts.eventBus);
   }
+  // Webhook refetch port is optional (conditional decoration so Fastify's
+  // duplicate-decoration guard doesn't fire across multi-server tests). When
+  // absent, the webhook route still verifies HMAC and 202s.
+  if (opts.webhookRefetch) {
+    server.decorate('webhookRefetch', opts.webhookRefetch);
+  }
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
@@ -361,6 +386,17 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // Config export — admin-only download of the merged raw config (pre-env-
   // substitution) for committing as the next deploy's seed config.
   await server.register(configExportRoutes, { prefix: '/api/config' });
+
+  // Admin Portal Settings hub — webhook secret generate/rotate, OAuth client,
+  // admin emails, login allow-list. Every handler is admin-gated; the routes
+  // 503 when the backing SettingsService/SetupService aren't wired.
+  await server.register(portalSettingsRoutes, { prefix: '/api/settings' });
+
+  // GitHub webhook receiver. Registered as its own encapsulated plugin so its
+  // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak
+  // into the global JSON parsing. HMAC is the entire auth boundary — the route
+  // is in require-auth's PUBLIC_PATH_PREFIXES + SETUP_PUBLIC_PATHS.
+  await server.register(webhookRoutes, { prefix: '/api/webhooks' });
 
   return server;
 }

@@ -1,13 +1,22 @@
 ---
 type: open-question
-status: active
+status: answered
 opened: 2026-06-17
+updated: 2026-06-18
 answer-source: experiment
 importance: standard
 tags: [redis, bullmq, queue-retention, memory]
 ---
 
 # Why has the portal-demo redis dataset grown to ~246 MB, and how do we bound it?
+
+> **ANSWERED & RESOLVED** (2026-06-18). Root cause was unbounded BullMQ
+> completed/failed job retention (sync-scheduler queue + `removeOnFail: false`
+> in the event-bus producer/replay). App-side retention bounds shipped in #75
+> and are now deployed to portal-demo. Replay-stream fate is the still-open
+> [replay-stream-wire-or-cut](replay-stream-wire-or-cut.md). Post-deploy
+> `redis-cli --bigkeys` confirmation of a flat working set is the only
+> remaining verify step.
 
 ## Context
 

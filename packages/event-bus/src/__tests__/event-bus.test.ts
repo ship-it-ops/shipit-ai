@@ -128,24 +128,32 @@ describe('resolveConfig', () => {
 
 // ── Idempotency key tests ─────────────────────────────────────────────
 describe('buildIdempotencyKey', () => {
-  it('formats key as {connectorId}~{nodeId}~{eventVersion} with all colons replaced', () => {
-    // BullMQ 5 forbids `:` in custom job IDs, so the lone colon in the
-    // `shipit:` scheme gets rewritten to `~`; the `//` slashes survive.
-    const node = makeNode({
-      id: 'shipit://LogicalService/github/graph-api',
-      _event_version: 42,
-    });
+  it('formats key as {connectorId}~{nodeId}~{contentHash} with all colons replaced', () => {
+    // Cut B (Option B): the dedup key is the node CONTENT fingerprint, not
+    // `_event_version`. BullMQ 5 forbids `:` in custom job IDs, so the lone colon
+    // in the `shipit:` scheme gets rewritten to `~`; the `//` slashes survive; the
+    // content hash is hex (colon-free).
+    const node = makeNode({ id: 'shipit://LogicalService/github/graph-api' });
     const key = buildIdempotencyKey('github-shipitops', node);
-    expect(key).toBe('github-shipitops~shipit~//LogicalService/github/graph-api~42');
+    expect(key.startsWith('github-shipitops~shipit~//LogicalService/github/graph-api~')).toBe(true);
+    expect(key).toMatch(/~[0-9a-f]+$/); // ends with a hex content hash
     expect(key).not.toContain(':');
   });
 
-  it('handles ISO 8601 event version', () => {
-    const node = makeNode({ _event_version: '2026-02-28T12:00:00Z' });
-    const key = buildIdempotencyKey('k8s-prod', node);
-    expect(key).toContain('k8s-prod~');
-    expect(key).toContain('~2026-02-28T12~00~00Z');
-    expect(key).not.toContain(':');
+  it('is INDEPENDENT of _event_version (ordering token), DEPENDENT on content', () => {
+    const a = makeNode({ id: 'shipit://LogicalService/github/svc', _event_version: 1 });
+    const b = makeNode({
+      id: 'shipit://LogicalService/github/svc',
+      _event_version: 1_719_000_000_000,
+    });
+    // same content, different ordering token → SAME dedup key (so a stale
+    // re-sync of unchanged content still dedupes)
+    expect(buildIdempotencyKey('c', a)).toBe(buildIdempotencyKey('c', b));
+
+    // changed content → DIFFERENT dedup key (so a genuine change is not deduped
+    // away before the writer's freshness guard)
+    const c = makeNode({ id: 'shipit://LogicalService/github/svc', properties: { tier: 2 } });
+    expect(buildIdempotencyKey('c', c)).not.toBe(buildIdempotencyKey('c', a));
   });
 });
 
@@ -164,7 +172,12 @@ describe('EventBusProducer', () => {
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(1);
     expect(jobs[0].name).toBe('event');
-    expect(jobs[0].opts.jobId).toBe('github-shipitops~shipit~//LogicalService/github/graph-api~1');
+    expect(
+      (jobs[0].opts.jobId as string).startsWith(
+        'github-shipitops~shipit~//LogicalService/github/graph-api~',
+      ),
+    ).toBe(true);
+    expect(jobs[0].opts.jobId).not.toContain(':');
     expect(jobs[0].data.connector_id).toBe('github-shipitops');
     expect(jobs[0].data.payload).toEqual(entity);
     // Retention now lives in the queue's defaultJobOptions, not per-job —
@@ -192,8 +205,9 @@ describe('EventBusProducer', () => {
 
     const jobs = mockAddBulk.mock.calls[0][0];
     expect(jobs).toHaveLength(2);
-    expect(jobs[0].opts.jobId).toContain('svc-a~1');
-    expect(jobs[1].opts.jobId).toContain('svc-b~2');
+    expect(jobs[0].opts.jobId).toContain('svc-a');
+    expect(jobs[1].opts.jobId).toContain('svc-b');
+    expect(jobs[0].opts.jobId).not.toBe(jobs[1].opts.jobId);
   });
 
   it('emits one envelope for an edge-only entity (e.g., Codeowners batch)', async () => {

@@ -1147,6 +1147,125 @@ export async function updateOidcProvider(input: {
   return (await res.json()) as { ok: boolean; restartRequired: boolean };
 }
 
+// ── Admin Portal Settings ─────────────────────────────────────────────────
+// Admin-only config hub: per-connector GitHub webhook secrets, the OAuth
+// login client, the admin email list, and the login allow-list. Every
+// endpoint is server-gated (403 FORBIDDEN for non-admins; 503
+// SETTINGS_DISABLED when the SettingsService isn't wired). The functions
+// below surface the backend's structured `{error:{code,message}}` envelope
+// so the UI can render actionable copy (SELF_LOCKOUT, INVALID_*, etc.).
+
+/** A single verified delivery the receiver has seen for a connector. */
+export interface VerifiedDelivery {
+  event: string;
+  deliveryId: string;
+  ts: string;
+}
+
+export interface WebhookConnectorStatus {
+  connectorId: string;
+  appId: string | null;
+  org: string | null;
+  /** Whether a webhook secret has been generated/stored for this App. */
+  secretConfigured: boolean;
+  /** Most recent verified delivery seen by the receiver, or null if none yet. */
+  lastVerifiedDelivery: VerifiedDelivery | null;
+}
+
+export interface PortalSettings {
+  /** The shared public receiver URL to paste into each GitHub App. */
+  webhookUrl: string;
+  webhooks: WebhookConnectorStatus[];
+  oauth: { configured: boolean };
+  admins: string[];
+  allowlist: string[];
+}
+
+/** Result of generating/rotating a connector's webhook secret. */
+export interface WebhookSecretResult {
+  /** Plaintext secret — shown once to the admin to paste into GitHub. */
+  secret: string;
+  webhookUrl: string;
+  /** Numbered, human-readable setup steps for the GitHub App UI. */
+  steps: string[];
+}
+
+/**
+ * Pull the structured backend error message off a non-OK response, falling
+ * back to a status-based message. Shared by the settings mutations so a
+ * SELF_LOCKOUT / INVALID_* / NO_RESOLVABLE_APP message reaches the UI.
+ */
+async function settingsError(res: Response, fallback: string): Promise<Error> {
+  const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+  return new Error(body.error?.message ?? `${fallback}: ${res.status}`);
+}
+
+export async function fetchPortalSettings(): Promise<PortalSettings> {
+  const res = await fetchApi(`${API_URL}/api/settings`);
+  if (!res.ok) throw await settingsError(res, 'Failed to load settings');
+  return (await res.json()) as PortalSettings;
+}
+
+/**
+ * Generate (setup) or rotate a connector's webhook secret. Both server
+ * routes are identical; `action` picks the path. Rotating invalidates the
+ * previous secret — the UI warns the admin to copy the returned value.
+ */
+export async function setConnectorWebhookSecret(
+  connectorId: string,
+  action: 'setup' | 'rotate',
+): Promise<WebhookSecretResult> {
+  const res = await fetchApi(
+    `${API_URL}/api/settings/webhooks/${encodeURIComponent(connectorId)}/${action}`,
+    { method: 'POST' },
+  );
+  if (!res.ok) throw await settingsError(res, 'Webhook secret update failed');
+  return (await res.json()) as WebhookSecretResult;
+}
+
+export function setupConnectorWebhook(connectorId: string): Promise<WebhookSecretResult> {
+  return setConnectorWebhookSecret(connectorId, 'setup');
+}
+
+export function rotateConnectorWebhook(connectorId: string): Promise<WebhookSecretResult> {
+  return setConnectorWebhookSecret(connectorId, 'rotate');
+}
+
+export async function updateOAuthClient(input: {
+  clientId: string;
+  clientSecret: string;
+}): Promise<{ ok: true }> {
+  const res = await fetchApi(`${API_URL}/api/settings/oauth`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw await settingsError(res, 'OAuth update failed');
+  return (await res.json()) as { ok: true };
+}
+
+export async function updateAdminEmails(emails: string[]): Promise<{ ok: true; admins: string[] }> {
+  const res = await fetchApi(`${API_URL}/api/settings/admins`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emails }),
+  });
+  // 422 SELF_LOCKOUT / 400 INVALID_ADMIN_EMAIL both carry an actionable
+  // message; surface it verbatim.
+  if (!res.ok) throw await settingsError(res, 'Admin update failed');
+  return (await res.json()) as { ok: true; admins: string[] };
+}
+
+export async function updateAllowlist(emails: string[]): Promise<{ ok: true; emails: string[] }> {
+  const res = await fetchApi(`${API_URL}/api/settings/allowlist`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ emails }),
+  });
+  if (!res.ok) throw await settingsError(res, 'Allow-list update failed');
+  return (await res.json()) as { ok: true; emails: string[] };
+}
+
 export async function fetchMcpInfo(): Promise<McpServerInfo> {
   // Only `authRequired` and `transport` are read by the UI — the endpoint
   // also returns the tool catalog but the page renders that from a static

@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-10
 updated: 2026-06-11
 author: claude-session-2026-06-10
@@ -10,6 +10,8 @@ tags: [web-ui, dockerfile, build, deploy]
 ---
 
 # Fixing web-ui Dockerfile `pnpm: not found` build failure
+
+> **SHIPPED & DEPLOYED** (#57 + follow-on prod fixes, 2026-06). Archived.
 
 ## Scope
 

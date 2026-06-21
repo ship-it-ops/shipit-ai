@@ -85,6 +85,26 @@ export class SetupService {
     this.env.SHIPIT_AUTH_ADMINS = trimmed;
   }
 
+  // CSV-aware variant of setAdminEmail: replaces the full admin list rather
+  // than overwriting a single value. Used by the admin Portal Settings editor
+  // (active mode) where the operator edits the whole roster at once. Same
+  // durability model as setAdminEmail — GSM is the durable home, the env write
+  // makes the new list visible this process, the next boot re-hydrates it.
+  async setAdminEmails(emails: string[]): Promise<void> {
+    const trimmed = emails.map((e) => e.trim()).filter((e) => e.length > 0);
+    if (trimmed.length === 0) {
+      throw new InvalidAdminEmailError('(empty list)');
+    }
+    for (const email of trimmed) {
+      if (!EMAIL_RE.test(email)) {
+        throw new InvalidAdminEmailError(email);
+      }
+    }
+    const csv = trimmed.join(',');
+    await this.secretStore.write('auth-admin-emails', csv);
+    this.env.SHIPIT_AUTH_ADMINS = csv;
+  }
+
   // Persist the login OAuth App's client id/secret. "Sign in with GitHub"
   // runs on a classic OAuth App the operator creates by hand (GitHub has
   // no manifest/one-click flow for OAuth Apps); the wizard collects the

@@ -17,7 +17,7 @@
 // while overlapping claims (`login`) stay below the connector's confidence so
 // the connector keeps winning them.
 import type { CanonicalEntity, CanonicalNode, PropertyClaim } from '@shipit-ai/shared';
-import { buildPersonCanonicalId, buildLinkingKey } from '@shipit-ai/shared';
+import { buildPersonCanonicalId, buildLinkingKey, deriveContentVersion } from '@shipit-ai/shared';
 
 // Below the connector's 0.9 so overlapping claims (login) resolve to the
 // connector under the default HIGHEST_CONFIDENCE strategy; name/email are
@@ -59,12 +59,11 @@ export function buildLoginPersonEntity(
   now: Date = new Date(),
 ): CanonicalEntity {
   const iso = now.toISOString();
-  // Coarse `_event_version` (date bucket) — the producer folds it into the
-  // idempotency key (`<connector>~<id>~<version>`), so repeated logins on the
-  // same day dedupe instead of writing on every callback. `_event_version`
-  // is only ever used for that key (never compared numerically), so a date
-  // string coexists safely with the connector's integer version.
-  const eventVersion = iso.slice(0, 10); // YYYY-MM-DD
+  // `_event_version` is the freshness/ordering token (Cut B). A login Person has
+  // no source timestamp, so — like the connector's Team/Person nodes — it gets a
+  // stable content hash over the identifying fields (NO `now`, so repeated logins
+  // with an unchanged profile dedupe; a profile change writes). Opaque/unorderable,
+  // which is correct: login-sourced Person freshness is not chronologically ranked.
 
   // GitHub → login-keyed (merges with the connector Person). OIDC → email-keyed
   // (best-effort; will NOT merge with a GitHub-connector Person — documented
@@ -103,7 +102,7 @@ export function buildLoginPersonEntity(
     _source_org: 'login',
     _source_id: sourceId,
     _last_synced: iso,
-    _event_version: eventVersion,
+    _event_version: deriveContentVersion(properties),
   };
 
   // No edges — the GitHub connector owns team-membership relations.

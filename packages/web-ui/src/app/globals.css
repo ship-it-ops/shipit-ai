@@ -1,9 +1,9 @@
 /**
  * Global stylesheet for ShipIt-AI web-ui.
  *
- * The design system's own globals.css (`@ship-it-ui/ui/styles/globals.css`)
- * imports Geist via `@fontsource-variable/geist` from CSS, which the Next 14 +
- * Tailwind v4-beta.3 PostCSS chain doesn't rebase the relative font URLs for —
+ * The design system's own base stylesheet (`@ship-it-ui/ui/src/styles/globals.base.css`)
+ * imports Geist via `@fontsource-variable/geist` from CSS, which the Next +
+ * Tailwind v4 PostCSS chain doesn't rebase the relative font URLs for —
  * webpack ends up looking for `./files/*.woff2` next to this file. Workaround:
  * pull in the DS pieces (tokens, animations, @theme inline, @layer base) here
  * and load Geist via JS imports in `layout.tsx`, which *does* go through the
@@ -25,8 +25,8 @@
 
 /*
  * `@theme inline` mirrors the DS's bridge between CSS variables and Tailwind
- * utility names. Mirrors `@ship-it-ui/ui/src/styles/globals.css` — keep in sync
- * if upstream tokens change.
+ * utility names. Mirrors `@ship-it-ui/ui/src/styles/globals.base.css` — keep in
+ * sync if upstream tokens change.
  */
 @theme inline {
   --color-bg: var(--color-bg);
@@ -41,13 +41,18 @@
   --color-accent-text: var(--color-accent-text);
   --color-accent-dim: var(--color-accent-dim);
   --color-accent-glow: var(--color-accent-glow);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-soft-text: var(--color-accent-soft-text);
   --color-ok: var(--color-ok);
   --color-warn: var(--color-warn);
   --color-err: var(--color-err);
   --color-purple: var(--color-purple);
   --color-pink: var(--color-pink);
 
-  --color-on-accent: #0a0a0b;
+  /* text-on-accent foreground. Now a theme-aware token shipped by the DS
+     (@ship-it-ui/tokens: #0a0a0b dark / #ffffff light) — the local per-theme
+     override was removed once the DS upstreamed it. */
+  --color-on-accent: var(--color-on-accent);
 
   --color-ok-fg: var(--color-ok-fg);
   --color-warn-fg: var(--color-warn-fg);
@@ -60,8 +65,22 @@
   --color-cta-from: var(--color-cta-from);
   --color-cta-to: var(--color-cta-to);
 
+  /* Consumer-marketplace semantics (rating/verified/sale). */
+  --color-rating: var(--color-rating);
+  --color-rating-dim: var(--color-rating-dim);
+  --color-verified: var(--color-verified);
+  --color-sale: var(--color-sale);
+  --color-sale-text: var(--color-sale-text);
+
   --font-sans: var(--font-family-sans);
   --font-mono: var(--font-family-mono);
+  /* Display families bridge to token vars; the actual webfonts only render if
+     loaded via JS in layout.tsx (CSS @import of fonts breaks Next URL rebasing,
+     same reason this whole bridge is re-declared locally). Unused today; they
+     fall back to system-ui/serif until a consumer adds the @fontsource pkgs. */
+  --font-display-tech: var(--font-family-display-tech);
+  --font-display-bold: var(--font-family-display-bold);
+  --font-display-serif: var(--font-family-display-serif);
 
   --text-eyebrow: var(--font-size-eyebrow);
   --text-mono: var(--font-size-mono);
@@ -72,6 +91,8 @@
   --text-h2: var(--font-size-h2);
   --text-h1: var(--font-size-h1);
   --text-display: var(--font-size-display);
+  --text-display-lg: var(--font-size-display-lg);
+  --text-display-xl: var(--font-size-display-xl);
 
   --font-weight-light: var(--font-weight-light);
   --font-weight-regular: var(--font-weight-regular);
@@ -85,6 +106,7 @@
   --tracking-wide: var(--tracking-wide);
   --tracking-xwide: var(--tracking-xwide);
 
+  --spacing-px: var(--space-px);
   --spacing-1: var(--space-1);
   --spacing-2: var(--space-2);
   --spacing-3: var(--space-3);
@@ -114,6 +136,35 @@
   --z-popover: var(--z-popover);
   --z-toast: var(--z-toast);
   --z-tooltip: var(--z-tooltip);
+
+  /* Mobile — touch & layout dimensions (h-row, h-tabbar, min-h-touch). */
+  --spacing-touch: var(--touch-min);
+  --spacing-touch-comfortable: var(--touch-comfortable);
+  --spacing-row: var(--row-h);
+  --spacing-row-lg: var(--row-h-lg);
+  --spacing-tabbar: var(--tabbar-h);
+  --spacing-navbar: var(--navbar-h);
+  /* Screen-edge padding (`p-gutter`). The DS renamed this key from `screen` to
+     `gutter` (DS ui 0.0.20) — the old `screen` key collided with Tailwind's
+     reserved viewport keyword and shadowed `h-screen`/`w-screen` (100vh → 16px).
+     `gutter` is safe; see scars/tailwind-spacing-screen-key-shadows-h-screen.md. */
+  --spacing-gutter: var(--screen-pad);
+  --spacing-gutter-lg: var(--screen-pad-lg);
+
+  /* Mobile — bumped type scale (text-m-body, text-m-h1, …). */
+  --text-m-eyebrow: var(--font-size-m-eyebrow);
+  --text-m-mono: var(--font-size-m-mono);
+  --text-m-body: var(--font-size-m-body);
+  --text-m-body-lg: var(--font-size-m-body-lg);
+  --text-m-h4: var(--font-size-m-h4);
+  --text-m-h3: var(--font-size-m-h3);
+  --text-m-h2: var(--font-size-m-h2);
+  --text-m-h1: var(--font-size-m-h1);
+
+  /* Mobile — radii (rounded-m-tab, rounded-m-card, rounded-m-sheet). */
+  --radius-m-tab: var(--radius-m-tab);
+  --radius-m-card: var(--radius-m-card);
+  --radius-m-sheet: var(--radius-m-sheet);
 }
 
 @layer base {
@@ -122,6 +173,12 @@
     color: var(--color-text);
     background: var(--color-bg);
     font-feature-settings: 'cv11', 'ss01';
+    /* Pairs the UA scrollbar/form-control chrome to the active theme.
+     * Default is dark to match :root; the light override flips it. */
+    color-scheme: dark;
+  }
+  html[data-theme='light'] {
+    color-scheme: light;
   }
 
   body {
@@ -254,6 +311,24 @@
   to {
     opacity: 1;
     transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
   }
 }
 

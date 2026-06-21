@@ -73,6 +73,8 @@ import {
   useUpdateGitHubApp,
 } from '@/lib/hooks/use-connectors';
 import { useQueryClient } from '@tanstack/react-query';
+import { ScheduleField } from './schedule-field';
+import { DEFAULT_SCHEDULE, scheduleLabel } from '@/lib/schedule';
 
 interface AddGitHubConnectorWizardProps {
   open: boolean;
@@ -176,6 +178,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   const [name, setName] = useState('');
   const [scope, setScope] = useState<ConnectorScope>(DEFAULT_SCOPE);
   const [entities, setEntities] = useState<ConnectorEntities>(DEFAULT_ENTITIES);
+  const [schedule, setSchedule] = useState(DEFAULT_SCHEDULE);
 
   // App-identity state. `mode` defaults to 'per-org' because GitHub Apps
   // created via our manifest are private ("Only on this account") and
@@ -554,6 +557,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
         name,
         installationId,
         org,
+        schedule,
         scope,
         entities,
         app:
@@ -1127,7 +1131,13 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
             />
           </ConfigureSection>
 
-          {/* Section 3: entity-type toggles. Defaults are reasonable so
+          {/* Section 3: sync cadence. Defaults to 30 min; the field warns
+              (without blocking) when the user picks a very frequent cadence. */}
+          <ConfigureSection title="Sync schedule">
+            <ScheduleField value={schedule} onChange={setSchedule} />
+          </ConfigureSection>
+
+          {/* Section 4: entity-type toggles. Defaults are reasonable so
               most users skim past this. */}
           <ConfigureSection title="Entity types to sync">
             <div className="grid grid-cols-2 gap-2">
@@ -1175,6 +1185,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
                     : `shared (new: ${sharedAppId})`
                   : `per-org override: ${overrideAppId}`,
             },
+            { label: 'Schedule', value: scheduleLabel(schedule) },
             { label: 'Repo include', value: scope.repos.include.join(', ') || '**' },
             { label: 'Repo exclude', value: scope.repos.exclude.join(', ') || '—' },
             { label: 'Cap', value: scope.cappedAt ?? 'no cap' },

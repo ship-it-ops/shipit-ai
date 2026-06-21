@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-15
 updated: 2026-06-15
 author: claude-session-2026-06-15-confidence
@@ -10,6 +10,10 @@ tags: [confidence, claims, verification, reconciliation]
 ---
 
 # Per-field confidence + verification — implemented, NOT committed
+
+> **SHIPPED & DEPLOYED** (#74, 2026-06). Archived. Deferred follow-ups
+> (write-time confidence snapshot, Bayesian engine, per-property independence,
+> RBAC on write endpoints) remain tracked in the decision + plan.
 
 Implements [per-field-confidence-and-verification](../decisions/per-field-confidence-and-verification.md).
 

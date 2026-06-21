@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-14
 updated: 2026-06-14
 author: claude-session-2026-06-14
@@ -10,6 +10,8 @@ tags: [github, connectors, wizard, manifest, ux]
 ---
 
 # Pre-launch GitHub org existence check in the Add-Connector wizard
+
+> **SHIPPED & DEPLOYED** (51d3dcf / #72, 2026-06). Archived.
 
 ## Scope
 

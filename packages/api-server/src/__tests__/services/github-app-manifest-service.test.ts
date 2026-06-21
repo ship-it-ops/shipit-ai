@@ -246,6 +246,105 @@ describe('GitHubAppManifestService — GSM persistence', () => {
   });
 });
 
+// buildManifest reads the template at REQUEST time + substitutes the runtime
+// URLs, and exchangeAndPersist POSTs the conversion code to GitHub. These cover
+// #8's gaps the GSM-persistence block above doesn't: the request-time template
+// ENOENT (the setup-wizard-manifest-launch scar) surfacing a clear error rather
+// than a cryptic 500, the URL substitution, and the conversion POST shape.
+describe('GitHubAppManifestService — buildManifest + conversion POST shape', () => {
+  let tmpDir: string;
+
+  afterEach(() => {
+    if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function svcWithTemplate(
+    templatePath: string,
+    fetchImpl?: typeof fetch,
+  ): GitHubAppManifestService {
+    return new GitHubAppManifestService({
+      templatePath,
+      appService: makeStubAppService(),
+      keyDir: join(tmpDir, 'keys'),
+      fetchImpl: fetchImpl ?? makeFetchMock(conversionPayload),
+    });
+  }
+
+  it('substitutes redirect_url + hook_attributes from the runtime args', () => {
+    tmpDir = makeTmpDir();
+    const svc = svcWithTemplate(writeManifestTemplate(tmpDir));
+
+    const { manifest, webhookOmitted } = svc.buildManifest({
+      webhookUrl: 'https://portal.example.com/api/webhooks/github',
+      redirectUrl: 'https://portal.example.com/api/connectors/github/app-manifest-callback',
+    });
+
+    expect(webhookOmitted).toBe(false);
+    expect(manifest.redirect_url).toBe(
+      'https://portal.example.com/api/connectors/github/app-manifest-callback',
+    );
+    expect(manifest.hook_attributes).toEqual({
+      url: 'https://portal.example.com/api/webhooks/github',
+      active: true,
+    });
+    // Connector-only manifest — never carries login callback_urls.
+    expect(manifest.callback_urls).toBeUndefined();
+  });
+
+  it('throws a CLEAR, actionable error when the template is absent at request time', () => {
+    tmpDir = makeTmpDir();
+    // Point at a path that was never written — simulates a broken image where
+    // the template didn't make it into the deploy output.
+    const missing = join(tmpDir, 'does-not-exist.json');
+    const svc = svcWithTemplate(missing);
+
+    expect(() =>
+      svc.buildManifest({ webhookUrl: 'https://x.test/h', redirectUrl: 'https://x.test/cb' }),
+    ).toThrow(/manifest template not readable/);
+    // The message names the path and the override env so an operator can fix it,
+    // instead of a bare "ENOENT" bubbling up as a cryptic 500.
+    expect(() =>
+      svc.buildManifest({ webhookUrl: 'https://x.test/h', redirectUrl: 'https://x.test/cb' }),
+    ).toThrow(/SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE/);
+  });
+
+  it('POSTs the conversion code to the GitHub manifest-conversion endpoint with the API headers', async () => {
+    tmpDir = makeTmpDir();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(conversionPayload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch;
+    const svc = svcWithTemplate(writeManifestTemplate(tmpDir), fetchMock);
+
+    await svc.exchangeAndPersist('the-code-42', {});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe('https://api.github.com/app-manifests/the-code-42/conversions');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toMatchObject({
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    });
+  });
+
+  it('surfaces a clear error when GitHub rejects the conversion (non-2xx)', async () => {
+    tmpDir = makeTmpDir();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('code expired', { status: 422, statusText: 'Unprocessable Entity' }),
+      ) as unknown as typeof fetch;
+    const svc = svcWithTemplate(writeManifestTemplate(tmpDir), fetchMock);
+
+    await expect(svc.exchangeAndPersist('stale-code', {})).rejects.toThrow(
+      /conversion failed: HTTP 422/,
+    );
+  });
+});
+
 // The template must ship inside the api-server package: deployed images are
 // `pnpm deploy --prod` output and never contain the repo root, so resolving
 // the template relative to the config file's directory (the old behavior)

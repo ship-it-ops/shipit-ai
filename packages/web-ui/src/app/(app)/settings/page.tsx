@@ -1,9 +1,12 @@
 'use client';
 
+// User preferences (reached from the user menu). Account-wide, per-user
+// settings only. Admin/instance-level configuration (GitHub webhooks, login &
+// access, instance IdP/export) lives on the admin-only /admin/settings page,
+// reached from the sidebar Admin group.
 import { Badge, Card, Checkbox, Tabs, TabsList, Tab, TabsContent } from '@ship-it-ui/ui';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { ApiKeysTab } from '@/components/settings/api-keys-tab';
-import { InstanceTab } from '@/components/settings/instance-tab';
 
 export default function SettingsPage() {
   return (
@@ -11,7 +14,7 @@ export default function SettingsPage() {
       <header>
         <h1 className="text-text text-[22px] font-semibold tracking-tight">Settings</h1>
         <p className="text-text-muted text-[13px]">
-          Account-wide preferences. Theme is persisted to a cookie and survives reloads.
+          Your personal preferences. Theme is persisted to a cookie and survives reloads.
         </p>
       </header>
 
@@ -20,7 +23,6 @@ export default function SettingsPage() {
           <Tab value="appearance">Appearance</Tab>
           <Tab value="notifications">Notifications</Tab>
           <Tab value="api-keys">API Keys</Tab>
-          <Tab value="instance">Instance</Tab>
         </TabsList>
 
         <TabsContent value="appearance" className="mt-4 flex flex-col gap-4">
@@ -66,10 +68,6 @@ export default function SettingsPage() {
 
         <TabsContent value="api-keys" className="mt-4">
           <ApiKeysTab />
-        </TabsContent>
-
-        <TabsContent value="instance" className="mt-4">
-          <InstanceTab />
         </TabsContent>
       </Tabs>
     </div>

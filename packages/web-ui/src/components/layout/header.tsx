@@ -34,6 +34,7 @@ const TRAILS: Record<string, Trail> = {
   '/admin/audit': { section: { label: 'Admin' }, page: 'Audit Log' },
   '/admin/access': { section: { label: 'Admin' }, page: 'Access Control' },
   '/admin/agent-activity': { section: { label: 'Admin' }, page: 'Agent Activity' },
+  '/admin/settings': { section: { label: 'Admin' }, page: 'Settings' },
   '/profile': { page: 'Profile' },
   '/settings': { page: 'Settings' },
 };

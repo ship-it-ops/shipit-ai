@@ -65,6 +65,17 @@ As of 2026-06-07 the affected workspaces are: `shared` (6 files), `event-bus` (1
 
 Then verify with `pnpm install && pnpm turbo typecheck && pnpm turbo test --force && pnpm turbo build`.
 
+> **2026-06-20 update — this fix recipe NO LONGER HOLDS at `vitest@4.1.9` + TypeScript `6.0.3`.**
+> Re-attempting the vitest 3→4 bump on `next-release` and adding `@types/node` to every Node-API
+> workspace (shared, event-bus, core-writer, api-server, mcp-server, connectors/github) did NOT
+> restore typecheck — `shared` still failed with `Cannot find namespace 'NodeJS'` / `Cannot find name
+'node:fs'` in both src and test files, with `@types/node` correctly symlinked into the workspace at
+> BOTH 22 and 25. So vitest 4 remains deferred (see the 2026-06-20 round in
+> [dependabot-resolution-strategy](../decisions/dependabot-resolution-strategy.md)). Key relief valve:
+> **vitest carries no security advisory** — the vulnerable transitive is `vite`, which we override
+> independently — so staying on `vitest@3` costs nothing on security. A real vitest-4 adoption now
+> needs a dedicated investigation into vitest-4 type resolution under pnpm-10 + TS-6, not this recipe.
+
 ## Related
 
 - [dependabot-resolution-strategy](../decisions/dependabot-resolution-strategy.md) — the 2026-06-07 update lists this scar as a deferral reason

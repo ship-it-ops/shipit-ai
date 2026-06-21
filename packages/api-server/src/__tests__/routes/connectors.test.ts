@@ -72,7 +72,7 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(body.type).toBe('github');
     expect(body.org).toBe('shipitops');
     // Defaults from Zod should be filled in
-    expect(body.schedule).toBe('*/15 * * * *');
+    expect(body.schedule).toBe('*/30 * * * *');
     expect(body.scope.cappedAt).toBe(100);
     // No App override unless caller asked for one — verifies the registry
     // doesn't materialize an empty `app: {}` that would leak into YAML.
@@ -120,6 +120,18 @@ describe('Connector routes (CRUD + ETag)', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('PRIVATE_KEY_PATH_NOT_ALLOWED');
+  });
+
+  it('POST /api/connectors rejects a malformed cron schedule', async () => {
+    // The schema's cron-shape refine guards BullMQ from a garbage pattern that
+    // would otherwise throw at scheduler start time. A 4-field string is invalid.
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { ...validPayload, id: 'github-bad-cron', schedule: 'not a cron' },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
   });
 
   it('PATCH /api/connectors/:id with app:null clears the override', async () => {
@@ -770,6 +782,27 @@ describe('GitHub App manifest flow', () => {
     // Static fields from the template flow through untouched.
     expect(body.name).toBe('ShipIt-AI Test');
     expect(body.default_permissions).toEqual({ contents: 'read' });
+  });
+
+  it('GET /manifest derives the callback from x-forwarded-host over the internal Host (behind a proxy)', async () => {
+    // Behind a TLS-terminating proxy the pod's Host is the internal service
+    // address; the public hostname GitHub must redirect back to arrives in
+    // x-forwarded-host. If the callback used the internal Host, GitHub's
+    // redirect after App creation would 404 — the first-login redirect_uri
+    // failure mode. manifestUrlsFromRequest must prefer x-forwarded-host.
+    const res = await server.inject({
+      method: 'GET',
+      url: '/api/connectors/github/manifest',
+      headers: {
+        host: 'api-server.internal.svc:3001',
+        'x-forwarded-host': 'portal.public.example.com',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().redirect_url).toBe(
+      'https://portal.public.example.com/api/connectors/github/app-manifest-callback',
+    );
   });
 
   it('GET /manifest/launch returns auto-submitting HTML form posting to github.com', async () => {

@@ -66,7 +66,17 @@ entities showing stale "Synced" — doesn't fix the complaint); short idempotenc
 TTL (reintroduces full re-writes every run); UI relabel to "Last changed" +
 show connector run time (more accurate label but doesn't make "Synced" fresh).
 
-## KNOWN DEEPER ISSUE (separate, not fixed here)
+## UPDATE 2026-06-19 — deeper issue fixed by Webhook Cut B
+
+The "KNOWN DEEPER ISSUE" below (constant `_event_version` suppressing real content
+changes) is now addressed. `_event_version` is content-derived (epoch ms for
+timestamped entities; `ch_` content hash otherwise), the idempotency/dedup key is a
+separate content fingerprint (`deriveNodeContentHash`) so a genuine change is never
+deduped away, and the core-writer has an atomic in-Cypher freshness guard that skips
+only strictly-older deliveries (and never moves `_last_synced` backward). See
+[webhook-cut-b-content-freshness](../plans/webhook-cut-b-content-freshness.md).
+
+## KNOWN DEEPER ISSUE (separate — FIXED by Cut B, see update above)
 
 The constant `_event_version: 1` also suppresses real CONTENT changes: if a
 repo's language/visibility/etc. changes, the normalizer still emits

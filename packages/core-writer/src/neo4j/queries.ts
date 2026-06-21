@@ -1,32 +1,69 @@
 import type { ManagedTransaction } from 'neo4j-driver';
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
 
+/**
+ * Atomically upsert a node with a FRESHNESS GUARD (Cut B).
+ *
+ * The compare-and-set is a SINGLE Cypher transaction (not an app-level
+ * read-then-write) so it is correct under BullMQ worker concurrency, multiple
+ * core-writer replicas, and managed-transaction retries — the read-then-write
+ * variant is a TOCTOU race that lets an older delivery overwrite newer state.
+ * It also sidesteps neo4j-driver lossless-Integer typing: the comparison runs
+ * against the live stored value in Cypher using native numeric ordering, so
+ * there is no JS `typeof`/`toNumber` dance on the stored side.
+ *
+ * Reject (skip the content write, keep stored) iff the incoming version is
+ * COMPARABLE (a finite epoch number) AND the stored version is STRICTLY greater.
+ * Strict `>` (not `>=`) is deliberate: equal-version-but-different-content already
+ * passed the content-hash dedup layer, so it is a real change and must be written
+ * (last-writer-wins for the same instant). All other cases write:
+ *   - first write (stored null), incomparable incoming (content-hash version),
+ *   - legacy stored `1` vs an epoch (1 > epoch is false), and
+ *   - a stored string vs a numeric incoming (`string > number` → null → not rejected).
+ *
+ * Returns `true` when the node was written, `false` when the guard rejected it.
+ */
 export async function mergeNode(
   tx: ManagedTransaction,
   node: CanonicalNode,
   mergedClaims: PropertyClaim[],
   effectiveProperties: Record<string, unknown>,
-): Promise<void> {
+): Promise<boolean> {
   // Build effective property keys (e.g., name -> name_effective)
   const effectiveProps: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(effectiveProperties)) {
     effectiveProps[key] = value;
   }
 
+  // Only a finite epoch-ms number is chronologically orderable. Content-hash
+  // versions (sentinel-prefixed strings) are opaque → not comparable → always write.
+  const comparable =
+    typeof node._event_version === 'number' && Number.isFinite(node._event_version);
+  const incoming = comparable ? (node._event_version as number) : null;
+
   const query = `
     MERGE (n:${sanitizeLabel(node.label)} {id: $id})
-    SET n += $properties,
-        n += $effectiveProps,
-        n._claims = $claims,
-        n._last_synced = $lastSynced,
-        n._source_system = $sourceSystem,
-        n._source_org = $sourceOrg,
-        n._source_id = $sourceId,
-        n._event_version = $eventVersion
+    WITH n, coalesce(
+      $comparable AND n._event_version IS NOT NULL AND n._event_version > $incoming,
+      false
+    ) AS reject
+    FOREACH (_ IN CASE WHEN reject THEN [] ELSE [1] END |
+      SET n += $properties,
+          n += $effectiveProps,
+          n._claims = $claims,
+          n._last_synced = $lastSynced,
+          n._source_system = $sourceSystem,
+          n._source_org = $sourceOrg,
+          n._source_id = $sourceId,
+          n._event_version = $eventVersion
+    )
+    RETURN NOT reject AS written
   `;
 
-  await tx.run(query, {
+  const result = await tx.run(query, {
     id: node.id,
+    comparable,
+    incoming,
     properties: sanitizeProperties(node.properties),
     effectiveProps: sanitizeProperties(effectiveProps),
     claims: JSON.stringify(mergedClaims),
@@ -34,25 +71,30 @@ export async function mergeNode(
     sourceSystem: node._source_system,
     sourceOrg: node._source_org,
     sourceId: node._source_id,
-    eventVersion:
-      typeof node._event_version === 'number' ? node._event_version : node._event_version,
+    eventVersion: node._event_version,
   });
+  return result.records[0]?.get('written') === true;
 }
 
 /**
  * Refresh only `_last_synced` on an existing node — no claim/property writes.
  * Used on the idempotent-skip path so an unchanged-but-re-confirmed entity's
- * "Synced" time advances. No-ops if the node doesn't exist yet (MATCH misses).
+ * "Synced" time advances. Conditional + monotonic: only ADVANCES `_last_synced`
+ * (ISO-8601 sorts chronologically as a string), never moves it backward — a
+ * replayed/retried OLDER delivery whose content key is already recorded must not
+ * drag a fresher node's "Synced" time back. No-ops if the node doesn't exist yet.
  */
 export async function touchLastSynced(
   tx: ManagedTransaction,
   nodeId: string,
   lastSynced: string,
 ): Promise<void> {
-  await tx.run(`MATCH (n {id: $id}) SET n._last_synced = $lastSynced`, {
-    id: nodeId,
-    lastSynced,
-  });
+  await tx.run(
+    `MATCH (n {id: $id})
+     WHERE n._last_synced IS NULL OR n._last_synced < $lastSynced
+     SET n._last_synced = $lastSynced`,
+    { id: nodeId, lastSynced },
+  );
 }
 
 export async function mergeEdge(tx: ManagedTransaction, edge: CanonicalEdge): Promise<void> {
@@ -156,15 +198,21 @@ export async function getExistingClaims(
 /**
  * Sanitize a label/type for safe use in Cypher.
  * Only allows alphanumeric and underscore characters.
+ *
+ * Exported for unit testing: this output is interpolated DIRECTLY into Cypher
+ * (`MERGE (n:${sanitizeLabel(...)} ...)`), unlike property values which go
+ * through bound parameters — so its behavior is injection-relevant and locked
+ * by tests in queries.test.ts.
  */
-function sanitizeLabel(label: string): string {
+export function sanitizeLabel(label: string): string {
   return label.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
 /**
  * Sanitize properties for Neo4j (convert non-primitive values to JSON strings).
+ * Exported for unit testing.
  */
-function sanitizeProperties(props: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeProperties(props: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
     if (key.startsWith('_')) continue; // Skip internal properties

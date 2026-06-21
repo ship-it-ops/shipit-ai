@@ -53,10 +53,45 @@ function makeEnvelope(nodes: CanonicalNode[], edges: CanonicalEdge[]): EventEnve
 
 function createMockNodeWriter(): NodeWriter {
   return {
-    writeNode: vi.fn().mockResolvedValue(undefined),
+    writeNode: vi.fn().mockResolvedValue({ written: true }),
     writeEdge: vi.fn().mockResolvedValue(undefined),
     getExistingClaims: vi.fn().mockResolvedValue([]),
     touchLastSynced: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/**
+ * Stateful NodeWriter double that emulates the atomic in-Cypher freshness guard +
+ * conditional touch, so tests can exercise out-of-order / intra-batch ordering that
+ * a stateless mock cannot (audit test-strategist-006). `writeNode` rejects when a
+ * strictly-newer comparable version is already stored; `touchLastSynced` only advances.
+ */
+function createStatefulNodeWriter(): NodeWriter & {
+  store: Map<string, { version: number | string; lastSynced: string }>;
+} {
+  const store = new Map<string, { version: number | string; lastSynced: string }>();
+  return {
+    store,
+    writeNode: vi.fn(async (node) => {
+      const existing = store.get(node.id);
+      const comparable = typeof node._event_version === 'number';
+      if (
+        existing &&
+        comparable &&
+        typeof existing.version === 'number' &&
+        existing.version > (node._event_version as number)
+      ) {
+        return { written: false };
+      }
+      store.set(node.id, { version: node._event_version, lastSynced: node._last_synced });
+      return { written: true };
+    }),
+    writeEdge: vi.fn().mockResolvedValue(undefined),
+    getExistingClaims: vi.fn().mockResolvedValue([]),
+    touchLastSynced: vi.fn(async (nodeId: string, lastSynced: string) => {
+      const existing = store.get(nodeId);
+      if (existing && lastSynced > existing.lastSynced) existing.lastSynced = lastSynced;
+    }),
   };
 }
 
@@ -178,9 +213,9 @@ describe('CoreWriter', () => {
 
   it('reports errors without stopping batch processing', async () => {
     vi.mocked(nodeWriter.writeNode)
-      .mockResolvedValueOnce(undefined) // first node succeeds
+      .mockResolvedValueOnce({ written: true }) // first node succeeds
       .mockRejectedValueOnce(new Error('Write failed')) // second fails
-      .mockResolvedValueOnce(undefined); // third succeeds
+      .mockResolvedValueOnce({ written: true }); // third succeeds
 
     const event = makeEnvelope([makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')], []);
 
@@ -188,6 +223,122 @@ describe('CoreWriter', () => {
     expect(result.nodesWritten).toBe(2);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('Write failed');
+  });
+
+  describe('freshness guard (Cut B)', () => {
+    const EPOCH_OLD = 1_718_000_000_000;
+    const EPOCH_NEW = 1_719_000_000_000;
+
+    function versionedNode(
+      name: string,
+      version: number | string,
+      lastSynced: string,
+    ): CanonicalNode {
+      const n = makeNode(name);
+      n._event_version = version;
+      n._last_synced = lastSynced;
+      // make content differ from the default so the content-hash dedup key differs
+      n.properties.rev = String(version);
+      return n;
+    }
+
+    it('writes a newer delivery and skips a strictly-older one (criterion 3)', async () => {
+      const stateful = createStatefulNodeWriter();
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      const r1 = await writer.processEvent(
+        makeEnvelope([versionedNode('repo-a', EPOCH_NEW, '2026-06-21T00:00:00Z')], []),
+      );
+      expect(r1.nodesWritten).toBe(1);
+
+      const r2 = await writer.processEvent(
+        makeEnvelope([versionedNode('repo-a', EPOCH_OLD, '2026-06-10T00:00:00Z')], []),
+      );
+      expect(r2.nodesWritten).toBe(0);
+      expect(r2.freshnessSkipped).toBe(1);
+      // stored version + last_synced stay at the newer values (no backward move)
+      const stored = stateful.store.get('shipit://repository/default/org/repo-a');
+      expect(stored?.version).toBe(EPOCH_NEW);
+      expect(stored?.lastSynced).toBe('2026-06-21T00:00:00Z');
+    });
+
+    it('writes an equal-version delivery whose content differs (passed content dedup)', async () => {
+      const stateful = createStatefulNodeWriter();
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      await writer.processEvent(
+        makeEnvelope([versionedNode('p', EPOCH_NEW, '2026-06-21T00:00:00Z')], []),
+      );
+      const changed = versionedNode('p', EPOCH_NEW, '2026-06-22T00:00:00Z');
+      changed.properties.status = 'completed'; // same version, new content
+      const r = await writer.processEvent(makeEnvelope([changed], []));
+      expect(r.nodesWritten).toBe(1);
+      expect(r.freshnessSkipped).toBe(0);
+    });
+
+    it('skips an intra-batch older delivery for the same node (stateful, atomic guard)', async () => {
+      const stateful = createStatefulNodeWriter();
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      const result = await writer.processBatch([
+        makeEnvelope([versionedNode('repo-b', EPOCH_NEW, '2026-06-21T00:00:00Z')], []),
+        makeEnvelope([versionedNode('repo-b', EPOCH_OLD, '2026-06-10T00:00:00Z')], []),
+      ]);
+      expect(result.nodesWritten).toBe(1);
+      expect(result.freshnessSkipped).toBe(1);
+      expect(stateful.store.get('shipit://repository/default/org/repo-b')?.version).toBe(EPOCH_NEW);
+    });
+
+    it('legacy stored version 1 accepts an incoming epoch (no wedge, criterion 5)', async () => {
+      const stateful = createStatefulNodeWriter();
+      stateful.store.set('shipit://repository/default/org/repo-c', {
+        version: 1,
+        lastSynced: '2026-01-01T00:00:00Z',
+      });
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const r = await writer.processEvent(
+        makeEnvelope([versionedNode('repo-c', EPOCH_NEW, '2026-06-21T00:00:00Z')], []),
+      );
+      expect(r.nodesWritten).toBe(1);
+    });
+
+    it('content-hash (incomparable) versions always write — last-writer-wins for hashless entities', async () => {
+      const stateful = createStatefulNodeWriter();
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      await writer.processEvent(
+        makeEnvelope([versionedNode('t', 'ch_aaa', '2026-06-21T00:00:00Z')], []),
+      );
+      const r = await writer.processEvent(
+        makeEnvelope([versionedNode('t', 'ch_bbb', '2026-06-10T00:00:00Z')], []),
+      );
+      expect(r.nodesWritten).toBe(1);
+      expect(r.freshnessSkipped).toBe(0);
+    });
   });
 
   it('reconciles identity and uses existing canonical ID for merge', async () => {

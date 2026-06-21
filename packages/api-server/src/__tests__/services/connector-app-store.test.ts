@@ -140,6 +140,43 @@ describe('ConnectorAppStore', () => {
     expect(fileStore.read).not.toHaveBeenCalled();
   });
 
+  it('setWebhookSecret writes the per-App sidecar (0600, trailing newline) and re-syncs the blob', async () => {
+    const store = fakeGsmStore();
+    const connector = perOrgConnector('gh-a', '777', keyDir);
+    // The PEM must exist on disk for sync() to fold the secret into the blob
+    // (sync only reads the webhook sidecar when the connector has app.id + PEM).
+    writeFileSync(join(keyDir, 'github-app-777.pem'), 'PEM-777', { mode: 0o600 });
+
+    const svc = new ConnectorAppStore({ store, keyDir });
+    await svc.setWebhookSecret('777', 'wh-new-secret', [connector]);
+
+    const secretPath = join(keyDir, 'github-app-777.webhook-secret');
+    expect(readFileSync(secretPath, 'utf-8')).toBe('wh-new-secret\n');
+    expect(statSync(secretPath).mode & 0o777).toBe(0o600);
+
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, { webhookSecret?: string }>;
+    };
+    expect(blob.connectors['gh-a'].webhookSecret).toBe('wh-new-secret');
+  });
+
+  it('setWebhookSecret persists the sidecar even in file mode (no blob write)', async () => {
+    const fileStore: SecretStore = {
+      kind: 'file',
+      read: vi.fn().mockResolvedValue(null),
+      write: vi.fn().mockResolvedValue(undefined),
+    };
+    const svc = new ConnectorAppStore({ store: fileStore, keyDir });
+    await svc.setWebhookSecret('888', 'wh-file-secret', [perOrgConnector('gh-f', '888', keyDir)]);
+
+    // Sidecar still written on disk (the durable home in file mode)...
+    expect(readFileSync(join(keyDir, 'github-app-888.webhook-secret'), 'utf-8')).toBe(
+      'wh-file-secret\n',
+    );
+    // ...but sync() is a no-op for a file-kind store, so no blob write.
+    expect(fileStore.write).not.toHaveBeenCalled();
+  });
+
   it('sync swallows a GSM write failure (durability degrades, mutation does not fail)', async () => {
     const store: SecretStore = {
       kind: 'gsm',

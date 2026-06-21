@@ -165,7 +165,22 @@ export class GitHubAppManifestService {
     webhookOmitted: boolean;
     webhookOmissionReason?: string;
   } {
-    const template = JSON.parse(readFileSync(this.templatePath, 'utf-8')) as RawManifest;
+    // Read the template at REQUEST time (not boot), so a broken image where
+    // the file never made it into the deploy output surfaces here. A raw
+    // readFileSync ENOENT bubbles up as a cryptic 500 on the launch page; wrap
+    // it with the resolved path + the override env var so the operator can act.
+    // See docs/agent/investigations/setup-wizard-manifest-launch-enoent.md.
+    let raw: string;
+    try {
+      raw = readFileSync(this.templatePath, 'utf-8');
+    } catch (err) {
+      throw new Error(
+        `GitHub App manifest template not readable at ${this.templatePath}: ${(err as Error).message}. ` +
+          `It ships inside the api-server package (config/github-app-manifest.json); a broken image build ` +
+          `or a bad SHIPIT_GITHUB_APP_MANIFEST_TEMPLATE override is the usual cause.`,
+      );
+    }
+    const template = JSON.parse(raw) as RawManifest;
     // The `$comment` field is informational only — strip it before
     // GitHub sees the manifest; GitHub treats unknown fields as no-ops
     // but the comment confuses anyone reading the live manifest URL.

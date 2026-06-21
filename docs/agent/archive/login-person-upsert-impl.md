@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-14
 updated: 2026-06-14
 author: claude-session-2026-06-14-login-person
@@ -10,6 +10,8 @@ tags: [auth, graph, person, event-bus, core-writer]
 ---
 
 # Implementing login-user-as-Person upsert
+
+> **SHIPPED & DEPLOYED** (#67, 2026-06). Archived.
 
 ## Scope
 

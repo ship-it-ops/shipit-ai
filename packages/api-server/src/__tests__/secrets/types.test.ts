@@ -49,9 +49,9 @@ describe('secret taxonomy', () => {
     expect(() => assertWritable('auth-admin-emails')).not.toThrow();
     // /api/setup/complete writes the one-way completed latch.
     expect(() => assertWritable('setup-completed')).not.toThrow();
-    // The login allow-list is operator-managed via gcloud — the app only
-    // reads it, so writes are refused like bootstrap secrets.
-    expect(() => assertWritable('auth-allow-list-emails')).toThrow(SecretWriteForbiddenError);
+    // The login allow-list is now app-writable via the admin Portal Settings
+    // editor (the infra addVersion grant is in place).
+    expect(() => assertWritable('auth-allow-list-emails')).not.toThrow();
     // The latch is read directly from the store, never via env.
     expect(ENV_VAR_FOR['setup-completed']).toBeUndefined();
     // The connector-apps blob is app-written (durable per-org connectors) and

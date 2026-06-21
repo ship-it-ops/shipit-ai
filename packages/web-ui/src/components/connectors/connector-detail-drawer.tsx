@@ -39,6 +39,7 @@ import {
   usePatchConnector,
   useTriggerSync,
 } from '@/lib/hooks/use-connectors';
+import { ScheduleField } from './schedule-field';
 
 const statusVariant: Record<string, BadgeProps['variant']> = {
   healthy: 'ok',
@@ -381,9 +382,7 @@ function SettingsTab({
       <Field label="Display name">
         {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} />}
       </Field>
-      <Field label="Cron schedule" hint="Polling cadence as a 5-field cron string.">
-        {(p) => <Input {...p} value={schedule} onChange={(e) => setSchedule(e.target.value)} />}
-      </Field>
+      <ScheduleField value={schedule} onChange={setSchedule} />
       <Checkbox label="Enabled" checked={enabled} onCheckedChange={(c) => setEnabled(c === true)} />
       <div className="flex justify-between gap-2 pt-2">
         <Button variant="ghost" onClick={onDelete}>
