@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-22 | Total notes: 74
+Last updated: 2026-06-22 | Total notes: 75
 
 ## Investigations
 
@@ -26,7 +26,8 @@ Last updated: 2026-06-22 | Total notes: 74
 
 <!-- always-read at session start -->
 
-- [redis-oom-boot-tolerance-impl](status/redis-oom-boot-tolerance-impl.md) | status | active | core | 2026-06-22 | tolerate full/OOM Redis at boot (error listeners + resilient startRunner); unblocks sha-a45d7a4 deploy; implemented, all green, uncommitted
+- [redis-oom-boot-tolerance-impl](status/redis-oom-boot-tolerance-impl.md) | status | active | core | 2026-06-22 | tolerate full/OOM Redis at boot (error listeners + resilient startRunner); MERGED to main (#85, 3c25e8a)
+- [event-log-stream-bound-impl](status/event-log-stream-bound-impl.md) | status | active | core | 2026-06-22 | cut/bound shipit-event-log stream (the real ~825MB OOM key); gated off by default + MAXLEN; implemented, all green, uncommitted
 - [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
 - [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
 - [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
@@ -92,11 +93,11 @@ Last updated: 2026-06-22 | Total notes: 74
 - [cutb-option-b-rewrite-wave](open-questions/cutb-option-b-rewrite-wave.md) | open-question | answered | standard | 2026-06-19 | ANSWERED — Option B + schedule cleanup; one-time re-write wave accepted at current scale
 - [codeowner-edge-out-of-order-ordering](open-questions/codeowner-edge-out-of-order-ordering.md) | open-question | active | standard | 2026-06-19 | edges (CODEOWNER_OF etc.) have no ordering guard; mergeEdge is last-writer-wins — protect or accept?
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
-- [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | active | standard | 2026-06-04 | replay() unused; cut Redis Stream or wire it up
+- [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | answered | standard | 2026-06-22 | RESOLVED — CUT: shipit-event-log gated off by default (+MAXLEN if on); was the ~825MB OOM key
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
-- [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — BullMQ retention bounds shipped #75 + deployed; bigkeys verify pending
+- [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
 
 ## Scars
 
