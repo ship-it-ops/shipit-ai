@@ -76,9 +76,11 @@ function buildEnvelopes(entities: CanonicalEntity[], connectorId: string): Event
 
 export class EventBusProducer {
   private readonly queue: Queue;
-  private readonly streamRedis: Redis;
+  // Null when the event log is disabled (the prod default) — we open NO stream
+  // connection at all in that case, so a producer whose purpose is to NOT write
+  // the stream doesn't hold an idle Redis connection. Non-null ⟺ event log on.
+  private readonly streamRedis: Redis | null;
   private readonly retentionDays: number;
-  private readonly eventLogEnabled: boolean;
   private readonly eventLogMaxLen: number;
 
   constructor(config: ResolvedConfig) {
@@ -90,11 +92,12 @@ export class EventBusProducer {
       // bounded window for debugging instead of the old `removeOnFail: false`.
       defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
     });
-    this.streamRedis = new Redis(config.redisPort, config.redisHost, {
-      maxRetriesPerRequest: null,
-    });
+    // Only open the dedicated stream connection when the event log is enabled.
+    // Off (the default) → no connection opened, nothing to close.
+    this.streamRedis = config.eventLogEnabled
+      ? new Redis(config.redisPort, config.redisHost, { maxRetriesPerRequest: null })
+      : null;
     this.retentionDays = config.retentionDays;
-    this.eventLogEnabled = config.eventLogEnabled;
     this.eventLogMaxLen = config.eventLogMaxLen;
 
     // A BullMQ Queue / ioredis client is an EventEmitter; an emitted 'error'
@@ -107,7 +110,7 @@ export class EventBusProducer {
     this.queue.on('error', (err: Error) => {
       console.warn(`EventBus producer queue Redis error (publish degraded): ${err.message}`);
     });
-    this.streamRedis.on('error', (err: Error) => {
+    this.streamRedis?.on('error', (err: Error) => {
       console.warn(`EventBus producer stream Redis error (publish degraded): ${err.message}`);
     });
   }
@@ -136,7 +139,7 @@ export class EventBusProducer {
     // enabled it is bounded by BOTH a hard size ceiling (`MAXLEN ~`) and the
     // retention-day time trim so it can never blow the maxmemory ceiling again.
     // See the replay-stream-wire-or-cut open question.
-    if (this.eventLogEnabled && envelopes.length > 0) {
+    if (this.streamRedis && envelopes.length > 0) {
       const pipeline = this.streamRedis.pipeline();
       for (const env of envelopes) {
         // `MAXLEN ~ n` caps the stream at ~n entries, trimming inline on every
@@ -164,7 +167,8 @@ export class EventBusProducer {
 
   async close(): Promise<void> {
     await this.queue.close();
-    this.streamRedis.disconnect();
+    // Null when the event log was disabled — nothing was opened.
+    this.streamRedis?.disconnect();
   }
 }
 

@@ -46,8 +46,13 @@ still delivers.
 
 ## Status
 
-Implemented, all green — NOT committed yet (standing rule). Next: commit, push,
-PR to main.
+PR #86 open. Review (ship-reviewed-prs bot) = LGTM; one nit fixed:
+**IN7-RESOURCE** — `streamRedis` was opened unconditionally, so with the flag
+off (prod default) the producer held an idle, never-used Redis connection
+(ironic for a PR about cutting Redis pressure). Now created lazily only when
+`eventLogEnabled` (`Redis | null`), with `publish()` gated on its presence and
+`close()` null-guarded. Tests assert NO stream connection is opened when
+disabled and exactly one when enabled. All green.
 
 ## Ops follow-up (not code)
 

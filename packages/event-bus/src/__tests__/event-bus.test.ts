@@ -57,6 +57,7 @@ vi.mock('bullmq', () => {
 });
 
 import { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
 import { resolveConfig, DEFAULT_CONFIG } from '../config.js';
 import type { ResolvedConfig } from '../config.js';
 import { EventBusProducer, buildIdempotencyKey, EVENT_LOG_STREAM } from '../bullmq/producer.js';
@@ -289,6 +290,8 @@ describe('EventBusProducer', () => {
 
   it('writes events to the Redis Stream with a hard MAXLEN ceiling when the event log is enabled', async () => {
     const producer = new EventBusProducer(TEST_CONFIG); // eventLogEnabled: true
+    // Enabled → exactly one dedicated stream connection is opened.
+    expect(vi.mocked(Redis)).toHaveBeenCalledTimes(1);
     await producer.publish([makeEntity()], 'github-shipitops');
 
     expect(mockPipeline).toHaveBeenCalled();
@@ -308,6 +311,9 @@ describe('EventBusProducer', () => {
 
   it('does NOT write the event-log stream when disabled (the production default) — delivery still happens', async () => {
     const producer = new EventBusProducer({ ...TEST_CONFIG, eventLogEnabled: false });
+    // Disabled → NO idle stream Redis connection is opened (IN7-RESOURCE): the
+    // whole point of cutting the stream is to stop touching Redis for it.
+    expect(vi.mocked(Redis)).not.toHaveBeenCalled();
     await producer.publish([makeEntity()], 'github-shipitops');
 
     // Normal BullMQ delivery is untouched...
@@ -315,6 +321,8 @@ describe('EventBusProducer', () => {
     // ...but the dead-weight replay stream is never written.
     expect(mockPipeline).not.toHaveBeenCalled();
     expect(mockXadd).not.toHaveBeenCalled();
+    // ...and close() must not throw with no stream connection.
+    await expect(producer.close()).resolves.toBeUndefined();
   });
 
   it('does nothing for empty events array', async () => {
