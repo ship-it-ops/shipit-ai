@@ -29,7 +29,7 @@
     "@ship-it-ui/next": "^0.0.18",
     "@shipit-ai/mcp-server": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
-    "@xyflow/react": "^12.3.5",
+    "@xyflow/react": "^12.11.0",
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/geist-mono": "^5.2.8",
     "yaml": "^2.8.3"
