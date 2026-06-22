@@ -1,8 +1,8 @@
 ---
 type: open-question
-status: active
+status: answered
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-22
 author: claude-session-2026-06-04-deployment
 opened: 2026-06-04
 answer-source: maintainer
@@ -10,6 +10,20 @@ tags: [event-bus, replay, redis, cost, yagni]
 ---
 
 # Should the `shipit-event-log` Redis Stream be wired up or cut?
+
+> **ANSWERED & RESOLVED (2026-06-22) — CUT (gated off by default).** This stream
+> turned out to be the dominant share of the 2026-06-22 Redis OOM: `--bigkeys`
+> showed `shipit-event-log` at **~825 MB**, essentially the entire dataset (the
+> BullMQ completed/failed keys were ~0.1 MB — #75's retention bounds freed almost
+> nothing). Because `replay()` is still never called in production, the producer
+> now writes the stream **only when `eventLogEnabled` is true (default false)**,
+> so api-server (which passes only `redisUrl`) stops writing it in prod. When it
+> IS enabled it is hard-bounded by `XADD … MAXLEN ~ eventLogMaxLen` plus the
+> existing time trim, so it can never blow the maxmemory ceiling again. Reversible
+> via config; nothing deleted. The live ~825 MB key still needs a one-time
+> `DEL shipit-event-log` (or `XTRIM`) on the running Redis to reclaim it — the
+> code change only stops further growth. Implemented in branch
+> `fix/event-log-stream-bound`.
 
 ## Context
 

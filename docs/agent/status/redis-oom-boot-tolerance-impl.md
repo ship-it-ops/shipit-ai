@@ -44,9 +44,11 @@ logs that syncs are degraded — no crash.
 
 ## Status
 
-IMPLEMENTED, test-first, all green — NOT committed (standing rule: never
-commit/push without explicit approval). Awaiting approval to commit + the infra
-redeploy of sha-a45d7a4.
+MERGED to main as PR #85 (squash `3c25e8a`, 2026-06-22). Stops the crash. Note
+the FOLLOW-UP: the live Redis is still full — `--bigkeys` showed the real
+dominant key is the `shipit-event-log` stream (~825 MB), addressed separately in
+[event-log-stream-bound-impl](event-log-stream-bound-impl.md). This entry can be
+archived once the demo redeploys and is confirmed healthy.
 
 Done:
 

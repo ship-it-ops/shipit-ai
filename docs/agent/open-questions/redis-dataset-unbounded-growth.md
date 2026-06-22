@@ -2,21 +2,36 @@
 type: open-question
 status: answered
 opened: 2026-06-17
-updated: 2026-06-18
+updated: 2026-06-22
 answer-source: experiment
 importance: standard
-tags: [redis, bullmq, queue-retention, memory]
+tags: [redis, bullmq, queue-retention, memory, event-log-stream]
 ---
 
 # Why has the portal-demo redis dataset grown to ~246 MB, and how do we bound it?
 
-> **ANSWERED & RESOLVED** (2026-06-18). Root cause was unbounded BullMQ
-> completed/failed job retention (sync-scheduler queue + `removeOnFail: false`
-> in the event-bus producer/replay). App-side retention bounds shipped in #75
-> and are now deployed to portal-demo. Replay-stream fate is the still-open
-> [replay-stream-wire-or-cut](replay-stream-wire-or-cut.md). Post-deploy
-> `redis-cli --bigkeys` confirmation of a flat working set is the only
-> remaining verify step.
+> **ANSWERED & RESOLVED** — but the 2026-06-18 answer below NAMED THE WRONG
+> DOMINANT SOURCE. **Correction (2026-06-22, from `redis-cli --bigkeys`):** the
+> dataset is almost entirely ONE key — the `shipit-event-log` Redis **Stream** at
+> **~825 MB**. The BullMQ completed/failed job keys that #75 bounded are
+> negligible (~0.1 MB), so #75 + flushing BullMQ keys frees essentially nothing
+> and leaves Redis full. `shipit-event-log` is an **application** key (the
+> replay-only audit stream, source #3 below — which the original triage flagged
+> but mis-ranked as minor), NOT a BullMQ key. The real fix is to stop writing
+> that stream (it's replay-only and `replay()` is never called): the producer now
+> gates it behind `eventLogEnabled` (default false) + a `MAXLEN ~` ceiling when
+> on — see [replay-stream-wire-or-cut](replay-stream-wire-or-cut.md), now
+> RESOLVED, branch `fix/event-log-stream-bound`. The live ~825 MB key needs a
+> one-time `DEL shipit-event-log` / `XTRIM` to reclaim; code only stops growth.
+>
+> ---
+>
+> _Original (superseded) 2026-06-18 answer:_ "Root cause was unbounded BullMQ
+> completed/failed job retention (sync-scheduler queue + `removeOnFail: false` in
+> the event-bus producer/replay). App-side retention bounds shipped in #75…" —
+> #75 was real and worth keeping (it bounds the BullMQ keys), but it was NOT the
+> dataset's dominant share. The `--bigkeys` verify step it deferred is exactly
+> what surfaced the stream as the true culprit.
 
 ## Context
 

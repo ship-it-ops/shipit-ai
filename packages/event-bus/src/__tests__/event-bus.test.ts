@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 // ── Mock ioredis ──────────────────────────────────────────────────────
 const mockPipelineExec = vi.fn().mockResolvedValue([]);
+const mockXadd = vi.fn().mockReturnThis();
+const mockXtrim = vi.fn().mockReturnThis();
 const mockPipeline = vi.fn().mockReturnValue({
-  xadd: vi.fn().mockReturnThis(),
-  xtrim: vi.fn().mockReturnThis(),
+  xadd: mockXadd,
+  xtrim: mockXtrim,
   exec: mockPipelineExec,
 });
 const mockXrange = vi.fn().mockResolvedValue([]);
@@ -95,6 +97,10 @@ const TEST_CONFIG: ResolvedConfig = {
   retentionDays: 7,
   batchSize: 500,
   concurrency: 1,
+  // Enabled here so the stream-write assertions below exercise that path; the
+  // production default is OFF (asserted separately via resolveConfig).
+  eventLogEnabled: true,
+  eventLogMaxLen: 10_000,
 };
 
 // ── Config tests ──────────────────────────────────────────────────────
@@ -108,6 +114,10 @@ describe('resolveConfig', () => {
     expect(config.retentionDays).toBe(DEFAULT_CONFIG.retentionDays);
     expect(config.batchSize).toBe(DEFAULT_CONFIG.batchSize);
     expect(config.concurrency).toBe(DEFAULT_CONFIG.concurrency);
+    // The replay-only event-log stream is OFF by default (2026-06-22 OOM: it
+    // was the ~825 MB dominant key). Bounded if ever turned on.
+    expect(config.eventLogEnabled).toBe(false);
+    expect(config.eventLogMaxLen).toBe(DEFAULT_CONFIG.eventLogMaxLen);
   });
 
   it('uses custom values when provided', () => {
@@ -118,12 +128,16 @@ describe('resolveConfig', () => {
       retentionDays: 14,
       batchSize: 100,
       concurrency: 4,
+      eventLogEnabled: true,
+      eventLogMaxLen: 500,
     });
     expect(config.queueName).toBe('custom-queue');
     expect(config.maxRetries).toBe(5);
     expect(config.retentionDays).toBe(14);
     expect(config.batchSize).toBe(100);
     expect(config.concurrency).toBe(4);
+    expect(config.eventLogEnabled).toBe(true);
+    expect(config.eventLogMaxLen).toBe(500);
   });
 
   it('defaults port to 6379 when not specified', () => {
@@ -273,12 +287,34 @@ describe('EventBusProducer', () => {
     expect(firstJobId).toBe(secondJobId);
   });
 
-  it('writes events to Redis Stream', async () => {
-    const producer = new EventBusProducer(TEST_CONFIG);
+  it('writes events to the Redis Stream with a hard MAXLEN ceiling when the event log is enabled', async () => {
+    const producer = new EventBusProducer(TEST_CONFIG); // eventLogEnabled: true
     await producer.publish([makeEntity()], 'github-shipitops');
 
     expect(mockPipeline).toHaveBeenCalled();
     expect(mockPipelineExec).toHaveBeenCalled();
+    // The XADD must carry `MAXLEN ~ <n>` so the stream is size-bounded — the
+    // 2026-06-22 OOM was an unbounded-in-bytes event-log stream (~825 MB).
+    expect(mockXadd).toHaveBeenCalledWith(
+      EVENT_LOG_STREAM,
+      'MAXLEN',
+      '~',
+      TEST_CONFIG.eventLogMaxLen,
+      '*',
+      'data',
+      expect.any(String),
+    );
+  });
+
+  it('does NOT write the event-log stream when disabled (the production default) — delivery still happens', async () => {
+    const producer = new EventBusProducer({ ...TEST_CONFIG, eventLogEnabled: false });
+    await producer.publish([makeEntity()], 'github-shipitops');
+
+    // Normal BullMQ delivery is untouched...
+    expect(mockAddBulk).toHaveBeenCalledOnce();
+    // ...but the dead-weight replay stream is never written.
+    expect(mockPipeline).not.toHaveBeenCalled();
+    expect(mockXadd).not.toHaveBeenCalled();
   });
 
   it('does nothing for empty events array', async () => {

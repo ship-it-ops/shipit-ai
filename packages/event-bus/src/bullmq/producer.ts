@@ -78,6 +78,8 @@ export class EventBusProducer {
   private readonly queue: Queue;
   private readonly streamRedis: Redis;
   private readonly retentionDays: number;
+  private readonly eventLogEnabled: boolean;
+  private readonly eventLogMaxLen: number;
 
   constructor(config: ResolvedConfig) {
     this.queue = new Queue(config.queueName, {
@@ -92,6 +94,8 @@ export class EventBusProducer {
       maxRetriesPerRequest: null,
     });
     this.retentionDays = config.retentionDays;
+    this.eventLogEnabled = config.eventLogEnabled;
+    this.eventLogMaxLen = config.eventLogMaxLen;
 
     // A BullMQ Queue / ioredis client is an EventEmitter; an emitted 'error'
     // with NO listener rethrows as an uncaughtException and kills the process.
@@ -124,14 +128,33 @@ export class EventBusProducer {
       await this.queue.addBulk(jobs);
     }
 
-    // Write to Redis Stream for replay support
-    if (envelopes.length > 0) {
+    // Write to the `shipit-event-log` Redis Stream for replay support — ONLY
+    // when explicitly enabled. This stream stores the full event JSON per
+    // envelope and is read solely by `replay()`, which nothing currently calls;
+    // left on, a time-bounded-only stream is unbounded in bytes and grew to
+    // ~825 MB (the dominant share of the 2026-06-22 Redis OOM crashloop). When
+    // enabled it is bounded by BOTH a hard size ceiling (`MAXLEN ~`) and the
+    // retention-day time trim so it can never blow the maxmemory ceiling again.
+    // See the replay-stream-wire-or-cut open question.
+    if (this.eventLogEnabled && envelopes.length > 0) {
       const pipeline = this.streamRedis.pipeline();
       for (const env of envelopes) {
-        pipeline.xadd(EVENT_LOG_STREAM, '*', 'data', JSON.stringify(env));
+        // `MAXLEN ~ n` caps the stream at ~n entries, trimming inline on every
+        // add (the `~` makes trimming amortized/cheap). Bytes = entries ×
+        // event size, so the count cap is what bounds the working set.
+        pipeline.xadd(
+          EVENT_LOG_STREAM,
+          'MAXLEN',
+          '~',
+          this.eventLogMaxLen,
+          '*',
+          'data',
+          JSON.stringify(env),
+        );
       }
 
-      // Trim stream by retention period
+      // Secondary, time-based trim: drop anything older than the retention
+      // window even if the count cap hasn't been reached.
       const minTimestamp = Date.now() - this.retentionDays * 24 * 60 * 60 * 1000;
       pipeline.xtrim(EVENT_LOG_STREAM, 'MINID', String(minTimestamp));
 
