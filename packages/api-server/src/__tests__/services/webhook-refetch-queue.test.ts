@@ -6,23 +6,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // queue opens a dedicated client for the SETNX delivery-dedup keys.
 const mockQueueAdd = vi.fn().mockResolvedValue(undefined);
 const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueOn = vi.fn();
 const mockWorkerOn = vi.fn();
 const mockWorkerClose = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('bullmq', () => ({
-  Queue: vi.fn().mockImplementation(() => ({ add: mockQueueAdd, close: mockQueueClose })),
+  Queue: vi
+    .fn()
+    .mockImplementation(() => ({ add: mockQueueAdd, on: mockQueueOn, close: mockQueueClose })),
   Worker: vi.fn().mockImplementation(() => ({ on: mockWorkerOn, close: mockWorkerClose })),
 }));
 
 const mockRedisSet = vi.fn();
 const mockRedisGet = vi.fn();
 const mockRedisDel = vi.fn();
+const mockRedisOn = vi.fn();
 const mockRedisDisconnect = vi.fn();
 vi.mock('ioredis', () => ({
   Redis: vi.fn().mockImplementation(() => ({
     set: mockRedisSet,
     get: mockRedisGet,
     del: mockRedisDel,
+    on: mockRedisOn,
     disconnect: mockRedisDisconnect,
   })),
 }));
@@ -43,6 +48,25 @@ function makeQueue() {
 describe('WebhookRefetchQueue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('attaches an error listener to queue, worker, and the dedup redis client so a Redis OOM/ReplyError degrades instead of crashing the process', () => {
+    makeQueue();
+
+    // An emitted 'error' with no listener makes Node rethrow and kills the
+    // process (the 2026-06-22 crashloop). Every BullMQ/ioredis object the queue
+    // owns must register an 'error' handler that logs rather than rethrows.
+    const queueErr = mockQueueOn.mock.calls.find(([evt]) => evt === 'error');
+    const workerErr = mockWorkerOn.mock.calls.find(([evt]) => evt === 'error');
+    const redisErr = mockRedisOn.mock.calls.find(([evt]) => evt === 'error');
+    expect(queueErr).toBeDefined();
+    expect(workerErr).toBeDefined();
+    expect(redisErr).toBeDefined();
+
+    const oom = new Error("OOM command not allowed when used memory > 'maxmemory'");
+    expect(() => (queueErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    expect(() => (workerErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    expect(() => (redisErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
   });
 
   it('constructs its queue with a colon-free name + bounded retention', () => {

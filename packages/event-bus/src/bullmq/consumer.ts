@@ -31,6 +31,14 @@ export class EventBusConsumer {
       },
     );
 
+    // The Worker is an EventEmitter; an emitted 'error' with no listener
+    // rethrows as an uncaughtException and kills the process. A full Redis makes
+    // the worker's `moveToActive` Lua eval emit 'error' (`OOM command not
+    // allowed`) — log and degrade rather than crash the subscriber.
+    this.worker.on('error', (err: Error) => {
+      console.warn(`EventBus consumer worker Redis error (consumption degraded): ${err.message}`);
+    });
+
     await this.worker.waitUntilReady();
   }
 

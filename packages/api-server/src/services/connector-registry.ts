@@ -184,8 +184,22 @@ export class ConnectorRegistry {
   // runner can schedule polling without blocking server start.
   async startRunner(): Promise<void> {
     for (const connector of this.connectors.values()) {
-      if (connector.enabled) {
+      if (!connector.enabled) continue;
+      // Boot must DEGRADE, not crash. `runner.start` enqueues a repeatable job
+      // (a Redis write); against a Redis at `maxmemory` that rejects with an
+      // OOM ReplyError. Letting it bubble out of here — and out of the
+      // un-`.catch()`ed main() at boot — kills the process as an
+      // unhandledRejection (the 2026-06-22 crashloop;
+      // scar redis-memory-limit-below-dataset-oomkills). Catch per connector so
+      // one failure neither aborts the others nor takes the API down; the
+      // scheduler stays attached and the next poll tick / a Redis recovery picks
+      // the connector back up.
+      try {
         await this.runner.start(connector as GitHubConnectorConfig);
+      } catch (err) {
+        console.warn(
+          `Failed to schedule connector "${connector.id}" at boot (syncs degraded for it, API stays up): ${(err as Error).message}`,
+        );
       }
     }
   }

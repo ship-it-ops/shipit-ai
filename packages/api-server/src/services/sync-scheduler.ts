@@ -111,6 +111,25 @@ export class SyncScheduler implements ConnectorRunner {
       },
     );
 
+    // A BullMQ Queue/Worker is an EventEmitter. An emitted 'error' with NO
+    // listener makes Node rethrow it as an uncaughtException and kills the
+    // process. When Redis is at `maxmemory` (noeviction), the worker's
+    // `moveToActive` Lua eval fails with `OOM command not allowed` and the
+    // Worker emits 'error' — which is exactly what crashlooped api-server on the
+    // 2026-06-22 deploy (scar redis-memory-limit-below-dataset-oomkills). These
+    // handlers DEGRADE: log loudly, never rethrow, keep the API up. The next
+    // poll tick retries once Redis drains / recovers.
+    this.queue.on('error', (err: Error) => {
+      console.warn(
+        `SyncScheduler queue Redis error (syncs degraded, API stays up): ${err.message}`,
+      );
+    });
+    this.worker.on('error', (err: Error) => {
+      console.warn(
+        `SyncScheduler worker Redis error (syncs degraded, API stays up): ${err.message}`,
+      );
+    });
+
     this.worker.on('failed', (job: Job | undefined, err: Error) => {
       // The job itself records the run on completion; this handler is the
       // fallback when the processor throws before doing so (e.g. auth blew

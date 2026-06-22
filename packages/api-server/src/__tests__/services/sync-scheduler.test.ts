@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // provide `.on` (the scheduler attaches a 'failed' listener in its ctor).
 const mockQueueAdd = vi.fn().mockResolvedValue(undefined);
 const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueOn = vi.fn();
 const mockWorkerOn = vi.fn();
 const mockWorkerClose = vi.fn().mockResolvedValue(undefined);
 
@@ -14,6 +15,7 @@ vi.mock('bullmq', () => {
     add: mockQueueAdd,
     getRepeatableJobs: vi.fn().mockResolvedValue([]),
     removeRepeatableByKey: vi.fn().mockResolvedValue(undefined),
+    on: mockQueueOn,
     close: mockQueueClose,
   }));
   const Worker = vi.fn().mockImplementation(() => ({
@@ -52,6 +54,25 @@ describe('SyncScheduler', () => {
         removeOnFail: FAILED_JOB_RETENTION,
       },
     });
+  });
+
+  it('attaches an error listener to both queue and worker so a Redis OOM/ReplyError degrades instead of crashing the process', () => {
+    makeScheduler();
+
+    // A BullMQ Worker/Queue is an EventEmitter; an emitted 'error' with NO
+    // listener makes Node rethrow and kills the process — exactly the
+    // crashloop the 2026-06-22 deploy hit when the worker's moveToActive Lua
+    // eval failed with `OOM command not allowed`. A registered listener is the
+    // fix.
+    const queueErr = mockQueueOn.mock.calls.find(([evt]) => evt === 'error');
+    const workerErr = mockWorkerOn.mock.calls.find(([evt]) => evt === 'error');
+    expect(queueErr).toBeDefined();
+    expect(workerErr).toBeDefined();
+
+    // The handler must swallow (log) the error, never rethrow.
+    const oom = new Error("OOM command not allowed when used memory > 'maxmemory'");
+    expect(() => (queueErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    expect(() => (workerErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
   });
 
   it('still enqueues a repeatable poll job on start()', async () => {

@@ -18,6 +18,17 @@ export class EventBusReplay {
     });
     this.redis = new Redis(config.redisPort, config.redisHost, { maxRetriesPerRequest: null });
     this.batchSize = config.batchSize;
+
+    // Attach 'error' listeners so an emitted 'error' (e.g. `OOM command not
+    // allowed` against a full Redis) doesn't rethrow as an uncaughtException and
+    // crash the process. Log and degrade; replay() callers already see write
+    // rejections directly. See the 2026-06-22 api-server crashloop.
+    this.queue.on('error', (err: Error) => {
+      console.warn(`EventBus replay queue Redis error (replay degraded): ${err.message}`);
+    });
+    this.redis.on('error', (err: Error) => {
+      console.warn(`EventBus replay Redis error (replay degraded): ${err.message}`);
+    });
   }
 
   async replay(fromTimestamp: string): Promise<void> {

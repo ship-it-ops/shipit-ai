@@ -9,12 +9,14 @@ const mockPipeline = vi.fn().mockReturnValue({
 });
 const mockXrange = vi.fn().mockResolvedValue([]);
 const mockDisconnect = vi.fn();
+const mockRedisOn = vi.fn();
 
 vi.mock('ioredis', () => {
   const RedisMock = vi.fn().mockImplementation(() => ({
     pipeline: mockPipeline,
     xrange: mockXrange,
     disconnect: mockDisconnect,
+    on: mockRedisOn,
     options: { host: 'localhost', port: 6379 },
     duplicate: vi.fn().mockReturnThis(),
   }));
@@ -24,6 +26,8 @@ vi.mock('ioredis', () => {
 // ── Mock bullmq ───────────────────────────────────────────────────────
 const mockAddBulk = vi.fn().mockResolvedValue([]);
 const mockQueueClose = vi.fn().mockResolvedValue(undefined);
+const mockQueueOn = vi.fn();
+const mockWorkerOn = vi.fn();
 const mockWorkerClose = vi.fn().mockResolvedValue(undefined);
 const mockWaitUntilReady = vi.fn().mockResolvedValue(undefined);
 
@@ -32,6 +36,7 @@ let capturedWorkerProcessor: ((job: { data: unknown }) => Promise<void>) | null 
 vi.mock('bullmq', () => {
   const Queue = vi.fn().mockImplementation(() => ({
     addBulk: mockAddBulk,
+    on: mockQueueOn,
     close: mockQueueClose,
   }));
 
@@ -40,6 +45,7 @@ vi.mock('bullmq', () => {
     .mockImplementation((_name: string, processor: (job: { data: unknown }) => Promise<void>) => {
       capturedWorkerProcessor = processor;
       return {
+        on: mockWorkerOn,
         close: mockWorkerClose,
         waitUntilReady: mockWaitUntilReady,
       };
@@ -195,6 +201,17 @@ describe('EventBusProducer', () => {
     });
   });
 
+  it('attaches an error listener to its queue and stream client so a Redis OOM/ReplyError degrades instead of crashing the process', () => {
+    new EventBusProducer(TEST_CONFIG);
+    const queueErr = mockQueueOn.mock.calls.find(([evt]) => evt === 'error');
+    const redisErr = mockRedisOn.mock.calls.find(([evt]) => evt === 'error');
+    expect(queueErr).toBeDefined();
+    expect(redisErr).toBeDefined();
+    const oom = new Error("OOM command not allowed when used memory > 'maxmemory'");
+    expect(() => (queueErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    expect(() => (redisErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+  });
+
   it('creates one envelope per node', async () => {
     const producer = new EventBusProducer(TEST_CONFIG);
     const node1 = makeNode({ id: 'shipit://LogicalService/github/svc-a', _event_version: 1 });
@@ -304,6 +321,16 @@ describe('EventBusConsumer', () => {
     expect(mockWorkerClose).toHaveBeenCalled();
   });
 
+  it('attaches an error listener to its worker so a Redis OOM/ReplyError degrades instead of crashing the process', async () => {
+    const consumer = new EventBusConsumer(TEST_CONFIG);
+    await consumer.subscribe(vi.fn());
+    const workerErr = mockWorkerOn.mock.calls.find(([evt]) => evt === 'error');
+    expect(workerErr).toBeDefined();
+    const oom = new Error("OOM command not allowed when used memory > 'maxmemory'");
+    expect(() => (workerErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    await consumer.close();
+  });
+
   it('throws if subscribe is called twice', async () => {
     const consumer = new EventBusConsumer(TEST_CONFIG);
     await consumer.subscribe(vi.fn());
@@ -372,6 +399,17 @@ describe('EventBusReplay', () => {
     expect(lastCall?.[1]).toMatchObject({
       defaultJobOptions: { removeOnComplete: true, removeOnFail: FAILED_JOB_RETENTION },
     });
+  });
+
+  it('attaches an error listener to its queue and redis client so a Redis OOM/ReplyError degrades instead of crashing the process', () => {
+    new EventBusReplay(TEST_CONFIG);
+    const queueErr = mockQueueOn.mock.calls.find(([evt]) => evt === 'error');
+    const redisErr = mockRedisOn.mock.calls.find(([evt]) => evt === 'error');
+    expect(queueErr).toBeDefined();
+    expect(redisErr).toBeDefined();
+    const oom = new Error("OOM command not allowed when used memory > 'maxmemory'");
+    expect(() => (queueErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
+    expect(() => (redisErr?.[1] as (e: Error) => void)(oom)).not.toThrow();
   });
 });
 
