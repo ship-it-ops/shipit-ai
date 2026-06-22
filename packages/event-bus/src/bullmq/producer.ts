@@ -92,6 +92,20 @@ export class EventBusProducer {
       maxRetriesPerRequest: null,
     });
     this.retentionDays = config.retentionDays;
+
+    // A BullMQ Queue / ioredis client is an EventEmitter; an emitted 'error'
+    // with NO listener rethrows as an uncaughtException and kills the process.
+    // When Redis is at `maxmemory` (noeviction), writes fail with `OOM command
+    // not allowed` — this must DEGRADE the event bus, not crash the host
+    // process (the 2026-06-22 api-server crashloop). Log, never rethrow; the
+    // publish() path already propagates write rejections to the caller for
+    // BullMQ retry.
+    this.queue.on('error', (err: Error) => {
+      console.warn(`EventBus producer queue Redis error (publish degraded): ${err.message}`);
+    });
+    this.streamRedis.on('error', (err: Error) => {
+      console.warn(`EventBus producer stream Redis error (publish degraded): ${err.message}`);
+    });
   }
 
   async publish(events: CanonicalEntity[], connectorId: string): Promise<void> {

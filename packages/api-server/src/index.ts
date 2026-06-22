@@ -192,6 +192,16 @@ async function main() {
   let runStore: ConnectorRunStore;
   if (config.backend.redis.url) {
     runStoreRedis = new Redis(config.backend.redis.url, { maxRetriesPerRequest: null });
+    // ioredis is an EventEmitter; an emitted 'error' with no listener rethrows
+    // as an uncaughtException and crashes the process. Attach a logging handler
+    // so a Redis blip (or a full Redis) degrades run-history persistence instead
+    // of taking the API down. Run-history writes themselves reject as promises
+    // handled by their callers; this guards the connection-level 'error'.
+    runStoreRedis.on('error', (err: Error) => {
+      console.warn(
+        `ConnectorRunStore Redis error (run history degraded, API stays up): ${err.message}`,
+      );
+    });
     runStore = new RedisConnectorRunStore(runStoreRedis);
     console.log('ConnectorRunStore using Redis at', config.backend.redis.url);
   } else {
@@ -383,7 +393,20 @@ async function main() {
   // Start any pre-configured connectors after the server is constructed so
   // the runner attaches once the rest of the wiring (event bus, etc.) is in
   // place. Tests typically skip this entirely.
-  await connectorRegistry.startRunner();
+  //
+  // `startRunner` is internally resilient (it degrades per-connector on a Redis
+  // OOM rather than throwing); this try/catch is belt-and-suspenders so NO
+  // unexpected boot-enqueue rejection can bubble out of the un-`.catch()`ed
+  // main() as a process-killing unhandledRejection. The API must come up and
+  // serve /api/health even when Redis is at maxmemory — syncs just stay
+  // degraded until Redis drains. See scar redis-memory-limit-below-dataset-oomkills.
+  try {
+    await connectorRegistry.startRunner();
+  } catch (err) {
+    console.warn(
+      `Connector scheduling failed at boot (syncs degraded, API stays up): ${(err as Error).message}`,
+    );
+  }
 
   try {
     await server.listen({ port: api.port, host: '0.0.0.0' });

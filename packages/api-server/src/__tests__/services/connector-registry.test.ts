@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import type { ConnectorInstanceConfig } from '@shipit-ai/shared';
 import { ConnectorRegistry } from '../../services/connector-registry.js';
 
 // These tests pin behavior the routes depend on; the routes' own tests
@@ -247,5 +248,59 @@ describe('ConnectorRegistry — durableStore sync', () => {
     expect(sync).toHaveBeenCalledTimes(3);
     // Last sync reflects the empty set so a deleted connector can't resurrect.
     expect(sync.mock.calls[2][0]).toEqual([]);
+  });
+});
+
+describe('ConnectorRegistry — startRunner boot resilience', () => {
+  let tmpDir: string;
+  let yamlPath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-registry-startrunner-'));
+    yamlPath = join(tmpDir, 'shipit.config.local.yaml');
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function fakeRunner(start: ReturnType<typeof vi.fn>) {
+    return {
+      start,
+      stop: vi.fn().mockResolvedValue(undefined),
+      triggerSync: vi.fn().mockResolvedValue({ connectorId: 'x', state: 'idle' }),
+      getStatus: vi.fn().mockReturnValue({ connectorId: 'x', state: 'idle' }),
+    };
+  }
+
+  // The 2026-06-22 crashloop: with Redis at maxmemory, the boot-time
+  // `queue.add(repeat)` inside the scheduler's start() rejects with an OOM
+  // ReplyError. startRunner() awaits it; an unhandled rejection bubbling out of
+  // main() kills the process. Boot must DEGRADE that connector's scheduling and
+  // keep going, not crash.
+  it('does not throw when a runner.start() rejects (e.g. Redis OOM) and still attempts every enabled connector', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const start = vi
+      .fn()
+      .mockRejectedValue(new Error("OOM command not allowed when used memory > 'maxmemory'"));
+    // Connectors arrive via the constructor `initial` set (the real boot path:
+    // load instances → setRunner → startRunner), so `create()`'s own start()
+    // call isn't what's under test here.
+    const registry = new ConnectorRegistry({
+      localConfigPath: yamlPath,
+      initial: [
+        { id: 'gh-a', type: 'github', name: 'A', enabled: true, org: 'org-a' },
+        { id: 'gh-b', type: 'github', name: 'B', enabled: true, org: 'org-b' },
+      ] as unknown as ConnectorInstanceConfig[],
+    });
+    registry.setRunner(fakeRunner(start));
+
+    // The whole point: this must resolve, not reject.
+    await expect(registry.startRunner()).resolves.toBeUndefined();
+    // A failing connector does not abort the loop — both were attempted.
+    expect(start).toHaveBeenCalledTimes(2);
+    // The degradation is loud, not swallowed.
+    expect(warn).toHaveBeenCalled();
   });
 });

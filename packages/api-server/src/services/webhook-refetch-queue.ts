@@ -125,6 +125,28 @@ export class WebhookRefetchQueue {
       },
     );
 
+    // Attach 'error' listeners to every emitter the queue owns (BullMQ Queue +
+    // Worker + the dedup ioredis client). Without a listener, an emitted
+    // 'error' — e.g. the worker's `moveToActive` failing with `OOM command not
+    // allowed` against a full Redis — rethrows as an uncaughtException and
+    // crashes the process (the 2026-06-22 deploy crashloop; scar
+    // redis-memory-limit-below-dataset-oomkills). Degrade: log, never rethrow.
+    this.queue.on('error', (err: Error) => {
+      console.warn(
+        `WebhookRefetchQueue queue Redis error (refetch degraded, API stays up): ${err.message}`,
+      );
+    });
+    this.worker.on('error', (err: Error) => {
+      console.warn(
+        `WebhookRefetchQueue worker Redis error (refetch degraded, API stays up): ${err.message}`,
+      );
+    });
+    this.redis.on('error', (err: Error) => {
+      console.warn(
+        `WebhookRefetchQueue dedup-redis error (refetch degraded, API stays up): ${err.message}`,
+      );
+    });
+
     this.worker.on('failed', (job: Job | undefined, err: Error) => {
       // The processor lets transient failures (auth, publish to a down event
       // bus) throw so BullMQ retries; this surfaces them in logs. Console is

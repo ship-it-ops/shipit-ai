@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-20 | Total notes: 72
+Last updated: 2026-06-22 | Total notes: 74
 
 ## Investigations
 
@@ -15,6 +15,7 @@ Last updated: 2026-06-20 | Total notes: 72
 - [team-ownership-invisible-owns-and-blast-radius](investigations/team-ownership-invisible-owns-and-blast-radius.md) | investigation | fixed | core | 2026-06-16 | team-service + web-UI blast-radius only walked OWNS; added CODEOWNER_OF (downstream-only); uncommitted
 - [last-synced-frozen-by-idempotency-dedup](investigations/last-synced-frozen-by-idempotency-dedup.md) | investigation | fixed | core | 2026-06-16 | \_last_synced frozen by idempotency skip; now bump timestamp on skip; content-change suppression still open
 - [redis-oom-crashloop-data-appears-gone](investigations/redis-oom-crashloop-data-appears-gone.md) | investigation | completed | core | 2026-06-17 | redis dataset 246MB > 256Mi limit OOMKilled; UI looked empty; data intact
+- [apiserver-crashloop-unhandled-bullmq-error-on-oom-redis](investigations/apiserver-crashloop-unhandled-bullmq-error-on-oom-redis.md) | investigation | fixed | core | 2026-06-22 | no '.on(error)' on BullMQ Worker/Queue/ioredis → OOM moveToActive crashes process at boot; attach error listeners + resilient startRunner
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -25,6 +26,7 @@ Last updated: 2026-06-20 | Total notes: 72
 
 <!-- always-read at session start -->
 
+- [redis-oom-boot-tolerance-impl](status/redis-oom-boot-tolerance-impl.md) | status | active | core | 2026-06-22 | tolerate full/OOM Redis at boot (error listeners + resilient startRunner); unblocks sha-a45d7a4 deploy; implemented, all green, uncommitted
 - [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
 - [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
 - [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
