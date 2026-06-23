@@ -16,19 +16,14 @@ import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useCatalogEntities, useConnectorsList } from '@/lib/hooks/use-graph-data';
 import { resolveConnectorIdentity, connectorIdentityKey } from '@/lib/connector-identity';
 import { ConnectorPill } from '@/components/connectors/connector-pill';
-
-interface CatalogRow {
-  id: string;
-  name: string;
-  type: string;
-  owner: string;
-  environment: string;
-  tier: string;
-  sourceSystem: string;
-  sourceConnectorId: string;
-  // Stable key used by the source facet — matches connectorIdentityKey().
-  sourceKey: string;
-}
+import {
+  type CatalogRow,
+  matches,
+  makeDefaultFilter,
+  countHiddenByExclude,
+  cycleTypeState,
+} from './catalog-filter';
+import { TypeFilter } from './type-filter';
 
 type SortKey = 'name' | 'type' | 'environment' | 'tier' | 'owner' | 'source';
 type SortDir = 'asc' | 'desc';
@@ -72,28 +67,6 @@ function toRow(node: { data: Record<string, unknown> }): CatalogRow {
 
 function uniqueSorted(values: ReadonlyArray<string>): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort();
-}
-
-function matches(row: CatalogRow, query: string, filter: FilterPanelValue): boolean {
-  const q = query.trim().toLowerCase();
-  if (q) {
-    const haystack =
-      `${row.name} ${row.id} ${row.type} ${row.owner} ${row.sourceSystem} ${row.sourceConnectorId}`.toLowerCase();
-    if (!haystack.includes(q)) return false;
-  }
-  if (filter.types?.length && !filter.types.includes(row.type)) return false;
-  if (filter.environments?.length && !filter.environments.includes(row.environment)) return false;
-  if (filter.owners?.length && !filter.owners.includes(row.owner)) return false;
-  if (filter.tiers?.length && !filter.tiers.includes(row.tier)) return false;
-  const sources = (filter as Record<string, string[] | undefined>).sources;
-  if (sources?.length) {
-    // A selection matches the row if it's either the exact (type:instance)
-    // key or the "any instance of this type" wildcard `${type}:*`.
-    const typeWildcard = row.sourceSystem ? `${row.sourceSystem}:*` : '';
-    const ok = sources.some((s) => s === row.sourceKey || (typeWildcard && s === typeWildcard));
-    if (!ok) return false;
-  }
-  return true;
 }
 
 const SORT_FIELD: Record<SortKey, keyof CatalogRow> = {
@@ -164,7 +137,7 @@ export default function CatalogPage() {
   const { data: connectors } = useConnectorsList();
 
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<FilterPanelValue>({});
+  const [filter, setFilter] = useState<FilterPanelValue>(makeDefaultFilter);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -179,16 +152,19 @@ export default function CatalogPage() {
 
   const rows = useMemo<CatalogRow[]>(() => (data?.nodes ?? []).map(toRow), [data]);
 
+  const typeOptions = useMemo(
+    () =>
+      uniqueSorted(rows.map((r) => r.type)).map((v) => {
+        const meta = getEntityTypeMeta(v);
+        return { value: v, label: meta?.label ?? v };
+      }),
+    [rows],
+  );
+
   const facets = useMemo(
     () => [
-      {
-        id: 'types',
-        label: 'Type',
-        options: uniqueSorted(rows.map((r) => r.type)).map((v) => {
-          const meta = getEntityTypeMeta(v);
-          return { value: v, label: meta?.label ?? v };
-        }),
-      },
+      // NB: Type is rendered separately as a tri-state control (TypeFilter),
+      // not as a DS checkbox facet — see the sidebar below.
       {
         id: 'environments',
         label: 'Environment',
@@ -259,6 +235,18 @@ export default function CatalogPage() {
   const visibleCount = visibleRows.length;
   const filtersActive = Object.values(filter).some((v) => v && v.length > 0) || query.length > 0;
 
+  // Hint surfacing the default exclusion: how many entities are hidden purely
+  // because their type is in the exclude state (e.g. "Pipeline hidden · 25").
+  const hiddenByExclude = useMemo(
+    () => countHiddenByExclude(rows, query, filter),
+    [rows, query, filter],
+  );
+  const excludedTypeLabel = (
+    (filter as Record<string, readonly string[] | undefined>).excludeTypes ?? []
+  )
+    .map((t) => getEntityTypeMeta(t)?.label ?? t)
+    .join(', ');
+
   return (
     <div className="flex h-full">
       <aside className="border-border bg-panel w-72 shrink-0 overflow-y-auto border-r">
@@ -267,12 +255,18 @@ export default function CatalogPage() {
           <span className="text-text text-[13px] font-medium">Filters</span>
         </div>
         <div className="p-4">
+          <TypeFilter
+            options={typeOptions}
+            counts={counts.types}
+            filter={filter}
+            onCycle={(type) => setFilter((prev) => cycleTypeState(prev, type))}
+          />
           <FilterPanel
             facets={facets}
             value={filter}
             counts={counts}
             onValueChange={setFilter}
-            onReset={() => setFilter({})}
+            onReset={() => setFilter(makeDefaultFilter())}
             title="Refine"
             className="w-full"
           />
@@ -286,6 +280,11 @@ export default function CatalogPage() {
             <span className="text-text-dim font-mono text-[11px]">
               {filtersActive ? `${visibleCount} of ${totalCount}` : `${totalCount} entities`}
             </span>
+            {hiddenByExclude > 0 && excludedTypeLabel && (
+              <span className="text-text-muted font-mono text-[11px]">
+                {excludedTypeLabel} hidden · {hiddenByExclude}
+              </span>
+            )}
           </div>
           <p className="text-text-muted text-[12px]">
             Every entity ingested by ShipIt — services, repositories, deployments, pipelines,
