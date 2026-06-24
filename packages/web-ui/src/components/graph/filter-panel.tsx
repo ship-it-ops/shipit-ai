@@ -6,6 +6,8 @@ import { IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import type { GraphData } from '@/lib/api';
 import { useGraphStore, type GraphFilters } from '@/stores/graph-store';
+import { useGraphSources, useConnectorsList } from '@/lib/hooks/use-graph-data';
+import { connectorIdentityKey, resolveConnectorIdentity } from '@/lib/connector-identity';
 
 interface FilterPanelProps {
   open: boolean;
@@ -20,8 +22,31 @@ function uniqueSorted(values: ReadonlyArray<string>): string[] {
 
 export function FilterPanel({ open, onClose, data }: FilterPanelProps) {
   const { filters, setFilters, resetFilters } = useGraphStore();
+  const { data: graphSources } = useGraphSources();
+  const { data: connectors } = useConnectorsList();
 
-  const { facets, counts } = useMemo(() => {
+  // Sources facet is dynamic — populated from /api/graph/sources joined with
+  // the connectors list so labels resolve to the friendly connector name.
+  const sourcesFacet = useMemo(
+    () => ({
+      id: 'sources',
+      label: 'Source',
+      options: (graphSources ?? []).map((s) => {
+        const identity = resolveConnectorIdentity(
+          s.sourceSystem,
+          s.sourceConnectorId ?? undefined,
+          connectors,
+        );
+        return {
+          value: connectorIdentityKey(s.sourceSystem, s.sourceConnectorId ?? undefined),
+          label: identity.displayName,
+        };
+      }),
+    }),
+    [graphSources, connectors],
+  );
+
+  const { facets: derivedFacets, counts } = useMemo(() => {
     const nodes = data?.nodes ?? [];
     const labels: string[] = [];
     const environments: string[] = [];
@@ -98,12 +123,17 @@ export function FilterPanel({ open, onClose, data }: FilterPanelProps) {
     };
   }, [data]);
 
+  // Append the dynamic Source facet (from /api/graph/sources) to the
+  // data-derived label/env/tier/owner facets.
+  const facets = useMemo(() => [...derivedFacets, sourcesFacet], [derivedFacets, sourcesFacet]);
+
   const value = useMemo<FilterPanelValue>(
     () => ({
       nodeLabels: filters.nodeLabels,
       environments: filters.environments,
       tiers: filters.tiers,
       owners: filters.owners,
+      sources: filters.sources,
     }),
     [filters],
   );
@@ -116,6 +146,7 @@ export function FilterPanel({ open, onClose, data }: FilterPanelProps) {
       environments: [...(next.environments ?? [])],
       tiers: [...(next.tiers ?? [])],
       owners: [...(next.owners ?? [])],
+      sources: [...((next as Record<string, string[] | undefined>).sources ?? [])],
     } as Partial<GraphFilters>);
   };
 

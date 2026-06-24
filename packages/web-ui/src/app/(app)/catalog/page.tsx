@@ -13,18 +13,19 @@ import {
 } from '@ship-it-ui/ui';
 import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
-import { useCatalogEntities } from '@/lib/hooks/use-graph-data';
+import { useCatalogEntities, useConnectorsList } from '@/lib/hooks/use-graph-data';
+import { resolveConnectorIdentity, connectorIdentityKey } from '@/lib/connector-identity';
+import { ConnectorPill } from '@/components/connectors/connector-pill';
+import {
+  type CatalogRow,
+  matches,
+  makeDefaultFilter,
+  countHiddenByExclude,
+  cycleTypeState,
+} from './catalog-filter';
+import { TypeFilter } from './type-filter';
 
-interface CatalogRow {
-  id: string;
-  name: string;
-  type: string;
-  owner: string;
-  environment: string;
-  tier: string;
-}
-
-type SortKey = 'name' | 'type' | 'environment' | 'tier' | 'owner';
+type SortKey = 'name' | 'type' | 'environment' | 'tier' | 'owner' | 'source';
 type SortDir = 'asc' | 'desc';
 
 const TYPE_BADGE_VARIANT: Record<string, NonNullable<BadgeProps['variant']>> = {
@@ -46,7 +47,11 @@ function toRow(node: { data: Record<string, unknown> }): CatalogRow {
     owner?: string;
     environment?: string;
     tier?: number | string;
+    _source_system?: string;
+    _source_connector_id?: string;
   };
+  const sourceSystem = d._source_system ?? '';
+  const sourceConnectorId = d._source_connector_id ?? '';
   return {
     id: d.id,
     name: d.name ?? d.id,
@@ -54,6 +59,9 @@ function toRow(node: { data: Record<string, unknown> }): CatalogRow {
     owner: d.owner ?? '',
     environment: d.environment ?? '',
     tier: d.tier !== undefined ? String(d.tier) : '',
+    sourceSystem,
+    sourceConnectorId,
+    sourceKey: connectorIdentityKey(sourceSystem || undefined, sourceConnectorId || undefined),
   };
 }
 
@@ -61,22 +69,19 @@ function uniqueSorted(values: ReadonlyArray<string>): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort();
 }
 
-function matches(row: CatalogRow, query: string, filter: FilterPanelValue): boolean {
-  const q = query.trim().toLowerCase();
-  if (q) {
-    const haystack = `${row.name} ${row.id} ${row.type} ${row.owner}`.toLowerCase();
-    if (!haystack.includes(q)) return false;
-  }
-  if (filter.types?.length && !filter.types.includes(row.type)) return false;
-  if (filter.environments?.length && !filter.environments.includes(row.environment)) return false;
-  if (filter.owners?.length && !filter.owners.includes(row.owner)) return false;
-  if (filter.tiers?.length && !filter.tiers.includes(row.tier)) return false;
-  return true;
-}
+const SORT_FIELD: Record<SortKey, keyof CatalogRow> = {
+  name: 'name',
+  type: 'type',
+  environment: 'environment',
+  tier: 'tier',
+  owner: 'owner',
+  source: 'sourceConnectorId',
+};
 
 function compareRows(a: CatalogRow, b: CatalogRow, key: SortKey, dir: SortDir): number {
-  const av = a[key] ?? '';
-  const bv = b[key] ?? '';
+  const field = SORT_FIELD[key];
+  const av = a[field] ?? '';
+  const bv = b[field] ?? '';
   const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: 'base' });
   return dir === 'asc' ? cmp : -cmp;
 }
@@ -129,9 +134,10 @@ function SortHeader({
 export default function CatalogPage() {
   const router = useRouter();
   const { data, isLoading, error } = useCatalogEntities();
+  const { data: connectors } = useConnectorsList();
 
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<FilterPanelValue>({});
+  const [filter, setFilter] = useState<FilterPanelValue>(makeDefaultFilter);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -146,16 +152,19 @@ export default function CatalogPage() {
 
   const rows = useMemo<CatalogRow[]>(() => (data?.nodes ?? []).map(toRow), [data]);
 
+  const typeOptions = useMemo(
+    () =>
+      uniqueSorted(rows.map((r) => r.type)).map((v) => {
+        const meta = getEntityTypeMeta(v);
+        return { value: v, label: meta?.label ?? v };
+      }),
+    [rows],
+  );
+
   const facets = useMemo(
     () => [
-      {
-        id: 'types',
-        label: 'Type',
-        options: uniqueSorted(rows.map((r) => r.type)).map((v) => {
-          const meta = getEntityTypeMeta(v);
-          return { value: v, label: meta?.label ?? v };
-        }),
-      },
+      // NB: Type is rendered separately as a tri-state control (TypeFilter),
+      // not as a DS checkbox facet — see the sidebar below.
       {
         id: 'environments',
         label: 'Environment',
@@ -171,8 +180,30 @@ export default function CatalogPage() {
         label: 'Owner',
         options: uniqueSorted(rows.map((r) => r.owner)).map((v) => ({ value: v, label: v })),
       },
+      {
+        id: 'sources',
+        label: 'Source',
+        // Discovered from the rows themselves (no /api/graph/sources call
+        // needed) — keeps the facet in sync with the visible data even when
+        // the underlying connectors list is still loading.
+        options: uniqueSorted(rows.map((r) => r.sourceKey))
+          .filter((k) => k !== 'unknown')
+          .map((key) => {
+            // Key shape: `${type}:${instance}` or `${type}:*`. Reverse the
+            // split so the label uses the connector's friendly name when
+            // we can resolve it.
+            const [type, ...rest] = key.split(':');
+            const connectorId = rest.join(':');
+            const identity = resolveConnectorIdentity(
+              type,
+              connectorId === '*' ? undefined : connectorId,
+              connectors,
+            );
+            return { value: key, label: identity.displayName };
+          }),
+      },
     ],
-    [rows],
+    [rows, connectors],
   );
 
   const counts = useMemo(() => {
@@ -181,12 +212,16 @@ export default function CatalogPage() {
       environments: {},
       tiers: {},
       owners: {},
+      sources: {},
     };
     for (const r of rows) {
       if (r.type) c.types[r.type] = (c.types[r.type] ?? 0) + 1;
       if (r.environment) c.environments[r.environment] = (c.environments[r.environment] ?? 0) + 1;
       if (r.tier) c.tiers[r.tier] = (c.tiers[r.tier] ?? 0) + 1;
       if (r.owner) c.owners[r.owner] = (c.owners[r.owner] ?? 0) + 1;
+      if (r.sourceKey && r.sourceKey !== 'unknown') {
+        c.sources[r.sourceKey] = (c.sources[r.sourceKey] ?? 0) + 1;
+      }
     }
     return c;
   }, [rows]);
@@ -200,6 +235,18 @@ export default function CatalogPage() {
   const visibleCount = visibleRows.length;
   const filtersActive = Object.values(filter).some((v) => v && v.length > 0) || query.length > 0;
 
+  // Hint surfacing the default exclusion: how many entities are hidden purely
+  // because their type is in the exclude state (e.g. "Pipeline hidden · 25").
+  const hiddenByExclude = useMemo(
+    () => countHiddenByExclude(rows, query, filter),
+    [rows, query, filter],
+  );
+  const excludedTypeLabel = (
+    (filter as Record<string, readonly string[] | undefined>).excludeTypes ?? []
+  )
+    .map((t) => getEntityTypeMeta(t)?.label ?? t)
+    .join(', ');
+
   return (
     <div className="flex h-full">
       <aside className="border-border bg-panel w-72 shrink-0 overflow-y-auto border-r">
@@ -208,12 +255,18 @@ export default function CatalogPage() {
           <span className="text-text text-[13px] font-medium">Filters</span>
         </div>
         <div className="p-4">
+          <TypeFilter
+            options={typeOptions}
+            counts={counts.types}
+            filter={filter}
+            onCycle={(type) => setFilter((prev) => cycleTypeState(prev, type))}
+          />
           <FilterPanel
             facets={facets}
             value={filter}
             counts={counts}
             onValueChange={setFilter}
-            onReset={() => setFilter({})}
+            onReset={() => setFilter(makeDefaultFilter())}
             title="Refine"
             className="w-full"
           />
@@ -227,6 +280,11 @@ export default function CatalogPage() {
             <span className="text-text-dim font-mono text-[11px]">
               {filtersActive ? `${visibleCount} of ${totalCount}` : `${totalCount} entities`}
             </span>
+            {hiddenByExclude > 0 && excludedTypeLabel && (
+              <span className="text-text-muted font-mono text-[11px]">
+                {excludedTypeLabel} hidden · {hiddenByExclude}
+              </span>
+            )}
           </div>
           <p className="text-text-muted text-[12px]">
             Every entity ingested by ShipIt — services, repositories, deployments, pipelines,
@@ -314,6 +372,14 @@ export default function CatalogPage() {
                       onClick={() => toggleSort('owner')}
                     />
                   </th>
+                  <th className="border-border w-[200px] border-b px-3 py-2">
+                    <SortHeader
+                      label="Source"
+                      active={sortKey === 'source'}
+                      dir={sortDir}
+                      onClick={() => toggleSort('source')}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -351,6 +417,20 @@ export default function CatalogPage() {
                     <td className="px-3 py-[10px]">
                       {r.owner ? (
                         <span className="text-text-muted">{r.owner}</span>
+                      ) : (
+                        <span className="text-text-dim">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-[10px]">
+                      {r.sourceSystem ? (
+                        <ConnectorPill
+                          compact
+                          identity={resolveConnectorIdentity(
+                            r.sourceSystem,
+                            r.sourceConnectorId || undefined,
+                            connectors,
+                          )}
+                        />
                       ) : (
                         <span className="text-text-dim">—</span>
                       )}

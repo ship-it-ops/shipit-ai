@@ -194,6 +194,17 @@ export function GraphCanvas({ data, onNodeClick }: GraphCanvasProps) {
         const matches = owners && filters.owners.some((o) => owners.has(o));
         if (!matches) visible = false;
       }
+      // Source filter: match the node against any selected connector identity
+      // key. Format `${type}:${connectorId}` for an exact instance, or
+      // `${type}:*` to mean "any instance of this connector type".
+      if (filters.sources && filters.sources.length > 0) {
+        const sys = d._source_system as string | undefined;
+        const inst = d._source_connector_id as string | undefined;
+        const exact = sys && inst ? `${sys}:${inst}` : sys ? `${sys}:*` : 'unknown';
+        const wildcard = sys ? `${sys}:*` : '';
+        const ok = filters.sources.some((s) => s === exact || (wildcard && s === wildcard));
+        if (!ok) visible = false;
+      }
 
       if (visible) node.removeClass('hidden');
       else node.addClass('hidden');

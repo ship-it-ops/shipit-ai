@@ -35,6 +35,9 @@ Last updated: 2026-06-22 | Total notes: 75
 - [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); committed 5e2c2c2; rollout/rollback runbook
 - [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
 
+- [catalog-exclude-hide-types](status/catalog-exclude-hide-types.md) | status | active | standard | 2026-06-23 | catalog tri-state Type filter (include/exclude/neutral); Pipelines hidden by default; on catalog-enhancements
+- [catalog-enhancements-rebase](status/catalog-enhancements-rebase.md) | status | active | standard | 2026-06-23 | rebased per-node source-connector identity onto main; pushed to origin/catalog-enhancements
+
 ## Decisions
 
 - [agent-context-initialized](decisions/agent-context-initialized.md) | decision | active | core | 2026-05-20 | docs/agent scaffolded during MCP Access stage one
@@ -63,6 +66,7 @@ Last updated: 2026-06-22 | Total notes: 75
 - [mcp-token-auth-stage-2a](decisions/mcp-token-auth-stage-2a.md) | decision | active | core | 2026-06-14 | mcp-server enforces per-user bearer tokens; shared token crypto
 - [per-field-confidence-and-verification](decisions/per-field-confidence-and-verification.md) | decision | active | core | 2026-06-15 | hybrid heuristic confidence engine + derived verification status; corroboration/ambiguity/verify
 - [webhook-receiver-design](decisions/webhook-receiver-design.md) | decision | active | core | 2026-06-18 | HMAC verify-first receiver; per-App secret no-downgrade; coalesced targeted refetch
+- [per-node-source-connector-id](decisions/per-node-source-connector-id.md) | decision | active | standard | 2026-05-28 | stamp \_source_connector_id from envelope; powers catalog source facet/pills
 
 ## Patterns
 
@@ -98,6 +102,8 @@ Last updated: 2026-06-22 | Total notes: 75
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
+
+- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | repo declares ZERO Neo4j indexes; all graph queries full-scan; when/where to add? (PR #87 IN7)
 
 ## Scars
 

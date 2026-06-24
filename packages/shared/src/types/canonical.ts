@@ -8,6 +8,12 @@ export interface CanonicalNode {
   _source_system: string; // e.g., 'github', 'kubernetes'
   _source_org: string; // e.g., 'github/shipitops'
   _source_id: string; // Linking key from source system
+  // Connector instance ID that produced this entity (e.g. 'gh-acme-prod').
+  // Set by the core-writer from the event envelope, not by the normalizer —
+  // a normalizer doesn't know which configured instance dispatched the sync.
+  // Optional because pre-existing nodes from before this field was added
+  // won't have it until the next sync rewrites them.
+  _source_connector_id?: string;
   _last_synced: string; // ISO 8601
   // Freshness/ORDERING token (Cut B). Either a comparable epoch-ms number (entities
   // with a source timestamp — Repository/Pipeline) OR an opaque, sentinel-prefixed

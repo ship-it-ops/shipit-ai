@@ -14,7 +14,10 @@ import { Input, Spinner } from '@ship-it-ui/ui';
 import { DynamicIconGlyph, IconGlyph } from '@ship-it-ui/icons';
 import { getEntityTypeMeta } from '@ship-it-ui/shipit';
 import { useSearch } from '@/lib/hooks/use-search';
-import type { SearchResult } from '@/lib/api';
+import { useConnectorsList } from '@/lib/hooks/use-graph-data';
+import { resolveConnectorIdentity } from '@/lib/connector-identity';
+import { ConnectorPill } from '@/components/connectors/connector-pill';
+import type { EntitySourceFilter, SearchResult } from '@/lib/api';
 
 export interface EntitySearchBoxProps {
   /** Fires when the user picks a result. The input is cleared by default. */
@@ -34,6 +37,8 @@ export interface EntitySearchBoxProps {
   className?: string;
   /** Extra slot rendered inside the listbox above results (e.g., a tip line). */
   beforeResults?: ReactNode;
+  /** Restrict results to entities produced by a given connector type / instance. */
+  sourceFilter?: EntitySourceFilter;
 }
 
 const MIN_QUERY = 2;
@@ -48,6 +53,7 @@ export function EntitySearchBox({
   autoFocus,
   className,
   beforeResults,
+  sourceFilter,
 }: EntitySearchBoxProps) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -56,7 +62,8 @@ export function EntitySearchBox({
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
-  const { data, isLoading, isFetching } = useSearch(query);
+  const { data, isLoading, isFetching } = useSearch(query, sourceFilter);
+  const { data: connectors } = useConnectorsList();
 
   // Results: drop excluded labels, then sort preferred label first. The backend
   // already does a CONTAINS match; we keep the original relevance order for the rest.
@@ -206,6 +213,16 @@ export function EntitySearchBox({
                 </span>
                 <span className="text-text-muted shrink-0 text-[11px]">{meta.label}</span>
                 {r.owner && <span className="text-text-dim shrink-0 text-[11px]">{r.owner}</span>}
+                {r.sourceSystem && (
+                  <ConnectorPill
+                    compact
+                    identity={resolveConnectorIdentity(
+                      r.sourceSystem,
+                      r.sourceConnectorId,
+                      connectors,
+                    )}
+                  />
+                )}
               </button>
             );
           })}

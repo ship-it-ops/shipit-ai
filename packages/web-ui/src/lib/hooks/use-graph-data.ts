@@ -6,8 +6,13 @@ import {
   fetchEntityClaims,
   fetchNeighborhood,
   fetchGraphOverview,
+  fetchGraphSources,
+  fetchConnectors,
+  type Connector,
   type EntityClaims,
+  type EntitySourceFilter,
   type GraphData,
+  type GraphSourceInfo,
 } from '@/lib/api';
 
 export function useGraphData(nodeId?: string, depth: number = 2) {
@@ -19,18 +24,23 @@ export function useGraphData(nodeId?: string, depth: number = 2) {
   });
 }
 
-export function useInitialGraphData() {
+export function useInitialGraphData(source?: EntitySourceFilter) {
   return useQuery<GraphData>({
-    queryKey: ['graph-initial'],
-    queryFn: () => fetchGraphOverview(),
+    queryKey: ['graph-initial', source?.sourceSystem ?? '', source?.sourceConnectorId ?? ''],
+    queryFn: () => fetchGraphOverview(100, source),
     retry: 1,
   });
 }
 
-export function useCatalogEntities(limit: number = 500) {
+export function useCatalogEntities(limit: number = 500, source?: EntitySourceFilter) {
   return useQuery<GraphData>({
-    queryKey: ['catalog-overview', limit],
-    queryFn: () => fetchGraphOverview(limit),
+    queryKey: [
+      'catalog-overview',
+      limit,
+      source?.sourceSystem ?? '',
+      source?.sourceConnectorId ?? '',
+    ],
+    queryFn: () => fetchGraphOverview(limit, source),
     retry: 1,
   });
 }
@@ -51,6 +61,25 @@ export function useEntityClaims(nodeId?: string) {
     queryKey: ['claims', nodeId],
     queryFn: () => fetchEntityClaims(nodeId!),
     enabled: !!nodeId,
+    retry: 1,
+  });
+}
+
+export function useGraphSources() {
+  return useQuery<GraphSourceInfo[]>({
+    queryKey: ['graph-sources'],
+    queryFn: fetchGraphSources,
+    retry: 1,
+  });
+}
+
+// Shared connector-list cache — the /connectors page already fetches this,
+// but the catalog/explore source pill needs it too. Single React Query key
+// means both surfaces share the same network round-trip.
+export function useConnectorsList() {
+  return useQuery<Connector[]>({
+    queryKey: ['connectors-list'],
+    queryFn: fetchConnectors,
     retry: 1,
   });
 }

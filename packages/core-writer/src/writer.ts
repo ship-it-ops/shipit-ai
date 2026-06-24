@@ -150,9 +150,13 @@ export class CoreWriter {
           // Write node with resolved claims and effective properties. The
           // atomic in-Cypher freshness guard may REJECT this when a strictly-newer
           // version is already stored (out-of-order/stale delivery).
+          // Stamp the connector instance ID from the envelope so the graph
+          // remembers which configured instance produced this entity
+          // (normalizers don't know — only the runner/scheduler does).
           const nodeToWrite: CanonicalNode = {
             ...node,
             id: reconciliation.canonicalId,
+            _source_connector_id: event.connector_id,
           };
           const { written } = await this.nodeWriter.writeNode(
             nodeToWrite,

@@ -355,10 +355,35 @@ export class Neo4jService {
     return { nodes, edges, truncated };
   }
 
-  async getOverview(_ctx: RequestContext, limit: number = 100): Promise<NeighborhoodResult> {
+  async getOverview(
+    _ctx: RequestContext,
+    limitOrOpts:
+      | number
+      | { limit?: number; sourceSystem?: string; sourceConnectorId?: string } = 100,
+  ): Promise<NeighborhoodResult> {
+    // Back-compat: callers passing a bare number still work.
+    const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
+    const limit = opts.limit ?? 100;
+
+    // Filter at the Cypher layer rather than post-hoc — otherwise the
+    // LIMIT slices the unfiltered set and you'd get fewer than `limit`
+    // rows back when a source filter excludes most of the head of the
+    // result set.
+    const sourceClauses: string[] = [];
+    const params: Record<string, unknown> = { limit: neo4j.int(limit) };
+    if (opts.sourceSystem) {
+      sourceClauses.push('n._source_system = $sourceSystem');
+      params.sourceSystem = opts.sourceSystem;
+    }
+    if (opts.sourceConnectorId) {
+      sourceClauses.push('n._source_connector_id = $sourceConnectorId');
+      params.sourceConnectorId = opts.sourceConnectorId;
+    }
+    const sourceWhere = sourceClauses.length ? ` AND ${sourceClauses.join(' AND ')}` : '';
+
     const nodeRecords = await this.runQuery(
-      `MATCH (n) WHERE ${EXCLUDE_INTERNAL_LABELS} RETURN n, labels(n) AS labels LIMIT $limit`,
-      { limit: neo4j.int(limit) },
+      `MATCH (n) WHERE ${EXCLUDE_INTERNAL_LABELS}${sourceWhere} RETURN n, labels(n) AS labels LIMIT $limit`,
+      params,
     );
 
     const nodesMap = new Map<string, CytoscapeNode>();
@@ -450,6 +475,41 @@ export class Neo4jService {
     const cypher = `MATCH (n${nodeLabel}) ${where} RETURN n, labels(n) AS labels ${order} LIMIT $limit`;
 
     return this.runQuery(cypher, params);
+  }
+
+  /**
+   * Distinct (sourceSystem, sourceConnectorId) pairs present in the graph,
+   * with an entity count for each. Powers the source/connector filter facets
+   * — kept dynamic so a new connector type shows up without a UI deploy.
+   * Excludes internal `_`-prefix bookkeeping labels.
+   */
+  async getSources(): Promise<
+    Array<{ sourceSystem: string; sourceConnectorId: string | null; entityCount: number }>
+  > {
+    const records = await this.runQuery(
+      `MATCH (n)
+       WHERE ${EXCLUDE_INTERNAL_LABELS}
+         AND n._source_system IS NOT NULL
+       RETURN n._source_system AS sourceSystem,
+              n._source_connector_id AS sourceConnectorId,
+              count(n) AS entityCount
+       ORDER BY sourceSystem, sourceConnectorId`,
+    );
+
+    return records.map((record) => {
+      const count = record.get('entityCount') as { toNumber?: () => number };
+      const entityCount =
+        typeof count === 'object' && count?.toNumber ? count.toNumber() : Number(count);
+      const sourceConnectorId = record.get('sourceConnectorId');
+      return {
+        sourceSystem: String(record.get('sourceSystem')),
+        sourceConnectorId:
+          sourceConnectorId === null || sourceConnectorId === undefined
+            ? null
+            : String(sourceConnectorId),
+        entityCount,
+      };
+    });
   }
 
   async close(): Promise<void> {
