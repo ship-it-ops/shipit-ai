@@ -44,7 +44,10 @@ export function TypeFilter({ options, counts, filter, onCycle }: TypeFilterProps
               <button
                 type="button"
                 onClick={() => onCycle(opt.value)}
-                aria-pressed={state !== 'neutral'}
+                // Tri-state can't be conveyed by binary aria-pressed (include
+                // and exclude would both read as "pressed"), and the ✓/− glyph
+                // is aria-hidden — so put the state in the accessible name.
+                aria-label={`${opt.label} — ${STATE_HINT[state]}`}
                 title={STATE_HINT[state]}
                 className="hover:bg-panel-2 focus-visible:ring-accent-dim flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left outline-none focus-visible:ring-[3px]"
               >

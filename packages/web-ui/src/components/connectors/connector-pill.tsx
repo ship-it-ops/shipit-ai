@@ -22,8 +22,10 @@ export function ConnectorPill({ identity, compact = false, className }: Connecto
   const label = compact ? identity.shortName : identity.displayName;
   return (
     <Badge
-      variant={identity.resolved ? 'neutral' : 'neutral'}
+      variant="neutral"
       className={
+        // Unresolved (deleted/legacy connector) is dimmed via opacity — the
+        // Badge has no muted variant, so the distinction is visual + title.
         'font-mono text-[11px] ' + (identity.resolved ? '' : 'opacity-60 ') + (className ?? '')
       }
       title={identity.resolved ? identity.displayName : `${identity.displayName} (unresolved)`}

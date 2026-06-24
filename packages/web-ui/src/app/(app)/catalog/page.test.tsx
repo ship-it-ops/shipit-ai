@@ -49,6 +49,14 @@ describe('CatalogPage — default Pipeline exclusion', () => {
     expect(screen.getByTitle(/hidden · click to clear/i)).toBeInTheDocument();
   });
 
+  it('conveys the tri-state via the accessible name (not just the visual ✓/− glyph)', () => {
+    renderCatalog();
+    // Screen readers must be able to tell exclude from include — the state
+    // lives in the button's accessible name, not the aria-hidden indicator.
+    // (The type label is DS-meta-dependent; assert on the state phrasing.)
+    expect(screen.getByRole('button', { name: /hidden.*click to clear/i })).toBeInTheDocument();
+  });
+
   it('clicking the excluded Pipeline type reveals its entities and clears the hint', async () => {
     const user = userEvent.setup();
     renderCatalog();
