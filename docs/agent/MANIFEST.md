@@ -103,6 +103,8 @@ Last updated: 2026-06-22 | Total notes: 75
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
 
+- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | repo declares ZERO Neo4j indexes; all graph queries full-scan; when/where to add? (PR #87 IN7)
+
 ## Scars
 
 - [integration-tests-sharing-a-db-must-run-serially](scars/integration-tests-sharing-a-db-must-run-serially.md) | scar | active | core | 2026-06-19 | integration tests green alone but red together = vitest parallel files clobbering a shared real DB; --no-file-parallelism or isolate
