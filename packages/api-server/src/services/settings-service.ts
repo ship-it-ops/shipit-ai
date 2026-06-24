@@ -86,7 +86,10 @@ export class SettingsService {
   //   - Global-App connector → write github-webhook-secret + set the env so the
   //     receiver verifies the next delivery immediately (manifest-service
   //     precedent — GitHubAppService.update deliberately won't touch it).
-  async setConnectorWebhookSecret(connectorId: string): Promise<WebhookSecretResult> {
+  async setConnectorWebhookSecret(
+    connectorId: string,
+    fallbackUrl = '',
+  ): Promise<WebhookSecretResult> {
     const connector = this.registry.get(connectorId) as GitHubConnectorConfig;
     const resolved = resolveAppCredentials(connector, this.globalApp);
     if (!resolved.id) {
@@ -110,22 +113,23 @@ export class SettingsService {
       this.env.GITHUB_WEBHOOK_SECRET = secret;
     }
 
+    const url = this.effectiveWebhookUrl(fallbackUrl);
     return {
       secret,
-      webhookUrl: this.globalApp.webhookPublicUrl ?? '',
-      steps: this.webhookSetupSteps(secret),
+      webhookUrl: url,
+      steps: this.webhookSetupSteps(secret, url),
     };
   }
 
   // Numbered, copy-pasteable GitHub-App webhook setup instructions for the admin
   // browser. The secret is embedded so the admin can paste both URL + secret in
   // one pass; this string is returned to the (admin-only) caller, never logged.
-  private webhookSetupSteps(secret: string): string[] {
-    const url = this.globalApp.webhookPublicUrl ?? '<your webhook URL>';
+  private webhookSetupSteps(secret: string, url: string): string[] {
+    const webhookUrl = url || '<your webhook URL>';
     return [
       'Open your GitHub App settings (Settings → Developer settings → GitHub Apps → your app).',
       'In the "Webhook" section, ensure "Active" is checked.',
-      `Set the Webhook URL to: ${url}`,
+      `Set the Webhook URL to: ${webhookUrl}`,
       `Set the Webhook secret to: ${secret}`,
       'Set "Content type" to application/json.',
       'Save changes, then use "Recent Deliveries" → "Redeliver" (or push a commit) to verify.',
@@ -163,9 +167,22 @@ export class SettingsService {
     return Boolean(this.env.GITHUB_OAUTH_CLIENT_ID && this.env.GITHUB_OAUTH_CLIENT_SECRET);
   }
 
-  // The receiver URL shown across the settings UI.
-  getWebhookUrl(): string {
-    return this.globalApp.webhookPublicUrl ?? '';
+  // The receiver URL shown across the settings UI. Prefers the operator-set
+  // `webhookPublicUrl`; when that is unset/empty (the common deployed case —
+  // the YAML resolves `${GITHUB_WEBHOOK_PUBLIC_URL:-}` to ''), falls back to a
+  // request-derived origin passed in by the route so the field is never blank
+  // on a reachable instance.
+  getWebhookUrl(fallback = ''): string {
+    return this.effectiveWebhookUrl(fallback);
+  }
+
+  // Resolve the effective receiver URL: a non-empty configured value wins,
+  // otherwise the caller-supplied fallback (request-derived origin), otherwise
+  // empty. Note the configured value can be the empty string, so a plain `??`
+  // is NOT enough here.
+  private effectiveWebhookUrl(fallback: string): string {
+    const configured = this.globalApp.webhookPublicUrl;
+    return configured && configured.length > 0 ? configured : fallback;
   }
 
   // Per-connector webhook view rows for GET /api/settings.

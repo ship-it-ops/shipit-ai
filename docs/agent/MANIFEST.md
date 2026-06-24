@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-23 | Total notes: 75
+Last updated: 2026-06-24 | Total notes: 76
 
 ## Investigations
 
@@ -16,6 +16,7 @@ Last updated: 2026-06-23 | Total notes: 75
 - [last-synced-frozen-by-idempotency-dedup](investigations/last-synced-frozen-by-idempotency-dedup.md) | investigation | fixed | core | 2026-06-16 | \_last_synced frozen by idempotency skip; now bump timestamp on skip; content-change suppression still open
 - [redis-oom-crashloop-data-appears-gone](investigations/redis-oom-crashloop-data-appears-gone.md) | investigation | completed | core | 2026-06-17 | redis dataset 246MB > 256Mi limit OOMKilled; UI looked empty; data intact
 - [apiserver-crashloop-unhandled-bullmq-error-on-oom-redis](investigations/apiserver-crashloop-unhandled-bullmq-error-on-oom-redis.md) | investigation | fixed | core | 2026-06-22 | no '.on(error)' on BullMQ Worker/Queue/ioredis → OOM moveToActive crashes process at boot; attach error listeners + resilient startRunner
+- [webhook-settings-empty-url-and-misleading-setup](investigations/webhook-settings-empty-url-and-misleading-setup.md) | investigation | fixed | standard | 2026-06-24 | blank Receiver URL (empty-string YAML fallback, no request-derive) + "Set up" green badge conflated stored-secret with working; confirm-gate + tri-state + URL fallback
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.

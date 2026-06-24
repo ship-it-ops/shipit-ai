@@ -263,6 +263,22 @@ describe('admin /api/settings — admin happy paths (dev-fallback admin)', () =>
     expect(Array.isArray(body.allowlist)).toBe(true);
   });
 
+  it('GET / derives webhookUrl from forwarded headers when webhookPublicUrl is empty', async () => {
+    await h.server.close();
+    const config = configWithGlobalApp();
+    // Deployed case: env unset → YAML `${GITHUB_WEBHOOK_PUBLIC_URL:-}` → ''.
+    config.connectors.github.app.webhookPublicUrl = '';
+    h = await makeHarness({ config });
+
+    const res = await h.server.inject({
+      method: 'GET',
+      url: '/api/settings',
+      headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'portal.example.com' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().webhookUrl).toBe('https://portal.example.com/api/webhooks/github');
+  });
+
   it('POST /webhooks/:id/setup returns a secret + url + steps and persists (global App → GSM)', async () => {
     const res = await h.server.inject({
       method: 'POST',

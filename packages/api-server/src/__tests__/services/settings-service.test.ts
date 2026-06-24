@@ -101,6 +101,40 @@ describe('SettingsService.setConnectorWebhookSecret', () => {
     expect(env.GITHUB_WEBHOOK_SECRET).toBeUndefined();
   });
 
+  it('uses the request-derived fallback URL when webhookPublicUrl is empty', async () => {
+    const svc = new SettingsService({
+      secretStore: fakeStore(),
+      // Empty string (the deployed case: `${GITHUB_WEBHOOK_PUBLIC_URL:-}` → '').
+      globalApp: { id: 'global-app', webhookPublicUrl: '' },
+      registry: fakeRegistry([ghConnector()]),
+      connectorAppStore: fakeAppStore(),
+      env,
+    });
+
+    const result = await svc.setConnectorWebhookSecret(
+      'conn-acme',
+      'https://portal.example.com/api/webhooks/github',
+    );
+
+    expect(result.webhookUrl).toBe('https://portal.example.com/api/webhooks/github');
+    expect(
+      result.steps.some((s) => s.includes('https://portal.example.com/api/webhooks/github')),
+    ).toBe(true);
+  });
+
+  it('configured webhookPublicUrl wins over the request-derived fallback', async () => {
+    const svc = new SettingsService({
+      secretStore: fakeStore(),
+      globalApp: { id: 'global-app', webhookPublicUrl: 'https://configured.example/hook' },
+      registry: fakeRegistry([ghConnector()]),
+      connectorAppStore: fakeAppStore(),
+      env,
+    });
+
+    const result = await svc.setConnectorWebhookSecret('conn-acme', 'https://derived.example/hook');
+    expect(result.webhookUrl).toBe('https://configured.example/hook');
+  });
+
   it('throws NoResolvableAppError when no App id resolves', async () => {
     const svc = new SettingsService({
       secretStore: fakeStore(),
@@ -183,6 +217,34 @@ describe('SettingsService allow-list + getters', () => {
         GITHUB_OAUTH_CLIENT_SECRET: 'sec',
       }).getOAuthConfigured(),
     ).toBe(true);
+  });
+});
+
+describe('SettingsService.getWebhookUrl', () => {
+  const make = (webhookPublicUrl?: string) =>
+    new SettingsService({
+      secretStore: fakeStore(),
+      globalApp: { id: 'global-app', webhookPublicUrl },
+      registry: fakeRegistry([]),
+      connectorAppStore: fakeAppStore(),
+      env: {},
+    });
+
+  it('returns the configured URL when set', () => {
+    expect(make('https://configured.example/hook').getWebhookUrl('https://derived/hook')).toBe(
+      'https://configured.example/hook',
+    );
+  });
+
+  it('returns the fallback when webhookPublicUrl is the empty string', () => {
+    expect(make('').getWebhookUrl('https://derived.example/api/webhooks/github')).toBe(
+      'https://derived.example/api/webhooks/github',
+    );
+  });
+
+  it('returns empty string when both the config and the fallback are empty', () => {
+    expect(make('').getWebhookUrl('')).toBe('');
+    expect(make(undefined).getWebhookUrl()).toBe('');
   });
 });
 
