@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-05-20
-updated: 2026-05-20
+updated: 2026-06-23
 author: claude-opus-4-7
 tags: [mcp, auth, http-transport, tokens]
 importance: standard

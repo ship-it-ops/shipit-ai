@@ -30,6 +30,13 @@ Nothing yet — consciously deferred to avoid landing index infra (and a
 migration/bootstrap mechanism, which also doesn't exist) inside an unrelated
 feature PR.
 
+## Status — parked as future backlog (decided 2026-06-23)
+
+Maintainer decision: **not ready to start defining indexes yet.** Keep this as a
+future todo. Revisit when the graph grows beyond demo scale (the Revisit Trigger
+below) or when we build the missing migration/bootstrap mechanism for any other
+reason. Do not land index infra until then.
+
 ## Who Can Answer
 
 Maintainer / whoever owns the Neo4j schema lifecycle. Decision needed: (a) when

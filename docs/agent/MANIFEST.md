@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-22 | Total notes: 75
+Last updated: 2026-06-23 | Total notes: 75
 
 ## Investigations
 
@@ -26,17 +26,7 @@ Last updated: 2026-06-22 | Total notes: 75
 
 <!-- always-read at session start -->
 
-- [redis-oom-boot-tolerance-impl](status/redis-oom-boot-tolerance-impl.md) | status | active | core | 2026-06-22 | tolerate full/OOM Redis at boot (error listeners + resilient startRunner); MERGED to main (#85, 3c25e8a)
-- [event-log-stream-bound-impl](status/event-log-stream-bound-impl.md) | status | active | core | 2026-06-22 | cut/bound shipit-event-log stream (the real ~825MB OOM key); gated off by default + MAXLEN; implemented, all green, uncommitted
-- [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
-- [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
-- [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
-- [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
-- [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); committed 5e2c2c2; rollout/rollback runbook
-- [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
-
-- [catalog-exclude-hide-types](status/catalog-exclude-hide-types.md) | status | active | standard | 2026-06-23 | catalog tri-state Type filter (include/exclude/neutral); Pipelines hidden by default; on catalog-enhancements
-- [catalog-enhancements-rebase](status/catalog-enhancements-rebase.md) | status | active | standard | 2026-06-23 | rebased per-node source-connector identity onto main; pushed to origin/catalog-enhancements
+_None in flight. All prior status entries shipped to main and were archived 2026-06-23 (reconciled: their original commit hashes were squashed away on PR merge, but every feature is present on main — #76/#85/#86/#87 + DS bumps)._
 
 ## Decisions
 
@@ -82,10 +72,10 @@ Last updated: 2026-06-22 | Total notes: 75
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
-- [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
-- [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | active | core | 2026-06-18 | audited receiver: HMAC verify, per-App secret, coalesced refetch; Cut A/B split
-- [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
-- [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | active | core | 2026-06-14 | upsert logged-in user as a Person via event-bus on login
+- [admin-portal-settings](plans/admin-portal-settings.md) | plan | completed | core | 2026-06-23 | SHIPPED (#76): admin settings hub — webhook setup/rotate, OAuth, admins, allow-list
+- [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | completed | core | 2026-06-23 | SHIPPED: HMAC verify, per-App secret, coalesced refetch; Cut A (#76) + Cut B both landed
+- [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | completed | standard | 2026-06-23 | SHIPPED (#48/#67): bearer enforcement + token CRUD + API Keys UI; only mcp-server infra exposure remains
+- [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | completed | core | 2026-06-23 | SHIPPED (#67, hardened #73): login upserts a Person via event-bus; shared canonical-id merges with connector
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
@@ -98,12 +88,12 @@ Last updated: 2026-06-22 | Total notes: 75
 - [codeowner-edge-out-of-order-ordering](open-questions/codeowner-edge-out-of-order-ordering.md) | open-question | active | standard | 2026-06-19 | edges (CODEOWNER_OF etc.) have no ordering guard; mergeEdge is last-writer-wins — protect or accept?
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | answered | standard | 2026-06-22 | RESOLVED — CUT: shipit-event-log gated off by default (+MAXLEN if on); was the ~825MB OOM key
-- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
+- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-23 | Gap2 source-priority FIXED (#74 shared registry); Gap1 partial — manual-override route, add-relation route, claim-write RBAC still open
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
 
-- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | repo declares ZERO Neo4j indexes; all graph queries full-scan; when/where to add? (PR #87 IN7)
+- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | PARKED as future backlog — not starting indexes yet; revisit when graph outgrows demo scale (PR #87 IN7)
 
 ## Scars
 

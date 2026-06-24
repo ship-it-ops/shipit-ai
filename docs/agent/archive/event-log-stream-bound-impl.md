@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-06-22
 updated: 2026-06-22
 author: claude-session-2026-06-22-redis-oom
