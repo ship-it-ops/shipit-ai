@@ -9,77 +9,59 @@
 import { randomUUID } from 'node:crypto';
 import type { ManagedTransaction } from 'neo4j-driver';
 import type { PropertyClaim } from '@shipit-ai/shared';
-import { getSourceReliability, sourceKey } from '@shipit-ai/shared';
+import { getSourceReliability, sourceKey, pickManualOverride } from '@shipit-ai/shared';
 import type { Neo4jService } from './neo4j-service.js';
+import { loadClaimsLocked, writeClaims, parseClaims } from './claim-write-helpers.js';
 
 const VERIFIED_RELIABILITY = getSourceReliability('verified').reliability;
+
+/**
+ * A human-attestation claim is one whose source registry-key is `verified` or
+ * `manual` (both are namespaced as `verified:<actor>` / `manual:<actor>`). We
+ * match on the COLON-DELIMITED registry key via `sourceKey`, never a loose
+ * `STARTS WITH 'verified'` — that would miscategorize a connector source like
+ * `verified_import` / `manualish` as a human override.
+ */
+function isOverrideClaim(claim: PropertyClaim): boolean {
+  const key = sourceKey(claim.source);
+  return key === 'verified' || key === 'manual';
+}
+
+/**
+ * Stable dedup key for a contradicted GraphEditEvent. JSON.stringify of the
+ * tuple so the segments stay delimited — a bare concatenation
+ * (`${entityId}${propertyKey}${newValue}`) collides on boundary shifts
+ * (e.g. ('ab','c',…) vs ('a','bc',…)) and could suppress a real `contradicted`
+ * event. Both the read-existing and write sides MUST use this to agree.
+ */
+function contradictionKey(entityId: string, propertyKey: string, newValue: string): string {
+  return JSON.stringify([entityId, propertyKey, newValue]);
+}
 
 export interface ReviewQueueRow {
   entityId: string;
   name: string;
   label: string;
   propertyKey: string;
+  /**
+   * Effective value of the human override (verified OR manual) that a fresher
+   * connector claim now contradicts. Named `verifiedValue` for client back-compat;
+   * `overrideSource` distinguishes the two.
+   */
   verifiedValue: unknown;
   verifiedBy: string | null;
+  /** Registry key of the human override: `verified` or `manual`. */
+  overrideSource: 'verified' | 'manual';
   proposedValue: unknown;
   proposedSource: string;
-}
-
-function parseClaims(raw: unknown): PropertyClaim[] {
-  if (Array.isArray(raw)) return raw as PropertyClaim[];
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed as PropertyClaim[];
-    } catch {
-      // corrupted JSON — treat as no claims
-    }
-  }
-  return [];
 }
 
 export class VerificationService {
   constructor(private neo4j: Neo4jService) {}
 
-  // Read claims while holding a write lock on the node, inside `tx`. The SET
-  // forces Neo4j to take the node's write lock immediately, so a concurrent
-  // verify/resolve transaction blocks here until this one commits and then
-  // re-reads the latest claims — turning a lost-update race into serialized
-  // writes. `_claims_rev` is `_`-prefixed (hidden from user-facing queries).
-  private async loadClaimsLocked(
-    tx: ManagedTransaction,
-    entityId: string,
-  ): Promise<{
-    claims: PropertyClaim[];
-    name: string;
-    label: string;
-  } | null> {
-    const result = await tx.run(
-      `MATCH (n {id: $id})
-       SET n._claims_rev = coalesce(n._claims_rev, 0) + 1
-       RETURN n, labels(n) AS labels LIMIT 1`,
-      { id: entityId },
-    );
-    if (result.records.length === 0) return null;
-    const node = result.records[0].get('n') as { properties: Record<string, unknown> };
-    const labels = result.records[0].get('labels') as string[];
-    return {
-      claims: parseClaims(node.properties._claims),
-      name: String(node.properties.name ?? entityId.split('/').pop() ?? entityId),
-      label: labels[0] ?? 'Unknown',
-    };
-  }
-
-  private async writeClaims(
-    tx: ManagedTransaction,
-    entityId: string,
-    claims: PropertyClaim[],
-  ): Promise<void> {
-    await tx.run('MATCH (n {id: $id}) SET n._claims = $claims', {
-      id: entityId,
-      claims: JSON.stringify(claims),
-    });
-  }
+  // Locked read-modify-write of `_claims` is shared with ManualEditService via
+  // ./claim-write-helpers (loadClaimsLocked / writeClaims), so the `_claims_rev`
+  // lock contract lives in one place.
 
   private async recordEvent(
     tx: ManagedTransaction,
@@ -121,7 +103,7 @@ export class VerificationService {
     return this.neo4j.runInWriteTransaction(async (tx) => {
       // Load (locked) → mutate → write → audit, all in one transaction so a
       // concurrent verify or connector re-sync can't clobber the assured value.
-      const loaded = await this.loadClaimsLocked(tx, entityId);
+      const loaded = await loadClaimsLocked(tx, entityId);
       if (!loaded) throw new Error(`Entity ${entityId} not found`);
       const now = new Date().toISOString();
       const source = `verified:${actor}`;
@@ -151,26 +133,42 @@ export class VerificationService {
           ),
       );
       next.push(claim);
-      await this.writeClaims(tx, entityId, next);
+      await writeClaims(tx, entityId, next);
       await this.recordEvent(tx, entityId, propertyKey, 'verified', actor, value);
       return { ok: true };
     });
   }
 
-  /** Verified fields contradicted by a newer connector claim, awaiting adjudication. */
+  /**
+   * Human overrides (verified OR manual) contradicted by a newer connector
+   * claim, awaiting adjudication.
+   *
+   * Also EMITS a `contradicted` GraphEditEvent (deduped) per surfaced divergence
+   * — see {@link emitContradictions}. The divergence-detection hook lives HERE,
+   * in the review-queue computation, NOT on the hot write path: this method
+   * already owns the override-vs-connector contradiction predicate, and the
+   * connector resync that produces the divergence runs through core-writer
+   * (off-limits / no edit hook). Detecting at scan time keeps that contract
+   * intact while still giving operators an audit trail distinguishing a
+   * deliberate override from stale drift.
+   */
   async listReviewQueue(limit = 100): Promise<ReviewQueueRow[]> {
-    // Push the "has a verified field contradicted by a newer non-verified
-    // claim" predicate into Cypher (apoc parses the `_claims` JSON), so the
-    // LIMIT bounds *candidate* nodes — ordered deterministically — rather than
-    // a fixed prefix of all claim-bearing nodes in arbitrary order. Otherwise a
-    // real candidate could fall outside the scan window and never surface. The
-    // app-side loop below remains the authoritative row builder.
+    // Push the "has a human-override field contradicted by a newer
+    // non-override claim" predicate into Cypher (apoc parses the `_claims`
+    // JSON), so the LIMIT bounds *candidate* nodes — ordered deterministically —
+    // rather than a fixed prefix of all claim-bearing nodes in arbitrary order.
+    // Otherwise a real candidate could fall outside the scan window and never
+    // surface. The app-side loop below remains the authoritative row builder.
+    //
+    // Override match is colon-exact: split the source on ':' and compare the key
+    // to 'verified'/'manual', so 'verified_import'/'manualish' can't masquerade
+    // as a human override (the old `STARTS WITH 'verified'` did).
     const records = await this.neo4j.runQuery(
       `MATCH (n) WHERE n._claims IS NOT NULL AND n._claims STARTS WITH '['
        WITH n, apoc.convert.fromJsonList(n._claims) AS claims
-       WHERE any(vc IN claims WHERE vc.source STARTS WITH 'verified' AND
+       WHERE any(vc IN claims WHERE split(vc.source, ':')[0] IN ['verified','manual'] AND
          any(c IN claims WHERE
-           NOT c.source STARTS WITH 'verified'
+           NOT split(c.source, ':')[0] IN ['verified','manual']
            AND c.property_key = vc.property_key
            AND apoc.convert.toJson(c.value) <> apoc.convert.toJson(coalesce(vc.verified_value, vc.value))
            AND c.ingested_at > coalesce(vc.verified_at, vc.ingested_at)))
@@ -191,16 +189,20 @@ export class VerificationService {
         byKey.set(c.property_key, arr);
       }
       for (const [key, group] of byKey) {
-        const verified = group.find((c) => sourceKey(c.source) === 'verified');
-        if (!verified) continue;
-        const verifiedValue = verified.verified_value ?? verified.value;
-        const verifiedAt = verified.verified_at ?? verified.ingested_at;
+        // Use the SHARED deterministic resolver so the surfaced override is the
+        // SAME claim the read-path resolves as effective (verified-outranks-manual,
+        // then freshest ingested_at, then source). Array-order `find` could pick a
+        // different equal-rank manual claim → 'accept' would re-pin a non-effective value.
+        const override = pickManualOverride(group);
+        if (!override) continue;
+        const overrideValue = override.verified_value ?? override.value;
+        const overrideAt = override.verified_at ?? override.ingested_at;
         const contradicting = group
           .filter(
             (c) =>
-              sourceKey(c.source) !== 'verified' &&
-              JSON.stringify(c.value) !== JSON.stringify(verifiedValue) &&
-              c.ingested_at > verifiedAt,
+              !isOverrideClaim(c) &&
+              JSON.stringify(c.value) !== JSON.stringify(overrideValue) &&
+              c.ingested_at > overrideAt,
           )
           .sort((a, b) => b.ingested_at.localeCompare(a.ingested_at))[0];
         if (!contradicting) continue;
@@ -209,15 +211,75 @@ export class VerificationService {
           name: String(node.properties.name ?? node.properties.id),
           label: labels[0] ?? 'Unknown',
           propertyKey: key,
-          verifiedValue,
-          verifiedBy: verified.verified_by ?? null,
+          verifiedValue: overrideValue,
+          verifiedBy: override.verified_by ?? override.source.split(':')[1] ?? null,
+          overrideSource: sourceKey(override.source) as 'verified' | 'manual',
           proposedValue: contradicting.value,
           proposedSource: contradicting.source,
         });
-        if (rows.length >= limit) return rows;
+        if (rows.length >= limit) {
+          await this.emitContradictions(rows);
+          return rows;
+        }
       }
     }
+    await this.emitContradictions(rows);
     return rows;
+  }
+
+  /**
+   * Emit a `contradicted` GraphEditEvent for each surfaced divergence, ONCE per
+   * distinct (entity_id, property_key, new_value) — a stable contradiction that
+   * keeps re-appearing across scans must not spam the audit log. Dedup is done
+   * against existing `contradicted` events. Best-effort: an audit write that
+   * fails must never break the read path that operators rely on, so failures are
+   * swallowed (the row is still returned for review).
+   */
+  private async emitContradictions(rows: ReviewQueueRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    try {
+      const existing = await this.neo4j.runQuery(
+        `MATCH (e:GraphEditEvent {kind: 'contradicted'})
+         RETURN e.entity_id AS entityId, e.property_key AS propertyKey, e.new_value AS newValue`,
+      );
+      const seen = new Set<string>();
+      for (const rec of existing) {
+        seen.add(
+          contradictionKey(
+            String(rec.get('entityId')),
+            String(rec.get('propertyKey')),
+            String(rec.get('newValue')),
+          ),
+        );
+      }
+      for (const row of rows) {
+        const newValue = JSON.stringify(row.proposedValue);
+        const dedupKey = contradictionKey(row.entityId, row.propertyKey, newValue);
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+        await this.neo4j.runQuery(
+          `MATCH (n {id: $entityId})
+           CREATE (e:GraphEditEvent {
+             id: $id, kind: 'contradicted',
+             actor: $actor, entity_id: $entityId, property_key: $propertyKey,
+             prior_value: $priorValue, new_value: $newValue, ts: datetime()
+           })
+           CREATE (e)-[:EDITS]->(n)`,
+          {
+            // actor = the contradicting connector/source ('system' if unknown),
+            // so an operator can tell who drifted the value.
+            id: `ge:${randomUUID()}`,
+            actor: row.proposedSource || 'system',
+            entityId: row.entityId,
+            propertyKey: row.propertyKey,
+            priorValue: JSON.stringify(row.verifiedValue),
+            newValue,
+          },
+        );
+      }
+    } catch {
+      // Audit emission is best-effort; never fail the review-queue read.
+    }
   }
 
   /**
@@ -233,22 +295,26 @@ export class VerificationService {
     actor: string,
   ): Promise<{ ok: true }> {
     return this.neo4j.runInWriteTransaction(async (tx) => {
-      const loaded = await this.loadClaimsLocked(tx, entityId);
+      const loaded = await loadClaimsLocked(tx, entityId);
       if (!loaded) throw new Error(`Entity ${entityId} not found`);
       const group = loaded.claims.filter((c) => c.property_key === propertyKey);
-      const verified = group.find((c) => sourceKey(c.source) === 'verified');
-      if (!verified) throw new Error(`No verified claim on ${entityId}#${propertyKey}`);
-      const verifiedValue = verified.verified_value ?? verified.value;
-      const verifiedAt = verified.verified_at ?? verified.ingested_at;
+      // Adjudicate the SAME override the read-path resolves as effective: the
+      // shared deterministic resolver (verified outranks manual, then freshest,
+      // then source). The review queue surfaces this exact claim.
+      const override = pickManualOverride(group);
+      if (!override) throw new Error(`No human override on ${entityId}#${propertyKey}`);
+      const overrideSource = override.source;
+      const overrideValue = override.verified_value ?? override.value;
+      const overrideAt = override.verified_at ?? override.ingested_at;
 
-      let newValue = verifiedValue;
+      let newValue = overrideValue;
       if (action === 'accept') {
         const contradicting = group
           .filter(
             (c) =>
-              sourceKey(c.source) !== 'verified' &&
-              JSON.stringify(c.value) !== JSON.stringify(verifiedValue) &&
-              c.ingested_at > verifiedAt,
+              !isOverrideClaim(c) &&
+              JSON.stringify(c.value) !== JSON.stringify(overrideValue) &&
+              c.ingested_at > overrideAt,
           )
           .sort((a, b) => b.ingested_at.localeCompare(a.ingested_at))[0];
         if (contradicting) newValue = contradicting.value;
@@ -262,12 +328,15 @@ export class VerificationService {
       );
       const now = new Date(Math.max(Date.now(), newestClaimMs + 1000)).toISOString();
 
+      // Re-pin the exact override claim that was adjudicated. We set
+      // `verified_value`/`verified_at` even on a `manual:*` claim so the
+      // (override fresher than contradiction) predicate stops firing for it too.
       const next = loaded.claims.map((c) =>
-        sourceKey(c.source) === 'verified' && c.property_key === propertyKey
+        c.source === overrideSource && c.property_key === propertyKey
           ? { ...c, value: newValue, verified_value: newValue, verified_at: now, ingested_at: now }
           : c,
       );
-      await this.writeClaims(tx, entityId, next);
+      await writeClaims(tx, entityId, next);
       await this.recordEvent(
         tx,
         entityId,
@@ -275,7 +344,7 @@ export class VerificationService {
         action === 'accept' ? 'accepted' : 'rejected',
         actor,
         newValue,
-        verifiedValue,
+        overrideValue,
       );
       return { ok: true };
     });

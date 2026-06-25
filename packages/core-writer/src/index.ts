@@ -1,6 +1,6 @@
 // Core Writer
 export { CoreWriter } from './writer.js';
-export type { WriteResult, NodeWriter } from './writer.js';
+export type { WriteResult, NodeWriter, WriteNodeResult, ExistingClaims } from './writer.js';
 
 // Claims
 export { ClaimResolver } from './claims/resolver.js';
@@ -36,6 +36,7 @@ export {
   getExistingClaims,
   cleanupExpiredIdempotencyKeys,
 } from './neo4j/queries.js';
+export type { MergeNodeResult, ExistingClaims as Neo4jExistingClaims } from './neo4j/queries.js';
 
 // Config
 export { DEFAULT_CONFIG } from './config.js';

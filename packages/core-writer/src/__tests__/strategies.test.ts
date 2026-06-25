@@ -80,6 +80,22 @@ describe('resolveClaims', () => {
       expect(result!.effective_value).toBe('high');
       expect(result!.strategy).toBe('MANUAL_OVERRIDE_FIRST');
     });
+
+    it('among two manual claims, freshest wins deterministically (array-order independent)', () => {
+      const older = makeClaim({
+        value: 'alice',
+        source: 'manual:alice@co.com',
+        ingested_at: '2026-01-01T00:00:00.000Z',
+      });
+      const newer = makeClaim({
+        value: 'bob',
+        source: 'manual:bob@co.com',
+        ingested_at: '2026-02-01T00:00:00.000Z',
+      });
+      // Same winner regardless of input order — the read path (api-server) agrees.
+      expect(resolveClaims([older, newer], 'MANUAL_OVERRIDE_FIRST')!.effective_value).toBe('bob');
+      expect(resolveClaims([newer, older], 'MANUAL_OVERRIDE_FIRST')!.effective_value).toBe('bob');
+    });
   });
 
   describe('AUTHORITATIVE_ORDER', () => {

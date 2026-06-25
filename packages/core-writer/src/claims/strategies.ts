@@ -1,5 +1,5 @@
 import type { PropertyClaim, ResolutionStrategy, ClaimResolutionResult } from '@shipit-ai/shared';
-import { computeEffectiveConfidence, sourceRank } from '@shipit-ai/shared';
+import { computeEffectiveConfidence, sourceRank, pickManualOverride } from '@shipit-ai/shared';
 
 export function resolveClaims(
   claims: PropertyClaim[],
@@ -29,9 +29,9 @@ function resolveManualOverrideFirst(
   now?: Date,
 ): ClaimResolutionResult {
   // A human attestation wins: `verified:<user>` outranks `manual:<user>`.
-  const override =
-    claims.find((c) => c.source.startsWith('verified:')) ??
-    claims.find((c) => c.source.startsWith('manual:'));
+  // Deterministic tie-break (shared with the api-server read path) so two
+  // equally-ranked manual claims always resolve to the same winner.
+  const override = pickManualOverride(claims);
   if (override) {
     return {
       effective_value: override.value,

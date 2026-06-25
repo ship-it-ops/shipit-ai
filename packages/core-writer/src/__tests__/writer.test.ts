@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { CanonicalNode, CanonicalEdge, EventEnvelope } from '@shipit-ai/shared';
+import {
+  deriveNodeContentHash,
+  type CanonicalNode,
+  type CanonicalEdge,
+  type EventEnvelope,
+  type PropertyClaim,
+} from '@shipit-ai/shared';
 import { CoreWriter, type NodeWriter } from '../writer.js';
 import { InMemoryLinkingKeyIndex } from '../identity/linking-key-index.js';
 import { InMemoryIdempotencyChecker } from '../idempotency.js';
@@ -53,9 +59,11 @@ function makeEnvelope(nodes: CanonicalNode[], edges: CanonicalEdge[]): EventEnve
 
 function createMockNodeWriter(): NodeWriter {
   return {
-    writeNode: vi.fn().mockResolvedValue({ written: true }),
+    writeNode: vi
+      .fn()
+      .mockResolvedValue({ written: true, claimsWritten: true, claimsConflict: false }),
     writeEdge: vi.fn().mockResolvedValue(undefined),
-    getExistingClaims: vi.fn().mockResolvedValue([]),
+    getExistingClaims: vi.fn().mockResolvedValue({ claims: [], claimsRev: 0 }),
     touchLastSynced: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -81,13 +89,13 @@ function createStatefulNodeWriter(): NodeWriter & {
         typeof existing.version === 'number' &&
         existing.version > (node._event_version as number)
       ) {
-        return { written: false };
+        return { written: false, claimsWritten: false, claimsConflict: false };
       }
       store.set(node.id, { version: node._event_version, lastSynced: node._last_synced });
-      return { written: true };
+      return { written: true, claimsWritten: true, claimsConflict: false };
     }),
     writeEdge: vi.fn().mockResolvedValue(undefined),
-    getExistingClaims: vi.fn().mockResolvedValue([]),
+    getExistingClaims: vi.fn().mockResolvedValue({ claims: [], claimsRev: 0 }),
     touchLastSynced: vi.fn(async (nodeId: string, lastSynced: string) => {
       const existing = store.get(nodeId);
       if (existing && lastSynced > existing.lastSynced) existing.lastSynced = lastSynced;
@@ -168,17 +176,20 @@ describe('CoreWriter', () => {
   });
 
   it('merges existing claims with incoming claims', async () => {
-    vi.mocked(nodeWriter.getExistingClaims).mockResolvedValue([
-      {
-        property_key: 'tier',
-        value: 1,
-        source: 'backstage',
-        source_id: 'backstage://default/component/repo-a',
-        ingested_at: '2026-02-27T10:00:00Z',
-        confidence: 0.95,
-        evidence: null,
-      },
-    ]);
+    vi.mocked(nodeWriter.getExistingClaims).mockResolvedValue({
+      claims: [
+        {
+          property_key: 'tier',
+          value: 1,
+          source: 'backstage',
+          source_id: 'backstage://default/component/repo-a',
+          ingested_at: '2026-02-27T10:00:00Z',
+          confidence: 0.95,
+          evidence: null,
+        },
+      ],
+      claimsRev: 0,
+    });
 
     const event = makeEnvelope([makeNode('repo-a')], []);
     await writer.processEvent(event);
@@ -213,9 +224,9 @@ describe('CoreWriter', () => {
 
   it('reports errors without stopping batch processing', async () => {
     vi.mocked(nodeWriter.writeNode)
-      .mockResolvedValueOnce({ written: true }) // first node succeeds
+      .mockResolvedValueOnce({ written: true, claimsWritten: true, claimsConflict: false }) // first node succeeds
       .mockRejectedValueOnce(new Error('Write failed')) // second fails
-      .mockResolvedValueOnce({ written: true }); // third succeeds
+      .mockResolvedValueOnce({ written: true, claimsWritten: true, claimsConflict: false }); // third succeeds
 
     const event = makeEnvelope([makeNode('repo-a'), makeNode('repo-b'), makeNode('repo-c')], []);
 
@@ -368,5 +379,195 @@ describe('CoreWriter', () => {
     const writeCall = vi.mocked(nodeWriter.writeNode).mock.calls[0];
     const writtenNode = writeCall[0];
     expect(writtenNode.id).toBe(existingId);
+  });
+
+  describe('claims-rev optimistic-concurrency retry (T0 lost-update fix)', () => {
+    const manualClaim = (key: string, value: unknown): PropertyClaim => ({
+      property_key: key,
+      value,
+      source: 'manual:alice', // distinct source → ClaimResolver keeps it on merge
+      source_id: 'manual:alice',
+      ingested_at: '2026-06-24T12:00:00Z',
+      confidence: 0.95,
+      evidence: 'human edit',
+    });
+
+    /**
+     * Fake NodeWriter modelling `_claims_rev` so the writer's optimistic-retry loop
+     * can be exercised without a real DB. It simulates the lost-update race: an
+     * api-server manual write lands BETWEEN core-writer's first read and first write.
+     */
+    function createClaimsRevWriter(opts: {
+      // # of writeNode attempts that should report a claims-rev conflict before one succeeds
+      conflictsBeforeSuccess: number;
+    }): NodeWriter & {
+      storedClaims: PropertyClaim[];
+      storedRev: number;
+      lastMergedClaims: PropertyClaim[] | null;
+    } {
+      const state = {
+        storedClaims: [] as PropertyClaim[],
+        storedRev: 0,
+        lastMergedClaims: null as PropertyClaim[] | null,
+        injected: false,
+      };
+      let writeAttempts = 0;
+      return {
+        get storedClaims() {
+          return state.storedClaims;
+        },
+        get storedRev() {
+          return state.storedRev;
+        },
+        get lastMergedClaims() {
+          return state.lastMergedClaims;
+        },
+        getExistingClaims: vi.fn(async () => ({
+          claims: [...state.storedClaims],
+          claimsRev: state.storedRev,
+        })),
+        writeNode: vi.fn(
+          async (_node, mergedClaims: PropertyClaim[], _eff, expectedRev?: number) => {
+            // Simulate an api-server manual edit committing just before THIS write, for
+            // as many attempts as the test wants to force a conflict: bump the lock so
+            // the threaded `expectedRev` (read before this) is now stale. The first such
+            // edit also injects the manual claim core-writer must preserve.
+            if (writeAttempts < opts.conflictsBeforeSuccess) {
+              writeAttempts++;
+              if (!state.injected) {
+                state.injected = true;
+                state.storedClaims.push(manualClaim('tier', 'human-override'));
+              }
+              state.storedRev += 1;
+            }
+            // CAS: write only when the threaded expected rev still matches the lock.
+            if ((expectedRev ?? 0) !== state.storedRev) {
+              return { written: true, claimsWritten: false, claimsConflict: true };
+            }
+            state.lastMergedClaims = mergedClaims;
+            state.storedClaims = mergedClaims;
+            state.storedRev += 1;
+            return { written: true, claimsWritten: true, claimsConflict: false };
+          },
+        ),
+        writeEdge: vi.fn().mockResolvedValue(undefined),
+        touchLastSynced: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it('re-reads and re-resolves on conflict, preserving a manual claim that appeared between read and write', async () => {
+      const crw = createClaimsRevWriter({ conflictsBeforeSuccess: 1 });
+      writer = new CoreWriter(
+        crw,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      // Connector resync carries its own `tier` claim for the same node.
+      const node = makeNode('repo-a');
+      node._claims = [
+        {
+          property_key: 'tier',
+          value: 'connector-value',
+          source: 'github',
+          source_id: 'github://org/repo-a',
+          ingested_at: '2026-06-24T11:00:00Z',
+          confidence: 0.9,
+          evidence: null,
+        },
+      ];
+
+      const result = await writer.processEvent(makeEnvelope([node], []));
+
+      // The write ultimately succeeded (counted once), not skipped.
+      expect(result.nodesWritten).toBe(1);
+      expect(result.freshnessSkipped).toBe(0);
+      // It retried: read twice (initial + re-read), wrote twice (conflict + success).
+      expect(crw.getExistingClaims).toHaveBeenCalledTimes(2);
+      expect(crw.writeNode).toHaveBeenCalledTimes(2);
+
+      // The merged claims written on the successful attempt contain BOTH the manual
+      // claim (preserved) and the connector's claim (applied on top).
+      const merged = crw.lastMergedClaims!;
+      expect(merged.some((c) => c.source === 'manual:alice' && c.value === 'human-override')).toBe(
+        true,
+      );
+      expect(merged.some((c) => c.source === 'github' && c.value === 'connector-value')).toBe(true);
+    });
+
+    it('skips the claims write (does not clobber) when the retry cap is exhausted', async () => {
+      // Never let the CAS succeed → every attempt conflicts → cap (3) exhausted.
+      const crw = createClaimsRevWriter({ conflictsBeforeSuccess: Number.POSITIVE_INFINITY });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      writer = new CoreWriter(
+        crw,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      const result = await writer.processEvent(makeEnvelope([makeNode('repo-b')], []));
+
+      // Not counted as a normal write; surfaced (not silently) and NOT clobbered.
+      expect(result.nodesWritten).toBe(0);
+      // Distinct counter (not freshnessSkipped) so the two suppression reasons
+      // are separately observable.
+      expect(result.claimsConflictSkipped).toBe(1);
+      expect(result.freshnessSkipped).toBe(0);
+      expect(crw.writeNode).toHaveBeenCalledTimes(3); // bounded retry cap
+      // The injected manual claim is still present in the store (never overwritten).
+      expect(crw.storedClaims.some((c) => c.source === 'manual:alice')).toBe(true);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('claims-rev conflict'));
+      warn.mockRestore();
+    });
+
+    it('does NOT record idempotency on conflict-exhaustion → a later delivery re-attempts and succeeds', async () => {
+      // First delivery: every attempt conflicts (cap of 3 exhausted) → skipped.
+      // Second delivery of the SAME payload: churn has subsided (the fake stops
+      // injecting conflicts after `conflictsBeforeSuccess`), so the CAS succeeds.
+      // This can ONLY happen if the first delivery left idempotency UNRECORDED;
+      // otherwise the second delivery short-circuits as a duplicate.
+      // 3 == CLAIMS_REV_MAX_RETRIES: the first delivery exhausts the cap, then the
+      // fake stops injecting conflicts so the second delivery's CAS succeeds.
+      const crw = createClaimsRevWriter({ conflictsBeforeSuccess: 3 });
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const idem = new InMemoryIdempotencyChecker();
+      writer = new CoreWriter(crw, linkingKeyIndex, idem, DEFAULT_CONFIG);
+
+      const node = makeNode('repo-c');
+      node._claims = [
+        {
+          property_key: 'tier',
+          value: 'connector-value',
+          source: 'github',
+          source_id: 'github://org/repo-c',
+          ingested_at: '2026-06-24T11:00:00Z',
+          confidence: 0.9,
+          evidence: null,
+        },
+      ];
+
+      const first = await writer.processEvent(makeEnvelope([node], []));
+      expect(first.nodesWritten).toBe(0);
+      expect(first.claimsConflictSkipped).toBe(1);
+      // Key was NOT recorded, so the same payload is not yet a duplicate.
+      const key = `github-org:${node.id}:${deriveNodeContentHash(node)}`;
+      expect(await idem.isDuplicate(key)).toBe(false);
+
+      // Re-deliver the identical payload — it re-attempts (not deduped) and succeeds.
+      const second = await writer.processEvent(makeEnvelope([node], []));
+      expect(second.nodesWritten).toBe(1);
+      expect(second.claimsConflictSkipped).toBe(0);
+      expect(second.duplicatesSkipped).toBe(0);
+      // Both the preserved manual claim and the connector's claim are now stored.
+      expect(crw.storedClaims.some((c) => c.source === 'manual:alice')).toBe(true);
+      expect(
+        crw.storedClaims.some((c) => c.source === 'github' && c.value === 'connector-value'),
+      ).toBe(true);
+      // Now idempotency IS recorded → a third identical delivery dedups.
+      expect(await idem.isDuplicate(key)).toBe(true);
+      warn.mockRestore();
+    });
   });
 });

@@ -146,12 +146,12 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
     nodeWriter = {
       writeNode: vi.fn().mockImplementation(async (node, claims, effectiveProps) => {
         writtenNodes.set(node.id, { node, claims, effectiveProps });
-        return { written: true };
+        return { written: true, claimsWritten: true, claimsConflict: false };
       }),
       writeEdge: vi.fn().mockImplementation(async (edge) => {
         writtenEdges.push({ type: edge.type, from: edge.from, to: edge.to });
       }),
-      getExistingClaims: vi.fn().mockResolvedValue([]),
+      getExistingClaims: vi.fn().mockResolvedValue({ claims: [], claimsRev: 0 }),
       touchLastSynced: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -239,7 +239,10 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
 
     // Simulate existing claims returned from "Neo4j" for the repo node
     const existingGithubClaims = githubOutput.nodes[0]._claims;
-    vi.mocked(nodeWriter.getExistingClaims).mockResolvedValue(existingGithubClaims);
+    vi.mocked(nodeWriter.getExistingClaims).mockResolvedValue({
+      claims: existingGithubClaims,
+      claimsRev: 0,
+    });
 
     // Second: Backstage provides tier claim for the same repo
     const backstageOutput: CanonicalEntity = {

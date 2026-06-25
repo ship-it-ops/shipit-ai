@@ -81,6 +81,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
+- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | active | core | 2026-06-24 | v1a (manual claims) IMPLEMENTED+verified (uncommitted, release-next): T0 \_claims_rev CAS, RBAC, audit, reconciliation migrate, 9 real-DB integ tests; v1b (relations) pending
 
 ## Open Questions
 

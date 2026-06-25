@@ -136,13 +136,14 @@ describe.skipIf(!URI)('core-writer Neo4j storage — integration', () => {
     it('round-trips _claims JSON and returns [] for a missing node', async () => {
       const claims = [claim('name', 'web'), claim('language', 'TypeScript')];
       await writer.writeNode(repo('web', claims), claims, {});
-      const read = await writer.getExistingClaims('shipit://Repository/default/acme/web');
+      const read = (await writer.getExistingClaims('shipit://Repository/default/acme/web')).claims;
       expect(read).toHaveLength(2);
       expect(read.map((c) => c.property_key).sort()).toEqual(['language', 'name']);
       expect(read.find((c) => c.property_key === 'language')?.value).toBe('TypeScript');
-      expect(await writer.getExistingClaims('shipit://Repository/default/acme/missing')).toEqual(
-        [],
-      );
+      expect(await writer.getExistingClaims('shipit://Repository/default/acme/missing')).toEqual({
+        claims: [],
+        claimsRev: 0,
+      });
     });
   });
 

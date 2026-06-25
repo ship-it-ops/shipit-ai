@@ -75,6 +75,9 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       web: {
         allowedOrigins: ['http://localhost:3000'],
       },
+      manualWrite: {
+        enabled: true,
+      },
     },
     ...overrides,
   };

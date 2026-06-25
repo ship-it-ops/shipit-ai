@@ -113,6 +113,7 @@ export {
   independenceGroup,
   sourceRank,
   isDerivedFrom,
+  pickManualOverride,
 } from './config/source-reliability.js';
 export type { SourceReliabilityEntry } from './config/source-reliability.js';
 

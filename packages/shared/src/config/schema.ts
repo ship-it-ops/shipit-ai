@@ -422,6 +422,18 @@ const accessControlSchema = z.object({
     .default({
       allowedOrigins: ['http://localhost:3000'],
     }),
+  // Feature kill-switch for the manual-edit write path (claims v1a). Default
+  // ON: any signed-in human (member or admin holds `graph:write`) may author a
+  // `manual:<actor>` claim. Flip `enabled: false` to make the manual-write
+  // routes 403 with FEATURE_DISABLED — an instant rollback that needs no
+  // redeploy, leaving the read paths untouched.
+  manualWrite: z
+    .object({
+      enabled: z.boolean().default(true),
+    })
+    .default({
+      enabled: true,
+    }),
 });
 
 export type AccessControlConfig = z.infer<typeof accessControlSchema>;
@@ -524,6 +536,9 @@ export const configSchema = z.object({
     },
     web: {
       allowedOrigins: ['http://localhost:3000'],
+    },
+    manualWrite: {
+      enabled: true,
     },
   }),
 });

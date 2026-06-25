@@ -18,6 +18,8 @@ import authRoutes from './routes/auth.js';
 import tokenRoutes from './routes/tokens.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
+import { ClaimService } from './services/claim-service.js';
+import { ManualEditService } from './services/manual-edit-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
@@ -342,6 +344,18 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);
+    // Manual-edit write path (claims v1a). Constructed here — alongside its
+    // Neo4j dependency — so the claims routes can read it off the instance.
+    // ClaimService + SchemaService are the same collaborators the read path
+    // uses; schemaService is already decorated above.
+    server.decorate(
+      'manualEditService',
+      new ManualEditService(
+        opts.neo4jService,
+        new ClaimService(opts.neo4jService, server.schemaService),
+        server.schemaService,
+      ),
+    );
   }
   // Event bus is optional. When absent the login callback simply skips the
   // best-effort Person upsert (decoration is conditional so Fastify's

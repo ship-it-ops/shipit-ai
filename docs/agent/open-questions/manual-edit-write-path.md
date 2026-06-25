@@ -70,6 +70,12 @@ These must be reconciled before relying on manual overrides under
 
 Remaining work for this question = Gap 1's three items only.
 
+**2026-06-24:** Gap 1 now has an audited implementation plan →
+[[manual-edit-write-path]] (in `plans/`). The audit surfaced a blocker — the
+manual-claim durability guarantee was false (core-writer `mergeNode` clobbers
+manual claims via a `_claims_rev`-unaware write race); the plan fixes it (T0 CAS).
+This open question stays `active` until v1a/v1b ship.
+
 ## Tried
 
 Traced the full write path (resolver → mergeClaims → mergeNode/mergeEdge) and

@@ -1,34 +1,63 @@
 import type { ManagedTransaction } from 'neo4j-driver';
 import type { CanonicalNode, CanonicalEdge, PropertyClaim } from '@shipit-ai/shared';
 
+/** Outcome of {@link mergeNode}.
+ *  - `written` — the existing FRESHNESS-guard verdict: false ⇒ a strictly-newer
+ *    `_event_version` is already stored, so NOTHING was written. Unchanged meaning
+ *    (the batch processor still counts this as a freshness-skip).
+ *  - `claimsWritten` — whether the `_claims`/derived-property portion was written
+ *    AND `_claims_rev` bumped. Implies `written` (a freshness reject writes nothing).
+ *  - `claimsConflict` — the NEW optimistic-concurrency verdict: true ⇒ the freshness
+ *    guard passed (node content was written) but `_claims_rev` changed since the read,
+ *    so the claims write was SKIPPED to avoid clobbering a concurrent manual edit.
+ *    The caller should re-read + re-resolve claims and retry. */
+export interface MergeNodeResult {
+  written: boolean;
+  claimsWritten: boolean;
+  claimsConflict: boolean;
+}
+
 /**
- * Atomically upsert a node with a FRESHNESS GUARD (Cut B).
+ * Atomically upsert a node with TWO compare-and-set guards (both inside one
+ * Cypher tx, so both are correct under BullMQ concurrency, multiple core-writer
+ * replicas, and managed-tx retries — never an app-level read-then-write TOCTOU):
  *
- * The compare-and-set is a SINGLE Cypher transaction (not an app-level
- * read-then-write) so it is correct under BullMQ worker concurrency, multiple
- * core-writer replicas, and managed-transaction retries — the read-then-write
- * variant is a TOCTOU race that lets an older delivery overwrite newer state.
- * It also sidesteps neo4j-driver lossless-Integer typing: the comparison runs
- * against the live stored value in Cypher using native numeric ordering, so
- * there is no JS `typeof`/`toNumber` dance on the stored side.
+ * 1. FRESHNESS GUARD (Cut B) on `_event_version`. Reject (skip the content write,
+ *    keep stored) iff the incoming version is COMPARABLE (a finite epoch number)
+ *    AND the stored version is STRICTLY greater. Strict `>` (not `>=`) is
+ *    deliberate: equal-version-but-different-content already passed the
+ *    content-hash dedup layer, so it is a real change and must be written
+ *    (last-writer-wins for the same instant). All other cases write:
+ *      - first write (stored null), incomparable incoming (content-hash version),
+ *      - legacy stored `1` vs an epoch (1 > epoch is false), and
+ *      - a stored string vs a numeric incoming (`string > number` → null → not rejected).
  *
- * Reject (skip the content write, keep stored) iff the incoming version is
- * COMPARABLE (a finite epoch number) AND the stored version is STRICTLY greater.
- * Strict `>` (not `>=`) is deliberate: equal-version-but-different-content already
- * passed the content-hash dedup layer, so it is a real change and must be written
- * (last-writer-wins for the same instant). All other cases write:
- *   - first write (stored null), incomparable incoming (content-hash version),
- *   - legacy stored `1` vs an epoch (1 > epoch is false), and
- *   - a stored string vs a numeric incoming (`string > number` → null → not rejected).
+ * 2. CLAIMS OPTIMISTIC-CONCURRENCY GUARD on `_claims_rev`. api-server's manual-edit
+ *    writers (VerificationService) take a write-lock by bumping `_claims_rev` in a
+ *    single tx. core-writer is NOT a participant in that lock, so without this guard
+ *    a connector resync that read `_claims` at T0 would clobber a manual claim an
+ *    api-server writer committed at T1. We require the CURRENT stored `_claims_rev`
+ *    (coalesced null→0) to still equal `expectedClaimsRev` captured at read time; if
+ *    it changed, we skip the `_claims`/derived-property write (a `claimsConflict`)
+ *    so the caller can re-read + re-resolve on top of the concurrent edit. On a
+ *    successful claims write we bump `_claims_rev` so we, too, advance the lock.
  *
- * Returns `true` when the node was written, `false` when the guard rejected it.
+ * The two guards are INDEPENDENT and BOTH must pass to write claims. The freshness
+ * guard still gates ALL writes (`written:false` ⇒ a stale delivery wrote nothing —
+ * unchanged Cut-B semantics); the claims guard additionally gates ONLY the
+ * `_claims`/derived-property portion. A `claimsConflict` keeps `written:true` (the
+ * properties/source/version were still refreshed) but reports `claimsWritten:false`
+ * WITHOUT touching `_claims`, so the caller re-reads + re-resolves and retries.
+ *
+ * rev/version are bound parameters (never interpolated) — injection-safe.
  */
 export async function mergeNode(
   tx: ManagedTransaction,
   node: CanonicalNode,
   mergedClaims: PropertyClaim[],
   effectiveProperties: Record<string, unknown>,
-): Promise<boolean> {
+  expectedClaimsRev = 0,
+): Promise<MergeNodeResult> {
   // Build effective property keys (e.g., name -> name_effective)
   const effectiveProps: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(effectiveProperties)) {
@@ -41,16 +70,20 @@ export async function mergeNode(
     typeof node._event_version === 'number' && Number.isFinite(node._event_version);
   const incoming = comparable ? (node._event_version as number) : null;
 
+  // Two guards: `reject` skips ALL writes (freshness); `claimsConflict` skips only
+  // the claims/derived-property portion (lost-update protection on `_claims_rev`).
+  // A freshness reject implies no claims write either, so claimsConflict is only
+  // meaningful when the freshness guard passes.
   const query = `
     MERGE (n:${sanitizeLabel(node.label)} {id: $id})
     WITH n, coalesce(
       $comparable AND n._event_version IS NOT NULL AND n._event_version > $incoming,
       false
     ) AS reject
+    WITH n, reject,
+      (NOT reject AND coalesce(n._claims_rev, 0) <> $expectedClaimsRev) AS claimsConflict
     FOREACH (_ IN CASE WHEN reject THEN [] ELSE [1] END |
       SET n += $properties,
-          n += $effectiveProps,
-          n._claims = $claims,
           n._last_synced = $lastSynced,
           n._source_system = $sourceSystem,
           n._source_org = $sourceOrg,
@@ -58,13 +91,21 @@ export async function mergeNode(
           n._source_connector_id = $sourceConnectorId,
           n._event_version = $eventVersion
     )
-    RETURN NOT reject AS written
+    FOREACH (_ IN CASE WHEN (NOT reject AND NOT claimsConflict) THEN [1] ELSE [] END |
+      SET n += $effectiveProps,
+          n._claims = $claims,
+          n._claims_rev = coalesce(n._claims_rev, 0) + 1
+    )
+    RETURN (NOT reject) AS written,
+           (NOT reject AND NOT claimsConflict) AS claimsWritten,
+           claimsConflict
   `;
 
   const result = await tx.run(query, {
     id: node.id,
     comparable,
     incoming,
+    expectedClaimsRev,
     properties: sanitizeProperties(node.properties),
     effectiveProps: sanitizeProperties(effectiveProps),
     claims: JSON.stringify(mergedClaims),
@@ -78,7 +119,12 @@ export async function mergeNode(
     sourceConnectorId: node._source_connector_id ?? null,
     eventVersion: node._event_version,
   });
-  return result.records[0]?.get('written') === true;
+  const record = result.records[0];
+  return {
+    written: record?.get('written') === true,
+    claimsWritten: record?.get('claimsWritten') === true,
+    claimsConflict: record?.get('claimsConflict') === true,
+  };
 }
 
 /**
@@ -185,18 +231,42 @@ export async function cleanupExpiredIdempotencyKeys(tx: ManagedTransaction): Pro
     : Number(deleted ?? 0);
 }
 
+/** Existing claims plus the node's current `_claims_rev` (null coalesced → 0).
+ *  `claimsRev` is captured at READ time and threaded into the next {@link mergeNode}
+ *  as `expectedClaimsRev` for optimistic-concurrency control against api-server's
+ *  manual-edit writers, which bump `_claims_rev` under their own write-lock. */
+export interface ExistingClaims {
+  claims: PropertyClaim[];
+  claimsRev: number;
+}
+
+/** Coerce a neo4j-driver value (lossless `Integer`, plain number, or null) to a
+ *  JS number, defaulting a missing/unparseable `_claims_rev` to 0. */
+function toRev(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'object' && 'toNumber' in value) {
+    return (value as { toNumber(): number }).toNumber();
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export async function getExistingClaims(
   tx: ManagedTransaction,
   nodeId: string,
-): Promise<PropertyClaim[]> {
-  const result = await tx.run(`MATCH (n {id: $id}) RETURN n._claims AS claims`, { id: nodeId });
-  if (result.records.length === 0) return [];
+): Promise<ExistingClaims> {
+  const result = await tx.run(
+    `MATCH (n {id: $id}) RETURN n._claims AS claims, n._claims_rev AS claimsRev`,
+    { id: nodeId },
+  );
+  if (result.records.length === 0) return { claims: [], claimsRev: 0 };
+  const claimsRev = toRev(result.records[0].get('claimsRev'));
   const claimsJson = result.records[0].get('claims');
-  if (!claimsJson) return [];
+  if (!claimsJson) return { claims: [], claimsRev };
   try {
-    return JSON.parse(claimsJson as string) as PropertyClaim[];
+    return { claims: JSON.parse(claimsJson as string) as PropertyClaim[], claimsRev };
   } catch {
-    return [];
+    return { claims: [], claimsRev };
   }
 }
 

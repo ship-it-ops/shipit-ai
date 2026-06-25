@@ -809,6 +809,120 @@ export async function verifyClaim(
   );
 }
 
+// -- Manual claim write path (claims v1a) ------------------------------------
+// Author/replace or revert a `manual:<actor>` claim on a single property. The
+// backend gate ladder is requireAuth → requireCapability('graph:write') →
+// kill-switch (FEATURE_DISABLED) → rate-limit. `actor` is NEVER client-
+// supplied on the write — it's the authenticated principal; only the admin-
+// only revert `?actor=` targets *another* actor's claim.
+
+/** The known structured error codes the manual-write endpoints return. */
+export type ManualClaimErrorCode =
+  | 'INVALID_VALUE_TYPE' // 400 — value wasn't a string (v1 is string-only)
+  | 'ENTITY_NOT_FOUND' // 404
+  | 'AUTH_REQUIRED' // 401
+  | 'FORBIDDEN' // 403 — lacks graph:write, or non-admin used ?actor=
+  | 'FEATURE_DISABLED' // 403 — accessControl.manualWrite kill-switch is off
+  | 'MANUAL_EDIT_DISABLED' // 503 — ManualEditService not wired
+  | 'RATE_LIMITED' // 429
+  | 'UNKNOWN';
+
+/**
+ * Carries the backend's structured `{error:{code,message}}` plus the HTTP
+ * status so the UI can branch (FEATURE_DISABLED vs FORBIDDEN vs
+ * INVALID_VALUE_TYPE vs RATE_LIMITED) without re-parsing strings.
+ */
+export class ManualClaimError extends Error {
+  readonly code: ManualClaimErrorCode;
+  readonly status: number;
+  constructor(code: ManualClaimErrorCode, message: string, status: number) {
+    super(message);
+    this.name = 'ManualClaimError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** Map a non-OK manual-write response to a typed `ManualClaimError`. */
+async function manualClaimError(res: Response): Promise<ManualClaimError> {
+  if (res.status === 429) {
+    return new ManualClaimError('RATE_LIMITED', 'Too many edits — slow down.', 429);
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string };
+  };
+  const rawCode = body.error?.code;
+  // Only trust codes we know how to branch on; everything else collapses to
+  // UNKNOWN so the UI shows the generic fallback rather than leaking a string
+  // it can't reason about.
+  const KNOWN: ReadonlyArray<ManualClaimErrorCode> = [
+    'INVALID_VALUE_TYPE',
+    'ENTITY_NOT_FOUND',
+    'AUTH_REQUIRED',
+    'FORBIDDEN',
+    'FEATURE_DISABLED',
+    'MANUAL_EDIT_DISABLED',
+  ];
+  const code = (
+    KNOWN.includes(rawCode as ManualClaimErrorCode) ? rawCode : 'UNKNOWN'
+  ) as ManualClaimErrorCode;
+  return new ManualClaimError(
+    code,
+    body.error?.message ?? `Manual edit failed: ${res.status}`,
+    res.status,
+  );
+}
+
+export interface ManualClaimResult {
+  property: ResolvedProperty;
+  claimsRev: number;
+}
+
+/**
+ * Author or replace the caller's `manual:<actor>` claim on a property.
+ * `value` is string-only in v1. Path segments are URL-encoded. Throws a
+ * `ManualClaimError` on any non-OK response.
+ */
+export async function setManualClaim(
+  entityId: string,
+  propertyKey: string,
+  value: string,
+  evidence?: string | null,
+): Promise<ManualClaimResult> {
+  const res = await fetchApi(
+    `${API_URL}/api/claims/${encodeURIComponent(entityId)}/${encodeURIComponent(propertyKey)}/manual`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value, evidence: evidence ?? null }),
+    },
+  );
+  if (!res.ok) throw await manualClaimError(res);
+  return (await res.json()) as ManualClaimResult;
+}
+
+/**
+ * Remove a `manual:<actor>` claim, falling back to the next-ranked source.
+ * With no `targetActor` it reverts the caller's own claim; an admin may pass
+ * `targetActor` (sent as `?actor=`) to revert someone else's — a non-admin
+ * doing so gets 403 FORBIDDEN from the server. Returns `null` on the
+ * idempotent 204 (nothing to remove). Throws `ManualClaimError` otherwise.
+ */
+export async function revertManualClaim(
+  entityId: string,
+  propertyKey: string,
+  targetActor?: string,
+): Promise<ManualClaimResult | null> {
+  const qs = targetActor ? `?actor=${encodeURIComponent(targetActor)}` : '';
+  const res = await fetchApi(
+    `${API_URL}/api/claims/${encodeURIComponent(entityId)}/${encodeURIComponent(propertyKey)}/manual${qs}`,
+    { method: 'DELETE' },
+  );
+  if (res.status === 204) return null;
+  if (!res.ok) throw await manualClaimError(res);
+  return (await res.json()) as ManualClaimResult;
+}
+
 export async function fetchReviewQueue(): Promise<ReviewQueueRow[]> {
   return apiFetch<ReviewQueueRow[]>('/api/claims/review-queue');
 }
