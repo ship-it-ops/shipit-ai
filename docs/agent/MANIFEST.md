@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-25 | Total notes: 80
+Last updated: 2026-06-25 | Total notes: 81
 
 ## Investigations
 
@@ -32,6 +32,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 
 ## Decisions
 
+- [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
 - [agent-context-initialized](decisions/agent-context-initialized.md) | decision | active | core | 2026-05-20 | docs/agent scaffolded during MCP Access stage one
 - [mcp-tool-metadata-as-pure-data-module](decisions/mcp-tool-metadata-as-pure-data-module.md) | decision | active | core | 2026-05-20 | tool descriptions live in metadata.ts not register
 - [github-connector-architecture-v1](decisions/github-connector-architecture-v1.md) | decision | active | core | 2026-05-20 | App-only auth, one connector per org, polling+webhooks
@@ -91,7 +92,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | answered | standard | 2026-06-18 | ANSWERED — receiver built (Cut A); per-App sidecar secret, no global downgrade
 - [cutb-option-b-rewrite-wave](open-questions/cutb-option-b-rewrite-wave.md) | open-question | answered | standard | 2026-06-19 | ANSWERED — Option B + schedule cleanup; one-time re-write wave accepted at current scale
 - [codeowner-edge-out-of-order-ordering](open-questions/codeowner-edge-out-of-order-ordering.md) | open-question | active | standard | 2026-06-19 | edges (CODEOWNER_OF etc.) have no ordering guard; mergeEdge is last-writer-wins — protect or accept?
-- [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
+- [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | answered | standard | 2026-06-25 | ANSWERED — no tenant read-isolation; authenticated sees all orgs; B6 filter not wanted; connector=org view suffices
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | answered | standard | 2026-06-22 | RESOLVED — CUT: shipit-event-log gated off by default (+MAXLEN if on); was the ~825MB OOM key
 - [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-23 | Gap2 source-priority FIXED (#74 shared registry); Gap1 partial — manual-override route, add-relation route, claim-write RBAC still open
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped

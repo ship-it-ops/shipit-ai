@@ -1,8 +1,8 @@
 ---
 type: open-question
-status: active
+status: answered
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-25
 author: claude-opus-4-7
 tags: [auth, multi-tenant, neo4j, rbac]
 opened: 2026-06-01
@@ -11,6 +11,16 @@ importance: standard
 ---
 
 # How does `RequestContext.org` map to the `_source_org` property on nodes?
+
+## ANSWERED (2026-06-25) — no mapping needed; no tenant read-isolation
+
+Resolved by the maintainer: an authenticated user is meant to see **all** orgs,
+connectors, and entities. There is no per-tenant read filter, so `ctx.org` never
+needs to map to `_source_org`. The `Neo4jService` `_ctx` seam stays a permanent
+no-op; current single-`default`-principal behavior is correct by design. Per-org
+viewing is served at connector granularity (one connector = one org). See
+decision [[no-tenant-read-isolation-authenticated-sees-all]]. Reopens only if a
+true tenant-isolation requirement appears (see [[saas-tier-shared-github-app]]).
 
 ## Context
 
