@@ -183,6 +183,24 @@ describe('recentChanges', () => {
     expect(changes).toEqual([PIPELINE, DEPLOYMENT]);
   });
 
+  it('extracts a real event time into changedAt when the node reports one', () => {
+    const g = graph({
+      nodes: [
+        svcNode(SVC),
+        node(PIPELINE, 'Pipeline', {
+          _last_synced_age_seconds: 60,
+          last_run_at: '2026-06-25T18:00:00.000Z',
+        }),
+        node(DEPLOYMENT, 'Deployment', { _last_synced_age_seconds: 120 }),
+      ],
+      edges: [edge(SVC, PIPELINE, 'BUILT_BY'), edge(SVC, DEPLOYMENT, 'DEPLOYED_AS')],
+    });
+    const byId = new Map(recentChanges(g, SVC, 5).map((c) => [c.id, c]));
+    expect(byId.get(PIPELINE)?.changedAt).toBe('2026-06-25T18:00:00.000Z');
+    // Deployment carries no event-time field → changedAt stays undefined.
+    expect(byId.get(DEPLOYMENT)?.changedAt).toBeUndefined();
+  });
+
   it('caps to limit', () => {
     const nodes = [svcNode(SVC)];
     const edges: GraphData['edges'] = [];

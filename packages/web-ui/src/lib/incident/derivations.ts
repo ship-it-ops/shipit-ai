@@ -67,6 +67,14 @@ export interface RecentChangeEntry {
   environment?: string;
   lastSynced?: string;
   lastSyncedAgeSeconds?: number;
+  /**
+   * When the change *actually happened* (deploy time, last pipeline run,
+   * build completion), as an ISO timestamp — only set when the underlying
+   * connector reports a real event time. Distinct from `lastSynced`, which
+   * is merely when we last saw the node. Lets the IC read a true timeline
+   * instead of a sync-order proxy. Undefined when no event time is known.
+   */
+  changedAt?: string;
 }
 
 export interface MonitorEntry {
@@ -283,6 +291,31 @@ export function blastRadiusSummary(entries: BlastRadiusEntry[]): {
 
 const CHANGE_TYPES = new Set(['Deployment', 'Pipeline', 'BuildArtifact']);
 
+/**
+ * Property keys that, if present, carry a real "when did this change happen"
+ * timestamp — ordered most-specific-event first so e.g. a pipeline's
+ * `last_run_at` wins over a generic `created_at`. Connectors that don't
+ * report an event time simply have none of these; we then fall back to the
+ * sync timestamp in the UI (clearly labelled as "synced", not "deployed").
+ */
+const CHANGE_TIME_KEYS = [
+  'last_run_at',
+  'deployed_at',
+  'finished_at',
+  'completed_at',
+  'built_at',
+  'started_at',
+  'created_at',
+] as const;
+
+function changeTimestamp(d: GraphNode['data']): string | undefined {
+  for (const key of CHANGE_TIME_KEYS) {
+    const v = asString(d[key]);
+    if (v) return v;
+  }
+  return undefined;
+}
+
 export function recentChanges(
   graph: GraphData | undefined,
   serviceId: string,
@@ -308,6 +341,7 @@ export function recentChanges(
       environment: asString(n.data.environment),
       lastSynced: asString(n.data._last_synced),
       lastSyncedAgeSeconds: asNumber(n.data._last_synced_age_seconds),
+      changedAt: changeTimestamp(n.data),
     });
   }
   // Sort by sync time desc; oldest first when ages are missing so they fall
