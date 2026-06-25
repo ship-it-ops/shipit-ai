@@ -169,9 +169,49 @@ describe('wireSyncRuntime', () => {
       eventBus: null,
       scheduler: null,
       webhookRefetch: null,
+      auditRetention: null,
       degraded: false, // intentional, not a failure
     });
     expect(createScheduler).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No Redis URL configured'));
+  });
+
+  it('wires the audit-retention scheduler when retention is enabled', async () => {
+    const registry = makeRegistry();
+    const auditScheduler = { close: vi.fn() };
+    const createAuditRetention = vi.fn().mockReturnValue(auditScheduler);
+
+    const runtime = wireSyncRuntime({
+      ...baseOpts(registry, {
+        createEventBus: () => ({ close: vi.fn() }) as never,
+        createScheduler: () => fakeScheduler() as never,
+        createWebhookRefetch: () => ({ close: vi.fn() }) as never,
+        createAuditRetention: createAuditRetention as never,
+        logger: captureLogger(),
+      }),
+      auditRetention: { enabled: true } as never,
+    });
+
+    expect(createAuditRetention).toHaveBeenCalledTimes(1);
+    expect(runtime.auditRetention).toBe(auditScheduler);
+  });
+
+  it('skips the audit-retention scheduler when retention is disabled', async () => {
+    const registry = makeRegistry();
+    const createAuditRetention = vi.fn();
+
+    const runtime = wireSyncRuntime({
+      ...baseOpts(registry, {
+        createEventBus: () => ({ close: vi.fn() }) as never,
+        createScheduler: () => fakeScheduler() as never,
+        createWebhookRefetch: () => ({ close: vi.fn() }) as never,
+        createAuditRetention: createAuditRetention as never,
+        logger: captureLogger(),
+      }),
+      auditRetention: { enabled: false } as never,
+    });
+
+    expect(createAuditRetention).not.toHaveBeenCalled();
+    expect(runtime.auditRetention).toBeNull();
   });
 });

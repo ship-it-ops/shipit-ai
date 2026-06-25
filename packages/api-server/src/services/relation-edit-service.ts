@@ -124,16 +124,22 @@ export class RelationEditNotFoundError extends Error {
 }
 
 /**
- * The target edge exists but is connector-owned (`_manual_actor IS NULL`), so a
- * manual delete must refuse rather than destroy connector topology. Route maps
- * to 409.
+ * A state conflict that a manual edit must refuse rather than violate. Two
+ * distinct causes, both 409:
+ *   - `CONNECTOR_EDGE`: the target edge exists but is connector-owned
+ *     (`_manual_actor IS NULL`), so a manual delete must not destroy connector
+ *     topology.
+ *   - `CARDINALITY_VIOLATION`: creating this edge would exceed the schema's
+ *     declared cardinality for the type (e.g. a second OWNS owner on a 1:N
+ *     to-node). A graph-model invariant — counted across connector + manual
+ *     edges alike, since either population can already occupy the capped slot.
  */
 export class RelationEditConflictError extends Error {
-  readonly code: 'CONNECTOR_EDGE';
-  constructor(message: string) {
+  readonly code: 'CONNECTOR_EDGE' | 'CARDINALITY_VIOLATION';
+  constructor(message: string, code: RelationEditConflictError['code'] = 'CONNECTOR_EDGE') {
     super(message);
     this.name = 'RelationEditConflictError';
-    this.code = 'CONNECTOR_EDGE';
+    this.code = code;
   }
 }
 
@@ -213,6 +219,11 @@ export class RelationEditService {
         throw new RelationEditNotFoundError(`To node ${to} not found`);
       }
       this.assertEndpointLabels(relDef, endpoints.fromLabels, endpoints.toLabels, type);
+
+      // Enforce the schema's declared cardinality BEFORE the MERGE write. A
+      // violation is a state conflict (409), not bad input. The (from,to) pair
+      // itself is excluded so re-adding the EXACT same edge stays idempotent.
+      await this.assertCardinality(tx, relDef, from, to, type, safeType);
 
       // MERGE the edge. ON CREATE stamps the manual provenance marker. ON MATCH
       // we MUST NOT touch a connector edge (its `_manual_actor IS NULL`) — so we
@@ -347,6 +358,72 @@ export class RelationEditService {
         `${type} requires a ${relDef.to} to-node (got ${toLabels.join(',') || 'none'})`,
         'ENDPOINT_LABEL_MISMATCH',
       );
+    }
+  }
+
+  /**
+   * Enforce the schema's declared `cardinality` for this relation type, read as
+   * `from:to`. Run the check in only the constrained direction(s), counting
+   * edges of this type from ALL sources (connector + manual) — cardinality is a
+   * graph-model invariant, so an existing connector edge still blocks a
+   * conflicting manual one. Each query EXCLUDES the (from,to) pair itself
+   * (`other.id <> ...`), so re-adding the exact same edge is never a violation
+   * (the MERGE then resolves it as an idempotent no-op).
+   *
+   *   - N:M → unconstrained (no check).
+   *   - N:1 → FROM side capped: reject if `from` already has a `[:TYPE]->` edge
+   *     to a node OTHER THAN `to`.
+   *   - 1:N → TO side capped: reject if `to` already has a `<-[:TYPE]-` edge
+   *     from a node OTHER THAN `from`.
+   *   - 1:1 → BOTH caps apply.
+   */
+  private async assertCardinality(
+    tx: ManagedTransaction,
+    relDef: { cardinality?: string },
+    from: string,
+    to: string,
+    type: string,
+    safeType: string,
+  ): Promise<void> {
+    const cardinality = relDef.cardinality;
+    if (!cardinality || cardinality === 'N:M') return;
+
+    // FROM-side cap (N:1, 1:1): `from` may have at most one outgoing edge of
+    // this type. Reject if it already points at a DIFFERENT node than `to`.
+    if (cardinality === 'N:1' || cardinality === '1:1') {
+      const res = await tx.run(
+        `MATCH (from {id: $from})-[r:${safeType}]->(other)
+         WHERE other.id <> $to
+         RETURN other.id AS conflict LIMIT 1`,
+        { from, to },
+      );
+      const conflict = res.records[0]?.get('conflict') as string | undefined;
+      if (conflict != null) {
+        throw new RelationEditConflictError(
+          `${type} is ${cardinality}: ${from} may have only one outgoing ${type} ` +
+            `edge, but it already points to ${conflict}`,
+          'CARDINALITY_VIOLATION',
+        );
+      }
+    }
+
+    // TO-side cap (1:N, 1:1): `to` may have at most one incoming edge of this
+    // type. Reject if it already has one from a DIFFERENT node than `from`.
+    if (cardinality === '1:N' || cardinality === '1:1') {
+      const res = await tx.run(
+        `MATCH (other)-[r:${safeType}]->(to {id: $to})
+         WHERE other.id <> $from
+         RETURN other.id AS conflict LIMIT 1`,
+        { from, to },
+      );
+      const conflict = res.records[0]?.get('conflict') as string | undefined;
+      if (conflict != null) {
+        throw new RelationEditConflictError(
+          `${type} is ${cardinality}: ${to} may have only one incoming ${type} ` +
+            `edge, but it already comes from ${conflict}`,
+          'CARDINALITY_VIOLATION',
+        );
+      }
     }
   }
 

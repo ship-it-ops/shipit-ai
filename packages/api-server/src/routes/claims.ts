@@ -282,7 +282,7 @@ const claimsRoutes: FastifyPluginAsync = async (server) => {
 //   RelationEditValidationError (INVALID_RELATION_TYPE / SELF_LOOP /
 //     ENDPOINT_LABEL_MISMATCH)              → 400
 //   RelationEditNotFoundError   (ENDPOINT_NOT_FOUND) → 404
-//   RelationEditConflictError   (CONNECTOR_EDGE)     → 409
+//   RelationEditConflictError   (CONNECTOR_EDGE | CARDINALITY_VIOLATION) → 409
 // Anything else is unexpected → rethrow to the global error handler (500).
 function replyForRelationEditError(reply: FastifyReply, e: unknown): FastifyReply {
   if (e instanceof RelationEditValidationError) {

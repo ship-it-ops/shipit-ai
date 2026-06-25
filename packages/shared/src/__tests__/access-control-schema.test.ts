@@ -47,6 +47,29 @@ describe('accessControl schema', () => {
     expect(cfg.accessControl.web.allowedOrigins).toEqual(['http://localhost:3000']);
   });
 
+  it('defaults manualWrite to enabled with a 90-day audit retention window', () => {
+    const cfg = configSchema.parse(baseConfig);
+    expect(cfg.accessControl.manualWrite.enabled).toBe(true);
+    expect(cfg.accessControl.manualWrite.auditRetentionDays).toBe(90);
+  });
+
+  it('accepts auditRetentionDays = 0 to disable retention (keep audit events forever)', () => {
+    const cfg = configSchema.parse({
+      ...baseConfig,
+      accessControl: { manualWrite: { auditRetentionDays: 0 } },
+    });
+    expect(cfg.accessControl.manualWrite.auditRetentionDays).toBe(0);
+  });
+
+  it('rejects a negative auditRetentionDays', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: { manualWrite: { auditRetentionDays: -1 } },
+      }),
+    ).toThrow();
+  });
+
   it('accepts an OIDC provider with explicit settings', () => {
     const cfg = configSchema.parse({
       ...baseConfig,

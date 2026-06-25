@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-24 | Total notes: 76
+Last updated: 2026-06-24 | Total notes: 77
 
 ## Investigations
 
@@ -81,7 +81,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
-- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | active | core | 2026-06-24 | v1a (claims) SHIPPED (4ded3fe, pushed); v1b (relations) IMPLEMENTED+verified+reviewed (uncommitted, release-next): schema-validated edges, \_manual_actor guard, properties-injection fix, 14 real-DB integ tests
+- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | active | core | 2026-06-25 | v1a+v1b (claims+relations) SHIPPED (4ded3fe/f80a7aa, pushed); 3 follow-ups DONE+reviewed(COMMENT), uncommitted on release-next: audit retention, splitMerge un-migration, relation cardinality
 
 ## Open Questions
 
@@ -111,3 +111,4 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw
 - [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-07 | vitest 3→4 surfaces undeclared @types/node deps in five workspaces
 - [docker-copy-of-host-artifacts-poisons-image-builds](scars/docker-copy-of-host-artifacts-poisons-image-builds.md) | scar | active | core | 2026-06-11 | host node_modules/tsbuildinfo in COPY break image builds
+- [cypher-limit-skip-reject-js-number-floats](scars/cypher-limit-skip-reject-js-number-floats.md) | scar | active | standard | 2026-06-24 | Cypher LIMIT/SKIP $param fed a JS number throws 22N03 (marshals as FLOAT); wrap with neo4j.int()

@@ -77,6 +77,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       },
       manualWrite: {
         enabled: true,
+        auditRetentionDays: 90,
       },
     },
     ...overrides,

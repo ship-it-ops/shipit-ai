@@ -14,12 +14,21 @@ import { BullMQEventBusClient } from '@shipit-ai/event-bus';
 import type { AppLike } from '@shipit-ai/shared';
 import { SyncScheduler, type SyncSchedulerOptions } from './sync-scheduler.js';
 import { WebhookRefetchQueue, type WebhookRefetchQueueOptions } from './webhook-refetch-queue.js';
+import {
+  AuditRetentionScheduler,
+  type AuditRetentionSchedulerOptions,
+} from './audit-retention-scheduler.js';
+import type { AuditRetentionService } from './audit-retention-service.js';
 import type { ConnectorRegistry } from './connector-registry.js';
 
 export interface SyncRuntime {
   eventBus: BullMQEventBusClient | null;
   scheduler: SyncScheduler | null;
   webhookRefetch: WebhookRefetchQueue | null;
+  // Daily GraphEditEvent audit-retention cleanup. null when no Redis is
+  // configured, when wiring degraded, OR when retention is disabled
+  // (auditRetentionDays = 0) — the caller never has to call start() on it.
+  auditRetention: AuditRetentionScheduler | null;
   // True when a Redis URL WAS configured but wiring threw and we fell back to
   // the registry's NoopRunner. Distinguishes "intentionally no Redis"
   // (degraded: false, everything null) from "Redis configured but the
@@ -35,6 +44,7 @@ export interface SyncRuntimeFactories {
   createEventBus?: (redisUrl: string) => BullMQEventBusClient;
   createScheduler?: (opts: SyncSchedulerOptions) => SyncScheduler;
   createWebhookRefetch?: (opts: WebhookRefetchQueueOptions) => WebhookRefetchQueue;
+  createAuditRetention?: (opts: AuditRetentionSchedulerOptions) => AuditRetentionScheduler;
   // Defaults to the global console. Tests pass a capturing logger so the boot
   // warnings don't spam the test output and can be asserted on.
   logger?: Pick<typeof console, 'log' | 'warn'>;
@@ -51,6 +61,11 @@ export interface WireSyncRuntimeOptions {
   // docs/agent/patterns/live-reference-for-hot-reload.md.
   globalApp: AppLike;
   concurrency: number;
+  // The constructed audit-retention service (carries the configured window +
+  // the Neo4j handle). When omitted or when its `enabled` is false, no
+  // audit-retention scheduler is wired. Kept as the service (not raw config) so
+  // wireSyncRuntime stays decoupled from Neo4jService construction.
+  auditRetention?: AuditRetentionService;
   factories?: SyncRuntimeFactories;
 }
 
@@ -62,12 +77,20 @@ export function wireSyncRuntime(opts: WireSyncRuntimeOptions): SyncRuntime {
   const createScheduler = opts.factories?.createScheduler ?? ((o) => new SyncScheduler(o));
   const createWebhookRefetch =
     opts.factories?.createWebhookRefetch ?? ((o) => new WebhookRefetchQueue(o));
+  const createAuditRetention =
+    opts.factories?.createAuditRetention ?? ((o) => new AuditRetentionScheduler(o));
 
   if (!redisUrl) {
     log.warn(
       'No Redis URL configured — connectors will accept CRUD writes but syncs will not run. Set backend.redis.url to enable.',
     );
-    return { eventBus: null, scheduler: null, webhookRefetch: null, degraded: false };
+    return {
+      eventBus: null,
+      scheduler: null,
+      webhookRefetch: null,
+      auditRetention: null,
+      degraded: false,
+    };
   }
 
   // Track partially-constructed resources so a throw mid-wiring can release any
@@ -75,10 +98,17 @@ export function wireSyncRuntime(opts: WireSyncRuntimeOptions): SyncRuntime {
   let eventBus: BullMQEventBusClient | null = null;
   let scheduler: SyncScheduler | null = null;
   let webhookRefetch: WebhookRefetchQueue | null = null;
+  let auditRetention: AuditRetentionScheduler | null = null;
   try {
     eventBus = createEventBus(redisUrl);
     scheduler = createScheduler({ redisUrl, registry, eventBus, globalApp, concurrency });
     webhookRefetch = createWebhookRefetch({ redisUrl, registry, eventBus, globalApp, concurrency });
+    // Only stand up the audit-retention scheduler when retention is enabled
+    // (auditRetentionDays > 0). A disabled deployment never constructs a queue
+    // for work it would skip anyway.
+    if (opts.auditRetention?.enabled) {
+      auditRetention = createAuditRetention({ redisUrl, service: opts.auditRetention });
+    }
 
     // Swap the registry's NoopRunner for the live scheduler only after every
     // resource constructed — so a failure above leaves the registry on its
@@ -86,7 +116,8 @@ export function wireSyncRuntime(opts: WireSyncRuntimeOptions): SyncRuntime {
     registry.setRunner(scheduler);
     log.log('SyncScheduler attached to ConnectorRegistry');
     log.log('WebhookRefetchQueue attached');
-    return { eventBus, scheduler, webhookRefetch, degraded: false };
+    if (auditRetention) log.log('AuditRetentionScheduler attached');
+    return { eventBus, scheduler, webhookRefetch, auditRetention, degraded: false };
   } catch (err) {
     // Don't let broken wiring take down the API. The registry keeps its
     // NoopRunner (CRUD works, syncs don't); `degraded: true` makes that
@@ -96,7 +127,14 @@ export function wireSyncRuntime(opts: WireSyncRuntimeOptions): SyncRuntime {
     // partial init doesn't strand BullMQ workers connected to Redis.
     void scheduler?.close().catch(() => undefined);
     void webhookRefetch?.close().catch(() => undefined);
+    void auditRetention?.close().catch(() => undefined);
     void eventBus?.close().catch(() => undefined);
-    return { eventBus: null, scheduler: null, webhookRefetch: null, degraded: true };
+    return {
+      eventBus: null,
+      scheduler: null,
+      webhookRefetch: null,
+      auditRetention: null,
+      degraded: true,
+    };
   }
 }

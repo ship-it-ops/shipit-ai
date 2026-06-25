@@ -256,13 +256,32 @@ exhaustion (+ distinct `claimsConflictSkipped` metric). 5 nits deferred.
 
 ### Known gaps / deferred (not v1a blockers)
 
-- **Audit retention:** `GraphEditEvent` growth is unbounded (deferred per S6);
-  revisit with a node-count trigger ([[neo4j-no-indexes-declared]]).
+- **Audit retention:** ~~`GraphEditEvent` growth is unbounded (deferred per
+  S6)~~ RESOLVED 2026-06-24 (release-next, uncommitted): `AuditRetentionService`
+  (batched cutoff-filtered DETACH DELETE, looped + iteration-capped) + daily
+  BullMQ `AuditRetentionScheduler` (`0 3 * * *`), gated on new config
+  `accessControl.manualWrite.auditRetentionDays` (default 90; `0` disables).
+  Wired in `sync-runtime.ts`/`index.ts`. The `WHERE e.ts < datetime(cutoff)` is a
+  label scan today (zero indexes) — cheap at scale; index on
+  `:GraphEditEvent(ts)` is the eventual optimization ([[neo4j-no-indexes-declared]]).
+  The real-DB integration test caught a marshalling bug: `LIMIT $batch` rejects
+  a JS-number float (22N03) — fixed with `neo4j.int()`.
 - **Unindexed scans:** the reconciliation `[:EDITS]`/`[:VERIFIES]` re-point and
   several manual-edit lookups full-scan (zero Neo4j indexes today).
-- **`splitMerge` reversal** does NOT un-migrate claims/audit migrated by T-merge —
-  a reversed merge would leave the claim on both nodes. Needs a decision + test
-  before relying on merge-reversal with manual edits.
+- **`splitMerge` reversal:** ~~does NOT un-migrate claims/audit~~ RESOLVED
+  2026-06-24 (release-next, uncommitted): `confirmMerge` now records
+  `migratedClaims` (identity triples) + `repointedAuditIds` on the MergeEvent, and
+  `splitMerge` reverses them precisely (removes only those claims, re-points only
+  those audit edges, restores the loser) in one write tx. Idempotent on
+  double-split; a survivor's independently-owned or re-edited claim is preserved
+  (survivor-scoped `source_id` differs from the migrated loser-scoped one — pinned
+  by a regression test). Concurrent-split TOCTOU on `reversedAt` is benign by
+  per-op idempotency (documented). 5 unit tests.
+- **Cardinality enforcement** (was a v1b nit): RESOLVED 2026-06-24 (uncommitted):
+  `relation-edit-service.assertCardinality` enforces the schema's declared
+  `1:1`/`1:N`/`N:1`/`N:M` on the constrained direction(s) before the MERGE,
+  counting all sources, excluding the same (from,to) pair; `CARDINALITY_VIOLATION`
+  → 409. 6 unit tests.
 - **T5a scenario 3** copies the core-writer `mergeNode` CAS Cypher verbatim
   (with a source pointer) rather than importing `@shipit-ai/core-writer` into
   api-server — kept to avoid a cross-package dep. Revisit if a literal import is

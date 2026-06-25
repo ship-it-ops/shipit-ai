@@ -430,9 +430,18 @@ const accessControlSchema = z.object({
   manualWrite: z
     .object({
       enabled: z.boolean().default(true),
+      // Retention window (days) for `GraphEditEvent` audit nodes. Default ON at
+      // 90 days: a daily cleanup job DETACH-DELETEs audit events older than
+      // `now - auditRetentionDays`, bounding their otherwise-unbounded growth
+      // (same incident class as the 2026-06-17/2026-06-22 Redis OOM scars — see
+      // docs/agent/plans/manual-edit-write-path.md S6). Set `0` to DISABLE
+      // retention and keep every audit event forever. Negative values are
+      // rejected at load time.
+      auditRetentionDays: z.number().int().nonnegative().default(90),
     })
     .default({
       enabled: true,
+      auditRetentionDays: 90,
     }),
 });
 
@@ -539,6 +548,7 @@ export const configSchema = z.object({
     },
     manualWrite: {
       enabled: true,
+      auditRetentionDays: 90,
     },
   }),
 });

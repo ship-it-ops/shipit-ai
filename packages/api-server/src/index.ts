@@ -13,6 +13,7 @@ import {
   type ConnectorRunStore,
 } from './services/connector-run-store.js';
 import { wireSyncRuntime } from './services/sync-runtime.js';
+import { AuditRetentionService } from './services/audit-retention-service.js';
 import { resolveWebhookSecret } from './services/webhook-resolution.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import {
@@ -176,6 +177,16 @@ async function main() {
   const neo4jService = new Neo4jService(neo4j.uri, neo4j.user, neo4j.password);
   const schemaService = new SchemaService(schemaPath);
 
+  // GraphEditEvent audit-retention cleanup. Bounds the otherwise-unbounded
+  // growth of manual-edit audit nodes (deferred S6 follow-up from
+  // docs/agent/plans/manual-edit-write-path.md). Default ON at 90 days; set
+  // accessControl.manualWrite.auditRetentionDays = 0 to disable. The scheduler
+  // (daily repeatable BullMQ job) is wired below in wireSyncRuntime, gated on
+  // both Redis presence and this service being enabled.
+  const auditRetentionService = new AuditRetentionService(neo4jService, {
+    retentionDays: config.accessControl.manualWrite.auditRetentionDays,
+  });
+
   // Locate the local config file so the registry can write connector edits
   // back. Falls back to the sibling shipit.config.local.yaml of whatever
   // base config we loaded.
@@ -328,13 +339,16 @@ async function main() {
   // NoopRunner for the live scheduler on success, and keeps the API up (on the
   // NoopRunner) if any of that throws. `eventBus` is shared with createServer
   // so the login callback upserts the authenticated user as a Person.
-  const { eventBus, scheduler, webhookRefetch } = wireSyncRuntime({
+  const { eventBus, scheduler, webhookRefetch, auditRetention } = wireSyncRuntime({
     redisUrl: config.backend.redis.url,
     registry: connectorRegistry,
     // Live reference, not a snapshot — see live-reference-for-hot-reload
     // in docs/agent/patterns/.
     globalApp: gh,
     concurrency: config.connectors.github.rateLimits.maxConcurrentSyncs,
+    // null inside wireSyncRuntime when disabled or no Redis; daily cleanup
+    // started after the server listens.
+    auditRetention: auditRetentionService,
   });
 
   try {
@@ -408,6 +422,18 @@ async function main() {
     );
   }
 
+  // Register the daily audit-retention cleanup job. null when retention is
+  // disabled or no Redis is configured. Belt-and-suspenders try/catch (same
+  // rationale as startRunner above): a boot-time enqueue rejection must never
+  // bubble out of main() as a process-killing unhandledRejection.
+  try {
+    await auditRetention?.start();
+  } catch (err) {
+    console.warn(
+      `Audit-retention scheduling failed at boot (cleanup degraded, API stays up): ${(err as Error).message}`,
+    );
+  }
+
   try {
     await server.listen({ port: api.port, host: '0.0.0.0' });
     console.log(`ShipIt-AI API server listening on port ${api.port}`);
@@ -421,6 +447,7 @@ async function main() {
     await server.close();
     if (scheduler) await scheduler.close();
     if (webhookRefetch) await webhookRefetch.close();
+    if (auditRetention) await auditRetention.close();
     // The event bus owns its own Queue + stream connections (the scheduler's
     // close() only tears down the worker/queue it created), so close it here.
     if (eventBus) await eventBus.close();

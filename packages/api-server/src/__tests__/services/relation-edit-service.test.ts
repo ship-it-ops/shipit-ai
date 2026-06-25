@@ -76,6 +76,36 @@ class FakeNeo4j {
         ],
       };
     }
+    // Cardinality FROM-side cap: outgoing edges of TYPE from `from` to a node
+    // OTHER than `to`. (`(from {id: $from})-[r:TYPE]->(other) WHERE other.id <> $to`)
+    if (
+      cypher.includes('-[r:') &&
+      cypher.includes('->(other)') &&
+      cypher.includes('other.id <> $to')
+    ) {
+      const type = matchType(cypher);
+      const conflict = this.edges.find(
+        (e) => e.from === p.from && e.type === type && e.to !== p.to,
+      );
+      return {
+        records: conflict
+          ? [{ get: (k: string) => (k === 'conflict' ? conflict.to : undefined) }]
+          : [],
+      };
+    }
+    // Cardinality TO-side cap: incoming edges of TYPE into `to` from a node
+    // OTHER than `from`. (`(other)-[r:TYPE]->(to {id: $to}) WHERE other.id <> $from`)
+    if (cypher.includes('(other)-[r:') && cypher.includes('other.id <> $from')) {
+      const type = matchType(cypher);
+      const conflict = this.edges.find(
+        (e) => e.to === p.to && e.type === type && e.from !== p.from,
+      );
+      return {
+        records: conflict
+          ? [{ get: (k: string) => (k === 'conflict' ? conflict.from : undefined) }]
+          : [],
+      };
+    }
     // Edge MERGE.
     if (cypher.includes('MERGE (from)-[r:')) {
       const type = matchType(cypher);
@@ -154,6 +184,10 @@ const schemaStub = {
     relationship_types: {
       OWNS: { from: 'Team', to: 'LogicalService', cardinality: '1:N' },
       DEPENDS_ON: { from: 'LogicalService', to: 'LogicalService', cardinality: 'N:M' },
+      // N:1 — each service runs in at most one environment (from-side capped).
+      RUNS_IN: { from: 'LogicalService', to: 'Environment', cardinality: 'N:1' },
+      // 1:1 — exactly one primary owner mapping both ways.
+      PRIMARY_OF: { from: 'Team', to: 'LogicalService', cardinality: '1:1' },
     },
   }),
 };
@@ -353,6 +387,78 @@ describe('RelationEditService.addRelation', () => {
       service.addRelation({ from: SVC2, to: SVC, type: 'OWNS', actor: 'alice@x' }),
     ).rejects.toMatchObject({ code: 'ENDPOINT_LABEL_MISMATCH' });
     expect(fake.edges).toHaveLength(0);
+  });
+});
+
+describe('RelationEditService.addRelation — schema cardinality', () => {
+  let fake: FakeNeo4j;
+  let service: RelationEditService;
+  const TEAM2 = 'shipit://team/default/payments';
+  const ENV = 'shipit://environment/default/prod';
+  const ENV2 = 'shipit://environment/default/staging';
+  const SVC3 = 'shipit://logicalservice/default/ledger';
+  // Stand-in for an edge from a node we don't bother seeding (the cardinality
+  // count walks the edges array, not node existence).
+  const OTHER_TEAM = 'shipit://team/default/other';
+
+  beforeEach(() => {
+    fake = new FakeNeo4j();
+    service = makeService(fake);
+    fake.seedNode(TEAM, 'Team');
+    fake.seedNode(TEAM2, 'Team');
+    fake.seedNode(SVC, 'LogicalService');
+    fake.seedNode(SVC2, 'LogicalService');
+    fake.seedNode(SVC3, 'LogicalService');
+    fake.seedNode(ENV, 'Environment');
+    fake.seedNode(ENV2, 'Environment');
+  });
+
+  it('1:N (OWNS) — rejects a second owner on the TO side (each service owned by one team)', async () => {
+    // SVC is already OWNED by a different team (connector edge).
+    fake.seedEdge({ from: OTHER_TEAM, to: SVC, type: 'OWNS', props: { _source: 'github' } });
+    await expect(
+      service.addRelation({ from: TEAM, to: SVC, type: 'OWNS', actor: 'alice@x' }),
+    ).rejects.toMatchObject({ code: 'CARDINALITY_VIOLATION' });
+    // No manual edge written.
+    expect(fake.edges.filter((e) => e.props._manual_actor != null)).toHaveLength(0);
+  });
+
+  it('1:N (OWNS) — re-adding the SAME pair is not a cardinality violation (idempotent)', async () => {
+    fake.seedEdge({ from: TEAM, to: SVC, type: 'OWNS', props: { _manual_actor: 'alice@x' } });
+    const res = await service.addRelation({ from: TEAM, to: SVC, type: 'OWNS', actor: 'alice@x' });
+    expect(res).toEqual({ created: false });
+  });
+
+  it('N:1 (RUNS_IN) — rejects a second target on the FROM side (each service runs in one env)', async () => {
+    fake.seedEdge({ from: SVC, to: ENV, type: 'RUNS_IN', props: { _source: 'kubernetes' } });
+    await expect(
+      service.addRelation({ from: SVC, to: ENV2, type: 'RUNS_IN', actor: 'alice@x' }),
+    ).rejects.toMatchObject({ code: 'CARDINALITY_VIOLATION' });
+  });
+
+  it('1:1 (PRIMARY_OF) — rejects a conflict on the FROM side', async () => {
+    fake.seedEdge({ from: TEAM, to: SVC, type: 'PRIMARY_OF', props: { _manual_actor: 'x@x' } });
+    await expect(
+      service.addRelation({ from: TEAM, to: SVC2, type: 'PRIMARY_OF', actor: 'alice@x' }),
+    ).rejects.toMatchObject({ code: 'CARDINALITY_VIOLATION' });
+  });
+
+  it('1:1 (PRIMARY_OF) — rejects a conflict on the TO side', async () => {
+    fake.seedEdge({ from: TEAM, to: SVC, type: 'PRIMARY_OF', props: { _manual_actor: 'x@x' } });
+    await expect(
+      service.addRelation({ from: TEAM2, to: SVC, type: 'PRIMARY_OF', actor: 'alice@x' }),
+    ).rejects.toMatchObject({ code: 'CARDINALITY_VIOLATION' });
+  });
+
+  it('N:M (DEPENDS_ON) — never blocked by cardinality (many-to-many)', async () => {
+    fake.seedEdge({ from: SVC, to: SVC2, type: 'DEPENDS_ON', props: { _source: 'github' } });
+    const res = await service.addRelation({
+      from: SVC,
+      to: SVC3,
+      type: 'DEPENDS_ON',
+      actor: 'alice@x',
+    });
+    expect(res).toEqual({ created: true });
   });
 });
 
