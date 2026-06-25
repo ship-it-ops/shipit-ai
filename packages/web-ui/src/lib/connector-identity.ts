@@ -20,9 +20,25 @@ const TYPE_LABEL: Record<string, string> = {
   kubernetes: 'Kubernetes',
 };
 
+// Separator between the type label and the instance name in a composed
+// display label ("GitHub · acme-prod"). U+00B7 middle dot.
+const LABEL_SEP = ' · ';
+
 function titleCaseType(type: string | undefined): string {
   if (!type) return 'Unknown';
   return TYPE_LABEL[type] ?? type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+/**
+ * Strip a redundant leading `${typeLabel} · ` from a stored connector name so
+ * composition stays idempotent. The bare instance name is the canonical stored
+ * form, but legacy connectors (and the old wizard default) persisted a
+ * fully-composed `name` like "GitHub · acme-prod"; without this we'd render
+ * "GitHub · GitHub · acme-prod".
+ */
+function stripTypePrefix(name: string, typeLabel: string): string {
+  const prefix = `${typeLabel}${LABEL_SEP}`;
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
 }
 
 /**
@@ -69,13 +85,15 @@ export function resolveConnectorIdentity(
     };
   }
 
-  // The connector's `name` is the human-edited label from the wizard;
-  // fall back to its ID if blank.
-  const name = match.name?.trim() || match.id;
+  // The connector's `name` is the human-edited instance label from the wizard
+  // (canonically the bare org/instance, e.g. "acme-prod"); fall back to its ID
+  // if blank. Strip a redundant type prefix so legacy composed names don't
+  // double up when we compose the display label below.
+  const name = stripTypePrefix(match.name?.trim() || match.id, typeLabel);
   return {
     type,
     connectorId: connectorIdValue,
-    displayName: `${typeLabel} · ${name}`,
+    displayName: `${typeLabel}${LABEL_SEP}${name}`,
     shortName: name,
     resolved: true,
   };

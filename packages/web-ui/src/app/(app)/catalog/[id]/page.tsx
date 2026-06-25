@@ -273,7 +273,7 @@ export default function EntityDetailPage() {
               {sourceSystem && (
                 <>
                   <dt className="text-text-dim font-mono uppercase">Source</dt>
-                  <dd className="text-text">
+                  <dd className="text-text min-w-0">
                     {(() => {
                       const identity = resolveConnectorIdentity(
                         sourceSystem,
@@ -286,7 +286,7 @@ export default function EntityDetailPage() {
                           type="button"
                           onClick={() => router.push('/connectors')}
                           aria-label={`Open ${identity.displayName}`}
-                          className="focus-visible:ring-accent-dim rounded outline-none focus-visible:ring-[3px]"
+                          className="focus-visible:ring-accent-dim flex max-w-full min-w-0 rounded outline-none focus-visible:ring-[3px]"
                         >
                           {pill}
                         </button>

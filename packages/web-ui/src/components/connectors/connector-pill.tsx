@@ -26,7 +26,11 @@ export function ConnectorPill({ identity, compact = false, className }: Connecto
       className={
         // Unresolved (deleted/legacy connector) is dimmed via opacity — the
         // Badge has no muted variant, so the distinction is visual + title.
-        'font-mono text-[11px] ' + (identity.resolved ? '' : 'opacity-60 ') + (className ?? '')
+        // max-w-full + min-w-0 let the pill shrink inside a constrained cell so
+        // a long source label ellipsizes instead of overflowing the card.
+        'max-w-full min-w-0 font-mono text-[11px] ' +
+        (identity.resolved ? '' : 'opacity-60 ') +
+        (className ?? '')
       }
       title={identity.resolved ? identity.displayName : `${identity.displayName} (unresolved)`}
     >
@@ -35,9 +39,9 @@ export function ConnectorPill({ identity, compact = false, className }: Connecto
         kind="connector"
         size={11}
         aria-hidden
-        className="mr-[6px]"
+        className="mr-[6px] shrink-0"
       />
-      {label}
+      <span className="min-w-0 truncate">{label}</span>
     </Badge>
   );
 }
