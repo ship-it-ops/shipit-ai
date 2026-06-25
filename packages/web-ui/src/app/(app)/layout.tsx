@@ -2,6 +2,7 @@ import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { GlobalCommandPalette } from '@/components/layout/global-command-palette';
 import { OnboardingTrigger } from '@/components/onboarding/onboarding-trigger';
+import { FeedbackWidget } from '@/components/feedback/feedback-widget';
 
 // Authenticated app chrome — sidebar, header, command palette, the
 // onboarding trigger. Unauth surfaces (under (auth)/) opt out of this
@@ -18,6 +19,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <GlobalCommandPalette />
       <OnboardingTrigger />
+      <FeedbackWidget />
     </>
   );
 }

@@ -1588,3 +1588,67 @@ export async function runCypherQuery(
   }
   return body as CypherQueryResult;
 }
+
+// ── Feedback widget ─────────────────────────────────────────────────────────
+// Backs the "Report a problem" launcher. The server files a GitHub issue via a
+// service identity and attributes the reporter from the session.
+
+export type FeedbackType = 'bug' | 'feature' | 'question';
+
+export interface FeedbackContextPayload {
+  url?: string;
+  route?: string;
+  userAgent?: string;
+  viewport?: string;
+  language?: string;
+  appVersion?: string;
+}
+
+export interface FeedbackLogPayload {
+  level: string;
+  message: string;
+  ts?: number;
+}
+
+export interface FeedbackInput {
+  type: FeedbackType;
+  title: string;
+  description: string;
+  context?: FeedbackContextPayload;
+  logs?: FeedbackLogPayload[];
+}
+
+export interface FeedbackResult {
+  issueUrl: string;
+  issueNumber: number;
+}
+
+// Whether the widget should render. Treats any failure as "disabled" so a
+// flaky probe never blocks the UI.
+export async function fetchFeedbackConfig(): Promise<{ enabled: boolean }> {
+  try {
+    const res = await fetchApi(`${API_URL}/api/feedback/config`);
+    if (!res.ok) return { enabled: false };
+    return (await res.json()) as { enabled: boolean };
+  } catch {
+    return { enabled: false };
+  }
+}
+
+export async function submitFeedback(input: FeedbackInput): Promise<FeedbackResult> {
+  const res = await fetchApi(`${API_URL}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | FeedbackResult
+    | { error?: { message?: string } };
+  if (!res.ok) {
+    const message =
+      (body as { error?: { message?: string } }).error?.message ??
+      `Could not file your report (${res.status}).`;
+    throw new Error(message);
+  }
+  return body as FeedbackResult;
+}

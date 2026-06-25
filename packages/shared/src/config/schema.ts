@@ -448,6 +448,26 @@ const accessControlSchema = z.object({
 export type AccessControlConfig = z.infer<typeof accessControlSchema>;
 export type AuthConfig = AccessControlConfig['auth'];
 
+// Top-level `feedback:` block — backs the in-app "Report a problem" widget.
+// Non-secret values only (committable, like connectors.github.app): the
+// issue-filing identity is a server-held fine-grained PAT consumed via the
+// FEEDBACK_GITHUB_TOKEN env var (hydrated from GSM), never stored here.
+// `enabled` is additionally gated on that token being present at runtime.
+const feedbackConfigSchema = z.object({
+  // Explicit kill-switch. Defaults true, but the widget is gated at runtime on
+  // a target repo AND the FEEDBACK_GITHUB_TOKEN being present, so it stays off
+  // until configured. Set false to hard-disable even when those are set. Kept a
+  // literal (not env-substituted) because the loader yields strings for ${...}.
+  enabled: z.boolean().default(true),
+  repo: z
+    .object({
+      owner: z.string().default(''),
+      name: z.string().default(''),
+    })
+    .default({ owner: '', name: '' }),
+  defaultLabels: z.array(z.string()).default(['user-report']),
+});
+
 export const configSchema = z.object({
   backend: z.object({
     neo4j: z.object({
@@ -550,6 +570,13 @@ export const configSchema = z.object({
       enabled: true,
       auditRetentionDays: 90,
     },
+  }),
+  // In-app feedback widget target. Defaulted (disabled) so existing configs
+  // without a feedback block still validate and boot.
+  feedback: feedbackConfigSchema.default({
+    enabled: true,
+    repo: { owner: '', name: '' },
+    defaultLabels: ['user-report'],
   }),
 });
 

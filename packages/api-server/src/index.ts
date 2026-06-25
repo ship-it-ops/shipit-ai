@@ -23,6 +23,7 @@ import {
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
+import { FeedbackService } from './services/feedback-service.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
@@ -375,6 +376,14 @@ async function main() {
     webhookRefetch: webhookRefetch ?? undefined,
   });
 
+  // Backs the in-app "Report a problem" widget. Live reference to
+  // config.feedback; files issues via the server-held FEEDBACK_GITHUB_TOKEN
+  // PAT. Reuses the run-store Redis client for per-user rate limiting.
+  const feedbackService = new FeedbackService({
+    feedback: config.feedback,
+    redis: runStoreRedis,
+  });
+
   const server = await createServer({
     logger: true,
     neo4jService,
@@ -384,6 +393,7 @@ async function main() {
     githubAppManifestService,
     oidcSettingsService,
     settingsService,
+    feedbackService,
     // Active-mode /api/setup/status (behind auth) — used by the wizard's
     // post-restart poll and for ops debugging. The mutating setup routes
     // 409 outside setup mode.

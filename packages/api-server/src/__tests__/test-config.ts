@@ -80,6 +80,11 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
         auditRetentionDays: 90,
       },
     },
+    feedback: {
+      enabled: true,
+      repo: { owner: '', name: '' },
+      defaultLabels: ['user-report'],
+    },
     ...overrides,
   };
 }

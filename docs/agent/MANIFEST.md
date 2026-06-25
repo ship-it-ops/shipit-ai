@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-24 | Total notes: 77
+Last updated: 2026-06-25 | Total notes: 79
 
 ## Investigations
 
@@ -58,6 +58,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [per-field-confidence-and-verification](decisions/per-field-confidence-and-verification.md) | decision | active | core | 2026-06-15 | hybrid heuristic confidence engine + derived verification status; corroboration/ambiguity/verify
 - [webhook-receiver-design](decisions/webhook-receiver-design.md) | decision | active | core | 2026-06-18 | HMAC verify-first receiver; per-App secret no-downgrade; coalesced targeted refetch
 - [per-node-source-connector-id](decisions/per-node-source-connector-id.md) | decision | active | standard | 2026-05-28 | stamp \_source_connector_id from envelope; powers catalog source facet/pills
+- [feedback-widget-service-identity](decisions/feedback-widget-service-identity.md) | decision | active | standard | 2026-06-25 | "Report a problem" widget files issues via server-held PAT (issues:write), not the user's token; reporter attributed from session; v1 logs+metadata only
 
 ## Patterns
 
@@ -73,6 +74,7 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
+- [ds-upstream-feedback-widget](plans/ds-upstream-feedback-widget.md) | plan | active | standard | 2026-06-25 | DS asks for feedback widget: FabDock fixed-position slot, --z-fixed token, imperative toast(); widget shipped on existing primitives (non-blocking)
 - [admin-portal-settings](plans/admin-portal-settings.md) | plan | completed | core | 2026-06-23 | SHIPPED (#76): admin settings hub — webhook setup/rotate, OAuth, admins, allow-list
 - [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | completed | core | 2026-06-23 | SHIPPED: HMAC verify, per-App secret, coalesced refetch; Cut A (#76) + Cut B both landed
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | completed | standard | 2026-06-23 | SHIPPED (#48/#67): bearer enforcement + token CRUD + API Keys UI; only mcp-server infra exposure remains

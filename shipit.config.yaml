@@ -87,6 +87,19 @@ connectors:
   # shipit.config.local.yaml.
   instances: []
 
+# In-app "Report a problem" widget. Files a GitHub issue in the target repo
+# using a SERVER-HELD fine-grained PAT (issues:write) consumed via the
+# FEEDBACK_GITHUB_TOKEN env var (hydrated from GSM in prod) — never the
+# logged-in user's identity. The widget stays hidden until a target repo AND
+# that token are configured; set `enabled: false` to hard-disable.
+feedback:
+  enabled: true
+  repo:
+    owner: ${SHIPIT_FEEDBACK_REPO_OWNER:-}
+    name: ${SHIPIT_FEEDBACK_REPO_NAME:-}
+  defaultLabels:
+    - user-report
+
 frontend:
   api:
     # Public URL the web-UI's browser code uses to reach the api-server.

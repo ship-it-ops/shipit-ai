@@ -25,6 +25,10 @@ export type LogicalSecret =
   // webhookSecret}}. Written wholesale on connector mutations and rehydrated
   // (instances + PEM files) at boot. See ConnectorAppStore.
   | 'connector-apps'
+  // Server-held fine-grained PAT (issues:write) used to file issues from the
+  // in-app "Report a problem" widget. Read-only at runtime (never app-written),
+  // consumed via FEEDBACK_GITHUB_TOKEN.
+  | 'github-feedback-token'
   | 'neo4j-aura-password'
   | 'session-secret';
 
@@ -39,6 +43,7 @@ export const GSM_CONTAINER_DEFAULTS: Record<LogicalSecret, string> = {
   'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
   'setup-completed': 'shipit-setup-completed',
   'connector-apps': 'shipit-connector-apps',
+  'github-feedback-token': 'shipit-github-feedback-token',
   'neo4j-aura-password': 'shipit-neo4j-aura-password',
   'session-secret': 'shipit-session-secret',
 };
@@ -66,6 +71,8 @@ export const ENV_VAR_FOR: Partial<Record<LogicalSecret, string>> = {
   'auth-allow-list-emails': 'SHIPIT_AUTH_ALLOWLIST',
   'neo4j-aura-password': 'NEO4J_PASSWORD',
   'session-secret': 'SHIPIT_SESSION_SECRET',
+  // Read-only: the feedback widget's issue-filing PAT.
+  'github-feedback-token': 'FEEDBACK_GITHUB_TOKEN',
 };
 
 export const WRITABLE_SECRETS: ReadonlySet<LogicalSecret> = new Set<LogicalSecret>([

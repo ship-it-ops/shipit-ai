@@ -21,6 +21,7 @@ describe('secret taxonomy', () => {
       'auth-allow-list-emails': 'shipit-auth-allow-list-emails',
       'setup-completed': 'shipit-setup-completed',
       'connector-apps': 'shipit-connector-apps',
+      'github-feedback-token': 'shipit-github-feedback-token',
       'neo4j-aura-password': 'shipit-neo4j-aura-password',
       'session-secret': 'shipit-session-secret',
     });
@@ -36,6 +37,7 @@ describe('secret taxonomy', () => {
     expect(ENV_VAR_FOR['auth-allow-list-emails']).toBe('SHIPIT_AUTH_ALLOWLIST');
     expect(ENV_VAR_FOR['neo4j-aura-password']).toBe('NEO4J_PASSWORD');
     expect(ENV_VAR_FOR['session-secret']).toBe('SHIPIT_SESSION_SECRET');
+    expect(ENV_VAR_FOR['github-feedback-token']).toBe('FEEDBACK_GITHUB_TOKEN');
     expect(ENV_VAR_FOR['github-app-private-key']).toBeUndefined();
   });
 
@@ -58,6 +60,8 @@ describe('secret taxonomy', () => {
     // consumed as a file blob, never via env.
     expect(() => assertWritable('connector-apps')).not.toThrow();
     expect(ENV_VAR_FOR['connector-apps']).toBeUndefined();
+    // The feedback PAT is read-only at runtime — never app-written.
+    expect(() => assertWritable('github-feedback-token')).toThrow(SecretWriteForbiddenError);
   });
 
   it('resolves container names from hard-mapped defaults with per-secret env override', () => {

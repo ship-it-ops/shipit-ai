@@ -42,6 +42,8 @@ import webhookRoutes, { type WebhookRefetchPort } from './routes/webhooks.js';
 import { assertAuthConfigBootable, AuthConfigError } from './auth-bootability.js';
 import type { SetupService } from './services/setup-service.js';
 import type { SettingsService } from './services/settings-service.js';
+import feedbackRoutes from './routes/feedback.js';
+import type { FeedbackService } from './services/feedback-service.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -86,6 +88,9 @@ export interface CreateServerOptions {
   // Backs the admin /api/settings hub (webhook secrets, OAuth client, admin
   // emails, allow-list). Optional: the routes return 503 when not wired.
   settingsService?: SettingsService;
+  // Backs the in-app "Report a problem" widget (/api/feedback). Optional: the
+  // route returns 503 when not wired or when feedback isn't configured.
+  feedbackService?: FeedbackService;
   // Event bus client, exposed to routes so the login callback can publish
   // the authenticated user as a Person entity (see routes/auth.ts and
   // services/person-upsert.ts). Production passes the same BullMQ client the
@@ -107,6 +112,7 @@ declare module 'fastify' {
     setupMode: boolean;
     setupService?: SetupService;
     settingsService?: SettingsService;
+    feedbackService?: FeedbackService;
     eventBus?: EventBusClient;
     webhookRefetch?: WebhookRefetchPort;
   }
@@ -131,6 +137,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // tests; the routes 503 when it's absent.
   if (opts.settingsService) {
     server.decorate('settingsService', opts.settingsService);
+  }
+  if (opts.feedbackService) {
+    server.decorate('feedbackService', opts.feedbackService);
   }
 
   if (opts.config) {
@@ -413,6 +422,11 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // admin emails, login allow-list. Every handler is admin-gated; the routes
   // 503 when the backing SettingsService/SetupService aren't wired.
   await server.register(portalSettingsRoutes, { prefix: '/api/settings' });
+
+  // In-app "Report a problem" widget — files a GitHub issue via a server-held
+  // service PAT. Any signed-in user; the route 503s when feedback isn't wired
+  // or configured.
+  await server.register(feedbackRoutes, { prefix: '/api/feedback' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak
