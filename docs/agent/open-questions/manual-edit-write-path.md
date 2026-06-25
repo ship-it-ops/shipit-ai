@@ -76,6 +76,12 @@ manual-claim durability guarantee was false (core-writer `mergeNode` clobbers
 manual claims via a `_claims_rev`-unaware write race); the plan fixes it (T0 CAS).
 This open question stays `active` until v1a/v1b ship.
 
+**2026-06-24 (later):** Gap 1 is now BUILT. v1a (manual claim override/revert +
+RBAC) SHIPPED (commit `4ded3fe`, pushed to `origin/release-next`); v1b (manual
+add/delete relations) implemented + verified + reviewed, uncommitted on
+`release-next`. With Gap 2 already fixed (#74), this question is effectively
+resolved — flip to `answered` once v1b is committed.
+
 ## Tried
 
 Traced the full write path (resolver → mergeClaims → mergeNode/mergeEdge) and

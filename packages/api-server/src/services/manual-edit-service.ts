@@ -37,9 +37,17 @@ const MANUAL_RELIABILITY = getSourceReliability('manual').reliability;
  * - `contradicted`: a connector re-sync produced a value that diverges from an
  *   existing human override (manual/verified). Emitted by the review-queue
  *   computation (VerificationService) so operators can tell a deliberate
- *   override from stale connector drift. Relation kinds arrive in T3.
+ *   override from stale connector drift.
+ * - `relation_added` / `relation_removed`: a human authored or removed a manual
+ *   relationship edge (RelationEditService, v1b). Carries from_id/to_id/relation_type
+ *   instead of property_key/value.
  */
-export type GraphEditKind = 'manual_set' | 'manual_revert' | 'contradicted';
+export type GraphEditKind =
+  | 'manual_set'
+  | 'manual_revert'
+  | 'contradicted'
+  | 'relation_added'
+  | 'relation_removed';
 
 /** Input rejected before any write (route maps to 400). */
 export class ManualEditValidationError extends Error {

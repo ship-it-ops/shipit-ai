@@ -222,8 +222,11 @@ the v1a/v1b slice.
 
 ## Status
 
-**v1a (manual claims) — IMPLEMENTED + fully verified, uncommitted** on
-`release-next` (2026-06-24). v1b (relations) not started.
+**v1a (manual claims) — SHIPPED** (committed `4ded3fe`, pushed to
+`origin/release-next`, 2026-06-24).
+
+**v1b (manual relations) — IMPLEMENTED + fully verified, uncommitted** on
+`release-next` (2026-06-24).
 
 Tasks done: T0 (core-writer `_claims_rev` CAS + optimistic-retry), T2
 (ManualEditService + shared `claim-write-helpers` + deterministic
@@ -264,4 +267,26 @@ exhaustion (+ distinct `claimsConflictSkipped` metric). 5 nits deferred.
   (with a source pointer) rather than importing `@shipit-ai/core-writer` into
   api-server — kept to avoid a cross-package dep. Revisit if a literal import is
   preferred.
-- v1b (relations: T1b/T3/T4b/T5b/T6b/T8/T9b) remains to build.
+
+### v1b (relations) — done, evidence
+
+T1b/T3/T4b (relation-edit-service + schema-driven validation + dedicated
+ON-CREATE-only Cypher + `_manual_actor` provenance marker + gated routes reusing
+v1a's `requireCapability`/`actorOf`/kill-switch/rate-limit + relation_added/
+relation_removed audit), T5b (14 real-Neo4j integration scenarios), T6b/T8/T9b
+(web-ui relations client + entity-detail RelationManager: schema-driven type
+picker + entity-search target + 3 POST-outcome toasts + connector-edge
+delete-disabled + permission states). Full-repo `turbo` typecheck/test/lint
+14/14 · 14/14 · 1/1 (api-server 502 unit + 14 relation integration, web-ui 157).
+
+Multi-persona review returned REQUEST*CHANGES on ONE blocker — `properties`
+reserved-key injection (a `graph:write` caller could override server-stamped
+`_manual_actor`/`_source`/`_ingested_at` via the body's `properties` map, forging
+attribution and silently suppressing the audit row). Fixed: reject any
+`*`-prefixed property key (`INVALID_PROPERTIES`) + reject null array elements,
+with red→green adversarial tests at unit + integration. Nits deferred: structured
+app-log line for manual edits (v1a+v1b), `MANUAL_EDIT_DISABLED`vs`FEATURE_DISABLED`code naming, cardinality enforcement (only from/to labels
+today), CI throwaway-Neo4j fixture (APOC required),`withAuthEnabledServer`
+test-helper extraction.
+
+**Full feature (claims + relations) is now complete.**

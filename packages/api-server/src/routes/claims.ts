@@ -13,6 +13,12 @@ import {
   ManualEditValidationError,
   ManualEditNotFoundError,
 } from '../services/manual-edit-service.js';
+import {
+  type RelationEditService,
+  RelationEditValidationError,
+  RelationEditNotFoundError,
+  RelationEditConflictError,
+} from '../services/relation-edit-service.js';
 import { requireCapability } from '../middleware/require-auth.js';
 import type { Neo4jService } from '../services/neo4j-service.js';
 import type { SchemaService } from '../services/schema-service.js';
@@ -24,6 +30,8 @@ declare module 'fastify' {
     // Manual-edit write path (claims v1a). Decorated in server.ts only when a
     // neo4jService is wired (same gate the claims routes register behind).
     manualEditService?: ManualEditService;
+    // Manual RELATIONS write path (v1b). Same wiring gate as manualEditService.
+    relationEditService?: RelationEditService;
   }
 }
 
@@ -86,33 +94,34 @@ function replyForManualEditError(reply: FastifyReply, e: unknown): FastifyReply 
   throw e;
 }
 
+// Kill-switch preHandler for the manual-write routes. Default ON; flip
+// accessControl.manualWrite.enabled to false for an instant rollback that 403s
+// writes (FEATURE_DISABLED) while leaving read paths untouched. Module-scoped so
+// the claim AND relation write routes share one authority.
+const requireManualWriteEnabled = async (
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply | void> => {
+  if (request.server.config?.accessControl.manualWrite.enabled === false) {
+    return reply.status(403).send({
+      error: {
+        code: 'FEATURE_DISABLED',
+        message: 'Manual editing is disabled on this deployment.',
+      },
+    });
+  }
+  return undefined;
+};
+
+// Every manual-write route shares the same gate ladder: requireAuth (global
+// preHandler) → graph:write capability → kill-switch. The owning service is
+// decorated only when Neo4j is wired (same gate these plugins register behind),
+// so each plugin's 503 guard is defensive.
+const manualWriteGate = [requireCapability('graph:write'), requireManualWriteEnabled];
+
 const claimsRoutes: FastifyPluginAsync = async (server) => {
   const service = new ClaimService(server.neo4jService, server.schemaService);
   const verification = new VerificationService(server.neo4jService);
-
-  // Kill-switch preHandler for the manual-write routes. Default ON; flip
-  // accessControl.manualWrite.enabled to false for an instant rollback that
-  // 403s writes (FEATURE_DISABLED) while leaving read paths untouched.
-  const requireManualWriteEnabled = async (
-    request: FastifyRequest,
-    reply: FastifyReply,
-  ): Promise<FastifyReply | void> => {
-    if (request.server.config?.accessControl.manualWrite.enabled === false) {
-      return reply.status(403).send({
-        error: {
-          code: 'FEATURE_DISABLED',
-          message: 'Manual editing is disabled on this deployment.',
-        },
-      });
-    }
-    return undefined;
-  };
-
-  // Both manual routes share the same gate ladder: requireAuth (global
-  // preHandler) → graph:write capability → kill-switch. The service is
-  // decorated only when Neo4j is wired (same gate this plugin registers
-  // behind), so the 503 guard is defensive.
-  const manualWriteGate = [requireCapability('graph:write'), requireManualWriteEnabled];
 
   const requireManualEditService = (reply: FastifyReply): ManualEditService | null => {
     if (!server.manualEditService) {
@@ -265,6 +274,115 @@ const claimsRoutes: FastifyPluginAsync = async (server) => {
         });
       }
       return result;
+    },
+  );
+};
+
+// Map a RelationEditService error to its HTTP response per the T4b contract:
+//   RelationEditValidationError (INVALID_RELATION_TYPE / SELF_LOOP /
+//     ENDPOINT_LABEL_MISMATCH)              → 400
+//   RelationEditNotFoundError   (ENDPOINT_NOT_FOUND) → 404
+//   RelationEditConflictError   (CONNECTOR_EDGE)     → 409
+// Anything else is unexpected → rethrow to the global error handler (500).
+function replyForRelationEditError(reply: FastifyReply, e: unknown): FastifyReply {
+  if (e instanceof RelationEditValidationError) {
+    return reply.status(400).send({ error: { code: e.code, message: e.message } });
+  }
+  if (e instanceof RelationEditNotFoundError) {
+    return reply.status(404).send({ error: { code: e.code, message: e.message } });
+  }
+  if (e instanceof RelationEditConflictError) {
+    return reply.status(409).send({ error: { code: e.code, message: e.message } });
+  }
+  throw e;
+}
+
+// Manual RELATIONS write path (v1b). Author/remove a `manual:<actor>` edge that
+// is distinguishable from connector topology by its positive `_manual_actor`
+// provenance marker. Registered near the claim routes (server.ts), behind the
+// same gate ladder + principal-keyed rate limit.
+export const relationsRoutes: FastifyPluginAsync = async (server) => {
+  const requireRelationEditService = (reply: FastifyReply): RelationEditService | null => {
+    if (!server.relationEditService) {
+      reply.status(503).send({
+        error: {
+          code: 'MANUAL_EDIT_DISABLED',
+          message: 'Manual editing is not wired on this deployment.',
+        },
+      });
+      return null;
+    }
+    return server.relationEditService;
+  };
+
+  server.post<{
+    Body: { from?: string; to?: string; type?: string; properties?: Record<string, unknown> };
+  }>(
+    '/',
+    { config: MANUAL_WRITE_RATE_LIMIT, preHandler: manualWriteGate },
+    async (request, reply) => {
+      const svc = requireRelationEditService(reply);
+      if (!svc) return reply;
+      const { from, to, type, properties } = request.body ?? {};
+      if (
+        typeof from !== 'string' ||
+        typeof to !== 'string' ||
+        typeof type !== 'string' ||
+        !from ||
+        !to ||
+        !type
+      ) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_BODY', message: 'from, to and type are required strings.' },
+        });
+      }
+      try {
+        // actor is ALWAYS the authenticated principal, never client-supplied.
+        const result = await svc.addRelation({
+          from,
+          to,
+          type,
+          properties,
+          actor: actorOf(request),
+        });
+        return reply.status(200).send(result);
+      } catch (e) {
+        return replyForRelationEditError(reply, e);
+      }
+    },
+  );
+
+  server.delete<{
+    Body: { from?: string; to?: string; type?: string };
+  }>(
+    '/',
+    { config: MANUAL_WRITE_RATE_LIMIT, preHandler: manualWriteGate },
+    async (request, reply) => {
+      const svc = requireRelationEditService(reply);
+      if (!svc) return reply;
+      const { from, to, type } = request.body ?? {};
+      if (
+        typeof from !== 'string' ||
+        typeof to !== 'string' ||
+        typeof type !== 'string' ||
+        !from ||
+        !to ||
+        !type
+      ) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_BODY', message: 'from, to and type are required strings.' },
+        });
+      }
+      try {
+        const deleted = await svc.deleteRelation({ from, to, type, actor: actorOf(request) });
+        if (!deleted) {
+          // Idempotent: nothing matched. No body on 204.
+          return reply.status(204).send();
+        }
+        return reply.status(200).send({ deleted: true });
+      } catch (e) {
+        return replyForRelationEditError(reply, e);
+      }
     },
   );
 };
