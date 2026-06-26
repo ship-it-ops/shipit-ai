@@ -27,6 +27,9 @@ const MAX_DESCRIPTION = 5000;
 const MAX_LOGS = 200;
 const MAX_LOG_MESSAGE = 1000;
 const MAX_LOGS_BLOCK = 20000;
+// Cap the outbound GitHub issue-creation call so a hung API request can't hold
+// the feedback request handler open indefinitely.
+const ISSUE_CREATE_TIMEOUT_MS = 10_000;
 
 export interface FeedbackReporter {
   email: string;
@@ -159,6 +162,7 @@ export class FeedbackService {
         title,
         body,
         labels,
+        request: { signal: AbortSignal.timeout(ISSUE_CREATE_TIMEOUT_MS) },
       });
       return { issueUrl: data.html_url, issueNumber: data.number };
     } catch (err) {

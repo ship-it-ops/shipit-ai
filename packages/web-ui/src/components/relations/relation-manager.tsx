@@ -492,9 +492,9 @@ export function RelationManager({
         </p>
       ) : (
         <ul className="flex list-none flex-col gap-1 p-0">
-          {rows.map((row, i) => (
+          {rows.map((row) => (
             <RelationRowItem
-              key={`${row.direction}-${row.otherId}-${row.type}-${i}`}
+              key={`${row.direction}-${row.otherId}-${row.type}`}
               row={row}
               resolveName={resolveName}
               resolveType={resolveType}

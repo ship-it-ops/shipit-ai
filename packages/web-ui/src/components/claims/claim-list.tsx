@@ -459,9 +459,9 @@ function PropertyBlock({
         </div>
       </header>
       <ul className="flex list-none flex-col gap-2 p-0">
-        {prop.claims.map((c, i) => (
+        {prop.claims.map((c) => (
           <ClaimRow
-            key={c.source + i}
+            key={`${c.source}:${c.source_id}`}
             claim={c}
             isWinner={
               prop.winning_claim?.source === c.source &&
