@@ -76,6 +76,20 @@ Then verify with `pnpm install && pnpm turbo typecheck && pnpm turbo test --forc
 > independently — so staying on `vitest@3` costs nothing on security. A real vitest-4 adoption now
 > needs a dedicated investigation into vitest-4 type resolution under pnpm-10 + TS-6, not this recipe.
 
+> **2026-06-26 update — RESOLVED. vitest 4.1.9 is now shipped on `release-next` (PR #88).**
+> The missing piece the 2026-06-20 recipe lacked: **an explicit `"types": ["node"]` in
+> `tsconfig.base.json`.** Diagnosis that cracked it — `tsc --noEmit` failed but
+> `tsc --noEmit --types node` returned **0 errors**. So `@types/node` IS resolvable; TS's
+> _automatic_ `@types` discovery just silently includes nothing for the NodeNext backend
+> workspaces under vitest-4 + pnpm-10 (vitest 4 stopped "accidentally" making it discoverable).
+> Forcing the `types` field restores it. Complete fix = `types: ['node']` in the base tsconfig
+> **+** `@types/node` devDep declared in each backend workspace (shared, event-bus, core-writer,
+> connector-sdk, connectors/github, connectors/kubernetes, api-server, mcp-server). web-ui is
+> unaffected (standalone tsconfig, `moduleResolution: bundler`, already passes). Adding the devDep
+> ALONE does not fix it (confirmed again) — the `types` field is the load-bearing change.
+> See [[vitest-4-migration]] for the full set of v4 breaks (dist exclude, constructor mocks,
+> spyOn history, Mock typing).
+
 ## Related
 
 - [dependabot-resolution-strategy](../decisions/dependabot-resolution-strategy.md) — the 2026-06-07 update lists this scar as a deferral reason

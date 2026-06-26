@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-25 | Total notes: 81
+Last updated: 2026-06-26 | Total notes: 82
 
 ## Investigations
 
@@ -18,6 +18,7 @@ Last updated: 2026-06-25 | Total notes: 81
 - [apiserver-crashloop-unhandled-bullmq-error-on-oom-redis](investigations/apiserver-crashloop-unhandled-bullmq-error-on-oom-redis.md) | investigation | fixed | core | 2026-06-22 | no '.on(error)' on BullMQ Worker/Queue/ioredis → OOM moveToActive crashes process at boot; attach error listeners + resilient startRunner
 - [webhook-settings-empty-url-and-misleading-setup](investigations/webhook-settings-empty-url-and-misleading-setup.md) | investigation | fixed | standard | 2026-06-24 | blank Receiver URL (empty-string YAML fallback, no request-derive) + "Set up" green badge conflated stored-secret with working; confirm-gate + tri-state + URL fallback
 - [connector-name-double-type-prefix](investigations/connector-name-double-type-prefix.md) | investigation | fixed | standard | 2026-06-25 | wizard stored composed "GitHub · org"; render helper re-prefixed → "GitHub · GitHub · org"; idempotent stripTypePrefix + wizard stores bare org; +pill overflow CSS
+- [vitest-4-migration](investigations/vitest-4-migration.md) | investigation | fixed | core | 2026-06-26 | vitest 3→4 SHIPPED (#88): types:[node] in base tsconfig cracks the @types/node scar; +workspace→projects, dist exclude, constructor mocks, spyOn history
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -113,6 +114,6 @@ _None in flight. All prior status entries shipped to main and were archived 2026
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files
 - [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs
 - [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw
-- [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-07 | vitest 3→4 surfaces undeclared @types/node deps in five workspaces
+- [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-26 | vitest 3→4 breaks @types/node discovery; RESOLVED 2026-06-26 via types:[node] in base tsconfig (see [[vitest-4-migration]])
 - [docker-copy-of-host-artifacts-poisons-image-builds](scars/docker-copy-of-host-artifacts-poisons-image-builds.md) | scar | active | core | 2026-06-11 | host node_modules/tsbuildinfo in COPY break image builds
 - [cypher-limit-skip-reject-js-number-floats](scars/cypher-limit-skip-reject-js-number-floats.md) | scar | active | standard | 2026-06-24 | Cypher LIMIT/SKIP $param fed a JS number throws 22N03 (marshals as FLOAT); wrap with neo4j.int()
