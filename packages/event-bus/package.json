@@ -21,7 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "bullmq": "^5.78.1",
+    "bullmq": "^5.79.1",
     "ioredis": "^5.11.1",
     "@shipit-ai/shared": "workspace:*"
   },
