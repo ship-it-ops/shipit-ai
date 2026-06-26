@@ -14,14 +14,18 @@ const mockDisconnect = vi.fn();
 const mockRedisOn = vi.fn();
 
 vi.mock('ioredis', () => {
-  const RedisMock = vi.fn().mockImplementation(() => ({
-    pipeline: mockPipeline,
-    xrange: mockXrange,
-    disconnect: mockDisconnect,
-    on: mockRedisOn,
-    options: { host: 'localhost', port: 6379 },
-    duplicate: vi.fn().mockReturnThis(),
-  }));
+  // Vitest 4 only treats `function`/`class` mock implementations as
+  // constructable; an arrow impl throws "is not a constructor" under `new`.
+  const RedisMock = vi.fn().mockImplementation(function () {
+    return {
+      pipeline: mockPipeline,
+      xrange: mockXrange,
+      disconnect: mockDisconnect,
+      on: mockRedisOn,
+      options: { host: 'localhost', port: 6379 },
+      duplicate: vi.fn().mockReturnThis(),
+    };
+  });
   return { Redis: RedisMock, default: RedisMock };
 });
 
@@ -36,22 +40,26 @@ const mockWaitUntilReady = vi.fn().mockResolvedValue(undefined);
 let capturedWorkerProcessor: ((job: { data: unknown }) => Promise<void>) | null = null;
 
 vi.mock('bullmq', () => {
-  const Queue = vi.fn().mockImplementation(() => ({
-    addBulk: mockAddBulk,
-    on: mockQueueOn,
-    close: mockQueueClose,
-  }));
+  // Regular `function` impls so vitest 4 treats them as constructable (`new`).
+  const Queue = vi.fn().mockImplementation(function () {
+    return {
+      addBulk: mockAddBulk,
+      on: mockQueueOn,
+      close: mockQueueClose,
+    };
+  });
 
-  const Worker = vi
-    .fn()
-    .mockImplementation((_name: string, processor: (job: { data: unknown }) => Promise<void>) => {
-      capturedWorkerProcessor = processor;
-      return {
-        on: mockWorkerOn,
-        close: mockWorkerClose,
-        waitUntilReady: mockWaitUntilReady,
-      };
-    });
+  const Worker = vi.fn().mockImplementation(function (
+    _name: string,
+    processor: (job: { data: unknown }) => Promise<void>,
+  ) {
+    capturedWorkerProcessor = processor;
+    return {
+      on: mockWorkerOn,
+      close: mockWorkerClose,
+      waitUntilReady: mockWaitUntilReady,
+    };
+  });
 
   return { Queue, Worker };
 });

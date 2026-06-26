@@ -11,20 +11,24 @@ const mockWorkerOn = vi.fn();
 const mockWorkerClose = vi.fn().mockResolvedValue(undefined);
 let capturedProcessor: ((job: unknown) => Promise<unknown>) | undefined;
 
+// Vitest 4 only treats `function`/`class` mock impls as constructable (`new`).
 vi.mock('bullmq', () => {
-  const Queue = vi.fn().mockImplementation(() => ({
-    add: mockQueueAdd,
-    getRepeatableJobs: vi.fn().mockResolvedValue([]),
-    removeRepeatableByKey: vi.fn().mockResolvedValue(undefined),
-    on: mockQueueOn,
-    close: mockQueueClose,
-  }));
-  const Worker = vi
-    .fn()
-    .mockImplementation((_name: string, processor: typeof capturedProcessor) => {
-      capturedProcessor = processor;
-      return { on: mockWorkerOn, close: mockWorkerClose };
-    });
+  const Queue = vi.fn().mockImplementation(function () {
+    return {
+      add: mockQueueAdd,
+      getRepeatableJobs: vi.fn().mockResolvedValue([]),
+      removeRepeatableByKey: vi.fn().mockResolvedValue(undefined),
+      on: mockQueueOn,
+      close: mockQueueClose,
+    };
+  });
+  const Worker = vi.fn().mockImplementation(function (
+    _name: string,
+    processor: typeof capturedProcessor,
+  ) {
+    capturedProcessor = processor;
+    return { on: mockWorkerOn, close: mockWorkerClose };
+  });
   return { Queue, Worker };
 });
 

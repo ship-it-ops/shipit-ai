@@ -10,11 +10,14 @@ const mockQueueOn = vi.fn();
 const mockWorkerOn = vi.fn();
 const mockWorkerClose = vi.fn().mockResolvedValue(undefined);
 
+// Vitest 4 only treats `function`/`class` mock impls as constructable (`new`).
 vi.mock('bullmq', () => ({
-  Queue: vi
-    .fn()
-    .mockImplementation(() => ({ add: mockQueueAdd, on: mockQueueOn, close: mockQueueClose })),
-  Worker: vi.fn().mockImplementation(() => ({ on: mockWorkerOn, close: mockWorkerClose })),
+  Queue: vi.fn().mockImplementation(function () {
+    return { add: mockQueueAdd, on: mockQueueOn, close: mockQueueClose };
+  }),
+  Worker: vi.fn().mockImplementation(function () {
+    return { on: mockWorkerOn, close: mockWorkerClose };
+  }),
 }));
 
 const mockRedisSet = vi.fn();
@@ -23,13 +26,15 @@ const mockRedisDel = vi.fn();
 const mockRedisOn = vi.fn();
 const mockRedisDisconnect = vi.fn();
 vi.mock('ioredis', () => ({
-  Redis: vi.fn().mockImplementation(() => ({
-    set: mockRedisSet,
-    get: mockRedisGet,
-    del: mockRedisDel,
-    on: mockRedisOn,
-    disconnect: mockRedisDisconnect,
-  })),
+  Redis: vi.fn().mockImplementation(function () {
+    return {
+      set: mockRedisSet,
+      get: mockRedisGet,
+      del: mockRedisDel,
+      on: mockRedisOn,
+      disconnect: mockRedisDisconnect,
+    };
+  }),
 }));
 
 import { Queue } from 'bullmq';

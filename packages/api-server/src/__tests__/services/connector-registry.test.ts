@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { ConnectorInstanceConfig } from '@shipit-ai/shared';
-import { ConnectorRegistry } from '../../services/connector-registry.js';
+import { ConnectorRegistry, type ConnectorRunner } from '../../services/connector-registry.js';
 
 // These tests pin behavior the routes depend on; the routes' own tests
 // exercise the HTTP surface, this file targets the registry contract
@@ -265,13 +265,13 @@ describe('ConnectorRegistry — startRunner boot resilience', () => {
     vi.restoreAllMocks();
   });
 
-  function fakeRunner(start: ReturnType<typeof vi.fn>) {
+  function fakeRunner(start: ReturnType<typeof vi.fn>): ConnectorRunner {
     return {
       start,
       stop: vi.fn().mockResolvedValue(undefined),
       triggerSync: vi.fn().mockResolvedValue({ connectorId: 'x', state: 'idle' }),
       getStatus: vi.fn().mockReturnValue({ connectorId: 'x', state: 'idle' }),
-    };
+    } as unknown as ConnectorRunner;
   }
 
   // The 2026-06-22 crashloop: with Redis at maxmemory, the boot-time

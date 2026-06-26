@@ -27,7 +27,8 @@
     "@shipit-ai/event-bus": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^26.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^3.0.0"
+    "vitest": "^4.0.0"
   }
 }

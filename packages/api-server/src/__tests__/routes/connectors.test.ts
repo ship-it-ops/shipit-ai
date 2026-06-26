@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1171,6 +1171,14 @@ describe('GitHub owner-check endpoint', () => {
     });
     server = await createServer({ connectorRegistry: registry, config: makeTestConfig() });
     await server.ready();
+  });
+
+  afterEach(() => {
+    // Vitest 4: re-`vi.spyOn`-ing an already-spied method returns the existing
+    // spy and keeps its call history, so without a per-test restore the fetch
+    // call count leaks across tests (the malformed-owner test then sees prior
+    // calls). Restore the real fetch after every test.
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
