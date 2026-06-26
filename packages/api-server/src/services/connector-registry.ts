@@ -404,10 +404,7 @@ function parseConnectorInstance(value: unknown): ConnectorInstanceConfig {
   const result = connectorInstanceSchema.safeParse(value);
   if (!result.success) {
     const issues = result.error.issues
-      .map(
-        (i: { path: (string | number)[]; message: string }) =>
-          `  - ${i.path.join('.') || '(root)'}: ${i.message}`,
-      )
+      .map((i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`)
       .join('\n');
     throw Object.assign(new Error(`Connector validation failed:\n${issues}`), {
       statusCode: 400,

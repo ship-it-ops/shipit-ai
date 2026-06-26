@@ -13,7 +13,7 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
     {
       label: z.string().optional().describe('Filter by node label (e.g., "LogicalService")'),
       property_filters: z
-        .record(z.unknown())
+        .record(z.string(), z.unknown())
         .optional()
         .describe('Filter by property values (e.g., {"tier_effective": 1})'),
       limit: z

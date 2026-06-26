@@ -153,26 +153,29 @@ describe('accessControl schema', () => {
   });
 
   it('rejects an enabled OIDC provider with an empty issuerUrl', () => {
-    expect(() =>
-      configSchema.parse({
-        ...baseConfig,
-        accessControl: {
-          auth: {
-            enabled: true,
-            providers: {
-              oidc: {
-                enabled: true,
-                issuerUrl: '',
-                clientId: 'shipit',
-                clientSecretEnv: 'OIDC_CLIENT_SECRET',
-                displayName: 'IdP',
+    expect(
+      () =>
+        configSchema.parse({
+          ...baseConfig,
+          accessControl: {
+            auth: {
+              enabled: true,
+              providers: {
+                oidc: {
+                  enabled: true,
+                  issuerUrl: '',
+                  clientId: 'shipit',
+                  clientSecretEnv: 'OIDC_CLIENT_SECRET',
+                  displayName: 'IdP',
+                },
               },
+              admins: ['a@example.com'],
             },
-            admins: ['a@example.com'],
           },
-        },
-      }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*issuerUrl/);
+        }),
+      // Order-independent: zod 4 serializes issue keys as code/path/message,
+      // so the path ("issuerUrl") and message may appear in either order.
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*issuerUrl)/);
   });
 
   it('rejects an enabled OIDC provider with an empty clientId', () => {
@@ -195,7 +198,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*clientId/);
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*clientId)/);
   });
 
   it('rejects an enabled OIDC provider with an empty clientSecretEnv', () => {
@@ -218,7 +221,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*clientSecretEnv/);
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*clientSecretEnv)/);
   });
 
   it('accepts a GitHub OAuth provider with empty values when disabled', () => {
@@ -249,7 +252,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/github\.enabled is true[\s\S]*clientId/);
+    ).toThrow(/(?=[\s\S]*github\.enabled is true)(?=[\s\S]*clientId)/);
   });
 
   it('rejects an enabled GitHub OAuth provider with an empty clientSecretEnv', () => {
@@ -266,6 +269,6 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/github\.enabled is true[\s\S]*clientSecretEnv/);
+    ).toThrow(/(?=[\s\S]*github\.enabled is true)(?=[\s\S]*clientSecretEnv)/);
   });
 });
