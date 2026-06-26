@@ -19,7 +19,7 @@
  * loop) is already covered in routes/auth.test.ts.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createPublicKey, generateKeyPairSync, createSign, type KeyObject } from 'node:crypto';
+import { generateKeyPairSync, createSign, type KeyObject } from 'node:crypto';
 import type { AuthConfig } from '@shipit-ai/shared';
 import { makeTestConfig } from '../../test-config.js';
 import { OidcProvider } from '../../../services/auth/oidc-provider.js';
@@ -119,7 +119,7 @@ function stubIdp(overrides: StubOverrides = {}): { tokenBody: () => URLSearchPar
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       if (url.includes('.well-known/openid-configuration')) return json(DISCOVERY_DOC);
-      if (url.includes('/jwks')) return json({ keys: [publicJwk(createPublicKey(publicKey))] });
+      if (url.includes('/jwks')) return json({ keys: [publicJwk(publicKey)] });
       if (url.includes('/token')) {
         captured = new URLSearchParams(String(init?.body ?? ''));
         return json(tokenResponse);
