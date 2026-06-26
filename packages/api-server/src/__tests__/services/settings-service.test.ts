@@ -117,9 +117,12 @@ describe('SettingsService.setConnectorWebhookSecret', () => {
     );
 
     expect(result.webhookUrl).toBe('https://portal.example.com/api/webhooks/github');
-    expect(
-      result.steps.some((s) => s.includes('https://portal.example.com/api/webhooks/github')),
-    ).toBe(true);
+    // Exact element match (not a URL substring check) so CodeQL's
+    // js/incomplete-url-substring-sanitization doesn't fire on a `.includes(<url>)`
+    // pattern — the step text is fixed, so assert it in full.
+    expect(result.steps).toContain(
+      'Set the Webhook URL to: https://portal.example.com/api/webhooks/github',
+    );
   });
 
   it('configured webhookPublicUrl wins over the request-derived fallback', async () => {

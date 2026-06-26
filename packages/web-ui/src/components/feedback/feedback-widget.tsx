@@ -70,6 +70,22 @@ export function FeedbackWidget() {
   const [description, setDescription] = useState('');
   const [includeDiagnostics, setIncludeDiagnostics] = useState(true);
 
+  // Reset every field back to its default. Called on any close path (submit,
+  // Cancel, Esc, backdrop) so a reopened dialog never shows a half-filled form.
+  const resetForm = () => {
+    setType('bug');
+    setTitle('');
+    setDescription('');
+    setIncludeDiagnostics(true);
+  };
+
+  // Programmatic close (Cancel button, post-submit) — `onOpenChange` only fires
+  // for user-driven dismissals (Esc/backdrop), so reset here too.
+  const closeDialog = () => {
+    resetForm();
+    setOpen(false);
+  };
+
   const mutation = useMutation({
     mutationFn: () =>
       submitFeedback({
@@ -80,10 +96,7 @@ export function FeedbackWidget() {
         logs: includeDiagnostics ? getRecentLogs() : undefined,
       }),
     onSuccess: (result) => {
-      setOpen(false);
-      setTitle('');
-      setDescription('');
-      setType('bug');
+      closeDialog();
       toast({
         variant: 'ok',
         title: 'Report filed',
@@ -126,14 +139,16 @@ export function FeedbackWidget() {
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!mutation.isPending) setOpen(next);
+          if (mutation.isPending) return;
+          if (!next) resetForm();
+          setOpen(next);
         }}
         title="Report a problem"
         description="Tell us what went wrong or what you'd like to see. We'll file it for the team."
         width={520}
         footer={
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)} disabled={mutation.isPending}>
+            <Button variant="ghost" onClick={closeDialog} disabled={mutation.isPending}>
               Cancel
             </Button>
             <Button
