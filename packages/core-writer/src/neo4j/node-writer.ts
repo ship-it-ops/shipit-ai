@@ -3,9 +3,15 @@
 // are atomic per call; batching of multiple nodes per transaction lives one
 // level up in BatchProcessor.
 import type { CanonicalEdge, CanonicalNode, PropertyClaim } from '@shipit-ai/shared';
-import type { NodeWriter } from '../writer.js';
+import type { NodeWriter, WriteNodeResult } from '../writer.js';
 import { Neo4jClient } from './client.js';
-import { getExistingClaims, mergeEdge, mergeNode, touchLastSynced } from './queries.js';
+import {
+  getExistingClaims,
+  mergeEdge,
+  mergeNode,
+  touchLastSynced,
+  type ExistingClaims,
+} from './queries.js';
 
 export class Neo4jNodeWriter implements NodeWriter {
   private readonly client: Neo4jClient;
@@ -20,11 +26,11 @@ export class Neo4jNodeWriter implements NodeWriter {
     node: CanonicalNode,
     mergedClaims: PropertyClaim[],
     effectiveProperties: Record<string, unknown>,
-  ): Promise<{ written: boolean }> {
-    const written = await this.client.executeWrite(async (tx) => {
-      return mergeNode(tx, node, mergedClaims, effectiveProperties);
+    expectedClaimsRev = 0,
+  ): Promise<WriteNodeResult> {
+    return this.client.executeWrite(async (tx) => {
+      return mergeNode(tx, node, mergedClaims, effectiveProperties, expectedClaimsRev);
     }, this.database);
-    return { written };
   }
 
   async writeEdge(edge: CanonicalEdge): Promise<void> {
@@ -33,7 +39,7 @@ export class Neo4jNodeWriter implements NodeWriter {
     }, this.database);
   }
 
-  async getExistingClaims(nodeId: string): Promise<PropertyClaim[]> {
+  async getExistingClaims(nodeId: string): Promise<ExistingClaims> {
     return this.client.executeRead(async (tx) => {
       return getExistingClaims(tx, nodeId);
     }, this.database);

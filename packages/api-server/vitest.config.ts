@@ -29,4 +29,9 @@ export default defineConfig({
       '@shipit-ai/mcp-server': r('mcp-server/src/index.ts'),
     },
   },
+  test: {
+    // Vitest 4 no longer excludes `dist` by default; scope to TS sources so the
+    // compiled dist/**/*.test.js copies aren't collected after a build.
+    include: ['src/**/*.test.ts'],
+  },
 });

@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-06-22 | Total notes: 75
+Last updated: 2026-06-26 | Total notes: 82
 
 ## Investigations
 
@@ -16,6 +16,9 @@ Last updated: 2026-06-22 | Total notes: 75
 - [last-synced-frozen-by-idempotency-dedup](investigations/last-synced-frozen-by-idempotency-dedup.md) | investigation | fixed | core | 2026-06-16 | \_last_synced frozen by idempotency skip; now bump timestamp on skip; content-change suppression still open
 - [redis-oom-crashloop-data-appears-gone](investigations/redis-oom-crashloop-data-appears-gone.md) | investigation | completed | core | 2026-06-17 | redis dataset 246MB > 256Mi limit OOMKilled; UI looked empty; data intact
 - [apiserver-crashloop-unhandled-bullmq-error-on-oom-redis](investigations/apiserver-crashloop-unhandled-bullmq-error-on-oom-redis.md) | investigation | fixed | core | 2026-06-22 | no '.on(error)' on BullMQ Worker/Queue/ioredis → OOM moveToActive crashes process at boot; attach error listeners + resilient startRunner
+- [webhook-settings-empty-url-and-misleading-setup](investigations/webhook-settings-empty-url-and-misleading-setup.md) | investigation | fixed | standard | 2026-06-24 | blank Receiver URL (empty-string YAML fallback, no request-derive) + "Set up" green badge conflated stored-secret with working; confirm-gate + tri-state + URL fallback
+- [connector-name-double-type-prefix](investigations/connector-name-double-type-prefix.md) | investigation | fixed | standard | 2026-06-25 | wizard stored composed "GitHub · org"; render helper re-prefixed → "GitHub · GitHub · org"; idempotent stripTypePrefix + wizard stores bare org; +pill overflow CSS
+- [vitest-4-migration](investigations/vitest-4-migration.md) | investigation | fixed | core | 2026-06-26 | vitest 3→4 SHIPPED (#88): types:[node] in base tsconfig cracks the @types/node scar; +workspace→projects, dist exclude, constructor mocks, spyOn history
 
 <!--
   This file is the index for `docs/agent/`. Agents read it at session start.
@@ -26,20 +29,11 @@ Last updated: 2026-06-22 | Total notes: 75
 
 <!-- always-read at session start -->
 
-- [redis-oom-boot-tolerance-impl](status/redis-oom-boot-tolerance-impl.md) | status | active | core | 2026-06-22 | tolerate full/OOM Redis at boot (error listeners + resilient startRunner); MERGED to main (#85, 3c25e8a)
-- [event-log-stream-bound-impl](status/event-log-stream-bound-impl.md) | status | active | core | 2026-06-22 | cut/bound shipit-event-log stream (the real ~825MB OOM key); gated off by default + MAXLEN; implemented, all green, uncommitted
-- [webhook-receiver-cut-a-impl](status/webhook-receiver-cut-a-impl.md) | status | active | core | 2026-06-18 | GitHub webhook receiver Cut A — shipped to next-release (aa43558, b46dcc7)
-- [portal-settings-impl](status/portal-settings-impl.md) | status | active | core | 2026-06-18 | admin Portal Settings hub implemented + reviewed; all tests green, uncommitted
-- [web-ui-theme-onaccent-and-settings-split](status/web-ui-theme-onaccent-and-settings-split.md) | status | active | standard | 2026-06-19 | on-accent contrast fix + admin/user settings split; DS on-accent token now upstreamed (tokens 0.0.9), local override dropped
-- [ds-upgrade-to-latest](status/ds-upgrade-to-latest.md) | status | active | standard | 2026-06-19 | DS upgrades: 0.0.19 set (committed 01b77ec) then 0.0.20 set dropping both local divergences (uncommitted)
-- [cutb-content-freshness-impl](status/cutb-content-freshness-impl.md) | status | active | core | 2026-06-19 | Cut B implemented (Option B + atomic Cypher guard + cleanup); committed 5e2c2c2; rollout/rollback runbook
-- [configurable-connector-schedule](status/configurable-connector-schedule.md) | status | active | standard | 2026-06-19 | connector schedule user-configurable in wizard+edit; 30-min default; too-frequent warn; all tests green, uncommitted
-
-- [catalog-exclude-hide-types](status/catalog-exclude-hide-types.md) | status | active | standard | 2026-06-23 | catalog tri-state Type filter (include/exclude/neutral); Pipelines hidden by default; on catalog-enhancements
-- [catalog-enhancements-rebase](status/catalog-enhancements-rebase.md) | status | active | standard | 2026-06-23 | rebased per-node source-connector identity onto main; pushed to origin/catalog-enhancements
+_None in flight. All prior status entries shipped to main and were archived 2026-06-23 (reconciled: their original commit hashes were squashed away on PR merge, but every feature is present on main — #76/#85/#86/#87 + DS bumps)._
 
 ## Decisions
 
+- [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
 - [agent-context-initialized](decisions/agent-context-initialized.md) | decision | active | core | 2026-05-20 | docs/agent scaffolded during MCP Access stage one
 - [mcp-tool-metadata-as-pure-data-module](decisions/mcp-tool-metadata-as-pure-data-module.md) | decision | active | core | 2026-05-20 | tool descriptions live in metadata.ts not register
 - [github-connector-architecture-v1](decisions/github-connector-architecture-v1.md) | decision | active | core | 2026-05-20 | App-only auth, one connector per org, polling+webhooks
@@ -67,6 +61,7 @@ Last updated: 2026-06-22 | Total notes: 75
 - [per-field-confidence-and-verification](decisions/per-field-confidence-and-verification.md) | decision | active | core | 2026-06-15 | hybrid heuristic confidence engine + derived verification status; corroboration/ambiguity/verify
 - [webhook-receiver-design](decisions/webhook-receiver-design.md) | decision | active | core | 2026-06-18 | HMAC verify-first receiver; per-App secret no-downgrade; coalesced targeted refetch
 - [per-node-source-connector-id](decisions/per-node-source-connector-id.md) | decision | active | standard | 2026-05-28 | stamp \_source_connector_id from envelope; powers catalog source facet/pills
+- [feedback-widget-service-identity](decisions/feedback-widget-service-identity.md) | decision | active | standard | 2026-06-25 | "Report a problem" widget files issues via server-held PAT (issues:write), not the user's token; reporter attributed from session; v1 logs+metadata only
 
 ## Patterns
 
@@ -82,28 +77,30 @@ Last updated: 2026-06-22 | Total notes: 75
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
 - [ds-upstream-theming-prompt](plans/ds-upstream-theming-prompt.md) | plan | completed | standard | 2026-06-19 | DONE — DS shipped on-accent token + screen→gutter rename (tokens 0.0.9 / ui 0.0.20)
-- [admin-portal-settings](plans/admin-portal-settings.md) | plan | active | core | 2026-06-18 | admin settings hub: webhook setup/rotate, OAuth, admins, allow-list (infra-gated)
-- [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | active | core | 2026-06-18 | audited receiver: HMAC verify, per-App secret, coalesced refetch; Cut A/B split
-- [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | active | standard | 2026-05-20 | remote transport tokens UI for MCP login
-- [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | active | core | 2026-06-14 | upsert logged-in user as a Person via event-bus on login
+- [ds-upstream-feedback-widget](plans/ds-upstream-feedback-widget.md) | plan | active | standard | 2026-06-25 | DS asks for feedback widget: FabDock fixed-position slot, --z-fixed token, imperative toast(); widget shipped on existing primitives (non-blocking)
+- [admin-portal-settings](plans/admin-portal-settings.md) | plan | completed | core | 2026-06-23 | SHIPPED (#76): admin settings hub — webhook setup/rotate, OAuth, admins, allow-list
+- [github-webhook-receiver](plans/github-webhook-receiver.md) | plan | completed | core | 2026-06-23 | SHIPPED: HMAC verify, per-App secret, coalesced refetch; Cut A (#76) + Cut B both landed
+- [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | completed | standard | 2026-06-23 | SHIPPED (#48/#67): bearer enforcement + token CRUD + API Keys UI; only mcp-server infra exposure remains
+- [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | completed | core | 2026-06-23 | SHIPPED (#67, hardened #73): login upserts a Person via event-bus; shared canonical-id merges with connector
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
+- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | active | core | 2026-06-25 | v1a+v1b (claims+relations) SHIPPED (4ded3fe/f80a7aa, pushed); 3 follow-ups DONE+reviewed(COMMENT), uncommitted on release-next: audit retention, splitMerge un-migration, relation cardinality
 
 ## Open Questions
 
 - [per-app-webhook-secrets](open-questions/per-app-webhook-secrets.md) | open-question | answered | standard | 2026-06-18 | ANSWERED — receiver built (Cut A); per-App sidecar secret, no global downgrade
 - [cutb-option-b-rewrite-wave](open-questions/cutb-option-b-rewrite-wave.md) | open-question | answered | standard | 2026-06-19 | ANSWERED — Option B + schedule cleanup; one-time re-write wave accepted at current scale
 - [codeowner-edge-out-of-order-ordering](open-questions/codeowner-edge-out-of-order-ordering.md) | open-question | active | standard | 2026-06-19 | edges (CODEOWNER_OF etc.) have no ordering guard; mergeEdge is last-writer-wins — protect or accept?
-- [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | active | standard | 2026-06-01 | ctx.org maps to which `_source_org` values? Blocks B6 org filter
+- [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | answered | standard | 2026-06-25 | ANSWERED — no tenant read-isolation; authenticated sees all orgs; B6 filter not wanted; connector=org view suffices
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | answered | standard | 2026-06-22 | RESOLVED — CUT: shipit-event-log gated off by default (+MAXLEN if on); was the ~825MB OOM key
-- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-04 | manual claim/edge write endpoints unbuilt; source-priority inconsistency
+- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-23 | Gap2 source-priority FIXED (#74 shared registry); Gap1 partial — manual-override route, add-relation route, claim-write RBAC still open
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
 
-- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | repo declares ZERO Neo4j indexes; all graph queries full-scan; when/where to add? (PR #87 IN7)
+- [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | PARKED as future backlog — not starting indexes yet; revisit when graph outgrows demo scale (PR #87 IN7)
 
 ## Scars
 
@@ -117,5 +114,6 @@ Last updated: 2026-06-22 | Total notes: 75
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files
 - [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs
 - [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw
-- [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-07 | vitest 3→4 surfaces undeclared @types/node deps in five workspaces
+- [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-26 | vitest 3→4 breaks @types/node discovery; RESOLVED 2026-06-26 via types:[node] in base tsconfig (see [[vitest-4-migration]])
 - [docker-copy-of-host-artifacts-poisons-image-builds](scars/docker-copy-of-host-artifacts-poisons-image-builds.md) | scar | active | core | 2026-06-11 | host node_modules/tsbuildinfo in COPY break image builds
+- [cypher-limit-skip-reject-js-number-floats](scars/cypher-limit-skip-reject-js-number-floats.md) | scar | active | standard | 2026-06-24 | Cypher LIMIT/SKIP $param fed a JS number throws 22N03 (marshals as FLOAT); wrap with neo4j.int()

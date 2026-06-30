@@ -19,7 +19,7 @@ export function registerGraphQuery(
     MCP_TOOL_BY_NAME.graph_query.description,
     {
       query: z.string().describe('Cypher query (read-only, parameterized)'),
-      params: z.record(z.unknown()).optional().describe('Query parameters'),
+      params: z.record(z.string(), z.unknown()).optional().describe('Query parameters'),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (toolParams) => {

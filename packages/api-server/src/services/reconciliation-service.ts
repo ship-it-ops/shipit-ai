@@ -14,10 +14,14 @@ import { randomUUID } from 'node:crypto';
 import type {
   CandidateDetail,
   MergeEventSummary,
+  PropertyClaim,
   ReconciliationCandidate,
   ReconciliationStats,
 } from '@shipit-ai/shared';
+import { sourceKey } from '@shipit-ai/shared';
+import type { ManagedTransaction } from 'neo4j-driver';
 import type { Neo4jService } from './neo4j-service.js';
+import { loadClaimsLocked, writeClaims } from './claim-write-helpers.js';
 import { jaroWinkler, setSimilarity, trigramJaccard } from './string-similarity.js';
 
 // Above this, the design doc allows auto-merge. We surface them as
@@ -293,38 +297,61 @@ export class ReconciliationService {
     const loser = survivor === candidate.leftId ? candidate.rightId : candidate.leftId;
 
     const mergeId = `me:${randomUUID()}`;
-    await this.neo4j.runQuery(
-      `MATCH (s {id: $survivor}), (l {id: $loser}), (c:ReconciliationCandidate {id: $cid})
-       CREATE (m:MergeEvent {
-         id: $mergeId,
-         actor: $actor,
-         timestamp: datetime(),
-         method: 'fuzzy',
-         confidence: $confidence,
-         survivorId: $survivor,
-         loserId: $loser,
-         loserSnapshot: $loserSnapshot
-       })
-       CREATE (m)-[:MERGED]->(s)
-       CREATE (m)-[:ABSORBED]->(l)
-       SET l._deleted = true,
-           l._merged_into = $survivor,
-           l._merged_at = m.timestamp,
-           c.status = 'confirmed',
-           c.reviewedAt = m.timestamp,
-           c.reviewedBy = $actor`,
-      {
-        cid: id,
-        mergeId,
-        survivor,
-        loser,
-        actor,
-        confidence: candidate.confidence,
-        loserSnapshot: JSON.stringify(
-          survivor === candidate.leftId ? candidate.rightProperties : candidate.leftProperties,
-        ),
-      },
+    const loserSnapshot = JSON.stringify(
+      survivor === candidate.leftId ? candidate.rightProperties : candidate.leftProperties,
     );
+
+    // Whole merge — human-claim migration + audit re-point + soft-delete — runs in
+    // ONE write transaction so the durability promise holds atomically: a manual
+    // override carried by the loser never vanishes between the soft-delete and the
+    // migration. The claims read/write honors the shared `_claims_rev` lock
+    // authority (loadClaimsLocked/writeClaims) that both api-server writers and
+    // core-writer's mergeNode CAS-check, so a connector resync racing this merge
+    // can't clobber the migrated claims.
+    await this.neo4j.runInWriteTransaction(async (tx) => {
+      // Capture EXACTLY what the merge moved so splitMerge can reverse it precisely
+      // without re-inferring it from source_id string shapes (which differ between
+      // the test fake and production). The recorded identity tuples / event ids are
+      // stamped onto the MergeEvent as the authoritative provenance record.
+      const migratedClaims = await this.migrateHumanClaims(tx, loser, survivor);
+      const repointedAuditIds = await repointAuditEvents(tx, loser, survivor);
+      await tx.run(
+        `MATCH (s {id: $survivor}), (l {id: $loser}), (c:ReconciliationCandidate {id: $cid})
+         CREATE (m:MergeEvent {
+           id: $mergeId,
+           actor: $actor,
+           timestamp: datetime(),
+           method: 'fuzzy',
+           confidence: $confidence,
+           survivorId: $survivor,
+           loserId: $loser,
+           loserSnapshot: $loserSnapshot,
+           migratedClaims: $migratedClaims,
+           repointedAuditIds: $repointedAuditIds
+         })
+         CREATE (m)-[:MERGED]->(s)
+         CREATE (m)-[:ABSORBED]->(l)
+         SET l._deleted = true,
+             l._merged_into = $survivor,
+             l._merged_at = m.timestamp,
+             c.status = 'confirmed',
+             c.reviewedAt = m.timestamp,
+             c.reviewedBy = $actor`,
+        {
+          cid: id,
+          mergeId,
+          survivor,
+          loser,
+          actor,
+          confidence: candidate.confidence,
+          loserSnapshot,
+          // Stored as JSON strings: Neo4j node properties can't hold nested
+          // objects, and this matches the loserSnapshot precedent above.
+          migratedClaims: JSON.stringify(migratedClaims),
+          repointedAuditIds: JSON.stringify(repointedAuditIds),
+        },
+      );
+    });
 
     return {
       id: mergeId,
@@ -337,6 +364,58 @@ export class ReconciliationService {
       method: 'fuzzy',
       confidence: candidate.confidence,
     };
+  }
+
+  /**
+   * Migrate the loser's human-attestation claims (`manual:*` / `verified:*`) onto
+   * the survivor, inside `tx`. Without this, a node carrying a manual override that
+   * loses an identity merge would have that override silently dropped — the
+   * survivor is the visible node, but the override lives on the soft-deleted loser.
+   *
+   * Both writers are locked via `loadClaimsLocked` (it bumps `_claims_rev`, taking
+   * each node's write lock), so a concurrent connector resync serializes behind
+   * this merge rather than racing it.
+   *
+   * ONLY human attestations migrate: connector claims (github/datadog/…) are
+   * re-derived on the next resync of the survivor and would just be stale noise.
+   * `verified:*` migrates alongside `manual:*` — both are irreplaceable human input
+   * resolved by the same MANUAL_OVERRIDE_FIRST winner, so dropping verified would
+   * be the same durability bug one rung up.
+   *
+   * Merge is by the codebase's claim identity `(source, source_id, property_key)`
+   * (mirrors ClaimResolver.mergeClaims): a loser claim whose triple already exists
+   * on the survivor is skipped, so no duplicates and the survivor's own copy wins a
+   * true collision. The survivor's per-property winner is re-resolved by the shared
+   * read-path resolver on the next read, so a migrated manual override wins where
+   * it should.
+   */
+  private async migrateHumanClaims(
+    tx: ManagedTransaction,
+    loser: string,
+    survivor: string,
+  ): Promise<ClaimIdentity[]> {
+    // Locking the loser first (lower-or-higher id ordering is irrelevant here:
+    // a merge holds a unique candidate, so two merges can't contend the same pair).
+    const loserLocked = await loadClaimsLocked(tx, loser);
+    const survivorLocked = await loadClaimsLocked(tx, survivor);
+    if (!loserLocked || !survivorLocked) return []; // a node vanished mid-merge — nothing to migrate
+
+    const humanClaims = loserLocked.claims.filter((c) => isHumanAttestation(c));
+    if (humanClaims.length === 0) return [];
+
+    const merged = mergeClaimsByIdentity(survivorLocked.claims, humanClaims);
+    // Only write when migration actually added a claim — avoids a needless rev bump
+    // and `_claims` rewrite when the survivor already holds every human claim.
+    if (merged.length === survivorLocked.claims.length) return [];
+    await writeClaims(tx, survivor, merged);
+    // mergeClaimsByIdentity keeps the survivor's claims first then appends the new
+    // ones, so the tail is exactly what was migrated — the identities splitMerge
+    // must remove to reverse this merge.
+    return merged.slice(survivorLocked.claims.length).map((c) => ({
+      source: c.source,
+      source_id: c.source_id,
+      property_key: c.property_key,
+    }));
   }
 
   async reject(id: string, actor: string): Promise<void> {
@@ -397,26 +476,189 @@ export class ReconciliationService {
     });
   }
 
-  /** Reverse a merge: restore the loser and detach the MergeEvent. */
+  /**
+   * Reverse a merge: precisely un-migrate what `confirmMerge` moved (using the
+   * provenance it recorded on the MergeEvent), then restore the loser. Removing
+   * by recorded identity means a claim the survivor independently owns — or one
+   * migrated by a *different* merge — is never touched.
+   *
+   * Concurrency: the `reversedAt` short-circuit is read before the write tx, so
+   * two concurrent splits can both enter the un-migration branch. This is benign —
+   * every reverse op is individually idempotent: the identity filter no-ops once
+   * the claims are gone, `unrepointAuditEvents` matches nothing once the edges have
+   * moved back, and the final `SET reversedAt` is last-writer-wins. Splits are
+   * rare/admin-initiated, so we accept this rather than lock the MergeEvent.
+   *
+   * Accepted limitation: removal matches the recorded identity triple, not the
+   * value. If the survivor's claim for a migrated identity were re-attested to a
+   * NEW value under the SAME source_id within the merge window, split would drop
+   * that newer value. In practice a survivor re-edit flows through
+   * manual-edit-service, which writes a SURVIVOR-scoped `source_id` (≠ the migrated
+   * loser-scoped one), so the re-edit has a different identity and survives — see
+   * the "re-edit of a migrated property survives split" regression test.
+   */
   async splitMerge(mergeId: string, actor: string): Promise<void> {
-    const result = await this.neo4j.runQuery(
+    const found = await this.neo4j.runQuery(
       `MATCH (m:MergeEvent {id: $id})
-       OPTIONAL MATCH (m)-[:ABSORBED]->(l)
-       WITH m, l
-       SET l._deleted = false
-       REMOVE l._merged_into, l._merged_at
-       WITH m
-       SET m.reversedAt = datetime(), m.reversedBy = $actor
-       RETURN m.id AS id`,
-      { id: mergeId, actor },
+       RETURN m.survivorId AS survivor, m.loserId AS loser,
+              m.migratedClaims AS migratedClaims, m.repointedAuditIds AS repointedAuditIds,
+              m.reversedAt AS reversedAt`,
+      { id: mergeId },
     );
-    if (result.length === 0) throw new Error(`MergeEvent ${mergeId} not found`);
+    if (found.length === 0) throw new Error(`MergeEvent ${mergeId} not found`);
+    const rec = found[0] as { get: (k: string) => unknown };
+    const survivor = asString(rec.get('survivor'));
+    const loser = asString(rec.get('loser'));
+    const alreadyReversed = rec.get('reversedAt') != null;
+    const migrated = parseRecordedArray<ClaimIdentity>(rec.get('migratedClaims'));
+    const repointedIds = parseRecordedArray<string>(rec.get('repointedAuditIds'));
+
+    await this.neo4j.runInWriteTransaction(async (tx) => {
+      if (!alreadyReversed) {
+        if (migrated.length > 0) {
+          const locked = await loadClaimsLocked(tx, survivor);
+          if (locked) {
+            const remaining = locked.claims.filter(
+              (c) =>
+                !migrated.some(
+                  (m) =>
+                    m.source === c.source &&
+                    m.source_id === c.source_id &&
+                    m.property_key === c.property_key,
+                ),
+            );
+            if (remaining.length !== locked.claims.length) {
+              await writeClaims(tx, survivor, remaining);
+            }
+          }
+        }
+        await unrepointAuditEvents(tx, survivor, loser, repointedIds);
+      }
+      await tx.run(
+        `MATCH (m:MergeEvent {id: $id})
+         OPTIONAL MATCH (m)-[:ABSORBED]->(l)
+         SET l._deleted = false
+         REMOVE l._merged_into, l._merged_at
+         SET m.reversedAt = datetime(), m.reversedBy = $actor`,
+        { id: mergeId, actor },
+      );
+    });
   }
 }
 
 function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
+
+/** A human-authored attestation claim (`manual:<actor>` or `verified:<actor>`). */
+function isHumanAttestation(claim: PropertyClaim): boolean {
+  const key = sourceKey(claim.source);
+  return key === 'manual' || key === 'verified';
+}
+
+/** The identity triple that uniquely keys a claim within a node's `_claims`. */
+interface ClaimIdentity {
+  source: string;
+  source_id: string;
+  property_key: string;
+}
+
+/** Parse a JSON-stringified array recorded on a MergeEvent; `[]` on anything invalid. */
+function parseRecordedArray<T>(raw: unknown): T[] {
+  if (typeof raw !== 'string' || raw.length === 0) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? (v as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Merge `incoming` claims into `base`, deduped by the codebase's claim identity
+ * `(source, source_id, property_key)` (the same key ClaimResolver.mergeClaims uses).
+ * A claim whose triple already exists in `base` is skipped so the survivor's own
+ * copy wins a true collision and migration never duplicates a claim.
+ */
+// DEFERRED (acknowledged): migrated claims keep the loser's `source_id`; not
+// rewritten to the survivor. Harmless for resolution today (identity is the full
+// triple) — revisit if source_id ever needs to point at the survivor.
+function mergeClaimsByIdentity(base: PropertyClaim[], incoming: PropertyClaim[]): PropertyClaim[] {
+  const merged = [...base];
+  for (const claim of incoming) {
+    const exists = merged.some(
+      (c) =>
+        c.source === claim.source &&
+        c.source_id === claim.source_id &&
+        c.property_key === claim.property_key,
+    );
+    if (!exists) merged.push(claim);
+  }
+  return merged;
+}
+
+/**
+ * Re-point the loser's audit trail at the survivor: `GraphEditEvent` edits
+ * (`[:EDITS]`) and `VerificationEvent` verifications (`[:VERIFIES]`). After an
+ * identity merge the survivor is the visible node, so its audit history must
+ * include events that were recorded against the soft-deleted loser — otherwise
+ * those events dangle on a hidden `_deleted` node and disappear from the UI.
+ *
+ * One query per relationship type: a Neo4j relationship type can't be
+ * parameterized, and "re-pointing" is create-new-of-same-type + delete-old. The
+ * type list is a fixed, code-controlled allowlist (never user input), so the
+ * interpolation is safe.
+ */
+async function repointAuditEvents(
+  tx: ManagedTransaction,
+  loser: string,
+  survivor: string,
+): Promise<string[]> {
+  const movedIds: string[] = [];
+  for (const relType of AUDIT_REL_TYPES) {
+    const res = await tx.run(
+      `MATCH (s {id: $survivor})
+       MATCH (e)-[r:${relType}]->(l {id: $loser})
+       CREATE (e)-[:${relType}]->(s)
+       DELETE r
+       RETURN e.id AS id`,
+      { loser, survivor },
+    );
+    for (const rec of res.records as Array<{ get: (k: string) => unknown }>) {
+      const id = rec.get('id');
+      if (typeof id === 'string') movedIds.push(id);
+    }
+  }
+  return movedIds;
+}
+
+/**
+ * Reverse of {@link repointAuditEvents}: on splitMerge, send the recorded audit
+ * edges back from the survivor to the loser. Precise — only events whose ids were
+ * recorded on the MergeEvent at confirm time move, so the survivor's own audit
+ * history is left intact.
+ */
+async function unrepointAuditEvents(
+  tx: ManagedTransaction,
+  survivor: string,
+  loser: string,
+  eventIds: string[],
+): Promise<void> {
+  if (eventIds.length === 0) return;
+  for (const relType of AUDIT_REL_TYPES) {
+    await tx.run(
+      `MATCH (l {id: $loser})
+       MATCH (e)-[r:${relType}]->(s {id: $survivor})
+       WHERE e.id IN $ids
+       CREATE (e)-[:${relType}]->(l)
+       DELETE r`,
+      { loser, survivor, ids: eventIds },
+    );
+  }
+}
+
+/** Audit-edge types whose events follow the visible node across an identity merge. */
+const AUDIT_REL_TYPES = ['EDITS', 'VERIFIES'] as const;
 
 function candidateFromRecord(rec: { get: (k: string) => unknown }): ReconciliationCandidate {
   const c = rec.get('c') as { properties: Record<string, unknown> };

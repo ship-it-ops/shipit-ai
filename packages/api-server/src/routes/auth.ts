@@ -66,11 +66,15 @@ function emailPassesAllowList(
 }
 
 // Capabilities granted by role today. Real RBAC is a follow-up; until then
-// admins get the wildcard and members get the read-only set. The shape of
-// this function is the seam future grants will hang off of.
+// admins get the wildcard and members get the read set plus `graph:write` —
+// the latter is what lets any signed-in human author manual claims (claims
+// v1a). The anonymous principal (capabilities []) and MCP-token principals
+// (capabilities = their granted token scopes) do NOT pick up `graph:write`
+// from here, so they stay denied by default. The shape of this function is
+// the seam future grants will hang off of.
 function capabilitiesForRole(role: AuthRole): ReadonlyArray<string> {
   if (role === 'admin') return ['*'];
-  return ['graph:read', 'catalog:read'];
+  return ['graph:read', 'catalog:read', 'graph:write'];
 }
 
 const authRoutes: FastifyPluginAsync = async (server) => {

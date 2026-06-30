@@ -18,6 +18,9 @@ import authRoutes from './routes/auth.js';
 import tokenRoutes from './routes/tokens.js';
 import { ConnectorRegistry } from './services/connector-registry.js';
 import { SchemaService } from './services/schema-service.js';
+import { ClaimService } from './services/claim-service.js';
+import { ManualEditService } from './services/manual-edit-service.js';
+import { RelationEditService } from './services/relation-edit-service.js';
 import { GitHubAppService } from './services/github-app-service.js';
 import { GitHubAppManifestService } from './services/github-app-manifest-service.js';
 import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
@@ -27,7 +30,7 @@ import connectorRoutes from './routes/connectors.js';
 import schemaRoutes from './routes/schema.js';
 import graphRoutes from './routes/graph.js';
 import queryRoutes from './routes/query.js';
-import claimsRoutes, { conflictsRoutes } from './routes/claims.js';
+import claimsRoutes, { conflictsRoutes, relationsRoutes } from './routes/claims.js';
 import teamsRoutes from './routes/teams.js';
 import reconciliationRoutes from './routes/reconciliation.js';
 import incidentEventsRoutes from './routes/incident-events.js';
@@ -39,6 +42,8 @@ import webhookRoutes, { type WebhookRefetchPort } from './routes/webhooks.js';
 import { assertAuthConfigBootable, AuthConfigError } from './auth-bootability.js';
 import type { SetupService } from './services/setup-service.js';
 import type { SettingsService } from './services/settings-service.js';
+import feedbackRoutes from './routes/feedback.js';
+import type { FeedbackService } from './services/feedback-service.js';
 
 export interface CreateServerOptions {
   logger?: boolean;
@@ -83,6 +88,9 @@ export interface CreateServerOptions {
   // Backs the admin /api/settings hub (webhook secrets, OAuth client, admin
   // emails, allow-list). Optional: the routes return 503 when not wired.
   settingsService?: SettingsService;
+  // Backs the in-app "Report a problem" widget (/api/feedback). Optional: the
+  // route returns 503 when not wired or when feedback isn't configured.
+  feedbackService?: FeedbackService;
   // Event bus client, exposed to routes so the login callback can publish
   // the authenticated user as a Person entity (see routes/auth.ts and
   // services/person-upsert.ts). Production passes the same BullMQ client the
@@ -104,6 +112,7 @@ declare module 'fastify' {
     setupMode: boolean;
     setupService?: SetupService;
     settingsService?: SettingsService;
+    feedbackService?: FeedbackService;
     eventBus?: EventBusClient;
     webhookRefetch?: WebhookRefetchPort;
   }
@@ -128,6 +137,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // tests; the routes 503 when it's absent.
   if (opts.settingsService) {
     server.decorate('settingsService', opts.settingsService);
+  }
+  if (opts.feedbackService) {
+    server.decorate('feedbackService', opts.feedbackService);
   }
 
   if (opts.config) {
@@ -342,6 +354,24 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   }
   if (opts.neo4jService) {
     server.decorate('neo4jService', opts.neo4jService);
+    // Manual-edit write path (claims v1a). Constructed here — alongside its
+    // Neo4j dependency — so the claims routes can read it off the instance.
+    // ClaimService + SchemaService are the same collaborators the read path
+    // uses; schemaService is already decorated above.
+    server.decorate(
+      'manualEditService',
+      new ManualEditService(
+        opts.neo4jService,
+        new ClaimService(opts.neo4jService, server.schemaService),
+        server.schemaService,
+      ),
+    );
+    // Manual RELATIONS write path (v1b). Same Neo4j dependency + live schema for
+    // relation-type validation; the relations routes read it off the instance.
+    server.decorate(
+      'relationEditService',
+      new RelationEditService(opts.neo4jService, server.schemaService),
+    );
   }
   // Event bus is optional. When absent the login callback simply skips the
   // best-effort Person upsert (decoration is conditional so Fastify's
@@ -371,6 +401,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
     await server.register(queryRoutes, { prefix: '/api/query' });
     await server.register(claimsRoutes, { prefix: '/api/claims' });
     await server.register(conflictsRoutes, { prefix: '/api/conflicts' });
+    await server.register(relationsRoutes, { prefix: '/api/relations' });
     await server.register(teamsRoutes, { prefix: '/api/teams' });
     await server.register(reconciliationRoutes, { prefix: '/api/reconciliation' });
   }
@@ -391,6 +422,11 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // admin emails, login allow-list. Every handler is admin-gated; the routes
   // 503 when the backing SettingsService/SetupService aren't wired.
   await server.register(portalSettingsRoutes, { prefix: '/api/settings' });
+
+  // In-app "Report a problem" widget — files a GitHub issue via a server-held
+  // service PAT. Any signed-in user; the route 503s when feedback isn't wired
+  // or configured.
+  await server.register(feedbackRoutes, { prefix: '/api/feedback' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak

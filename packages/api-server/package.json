@@ -32,7 +32,7 @@
     "@shipit-ai/event-bus": "workspace:*",
     "@shipit-ai/mcp-server": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
-    "bullmq": "^5.78.1",
+    "bullmq": "^5.79.1",
     "fastify": "^5.8.5",
     "ioredis": "^5.11.1",
     "neo4j-driver": "^6.1.0",
@@ -41,8 +41,9 @@
   },
   "devDependencies": {
     "@types/ioredis-mock": "^8.2.7",
+    "@types/node": "^26.0.0",
     "ioredis-mock": "^8.13.1",
     "typescript": "^6.0.3",
-    "vitest": "^3.0.0"
+    "vitest": "^4.0.0"
   }
 }

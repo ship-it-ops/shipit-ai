@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { PropertyClaim } from '@shipit-ai/shared';
+import { pickManualOverride, type PropertyClaim } from '@shipit-ai/shared';
 import { VerificationService } from '../../services/verification-service.js';
 import { ClaimService } from '../../services/claim-service.js';
 
@@ -12,6 +12,7 @@ interface FakeNode {
 class FakeNeo4j {
   nodes = new Map<string, FakeNode>();
   events: Record<string, unknown>[] = [];
+  graphEditEvents: Record<string, unknown>[] = [];
 
   seed(id: string, label: string, claims: PropertyClaim[], extra: Record<string, unknown> = {}) {
     this.nodes.set(id, {
@@ -29,10 +30,32 @@ class FakeNeo4j {
       return node ? [record(node)] : [];
     }
     if (cypher.includes('n._claims IS NOT NULL')) {
+      // The Cypher predicate is applied in real Neo4j; the fake returns every
+      // claim-bearing node and lets the service's app-side loop filter. Mirror
+      // that: return all seeded nodes.
       return [...this.nodes.values()].map(record);
     }
     if (cypher.includes('CREATE (v:VerificationEvent')) {
       this.events.push({ ...params });
+      return [];
+    }
+    // Dedup query for already-emitted `contradicted` events.
+    if (cypher.includes("GraphEditEvent {kind: 'contradicted'}")) {
+      return this.graphEditEvents
+        .filter((e) => e.kind === 'contradicted')
+        .map((e) => ({
+          get: (k: string) =>
+            k === 'entityId'
+              ? e.entityId
+              : k === 'propertyKey'
+                ? e.propertyKey
+                : k === 'newValue'
+                  ? e.newValue
+                  : undefined,
+        }));
+    }
+    if (cypher.includes('CREATE (e:GraphEditEvent')) {
+      this.graphEditEvents.push({ ...params });
       return [];
     }
     if (cypher.includes('SET n._claims')) {
@@ -168,6 +191,64 @@ describe('VerificationService', () => {
     expect(fake.events.some((e) => e.kind === 'accepted')).toBe(true);
   });
 
+  it('review queue and resolveReview adjudicate the SAME equal-rank manual claim (deterministic, not array order)', async () => {
+    // Two equal-rank manual claims on the same property. The shared deterministic
+    // resolver (pickManualOverride) breaks the tie on freshest ingested_at, then
+    // source — NOT array order. Regression: the old array-order `pickOverride`
+    // could surface/adjudicate a DIFFERENT claim than the deterministic winner, so
+    // 'accept' could re-pin a non-effective value. Here the array order is
+    // DELIBERATELY the opposite of the deterministic winner so a regression would
+    // pick `alice` first; the shared resolver must still pick `bob` (freshest).
+    const winner = pickManualOverride([
+      claim({
+        source: 'manual:alice',
+        source_id: 'manual://alice',
+        value: 'alpha',
+        ingested_at: '2026-06-20T00:00:00Z',
+      }),
+      claim({
+        source: 'manual:bob',
+        source_id: 'manual://bob',
+        value: 'bravo',
+        ingested_at: '2026-06-21T00:00:00Z',
+      }),
+    ])!;
+    expect(winner.source).toBe('manual:bob'); // sanity: bob is the deterministic winner
+    expect(winner.value).toBe('bravo');
+
+    const alice = claim({
+      source: 'manual:alice',
+      source_id: 'manual://alice',
+      value: 'alpha',
+      ingested_at: '2026-06-20T00:00:00Z',
+    });
+    const bob = claim({
+      source: 'manual:bob',
+      source_id: 'manual://bob',
+      value: 'bravo', // the deterministic winner (freshest manual edit)
+      ingested_at: '2026-06-21T00:00:00Z',
+    });
+    const contradicting = claim({
+      source: 'github',
+      value: 'connector',
+      ingested_at: '2026-06-22T00:00:00Z',
+    });
+    // alice FIRST so array-order picking would wrongly choose alice.
+    fake.seed(ID, 'Repository', [alice, bob, contradicting]);
+
+    const queue = await verification.listReviewQueue();
+    expect(queue).toHaveLength(1);
+    // The queue surfaces the deterministic winner, not the array-first claim.
+    expect(queue[0].verifiedValue).toBe('bravo');
+    expect(queue[0].verifiedBy).toBe('bob');
+
+    // 'accept' adopts the proposed value onto that SAME (deterministic) claim.
+    await verification.resolveReview(ID, 'name', 'accept', 'mohamed@x');
+    expect(storedClaims().find((c) => c.source === 'manual:bob')!.value).toBe('connector');
+    // The non-winning manual claim is untouched.
+    expect(storedClaims().find((c) => c.source === 'manual:alice')!.value).toBe('alpha');
+  });
+
   it('resolveReview reject re-pins the verified value and clears the queue', async () => {
     fake.seed(ID, 'Repository', [claim({})]);
     await verification.verify(ID, 'name', 'api', 'mohamed@x');
@@ -182,6 +263,49 @@ describe('VerificationService', () => {
     expect(verified.verified_value).toBe('api'); // unchanged
     expect(await verification.listReviewQueue()).toHaveLength(0); // verified_at bumped past the dissenter
     expect(fake.events.some((e) => e.kind === 'rejected')).toBe(true);
+  });
+});
+
+describe('contradictionKey dedup (no boundary-shift collision)', () => {
+  let fake: FakeNeo4j;
+  let verification: VerificationService;
+
+  beforeEach(() => {
+    fake = new FakeNeo4j();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    verification = new VerificationService(fake as any);
+  });
+
+  it('emits a distinct contradicted event for two divergences that collide under bare concatenation', async () => {
+    // ('ab','c',V) and ('a','bc',V) both bare-concatenate to "abcV" — the old
+    // delimiter-free key would dedup the second away and SUPPRESS a real event.
+    // JSON.stringify([...]) keeps the segments distinct.
+    const contradicting = (v: string) => claim({ value: v, ingested_at: '2026-06-22T00:00:00Z' });
+    const manual = (v: string, key: string) =>
+      claim({
+        property_key: key,
+        source: 'manual:alice',
+        source_id: `manual://alice#${key}`,
+        value: v,
+        ingested_at: '2026-06-20T00:00:00Z',
+      });
+
+    // Node 'ab' with property 'c'; node 'a' with property 'bc'. Same proposedValue.
+    fake.seed('ab', 'Repository', [
+      manual('override', 'c'),
+      { ...contradicting('drift'), property_key: 'c' },
+    ]);
+    fake.seed('a', 'Repository', [
+      manual('override', 'bc'),
+      { ...contradicting('drift'), property_key: 'bc' },
+    ]);
+
+    const queue = await verification.listReviewQueue();
+    expect(queue).toHaveLength(2);
+    // Both divergences must produce their OWN contradicted audit event (not deduped).
+    // (`kind` is a Cypher literal, not a param, so match on the recorded entity ids.)
+    const emittedFor = fake.graphEditEvents.map((e) => `${e.entityId}|${e.propertyKey}`).sort();
+    expect(emittedFor).toEqual(['ab|c', 'a|bc']);
   });
 });
 

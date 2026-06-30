@@ -809,6 +809,248 @@ export async function verifyClaim(
   );
 }
 
+// -- Manual claim write path (claims v1a) ------------------------------------
+// Author/replace or revert a `manual:<actor>` claim on a single property. The
+// backend gate ladder is requireAuth → requireCapability('graph:write') →
+// kill-switch (FEATURE_DISABLED) → rate-limit. `actor` is NEVER client-
+// supplied on the write — it's the authenticated principal; only the admin-
+// only revert `?actor=` targets *another* actor's claim.
+
+/** The known structured error codes the manual-write endpoints return. */
+export type ManualClaimErrorCode =
+  | 'INVALID_VALUE_TYPE' // 400 — value wasn't a string (v1 is string-only)
+  | 'ENTITY_NOT_FOUND' // 404
+  | 'AUTH_REQUIRED' // 401
+  | 'FORBIDDEN' // 403 — lacks graph:write, or non-admin used ?actor=
+  | 'FEATURE_DISABLED' // 403 — accessControl.manualWrite kill-switch is off
+  | 'MANUAL_EDIT_DISABLED' // 503 — ManualEditService not wired
+  | 'RATE_LIMITED' // 429
+  | 'UNKNOWN';
+
+/**
+ * Carries the backend's structured `{error:{code,message}}` plus the HTTP
+ * status so the UI can branch (FEATURE_DISABLED vs FORBIDDEN vs
+ * INVALID_VALUE_TYPE vs RATE_LIMITED) without re-parsing strings.
+ */
+export class ManualClaimError extends Error {
+  readonly code: ManualClaimErrorCode;
+  readonly status: number;
+  constructor(code: ManualClaimErrorCode, message: string, status: number) {
+    super(message);
+    this.name = 'ManualClaimError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** Map a non-OK manual-write response to a typed `ManualClaimError`. */
+async function manualClaimError(res: Response): Promise<ManualClaimError> {
+  if (res.status === 429) {
+    return new ManualClaimError('RATE_LIMITED', 'Too many edits — slow down.', 429);
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string };
+  };
+  const rawCode = body.error?.code;
+  // Only trust codes we know how to branch on; everything else collapses to
+  // UNKNOWN so the UI shows the generic fallback rather than leaking a string
+  // it can't reason about.
+  const KNOWN: ReadonlyArray<ManualClaimErrorCode> = [
+    'INVALID_VALUE_TYPE',
+    'ENTITY_NOT_FOUND',
+    'AUTH_REQUIRED',
+    'FORBIDDEN',
+    'FEATURE_DISABLED',
+    'MANUAL_EDIT_DISABLED',
+  ];
+  const code = (
+    KNOWN.includes(rawCode as ManualClaimErrorCode) ? rawCode : 'UNKNOWN'
+  ) as ManualClaimErrorCode;
+  return new ManualClaimError(
+    code,
+    body.error?.message ?? `Manual edit failed: ${res.status}`,
+    res.status,
+  );
+}
+
+export interface ManualClaimResult {
+  property: ResolvedProperty;
+  claimsRev: number;
+}
+
+/**
+ * Author or replace the caller's `manual:<actor>` claim on a property.
+ * `value` is string-only in v1. Path segments are URL-encoded. Throws a
+ * `ManualClaimError` on any non-OK response.
+ */
+export async function setManualClaim(
+  entityId: string,
+  propertyKey: string,
+  value: string,
+  evidence?: string | null,
+): Promise<ManualClaimResult> {
+  const res = await fetchApi(
+    `${API_URL}/api/claims/${encodeURIComponent(entityId)}/${encodeURIComponent(propertyKey)}/manual`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value, evidence: evidence ?? null }),
+    },
+  );
+  if (!res.ok) throw await manualClaimError(res);
+  return (await res.json()) as ManualClaimResult;
+}
+
+/**
+ * Remove a `manual:<actor>` claim, falling back to the next-ranked source.
+ * With no `targetActor` it reverts the caller's own claim; an admin may pass
+ * `targetActor` (sent as `?actor=`) to revert someone else's — a non-admin
+ * doing so gets 403 FORBIDDEN from the server. Returns `null` on the
+ * idempotent 204 (nothing to remove). Throws `ManualClaimError` otherwise.
+ */
+export async function revertManualClaim(
+  entityId: string,
+  propertyKey: string,
+  targetActor?: string,
+): Promise<ManualClaimResult | null> {
+  const qs = targetActor ? `?actor=${encodeURIComponent(targetActor)}` : '';
+  const res = await fetchApi(
+    `${API_URL}/api/claims/${encodeURIComponent(entityId)}/${encodeURIComponent(propertyKey)}/manual${qs}`,
+    { method: 'DELETE' },
+  );
+  if (res.status === 204) return null;
+  if (!res.ok) throw await manualClaimError(res);
+  return (await res.json()) as ManualClaimResult;
+}
+
+// -- Manual relation write path (relations v1b) ------------------------------
+// Author/delete a `manual:<actor>` relationship edge. Mirrors the v1a manual-
+// claim client: same gate ladder (requireAuth → requireCapability('graph:write')
+// → kill-switch → rate-limit) and the same typed-error pattern so the UI can
+// branch per code. `actor` is NEVER client-supplied — it's the authenticated
+// principal. A manual edge is the only edge a DELETE may remove; connector edges
+// are refused (409 CONNECTOR_EDGE) and never touched.
+
+/** The known structured error codes the relation write endpoints return. */
+export type RelationEditErrorCode =
+  | 'INVALID_BODY' // 400 — from/to/type missing or wrong shape
+  | 'INVALID_RELATION_TYPE' // 400 — type not in the live schema
+  | 'SELF_LOOP' // 400 — from === to
+  | 'ENDPOINT_LABEL_MISMATCH' // 400 — from/to labels violate the schema constraint
+  | 'INVALID_PROPERTIES' // 400 — non-primitive property value
+  | 'ENDPOINT_NOT_FOUND' // 404 — from or to node doesn't exist
+  | 'CONNECTOR_EDGE' // 409 — DELETE matched a connector-owned edge (refused)
+  | 'AUTH_REQUIRED' // 401
+  | 'FORBIDDEN' // 403 — lacks graph:write
+  | 'FEATURE_DISABLED' // 403 — manualWrite kill-switch is off
+  | 'MANUAL_EDIT_DISABLED' // 503 — RelationEditService not wired
+  | 'RATE_LIMITED' // 429
+  | 'UNKNOWN';
+
+/**
+ * Carries the backend's structured `{error:{code,message}}` plus the HTTP status
+ * so the relations UI can branch (CONNECTOR_EDGE vs ENDPOINT_LABEL_MISMATCH vs
+ * FEATURE_DISABLED vs RATE_LIMITED) without re-parsing strings. Mirrors
+ * `ManualClaimError`.
+ */
+export class RelationEditError extends Error {
+  readonly code: RelationEditErrorCode;
+  readonly status: number;
+  constructor(code: RelationEditErrorCode, message: string, status: number) {
+    super(message);
+    this.name = 'RelationEditError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** Map a non-OK relation-write response to a typed `RelationEditError`. */
+async function relationEditError(res: Response): Promise<RelationEditError> {
+  if (res.status === 429) {
+    return new RelationEditError('RATE_LIMITED', 'Too many edits — slow down.', 429);
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string };
+  };
+  const rawCode = body.error?.code;
+  // Only trust codes we know how to branch on; everything else collapses to
+  // UNKNOWN so the UI shows the generic fallback rather than leaking a string
+  // it can't reason about.
+  const KNOWN: ReadonlyArray<RelationEditErrorCode> = [
+    'INVALID_BODY',
+    'INVALID_RELATION_TYPE',
+    'SELF_LOOP',
+    'ENDPOINT_LABEL_MISMATCH',
+    'INVALID_PROPERTIES',
+    'ENDPOINT_NOT_FOUND',
+    'CONNECTOR_EDGE',
+    'AUTH_REQUIRED',
+    'FORBIDDEN',
+    'FEATURE_DISABLED',
+    'MANUAL_EDIT_DISABLED',
+  ];
+  const code = (
+    KNOWN.includes(rawCode as RelationEditErrorCode) ? rawCode : 'UNKNOWN'
+  ) as RelationEditErrorCode;
+  return new RelationEditError(
+    code,
+    body.error?.message ?? `Relation edit failed: ${res.status}`,
+    res.status,
+  );
+}
+
+/**
+ * Result of authoring a manual relation. The three distinct outcomes the UI
+ * surfaces separately:
+ *   - `created: true`                            — a new manual edge was written.
+ *   - `created: false`                           — your manual edge already existed (no-op).
+ *   - `created: false, preexistingConnectorEdge` — a connector already owns an
+ *     edge of this type; it was left untouched.
+ */
+export interface AddRelationResult {
+  created: boolean;
+  preexistingConnectorEdge?: boolean;
+}
+
+/**
+ * Author the caller's `manual:<actor>` relationship edge `from -[type]-> to`.
+ * Sends only from/to/type in v1 (no arbitrary properties). Throws a
+ * `RelationEditError` on any non-OK response.
+ */
+export async function createRelation(
+  from: string,
+  to: string,
+  type: string,
+): Promise<AddRelationResult> {
+  const res = await fetchApi(`${API_URL}/api/relations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to, type }),
+  });
+  if (!res.ok) throw await relationEditError(res);
+  return (await res.json()) as AddRelationResult;
+}
+
+/**
+ * Delete the caller's manual relationship edge `from -[type]-> to`. Sends a JSON
+ * body with an explicit `Content-Type` (DELETE-with-body). Returns:
+ *   - `true`  on 200 `{ deleted: true }` (a manual edge was removed),
+ *   - `false` on the idempotent 204 (nothing matched).
+ * A connector-owned edge is refused server-side with 409 → `RelationEditError`
+ * code `CONNECTOR_EDGE`. Throws `RelationEditError` on any other non-OK status.
+ */
+export async function deleteRelation(from: string, to: string, type: string): Promise<boolean> {
+  const res = await fetchApi(`${API_URL}/api/relations`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to, type }),
+  });
+  if (res.status === 204) return false;
+  if (!res.ok) throw await relationEditError(res);
+  const body = (await res.json().catch(() => ({}))) as { deleted?: boolean };
+  return body.deleted === true;
+}
+
 export async function fetchReviewQueue(): Promise<ReviewQueueRow[]> {
   return apiFetch<ReviewQueueRow[]>('/api/claims/review-queue');
 }
@@ -1345,4 +1587,68 @@ export async function runCypherQuery(
     throw e;
   }
   return body as CypherQueryResult;
+}
+
+// ── Feedback widget ─────────────────────────────────────────────────────────
+// Backs the "Report a problem" launcher. The server files a GitHub issue via a
+// service identity and attributes the reporter from the session.
+
+export type FeedbackType = 'bug' | 'feature' | 'question';
+
+export interface FeedbackContextPayload {
+  url?: string;
+  route?: string;
+  userAgent?: string;
+  viewport?: string;
+  language?: string;
+  appVersion?: string;
+}
+
+export interface FeedbackLogPayload {
+  level: string;
+  message: string;
+  ts?: number;
+}
+
+export interface FeedbackInput {
+  type: FeedbackType;
+  title: string;
+  description: string;
+  context?: FeedbackContextPayload;
+  logs?: FeedbackLogPayload[];
+}
+
+export interface FeedbackResult {
+  issueUrl: string;
+  issueNumber: number;
+}
+
+// Whether the widget should render. Treats any failure as "disabled" so a
+// flaky probe never blocks the UI.
+export async function fetchFeedbackConfig(): Promise<{ enabled: boolean }> {
+  try {
+    const res = await fetchApi(`${API_URL}/api/feedback/config`);
+    if (!res.ok) return { enabled: false };
+    return (await res.json()) as { enabled: boolean };
+  } catch {
+    return { enabled: false };
+  }
+}
+
+export async function submitFeedback(input: FeedbackInput): Promise<FeedbackResult> {
+  const res = await fetchApi(`${API_URL}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | FeedbackResult
+    | { error?: { message?: string } };
+  if (!res.ok) {
+    const message =
+      (body as { error?: { message?: string } }).error?.message ??
+      `Could not file your report (${res.status}).`;
+    throw new Error(message);
+  }
+  return body as FeedbackResult;
 }

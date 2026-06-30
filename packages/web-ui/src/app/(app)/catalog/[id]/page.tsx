@@ -21,6 +21,7 @@ import {
 } from '@/lib/hooks/use-graph-data';
 import { BlastRadiusDialog } from '@/components/blast-radius-dialog';
 import { ClaimList } from '@/components/claims/claim-list';
+import { RelationManager } from '@/components/relations/relation-manager';
 import { resolveConnectorIdentity } from '@/lib/connector-identity';
 import { ConnectorPill } from '@/components/connectors/connector-pill';
 
@@ -223,54 +224,12 @@ export default function EntityDetailPage() {
             )}
           </Card>
 
-          <Card title={`Relations (${incoming.length + outgoing.length})`}>
-            {incoming.length + outgoing.length === 0 ? (
-              <p className="text-text-muted text-[12px]">No connected entities.</p>
-            ) : (
-              <div className="flex flex-col gap-5">
-                {outgoing.length > 0 && (
-                  <RelationGroup
-                    direction="out"
-                    edges={outgoing.map((e) => ({
-                      otherId: e.data.target,
-                      relation: e.data.type,
-                    }))}
-                    resolveName={(targetId) =>
-                      data?.nodes.find((n) => n.data.id === targetId)?.data.name as
-                        | string
-                        | undefined
-                    }
-                    resolveType={(targetId) =>
-                      data?.nodes.find((n) => n.data.id === targetId)?.data.type as
-                        | string
-                        | undefined
-                    }
-                    onOpen={(targetId) => router.push(`/catalog/${encodeURIComponent(targetId)}`)}
-                  />
-                )}
-                {incoming.length > 0 && (
-                  <RelationGroup
-                    direction="in"
-                    edges={incoming.map((e) => ({
-                      otherId: e.data.source,
-                      relation: e.data.type,
-                    }))}
-                    resolveName={(sourceId) =>
-                      data?.nodes.find((n) => n.data.id === sourceId)?.data.name as
-                        | string
-                        | undefined
-                    }
-                    resolveType={(sourceId) =>
-                      data?.nodes.find((n) => n.data.id === sourceId)?.data.type as
-                        | string
-                        | undefined
-                    }
-                    onOpen={(sourceId) => router.push(`/catalog/${encodeURIComponent(sourceId)}`)}
-                  />
-                )}
-              </div>
-            )}
-          </Card>
+          <RelationManager
+            entityId={id}
+            entityLabel={(node.data.label as string) ?? type}
+            data={data}
+            onOpen={(targetId) => router.push(`/catalog/${encodeURIComponent(targetId)}`)}
+          />
 
           <Card
             title="Claims"
@@ -314,7 +273,7 @@ export default function EntityDetailPage() {
               {sourceSystem && (
                 <>
                   <dt className="text-text-dim font-mono uppercase">Source</dt>
-                  <dd className="text-text">
+                  <dd className="text-text min-w-0">
                     {(() => {
                       const identity = resolveConnectorIdentity(
                         sourceSystem,
@@ -327,7 +286,7 @@ export default function EntityDetailPage() {
                           type="button"
                           onClick={() => router.push('/connectors')}
                           aria-label={`Open ${identity.displayName}`}
-                          className="focus-visible:ring-accent-dim rounded outline-none focus-visible:ring-[3px]"
+                          className="focus-visible:ring-accent-dim flex max-w-full min-w-0 rounded outline-none focus-visible:ring-[3px]"
                         >
                           {pill}
                         </button>
@@ -407,65 +366,5 @@ function PropertyRow({ k, value }: { k: string; value: string }) {
       <dt className="text-text-dim font-mono text-[11px] uppercase">{k}</dt>
       <dd className="text-text break-words">{value}</dd>
     </>
-  );
-}
-
-function RelationGroup({
-  direction,
-  edges,
-  resolveName,
-  resolveType,
-  onOpen,
-}: {
-  direction: 'in' | 'out';
-  edges: Array<{ otherId: string; relation: string }>;
-  resolveName: (id: string) => string | undefined;
-  resolveType: (id: string) => string | undefined;
-  onOpen: (id: string) => void;
-}) {
-  const heading = direction === 'out' ? 'Depends on' : 'Used by';
-  const arrow = direction === 'out' ? '→' : '←';
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-text-dim font-mono text-[10px] tracking-[1.4px] uppercase">{heading}</h3>
-      <ul className="flex flex-col gap-1">
-        {edges.map((e, i) => {
-          const targetName = resolveName(e.otherId) ?? e.otherId;
-          const targetType = resolveType(e.otherId);
-          const meta = targetType ? getEntityTypeMeta(targetType) : null;
-          return (
-            <li key={`${e.otherId}-${i}`}>
-              <button
-                type="button"
-                onClick={() => onOpen(e.otherId)}
-                className="hover:bg-panel-2 focus-visible:ring-accent-dim flex w-full items-center gap-3 rounded-sm px-2 py-2 text-left text-[12px] outline-none focus-visible:ring-[3px]"
-              >
-                <span aria-hidden className="text-text-dim w-3 font-mono text-[10px]">
-                  {arrow}
-                </span>
-                <span
-                  aria-hidden
-                  className={
-                    'grid h-6 w-6 place-items-center rounded-xs ' +
-                    (meta ? meta.toneBg + ' ' + meta.toneClass : 'bg-panel-2 text-text-dim')
-                  }
-                >
-                  {meta ? (
-                    <DynamicIconGlyph name={meta.iconName} size={13} />
-                  ) : (
-                    <span className="font-mono text-[10px]">·</span>
-                  )}
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-text truncate">{targetName}</span>
-                  <span className="text-text-dim truncate font-mono text-[10px]">{e.relation}</span>
-                </span>
-                <IconGlyph name="caretRight" size={12} />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
   );
 }

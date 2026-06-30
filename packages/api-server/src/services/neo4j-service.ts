@@ -45,9 +45,28 @@ const MAX_BLAST_RADIUS_NODES = 200;
 // (caught below); these predate that convention and have no `name`/`id` shape,
 // so without an explicit exclusion they leaked into the catalog as nameless
 // "Service" rows. Keep this list in sync with those services' CREATE clauses.
-const INTERNAL_EVENT_LABELS = ['VerificationEvent', 'MergeEvent', 'ReconciliationCandidate'];
+const INTERNAL_EVENT_LABELS = [
+  'VerificationEvent',
+  'MergeEvent',
+  'ReconciliationCandidate',
+  // Manual-edit audit nodes (`ge:…`, manual-edit-service). Same rationale as
+  // the others: real graph nodes for bookkeeping, never user-facing catalog
+  // entities, so they must not leak into catalog/graph queries.
+  'GraphEditEvent',
+];
 // Cypher list literal, inlined into predicates so no call site needs an extra param.
 const INTERNAL_EVENT_LABELS_CYPHER = `[${INTERNAL_EVENT_LABELS.map((l) => `'${l}'`).join(', ')}]`;
+
+// Relationship types the app writes for its OWN bookkeeping/audit trail, never
+// user-facing topology: `EDITS` (manual-edit-service GraphEditEvent → entity),
+// `VERIFIES` (verification-service VerificationEvent → entity), and the merge
+// audit rels (`MERGED`/`ABSORBED`, reconciliation-service MergeEvent → entity).
+// They dangle off the INTERNAL_EVENT_LABELS nodes above, so an unfiltered
+// relationship count inflates the dashboard's edgeCount. Keep in sync with those
+// services' CREATE clauses. `DISTINCT_FROM` is intentionally NOT here — it links
+// two user-facing entities and is meaningful topology.
+const INTERNAL_REL_TYPES = ['EDITS', 'VERIFIES', 'MERGED', 'ABSORBED'];
+const INTERNAL_REL_TYPES_CYPHER = `[${INTERNAL_REL_TYPES.map((t) => `'${t}'`).join(', ')}]`;
 
 // Labels beginning with `_` are core-writer bookkeeping (`_LinkingKey`,
 // `_IdempotencyLog`) — they have no canonical `id` property and no
@@ -131,8 +150,12 @@ export class Neo4jService {
     const nodeCountsResult = await this.runQuery(
       `CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' AND NOT label IN ${INTERNAL_EVENT_LABELS_CYPHER} RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count`,
     );
+    // Exclude internal audit/bookkeeping rel types (EDITS/VERIFIES/MERGED/ABSORBED)
+    // so the dashboard edgeCount mirrors the node-count exclusion above and counts
+    // only user-facing topology — otherwise the manual-edit/verify/merge audit
+    // edges inflate it.
     const edgeCountsResult = await this.runQuery(
-      'CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count',
+      `CALL db.relationshipTypes() YIELD relationshipType WHERE NOT relationshipType IN ${INTERNAL_REL_TYPES_CYPHER} RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count`,
     );
 
     const nodesByLabel: Record<string, number> = {};

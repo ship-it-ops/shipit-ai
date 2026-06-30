@@ -75,6 +75,15 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       web: {
         allowedOrigins: ['http://localhost:3000'],
       },
+      manualWrite: {
+        enabled: true,
+        auditRetentionDays: 90,
+      },
+    },
+    feedback: {
+      enabled: true,
+      repo: { owner: '', name: '' },
+      defaultLabels: ['user-report'],
     },
     ...overrides,
   };

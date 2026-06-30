@@ -2,7 +2,7 @@
 type: open-question
 status: active
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-23
 author: claude-session-2026-06-04-deployment
 opened: 2026-06-04
 answer-source: maintainer
@@ -51,6 +51,36 @@ wins:
 
 These must be reconciled before relying on manual overrides under
 `AUTHORITATIVE_ORDER`, or the written winner won't match the displayed winner.
+
+## Update 2026-06-23 (audit) — Gap 2 RESOLVED, Gap 1 still partial
+
+- **Gap 2 — FIXED/SHIPPED (PR #74, `9d19e65`).** The two diverging lists were
+  replaced by a single shared registry: `SOURCE_PRIORITY_ORDER` in
+  `packages/shared/src/config/source-reliability.ts` (`manual` ranks 2nd, just
+  below `verified`). Both the writer (`core-writer/.../claims/strategies.ts`
+  `sourceRank`) and the API read path (`api-server/.../claim-service.ts`
+  `sourceRank`) now consume it — written winner == displayed winner. The fix
+  comment cites this doc.
+- **Gap 1 — still partially open.** A _verification_ write path now exists
+  (`POST /api/claims/:entityId/:propertyKey/verify` + `POST /api/claims/review/resolve`,
+  writing `verified:<actor>` claims). Still NOT built: the `manual:<user>`
+  override claim route, the add-relation/edge mutation endpoint, and the
+  Phase-3 RBAC gating on claim-write routes (claims.ts header still says RBAC
+  pending; writes are only rate-limited, not role-gated).
+
+Remaining work for this question = Gap 1's three items only.
+
+**2026-06-24:** Gap 1 now has an audited implementation plan →
+[[manual-edit-write-path]] (in `plans/`). The audit surfaced a blocker — the
+manual-claim durability guarantee was false (core-writer `mergeNode` clobbers
+manual claims via a `_claims_rev`-unaware write race); the plan fixes it (T0 CAS).
+This open question stays `active` until v1a/v1b ship.
+
+**2026-06-24 (later):** Gap 1 is now BUILT. v1a (manual claim override/revert +
+RBAC) SHIPPED (commit `4ded3fe`, pushed to `origin/release-next`); v1b (manual
+add/delete relations) implemented + verified + reviewed, uncommitted on
+`release-next`. With Gap 2 already fixed (#74), this question is effectively
+resolved — flip to `answered` once v1b is committed.
 
 ## Tried
 

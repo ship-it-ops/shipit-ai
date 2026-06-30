@@ -263,7 +263,10 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
     if (probeResult?.ok && probeResult.suggestedOrg && !org) {
       setOrg(probeResult.suggestedOrg);
       if (!connectorId) setConnectorId(defaultIdFor(probeResult.suggestedOrg));
-      if (!name) setName(`GitHub · ${probeResult.suggestedOrg}`);
+      // Store the bare org as the instance name; the UI composes the
+      // "GitHub · <org>" display label at render time (connector-identity.ts).
+      // Seeding the composed form here caused a double "GitHub · GitHub · …".
+      if (!name) setName(probeResult.suggestedOrg);
     }
   }, [probeResult, org, connectorId, name]);
 

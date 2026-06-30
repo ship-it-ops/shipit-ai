@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi, type Mock } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '@shipit-ai/shared';
 import { createServer } from '../../server.js';
@@ -35,12 +35,12 @@ describe('setup mode server', () => {
   let server: FastifyInstance;
   let store: ReturnType<typeof fakeGsmStore>;
   let env: NodeJS.ProcessEnv;
-  let exitSpy: ReturnType<typeof vi.fn>;
+  let exitSpy: Mock<(code: number) => void>;
 
   beforeAll(async () => {
     store = fakeGsmStore();
     env = { SHIPIT_SESSION_SECRET: SESSION_SECRET } as NodeJS.ProcessEnv;
-    exitSpy = vi.fn();
+    exitSpy = vi.fn<(code: number) => void>();
     const config = freshDeployConfig();
     const setupService = new SetupService({
       secretStore: store,

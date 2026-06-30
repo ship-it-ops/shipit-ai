@@ -47,6 +47,29 @@ describe('accessControl schema', () => {
     expect(cfg.accessControl.web.allowedOrigins).toEqual(['http://localhost:3000']);
   });
 
+  it('defaults manualWrite to enabled with a 90-day audit retention window', () => {
+    const cfg = configSchema.parse(baseConfig);
+    expect(cfg.accessControl.manualWrite.enabled).toBe(true);
+    expect(cfg.accessControl.manualWrite.auditRetentionDays).toBe(90);
+  });
+
+  it('accepts auditRetentionDays = 0 to disable retention (keep audit events forever)', () => {
+    const cfg = configSchema.parse({
+      ...baseConfig,
+      accessControl: { manualWrite: { auditRetentionDays: 0 } },
+    });
+    expect(cfg.accessControl.manualWrite.auditRetentionDays).toBe(0);
+  });
+
+  it('rejects a negative auditRetentionDays', () => {
+    expect(() =>
+      configSchema.parse({
+        ...baseConfig,
+        accessControl: { manualWrite: { auditRetentionDays: -1 } },
+      }),
+    ).toThrow();
+  });
+
   it('accepts an OIDC provider with explicit settings', () => {
     const cfg = configSchema.parse({
       ...baseConfig,
@@ -130,26 +153,29 @@ describe('accessControl schema', () => {
   });
 
   it('rejects an enabled OIDC provider with an empty issuerUrl', () => {
-    expect(() =>
-      configSchema.parse({
-        ...baseConfig,
-        accessControl: {
-          auth: {
-            enabled: true,
-            providers: {
-              oidc: {
-                enabled: true,
-                issuerUrl: '',
-                clientId: 'shipit',
-                clientSecretEnv: 'OIDC_CLIENT_SECRET',
-                displayName: 'IdP',
+    expect(
+      () =>
+        configSchema.parse({
+          ...baseConfig,
+          accessControl: {
+            auth: {
+              enabled: true,
+              providers: {
+                oidc: {
+                  enabled: true,
+                  issuerUrl: '',
+                  clientId: 'shipit',
+                  clientSecretEnv: 'OIDC_CLIENT_SECRET',
+                  displayName: 'IdP',
+                },
               },
+              admins: ['a@example.com'],
             },
-            admins: ['a@example.com'],
           },
-        },
-      }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*issuerUrl/);
+        }),
+      // Order-independent: zod 4 serializes issue keys as code/path/message,
+      // so the path ("issuerUrl") and message may appear in either order.
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*issuerUrl)/);
   });
 
   it('rejects an enabled OIDC provider with an empty clientId', () => {
@@ -172,7 +198,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*clientId/);
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*clientId)/);
   });
 
   it('rejects an enabled OIDC provider with an empty clientSecretEnv', () => {
@@ -195,7 +221,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/oidc\.enabled is true[\s\S]*clientSecretEnv/);
+    ).toThrow(/(?=[\s\S]*oidc\.enabled is true)(?=[\s\S]*clientSecretEnv)/);
   });
 
   it('accepts a GitHub OAuth provider with empty values when disabled', () => {
@@ -226,7 +252,7 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/github\.enabled is true[\s\S]*clientId/);
+    ).toThrow(/(?=[\s\S]*github\.enabled is true)(?=[\s\S]*clientId)/);
   });
 
   it('rejects an enabled GitHub OAuth provider with an empty clientSecretEnv', () => {
@@ -243,6 +269,6 @@ describe('accessControl schema', () => {
           },
         },
       }),
-    ).toThrow(/github\.enabled is true[\s\S]*clientSecretEnv/);
+    ).toThrow(/(?=[\s\S]*github\.enabled is true)(?=[\s\S]*clientSecretEnv)/);
   });
 });

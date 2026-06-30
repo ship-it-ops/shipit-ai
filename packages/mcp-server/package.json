@@ -27,12 +27,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "neo4j-driver": "^6.1.0",
-    "zod": "^3.25.0",
+    "zod": "^4.4.3",
     "@shipit-ai/shared": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^26.0.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
-    "vitest": "^3.0.0"
+    "vitest": "^4.0.0"
   }
 }

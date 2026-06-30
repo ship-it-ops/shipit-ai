@@ -10,6 +10,8 @@
 // re-import repo metadata from GitHub, so they share/derive the 'scm' lineage for
 // those fields. v1 is source-level; per-property overrides are a v2 follow-up.
 
+import type { PropertyClaim } from '../types/claims.js';
+
 export interface SourceReliabilityEntry {
   /** Calibrated base trust for a fresh claim from this source, 0..1. */
   reliability: number;
@@ -95,4 +97,44 @@ export function isDerivedFrom(candidate: string, winner: string): boolean {
   const entry = getSourceReliability(candidate);
   if (entry.derivesFrom.includes(winnerKey)) return true;
   return independenceGroup(candidate) === independenceGroup(winner);
+}
+
+/**
+ * Pick the winning human-attestation claim for the MANUAL_OVERRIDE_FIRST
+ * strategy, DETERMINISTICALLY. `verified:<user>` outranks `manual:<user>`
+ * (both are namespaced; we match the registry key, not array order).
+ *
+ * Why this lives in shared: BOTH core-writer's `resolveManualOverrideFirst`
+ * and api-server's read-path `pickByStrategy` resolve this strategy, and they
+ * MUST agree on the same winner. The previous `claims.find(...)` in each picked
+ * by array order, which is non-deterministic across connector re-syncs (claim
+ * order in `_claims` is not stable) — two equally-ranked `manual:<actor>`
+ * claims could resolve to different effective values on different reads. The
+ * tie-break below makes the winner a pure function of claim content:
+ *   1. lowest sourceRank wins (verified before manual);
+ *   2. then most-recent `ingested_at` (the freshest human edit);
+ *   3. then `source` lexicographically as a final stable key.
+ *
+ * Returns null when no `verified:`/`manual:` claim is present (caller falls
+ * back to its confidence-based strategy).
+ */
+export function pickManualOverride(claims: PropertyClaim[]): PropertyClaim | null {
+  let best: PropertyClaim | null = null;
+  for (const c of claims) {
+    const key = sourceKey(c.source);
+    if (key !== 'verified' && key !== 'manual') continue;
+    if (best === null || compareOverride(c, best) < 0) best = c;
+  }
+  return best;
+}
+
+/** Ordering for human-attestation claims: lower sorts first (i.e. wins). */
+function compareOverride(a: PropertyClaim, b: PropertyClaim): number {
+  const ra = sourceRank(a.source);
+  const rb = sourceRank(b.source);
+  if (ra !== rb) return ra - rb;
+  // Same rank (e.g. two manual claims): freshest ingested_at wins.
+  if (a.ingested_at !== b.ingested_at) return a.ingested_at < b.ingested_at ? 1 : -1;
+  // Final stable key so the result never depends on input order.
+  return a.source < b.source ? -1 : a.source > b.source ? 1 : 0;
 }

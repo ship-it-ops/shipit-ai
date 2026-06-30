@@ -23,6 +23,16 @@ function denyNonAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
 
 const norm = (e: string): string => e.trim().toLowerCase();
 
+// Derive the public webhook receiver URL from the incoming request, respecting
+// reverse-proxy headers (same proto/host logic as manifestUrlsFromRequest in
+// routes/connectors.ts). Used as the fallback when no `webhookPublicUrl` is
+// configured, so the Receiver URL field is never blank on a reachable instance.
+function receiverUrlFromRequest(request: FastifyRequest): string {
+  const proto = (request.headers['x-forwarded-proto'] as string) ?? 'http';
+  const host = (request.headers['x-forwarded-host'] as string) ?? request.headers.host ?? '';
+  return host ? `${proto}://${host}/api/webhooks/github` : '';
+}
+
 export async function portalSettingsRoutes(server: FastifyInstance): Promise<void> {
   // The settings hub is unusable without its backing service; fail loud at the
   // route level (503) rather than crashing per-handler if it wasn't wired.
@@ -45,7 +55,7 @@ export async function portalSettingsRoutes(server: FastifyInstance): Promise<voi
     if (requireServices(reply)) return;
     const settings = server.settingsService!;
     return reply.send({
-      webhookUrl: settings.getWebhookUrl(),
+      webhookUrl: settings.getWebhookUrl(receiverUrlFromRequest(request)),
       webhooks: await settings.listWebhooks(),
       oauth: { configured: settings.getOAuthConfigured() },
       admins: settings.getAdmins(server.config?.accessControl.auth.admins ?? []),
@@ -60,7 +70,10 @@ export async function portalSettingsRoutes(server: FastifyInstance): Promise<voi
     if (requireServices(reply)) return;
     const { connectorId } = request.params as { connectorId: string };
     try {
-      const result = await server.settingsService!.setConnectorWebhookSecret(connectorId);
+      const result = await server.settingsService!.setConnectorWebhookSecret(
+        connectorId,
+        receiverUrlFromRequest(request),
+      );
       return reply.send(result);
     } catch (err) {
       if (err instanceof NoResolvableAppError) {

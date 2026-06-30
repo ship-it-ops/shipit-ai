@@ -18,12 +18,21 @@ import {
   type WebhookSecretResult,
 } from '@/lib/api';
 
-function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
+function CopyButton({
+  value,
+  label = 'Copy',
+  disabled = false,
+}: {
+  value: string;
+  label?: string;
+  disabled?: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
       variant="outline"
       size="sm"
+      disabled={disabled}
       icon={<IconGlyph name={copied ? 'check' : 'copy'} />}
       onClick={async () => {
         await navigator.clipboard.writeText(value);
@@ -82,10 +91,17 @@ export function WebhooksTab() {
         </p>
         <div className="flex items-center gap-2">
           <code className="border-border bg-panel-2 text-text min-w-0 flex-1 truncate rounded border p-2 font-mono text-[12px]">
-            {data.webhookUrl}
+            {data.webhookUrl || '—'}
           </code>
-          <CopyButton value={data.webhookUrl} />
+          <CopyButton value={data.webhookUrl} disabled={!data.webhookUrl} />
         </div>
+        {!data.webhookUrl && (
+          <p className="text-warn mt-2 text-[11px]">
+            Couldn&apos;t determine the public URL. Set{' '}
+            <code className="font-mono">GITHUB_WEBHOOK_PUBLIC_URL</code> on the deployment, or open
+            this page from the portal&apos;s public address.
+          </p>
+        )}
       </Card>
 
       <Card title="Connectors">
@@ -122,12 +138,17 @@ function ConnectorRow({
   onRevealed: (result: WebhookSecretResult) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  // Confirm gate: the action mints AND persists a real secret on the server, so
+  // a single click must not silently do that. Opening + dismissing the confirm
+  // is a true no-op — the mutation only fires from the confirm's primary button.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const action = connector.secretConfigured ? 'rotate' : 'setup';
 
   const mutation = useMutation({
     mutationFn: () => setConnectorWebhookSecret(connector.connectorId, action),
     onSuccess: (result) => {
       setError(null);
+      setConfirmOpen(false);
       onRevealed(result);
     },
     // NO_RESOLVABLE_APP and GSM/file-mode failures arrive here with an
@@ -137,6 +158,14 @@ function ConnectorRow({
 
   const title = connector.org ?? connector.connectorId;
 
+  // Tri-state status: a stored secret is NOT the same as a working webhook.
+  // Green/"Active" is reserved for a delivery the receiver actually verified.
+  const status: 'not-set-up' | 'awaiting' | 'active' = !connector.secretConfigured
+    ? 'not-set-up'
+    : connector.lastVerifiedDelivery
+      ? 'active'
+      : 'awaiting';
+
   return (
     <li className="border-border flex flex-col gap-2 rounded border p-3">
       <div className="flex items-center justify-between gap-3">
@@ -145,33 +174,38 @@ function ConnectorRow({
           <div className="text-text-dim mt-[2px] flex flex-wrap items-center gap-2 text-[11px]">
             <span>{connector.appId ? `App ${connector.appId}` : 'Shared global App'}</span>
             <span aria-hidden>·</span>
-            {connector.secretConfigured ? (
+            {status === 'active' ? (
               <Badge variant="ok" size="sm">
-                Secret configured
+                Active
+              </Badge>
+            ) : status === 'awaiting' ? (
+              <Badge variant="warn" size="sm">
+                Awaiting first delivery
               </Badge>
             ) : (
               <Badge variant="neutral" size="sm">
-                No secret
+                Not set up
               </Badge>
             )}
           </div>
           <div className="text-text-dim mt-[2px] text-[11px]">
-            {connector.lastVerifiedDelivery
-              ? `Last verified: ${formatRelative(connector.lastVerifiedDelivery.ts)} (${connector.lastVerifiedDelivery.event})`
-              : 'No verified delivery yet'}
+            {status === 'active'
+              ? `Last verified: ${formatRelative(connector.lastVerifiedDelivery!.ts)} (${connector.lastVerifiedDelivery!.event})`
+              : status === 'awaiting'
+                ? 'Secret saved — paste it into GitHub to activate.'
+                : 'No verified delivery yet'}
           </div>
         </div>
         <Button
           variant={connector.secretConfigured ? 'outline' : 'primary'}
           size="sm"
-          onClick={() => mutation.mutate()}
+          onClick={() => {
+            setError(null);
+            setConfirmOpen(true);
+          }}
           disabled={mutation.isPending}
         >
-          {mutation.isPending
-            ? 'Working…'
-            : connector.secretConfigured
-              ? 'Rotate secret'
-              : 'Set up'}
+          {connector.secretConfigured ? 'Rotate secret' : 'Set up'}
         </Button>
       </div>
       {error && (
@@ -179,6 +213,43 @@ function ConnectorRow({
           {error}
         </div>
       )}
+
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(next) => {
+          // Closing the confirm is a no-op (unless a mint is mid-flight).
+          if (!next && !mutation.isPending) setConfirmOpen(false);
+        }}
+        title={action === 'rotate' ? 'Rotate webhook secret?' : 'Generate webhook secret?'}
+        description={
+          action === 'rotate'
+            ? 'This invalidates the current secret immediately — deliveries will fail until you paste the new one into the GitHub App.'
+            : "This generates and saves a new webhook secret. You'll then paste it into the GitHub App to activate deliveries."
+        }
+        width={460}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmOpen(false)}
+              disabled={mutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending
+                ? 'Working…'
+                : action === 'rotate'
+                  ? 'Rotate secret'
+                  : 'Generate secret'}
+            </Button>
+          </div>
+        }
+      />
     </li>
   );
 }
@@ -196,8 +267,8 @@ function SecretRevealDialog({
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title="Webhook secret"
-      description="Copy this now — rotating later generates a new one and this value won't be shown again."
+      title="Webhook secret saved"
+      description="This secret is now saved on the server, but webhooks stay inactive until you paste it (and the URL) into the GitHub App and a delivery is verified. Copy it now — it won't be shown again."
       width={560}
       footer={
         <Button variant="primary" onClick={onClose}>

@@ -422,10 +422,51 @@ const accessControlSchema = z.object({
     .default({
       allowedOrigins: ['http://localhost:3000'],
     }),
+  // Feature kill-switch for the manual-edit write path (claims v1a). Default
+  // ON: any signed-in human (member or admin holds `graph:write`) may author a
+  // `manual:<actor>` claim. Flip `enabled: false` to make the manual-write
+  // routes 403 with FEATURE_DISABLED — an instant rollback that needs no
+  // redeploy, leaving the read paths untouched.
+  manualWrite: z
+    .object({
+      enabled: z.boolean().default(true),
+      // Retention window (days) for `GraphEditEvent` audit nodes. Default ON at
+      // 90 days: a daily cleanup job DETACH-DELETEs audit events older than
+      // `now - auditRetentionDays`, bounding their otherwise-unbounded growth
+      // (same incident class as the 2026-06-17/2026-06-22 Redis OOM scars — see
+      // docs/agent/plans/manual-edit-write-path.md S6). Set `0` to DISABLE
+      // retention and keep every audit event forever. Negative values are
+      // rejected at load time.
+      auditRetentionDays: z.number().int().nonnegative().default(90),
+    })
+    .default({
+      enabled: true,
+      auditRetentionDays: 90,
+    }),
 });
 
 export type AccessControlConfig = z.infer<typeof accessControlSchema>;
 export type AuthConfig = AccessControlConfig['auth'];
+
+// Top-level `feedback:` block — backs the in-app "Report a problem" widget.
+// Non-secret values only (committable, like connectors.github.app): the
+// issue-filing identity is a server-held fine-grained PAT consumed via the
+// FEEDBACK_GITHUB_TOKEN env var (hydrated from GSM), never stored here.
+// `enabled` is additionally gated on that token being present at runtime.
+const feedbackConfigSchema = z.object({
+  // Explicit kill-switch. Defaults true, but the widget is gated at runtime on
+  // a target repo AND the FEEDBACK_GITHUB_TOKEN being present, so it stays off
+  // until configured. Set false to hard-disable even when those are set. Kept a
+  // literal (not env-substituted) because the loader yields strings for ${...}.
+  enabled: z.boolean().default(true),
+  repo: z
+    .object({
+      owner: z.string().default(''),
+      name: z.string().default(''),
+    })
+    .default({ owner: '', name: '' }),
+  defaultLabels: z.array(z.string()).default(['user-report']),
+});
 
 export const configSchema = z.object({
   backend: z.object({
@@ -525,6 +566,17 @@ export const configSchema = z.object({
     web: {
       allowedOrigins: ['http://localhost:3000'],
     },
+    manualWrite: {
+      enabled: true,
+      auditRetentionDays: 90,
+    },
+  }),
+  // In-app feedback widget target. Defaulted (disabled) so existing configs
+  // without a feedback block still validate and boot.
+  feedback: feedbackConfigSchema.default({
+    enabled: true,
+    repo: { owner: '', name: '' },
+    defaultLabels: ['user-report'],
   }),
 });
 

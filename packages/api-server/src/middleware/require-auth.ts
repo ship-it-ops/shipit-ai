@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
   buildCapabilitySet,
+  hasCapability,
   type AuthPrincipal,
   type Config,
   type RequestContext,
@@ -251,6 +252,35 @@ async function resolveContext(
     },
   });
   return null;
+}
+
+/**
+ * Reusable authorization preHandler: 403s unless `request.ctx` holds `cap`
+ * (the `*` wildcard grants everything — see hasCapability). Run AFTER the
+ * registerRequireAuth preHandler has populated `request.ctx`.
+ *
+ * The anonymous principal carries an empty capability set and is therefore
+ * rejected here; MCP-token principals only pass if `cap` is among their
+ * granted token scopes. This is the single gate the manual-write routes use
+ * for `graph:write`, and the seam future write routes (relations in v1b, a
+ * later verify-route retrofit) reuse without re-implementing the check.
+ */
+export function requireCapability(cap: string) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> => {
+    if (hasCapability(request.ctx, cap)) {
+      return undefined;
+    }
+    request.log.warn(
+      { path: request.url.split('?')[0], code: 'FORBIDDEN', cap },
+      'authz: rejected request',
+    );
+    return reply.status(403).send({
+      error: {
+        code: 'FORBIDDEN',
+        message: `This action requires the ${cap} capability.`,
+      },
+    });
+  };
 }
 
 /**

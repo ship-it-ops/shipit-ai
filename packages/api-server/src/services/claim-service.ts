@@ -12,12 +12,16 @@ import {
   sourceKey,
   sourceRank,
   weeksSince,
+  pickManualOverride,
   DEFAULT_CONFIDENCE_TUNING,
 } from '@shipit-ai/shared';
 import type { Neo4jService } from './neo4j-service.js';
 import type { SchemaService } from './schema-service.js';
 
-function pickByStrategy(
+// Exported so the manual-edit write path can compute a property's prior effective
+// value with the EXACT same resolution the read path applies (not a naive
+// "highest claim"), satisfying the audit's prior_value contract.
+export function pickByStrategy(
   claims: PropertyClaim[],
   strategy: ResolutionStrategy,
   now: Date,
@@ -26,10 +30,10 @@ function pickByStrategy(
 
   if (strategy === 'MANUAL_OVERRIDE_FIRST') {
     // Human attestation wins: `verified:<user>` outranks `manual:<user>`.
-    // Matches core-writer's resolveManualOverrideFirst (prefix match, not exact).
-    const override =
-      claims.find((c) => c.source.startsWith('verified:')) ??
-      claims.find((c) => c.source.startsWith('manual:'));
+    // Shared with core-writer's resolveManualOverrideFirst via pickManualOverride,
+    // which applies a DETERMINISTIC tie-break among same-rank manual claims
+    // (freshest ingested_at, then source) — array order is not stable.
+    const override = pickManualOverride(claims);
     if (override) return { winner: override, effective: override.value };
     return pickByStrategy(claims, 'HIGHEST_CONFIDENCE', now);
   }
@@ -114,7 +118,11 @@ function hasConflict(claims: PropertyClaim[]): boolean {
   return false;
 }
 
-function strategyFor(schema: ShipItSchema | null, label: string, key: string): ResolutionStrategy {
+export function strategyFor(
+  schema: ShipItSchema | null,
+  label: string,
+  key: string,
+): ResolutionStrategy {
   const typeDef = schema?.node_types[label];
   const propDef = typeDef?.properties[key];
   if (propDef?.resolution_strategy) return propDef.resolution_strategy;
@@ -126,6 +134,77 @@ export class ClaimService {
     private neo4j: Neo4jService,
     private schemaService: SchemaService,
   ) {}
+
+  /**
+   * Resolve ONE property from its claim group into a typed ResolvedProperty,
+   * applying the same strategy/confidence/status computation as the full entity
+   * read. Exposed so the manual-edit write path can return the exact post-edit
+   * resolved property without re-reading the node. `group` must contain only the
+   * claims for `propertyKey`.
+   */
+  resolveProperty(
+    group: PropertyClaim[],
+    label: string,
+    propertyKey: string,
+    now: Date = new Date(),
+  ): ResolvedProperty {
+    const tuning = DEFAULT_CONFIDENCE_TUNING;
+    const strategy = strategyFor(this.schemaService.getSchema(), label, propertyKey);
+    const { winner, effective } = pickByStrategy(group, strategy, now);
+    const conflict = hasConflict(group);
+
+    if (!winner) {
+      // No claims to score — emit a degenerate-but-typed row.
+      return {
+        property_key: propertyKey,
+        effective_value: effective,
+        winning_claim: null,
+        strategy,
+        has_conflict: conflict,
+        claims: group,
+        confidence: 0,
+        breakdown: {
+          base: 0,
+          base_source: 'none',
+          decay: 0,
+          corroboration: 0,
+          corroboration_sources: [],
+          conflict: 0,
+          conflict_sources: [],
+          ambiguity: 0,
+          verified: false,
+          verified_by: null,
+          effective: 0,
+          terms: [],
+        },
+        status: 'UNVERIFIED',
+        needs_review: false,
+      };
+    }
+
+    const breakdown = computeFieldConfidence(group, winner, { now, tuning });
+    const needsReview = computeNeedsReview(group, winner);
+    const isStale = !breakdown.verified && weeksSince(winner.ingested_at, now) > tuning.staleWeeks;
+    const status = deriveVerificationStatus({
+      breakdown,
+      hasConflict: conflict,
+      isStale,
+      needsReview,
+    });
+
+    return {
+      property_key: propertyKey,
+      effective_value: effective,
+      winning_claim: winner,
+      strategy,
+      has_conflict: conflict,
+      claims: group,
+      confidence: breakdown.effective,
+      breakdown,
+      status,
+      needs_review: needsReview,
+    };
+  }
 
   async getClaimsForEntity(entityId: string): Promise<EntityClaims | null> {
     const records = await this.neo4j.runQuery(
@@ -151,63 +230,7 @@ export class ClaimService {
     const tuning = DEFAULT_CONFIDENCE_TUNING;
     const properties: ResolvedProperty[] = [];
     for (const [key, group] of grouped) {
-      const strategy = strategyFor(schema, label, key);
-      const { winner, effective } = pickByStrategy(group, strategy, now);
-      const conflict = hasConflict(group);
-
-      if (!winner) {
-        // No claims to score — emit a degenerate-but-typed row.
-        properties.push({
-          property_key: key,
-          effective_value: effective,
-          winning_claim: null,
-          strategy,
-          has_conflict: conflict,
-          claims: group,
-          confidence: 0,
-          breakdown: {
-            base: 0,
-            base_source: 'none',
-            decay: 0,
-            corroboration: 0,
-            corroboration_sources: [],
-            conflict: 0,
-            conflict_sources: [],
-            ambiguity: 0,
-            verified: false,
-            verified_by: null,
-            effective: 0,
-            terms: [],
-          },
-          status: 'UNVERIFIED',
-          needs_review: false,
-        });
-        continue;
-      }
-
-      const breakdown = computeFieldConfidence(group, winner, { now, tuning });
-      const needsReview = computeNeedsReview(group, winner);
-      const isStale =
-        !breakdown.verified && weeksSince(winner.ingested_at, now) > tuning.staleWeeks;
-      const status = deriveVerificationStatus({
-        breakdown,
-        hasConflict: conflict,
-        isStale,
-        needsReview,
-      });
-
-      properties.push({
-        property_key: key,
-        effective_value: effective,
-        winning_claim: winner,
-        strategy,
-        has_conflict: conflict,
-        claims: group,
-        confidence: breakdown.effective,
-        breakdown,
-        status,
-        needs_review: needsReview,
-      });
+      properties.push(this.resolveProperty(group, label, key, now));
     }
 
     // Ownership clarity: GitHub ownership is modeled as CODEOWNER_OF edges, not a

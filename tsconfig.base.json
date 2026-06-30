@@ -14,7 +14,8 @@
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "composite": true
+    "composite": true,
+    "types": ["node"]
   },
   "exclude": ["node_modules", "dist"]
 }
