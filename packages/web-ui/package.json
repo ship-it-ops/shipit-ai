@@ -19,7 +19,7 @@
     "@tanstack/react-query": "^5.100.14",
     "zustand": "^5.0.14",
     "cytoscape": "^3.34.0",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.22.0",
     "@ship-it-ui/ui": "^0.0.20",
     "@ship-it-ui/shipit": "^0.0.21",
     "@ship-it-ui/tokens": "^0.0.9",
