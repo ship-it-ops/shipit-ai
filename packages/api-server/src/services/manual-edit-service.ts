@@ -43,11 +43,7 @@ const MANUAL_RELIABILITY = getSourceReliability('manual').reliability;
  *   instead of property_key/value.
  */
 export type GraphEditKind =
-  | 'manual_set'
-  | 'manual_revert'
-  | 'contradicted'
-  | 'relation_added'
-  | 'relation_removed';
+  'manual_set' | 'manual_revert' | 'contradicted' | 'relation_added' | 'relation_removed';
 
 /** Input rejected before any write (route maps to 400). */
 export class ManualEditValidationError extends Error {

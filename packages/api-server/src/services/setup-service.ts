@@ -25,8 +25,7 @@ export interface SetupStatus {
 }
 
 export type SetupCompleteResult =
-  | { ok: true }
-  | { ok: false; missing: BootGate[]; messages: string[] };
+  { ok: true } | { ok: false; missing: BootGate[]; messages: string[] };
 
 // Deliberately permissive — the goal is catching typos ("mohamed@" or a
 // bare name), not RFC 5322 conformance. The IdP is the real validator.

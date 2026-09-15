@@ -51,13 +51,11 @@ export class ConfigExportService {
   // "Secrets are NOT in this file".
   private scrub(merged: Record<string, unknown>): void {
     const mcp = (merged.backend as Record<string, unknown> | undefined)?.mcp as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (mcp) delete mcp.apiKeySecret;
     const connectors = merged.connectors as Record<string, unknown> | undefined;
     const app = (connectors?.github as Record<string, unknown> | undefined)?.app as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (app) delete app.webhookSecret;
     const instances = connectors?.instances;
     if (Array.isArray(instances)) {

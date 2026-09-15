@@ -381,8 +381,7 @@ export class Neo4jService {
   async getOverview(
     _ctx: RequestContext,
     limitOrOpts:
-      | number
-      | { limit?: number; sourceSystem?: string; sourceConnectorId?: string } = 100,
+      number | { limit?: number; sourceSystem?: string; sourceConnectorId?: string } = 100,
   ): Promise<NeighborhoodResult> {
     // Back-compat: callers passing a bare number still work.
     const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;

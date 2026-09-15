@@ -1563,8 +1563,7 @@ export class ConfigExportService {
   private scrub(merged: Record<string, unknown>): void {
     const connectors = merged.connectors as Record<string, unknown> | undefined;
     const app = (connectors?.github as Record<string, unknown> | undefined)?.app as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (app) delete app.webhookSecret;
     const instances = connectors?.instances;
     if (Array.isArray(instances)) {
