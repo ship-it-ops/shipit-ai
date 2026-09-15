@@ -33,7 +33,7 @@
     "@shipit-ai/mcp-server": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
     "bullmq": "^5.79.1",
-    "fastify": "^5.8.5",
+    "fastify": "^5.12.4",
     "ioredis": "^5.11.1",
     "neo4j-driver": "^6.1.0",
     "openid-client": "^6.8.5",
