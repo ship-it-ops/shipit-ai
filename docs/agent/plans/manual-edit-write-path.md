@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-24
-updated: 2026-06-24
+updated: 2026-08-21
 author: claude-session-2026-06-24
 tags: [claims, relations, manual-edits, webapp, rbac, audit, core-writer, neo4j]
 importance: core
@@ -221,6 +221,11 @@ principal-keyed rate limiting, capability-based RBAC with token default-deny, an
 the v1a/v1b slice.
 
 ## Status
+
+**COMPLETE — everything on main.** PR #88 (release-next → main) merged
+2026-06-30; `release-next` deleted on the remote. v1a, v1b, and all three
+follow-ups (audit retention, reconciliation claim un-migration, relation
+cardinality) verified present on main 2026-08-21.
 
 **v1a (manual claims) — SHIPPED** (committed `4ded3fe`, pushed to
 `origin/release-next`, 2026-06-24).

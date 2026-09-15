@@ -32,19 +32,19 @@
     "*": "secretlint --maskSecrets"
   },
   "devDependencies": {
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
-    "@types/node": "^26.0.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
+    "@types/node": "^26.1.2",
     "husky": "^9.1.7",
     "ioredis": "^5.11.1",
-    "lint-staged": "^17.0.8",
+    "lint-staged": "^17.3.0",
     "neo4j-driver": "^6.1.0",
-    "prettier": "^3.8.4",
-    "prettier-plugin-tailwindcss": "^0.8.0",
-    "secretlint": "^13.0.2",
-    "tsx": "^4.22.4",
-    "turbo": "^2.9.18",
+    "prettier": "^3.9.6",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "secretlint": "^13.0.4",
+    "tsx": "^4.23.10",
+    "turbo": "^2.10.8",
     "typescript": "^6.0.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22.0.0"
@@ -62,27 +62,31 @@
       }
     },
     "overrides": {
-      "hono": "^4.12.25",
-      "@hono/node-server": "^1.19.13",
+      "hono": "^4.13.5",
+      "@hono/node-server": "^1.19.15",
       "express-rate-limit": "^8.2.2",
-      "fast-uri": "^3.1.2",
+      "fast-uri@3": "^3.1.6",
       "vite": "7.3.5",
       "picomatch": "^4.0.4",
       "flatted": "^3.4.2",
       "path-to-regexp": "^8.4.0",
-      "brace-expansion@1": "^1.1.13",
-      "brace-expansion@5": "^5.0.6",
-      "qs": "^6.15.2",
-      "ip-address": "^10.1.1",
-      "postcss": "^8.5.10",
+      "brace-expansion@1": "^1.1.18",
+      "brace-expansion@5": "^5.0.9",
+      "qs": "^6.16.0",
+      "ip-address": "^10.3.1",
+      "postcss": "^8.5.26",
       "yaml": "^2.8.3",
       "ws": "^8.20.1",
       "uuid": "^11.1.1",
       "esbuild": "^0.28.1",
-      "undici": "^7.28.0",
+      "undici": "^7.29.0",
       "form-data": "^4.0.6",
-      "js-yaml": "^4.2.0",
-      "@babel/core": "^7.29.6"
+      "js-yaml": "^4.3.2",
+      "@babel/core": "^7.29.6",
+      "brace-expansion@2": "^2.1.4",
+      "protobufjs": "^7.6.5",
+      "find-my-way": "^9.7.0",
+      "body-parser": "^2.3.0"
     }
   }
 }

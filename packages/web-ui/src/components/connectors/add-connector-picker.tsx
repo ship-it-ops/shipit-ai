@@ -15,12 +15,7 @@ import { IconGlyph, type GlyphName } from '@ship-it-ui/icons';
 import { cn } from '@/lib/utils';
 
 export type ConnectorTypeId =
-  | 'github'
-  | 'kubernetes'
-  | 'datadog'
-  | 'backstage'
-  | 'jira'
-  | 'identity';
+  'github' | 'kubernetes' | 'datadog' | 'backstage' | 'jira' | 'identity';
 
 interface ConnectorType {
   id: ConnectorTypeId;

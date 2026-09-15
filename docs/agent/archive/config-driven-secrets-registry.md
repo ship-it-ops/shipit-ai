@@ -1,8 +1,8 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-08-13
 author: claude-session-2026-07-17
 branch: rework-secrets-plus-feedback
 agent: claude-session-2026-07-17

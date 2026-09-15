@@ -54,9 +54,7 @@ Every tool returns:
     "suggested_follow_up": ["Try entity_detail for node X"],
     "next_cursor": null,
   },
-  "data": {
-    /* tool-specific result */
-  },
+  "data": {/* tool-specific result */},
 }
 ```
 

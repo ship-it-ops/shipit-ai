@@ -725,11 +725,7 @@ export type ResolutionStrategy =
   | 'MERGE_SET';
 
 export type VerificationStatus =
-  | 'UNVERIFIED'
-  | 'CORROBORATED'
-  | 'USER_VERIFIED'
-  | 'DISPUTED'
-  | 'STALE';
+  'UNVERIFIED' | 'CORROBORATED' | 'USER_VERIFIED' | 'DISPUTED' | 'STALE';
 
 export interface BreakdownTerm {
   label: string;
@@ -1642,8 +1638,7 @@ export async function submitFeedback(input: FeedbackInput): Promise<FeedbackResu
     body: JSON.stringify(input),
   });
   const body = (await res.json().catch(() => ({}))) as
-    | FeedbackResult
-    | { error?: { message?: string } };
+    FeedbackResult | { error?: { message?: string } };
   if (!res.ok) {
     const message =
       (body as { error?: { message?: string } }).error?.message ??

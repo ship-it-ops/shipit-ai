@@ -78,8 +78,7 @@ export async function postSetupOAuth(clientId: string, clientSecret: string): Pr
 }
 
 export type SetupCompleteResult =
-  | { ok: true }
-  | { ok: false; missing: string[]; messages: string[] };
+  { ok: true } | { ok: false; missing: string[]; messages: string[] };
 
 export async function postSetupComplete(): Promise<SetupCompleteResult> {
   const res = await fetch(`${clientConfig.api.url}/api/setup/complete`, {

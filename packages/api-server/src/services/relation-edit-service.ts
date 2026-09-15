@@ -102,10 +102,7 @@ function assertValidProperties(properties: Record<string, unknown>): void {
 /** Input rejected before any write (route maps to 400). */
 export class RelationEditValidationError extends Error {
   readonly code:
-    | 'INVALID_RELATION_TYPE'
-    | 'SELF_LOOP'
-    | 'ENDPOINT_LABEL_MISMATCH'
-    | 'INVALID_PROPERTIES';
+    'INVALID_RELATION_TYPE' | 'SELF_LOOP' | 'ENDPOINT_LABEL_MISMATCH' | 'INVALID_PROPERTIES';
   constructor(message: string, code: RelationEditValidationError['code']) {
     super(message);
     this.name = 'RelationEditValidationError';

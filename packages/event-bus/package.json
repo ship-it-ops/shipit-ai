@@ -21,13 +21,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@shipit-ai/shared": "workspace:*",
     "bullmq": "^5.79.1",
-    "ioredis": "^5.11.1",
-    "@shipit-ai/shared": "workspace:*"
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   }
 }

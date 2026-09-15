@@ -1,8 +1,8 @@
 ---
 type: open-question
-status: active
+status: answered
 created: 2026-06-04
-updated: 2026-06-23
+updated: 2026-08-21
 author: claude-session-2026-06-04-deployment
 opened: 2026-06-04
 answer-source: maintainer
@@ -81,6 +81,9 @@ RBAC) SHIPPED (commit `4ded3fe`, pushed to `origin/release-next`); v1b (manual
 add/delete relations) implemented + verified + reviewed, uncommitted on
 `release-next`. With Gap 2 already fixed (#74), this question is effectively
 resolved — flip to `answered` once v1b is committed.
+
+**2026-08-21 — ANSWERED.** v1b + follow-ups merged to main via PR #88
+(2026-06-30). Both gaps closed; nothing remains.
 
 ## Tried
 

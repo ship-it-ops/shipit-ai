@@ -22,13 +22,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "neo4j-driver": "^6.1.0",
+    "@shipit-ai/event-bus": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
-    "@shipit-ai/event-bus": "workspace:*"
+    "neo4j-driver": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   }
 }

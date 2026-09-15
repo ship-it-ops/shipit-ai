@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-07-17 | Total notes: 83
+Last updated: 2026-09-14 | Total notes: 82
 
 ## Investigations
 
@@ -29,8 +29,6 @@ Last updated: 2026-07-17 | Total notes: 83
 
 <!-- always-read at session start -->
 
-- [config-driven-secrets-registry](status/config-driven-secrets-registry.md) | status | active | core | 2026-07-19 | secrets-registry rework: all 12 tasks built; PR #96 open
-
 ## Decisions
 
 - [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
@@ -43,7 +41,7 @@ Last updated: 2026-07-17 | Total notes: 83
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
-- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-06-07 | pnpm.overrides + direct bumps; 2026-06-07 round aggregated 8 of 14 PRs
+- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-09-14 | pnpm.overrides + direct bumps; 6 rounds; scoped fast-uri@3; eslint-10 + plugin-react-6 still blocked
 - [fastify-v5-migration](decisions/fastify-v5-migration.md) | decision | active | core | 2026-05-26 | bump fastify@^5.8.5 + 3 @fastify/\* plugins; closes 6 alerts
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 - [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
@@ -86,7 +84,7 @@ Last updated: 2026-07-17 | Total notes: 83
 - [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
-- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | active | core | 2026-06-25 | v1a+v1b (claims+relations) SHIPPED (4ded3fe/f80a7aa, pushed); 3 follow-ups DONE+reviewed(COMMENT), uncommitted on release-next: audit retention, splitMerge un-migration, relation cardinality
+- [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | completed | core | 2026-08-21 | COMPLETE: v1a+v1b + all 3 follow-ups merged to main (PR #88)
 
 ## Open Questions
 
@@ -95,7 +93,7 @@ Last updated: 2026-07-17 | Total notes: 83
 - [codeowner-edge-out-of-order-ordering](open-questions/codeowner-edge-out-of-order-ordering.md) | open-question | active | standard | 2026-06-19 | edges (CODEOWNER_OF etc.) have no ordering guard; mergeEdge is last-writer-wins — protect or accept?
 - [tenant-to-source-org-mapping](open-questions/tenant-to-source-org-mapping.md) | open-question | answered | standard | 2026-06-25 | ANSWERED — no tenant read-isolation; authenticated sees all orgs; B6 filter not wanted; connector=org view suffices
 - [replay-stream-wire-or-cut](open-questions/replay-stream-wire-or-cut.md) | open-question | answered | standard | 2026-06-22 | RESOLVED — CUT: shipit-event-log gated off by default (+MAXLEN if on); was the ~825MB OOM key
-- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | active | standard | 2026-06-23 | Gap2 source-priority FIXED (#74 shared registry); Gap1 partial — manual-override route, add-relation route, claim-write RBAC still open
+- [manual-edit-write-path](open-questions/manual-edit-write-path.md) | open-question | answered | standard | 2026-08-21 | ANSWERED — both gaps closed; v1a+v1b+follow-ups merged (PR #88)
 - [cookie-domain-topology](open-questions/cookie-domain-topology.md) | open-question | answered | standard | 2026-06-04 | RESOLVED by single-origin Ingress on GKE; Vercel split dropped
 - [allow-list-secret-not-app-writable](open-questions/allow-list-secret-not-app-writable.md) | open-question | answered | standard | 2026-06-18 | RESOLVED — infra grant made; allow-list write shipped in Portal Settings
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream

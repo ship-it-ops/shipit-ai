@@ -2,11 +2,7 @@ import type { PropertyClaim, ResolutionStrategy } from './claims.js';
 
 /** Per-field verification lifecycle, derived from claims + timestamps (not stored). */
 export type VerificationStatus =
-  | 'UNVERIFIED'
-  | 'CORROBORATED'
-  | 'USER_VERIFIED'
-  | 'DISPUTED'
-  | 'STALE';
+  'UNVERIFIED' | 'CORROBORATED' | 'USER_VERIFIED' | 'DISPUTED' | 'STALE';
 
 /** One named, signed contribution to a field's confidence, for explainable UI. */
 export interface BreakdownTerm {
