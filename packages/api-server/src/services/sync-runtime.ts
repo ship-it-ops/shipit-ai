@@ -66,6 +66,9 @@ export interface WireSyncRuntimeOptions {
   // audit-retention scheduler is wired. Kept as the service (not raw config) so
   // wireSyncRuntime stays decoupled from Neo4jService construction.
   auditRetention?: AuditRetentionService;
+  keyDir?: string;
+  lookupRepositoryNames?: (org: string) => Promise<string[]>;
+  lookupTeamSlugs?: (org: string) => Promise<string[]>;
   factories?: SyncRuntimeFactories;
 }
 
@@ -101,7 +104,16 @@ export function wireSyncRuntime(opts: WireSyncRuntimeOptions): SyncRuntime {
   let auditRetention: AuditRetentionScheduler | null = null;
   try {
     eventBus = createEventBus(redisUrl);
-    scheduler = createScheduler({ redisUrl, registry, eventBus, globalApp, concurrency });
+    scheduler = createScheduler({
+      redisUrl,
+      registry,
+      eventBus,
+      globalApp,
+      concurrency,
+      keyDir: opts.keyDir,
+      lookupRepositoryNames: opts.lookupRepositoryNames,
+      lookupTeamSlugs: opts.lookupTeamSlugs,
+    });
     webhookRefetch = createWebhookRefetch({ redisUrl, registry, eventBus, globalApp, concurrency });
     // Only stand up the audit-retention scheduler when retention is enabled
     // (auditRetentionDays > 0). A disabled deployment never constructs a queue

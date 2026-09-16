@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseDocument } from 'yaml';
-import type { ConnectorInstanceConfig, GitHubConnectorConfig, LastRun } from '@shipit-ai/shared';
+import type {
+  ConnectorInstanceConfig,
+  GitHubConnectorConfig,
+  KubernetesConnectorConfig,
+  LastRun,
+} from '@shipit-ai/shared';
 import { connectorInstanceSchema } from '@shipit-ai/shared';
 import { InMemoryConnectorRunStore, type ConnectorRunStore } from './connector-run-store.js';
 import type { ConnectorDurableStore } from './connector-app-store.js';
@@ -42,10 +47,10 @@ export interface SyncRuntimeStatus {
 // registry stay test-friendly (pass a fake runner) and lets the scheduler
 // own all queue lifecycle concerns.
 export interface ConnectorRunner {
-  start(connector: GitHubConnectorConfig): Promise<void>;
+  start(connector: ConnectorInstanceConfig): Promise<void>;
   stop(connectorId: string): Promise<void>;
   triggerSync(
-    connector: GitHubConnectorConfig,
+    connector: ConnectorInstanceConfig,
     mode: 'full' | 'incremental',
   ): Promise<SyncRuntimeStatus>;
   getStatus(connectorId: string): SyncRuntimeStatus;
@@ -58,14 +63,14 @@ export interface ConnectorRunner {
 class NoopRunner implements ConnectorRunner {
   private statuses = new Map<string, SyncRuntimeStatus>();
 
-  async start(connector: GitHubConnectorConfig): Promise<void> {
+  async start(connector: ConnectorInstanceConfig): Promise<void> {
     this.statuses.set(connector.id, { connectorId: connector.id, state: 'idle' });
   }
   async stop(connectorId: string): Promise<void> {
     this.statuses.delete(connectorId);
   }
   async triggerSync(
-    connector: GitHubConnectorConfig,
+    connector: ConnectorInstanceConfig,
     _mode: 'full' | 'incremental',
   ): Promise<SyncRuntimeStatus> {
     const status: SyncRuntimeStatus = {
@@ -110,28 +115,44 @@ function sha256(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
-interface CreateConnectorInput {
-  id: string;
-  type: 'github';
-  name: string;
-  enabled?: boolean;
-  installationId: string;
-  org: string;
-  schedule?: string;
-  scope?: GitHubConnectorConfig['scope'];
-  entities?: GitHubConnectorConfig['entities'];
-  // Optional per-connector GitHub App override; absent → inherits global.
-  app?: GitHubConnectorConfig['app'];
-}
+export type CreateConnectorInput =
+  | {
+      type: 'github';
+      id: string;
+      name: string;
+      enabled?: boolean;
+      installationId: string;
+      org: string;
+      schedule?: string;
+      scope?: GitHubConnectorConfig['scope'];
+      entities?: GitHubConnectorConfig['entities'];
+      // Optional per-connector GitHub App override; absent → inherits global.
+      app?: GitHubConnectorConfig['app'];
+    }
+  | {
+      type: 'kubernetes';
+      id: string;
+      name: string;
+      enabled?: boolean;
+      schedule?: string;
+      cluster: KubernetesConnectorConfig['cluster'];
+      access: KubernetesConnectorConfig['access'];
+      scope?: KubernetesConnectorConfig['scope'];
+      mapping?: KubernetesConnectorConfig['mapping'];
+    };
 
-interface UpdateConnectorInput {
+export interface UpdateConnectorInput {
   enabled?: boolean;
   name?: string;
   schedule?: string;
-  scope?: GitHubConnectorConfig['scope'];
-  entities?: GitHubConnectorConfig['entities'];
-  // Explicit `null` clears any existing override so the connector falls
-  // back to the global App. `undefined` leaves the existing value alone.
+  // Per-type blocks; the registry re-validates the merged object with Zod, so a
+  // block that does not belong to the instance's type is stripped, not applied.
+  scope?: unknown;
+  entities?: unknown;
+  cluster?: unknown;
+  access?: unknown;
+  mapping?: unknown;
+  // Explicit `null` clears an existing GitHub App override; `undefined` leaves it alone.
   app?: GitHubConnectorConfig['app'] | null;
 }
 
@@ -195,7 +216,7 @@ export class ConnectorRegistry {
       // scheduler stays attached and the next poll tick / a Redis recovery picks
       // the connector back up.
       try {
-        await this.runner.start(connector as GitHubConnectorConfig);
+        await this.runner.start(connector);
       } catch (err) {
         console.warn(
           `Failed to schedule connector "${connector.id}" at boot (syncs degraded for it, API stays up): ${(err as Error).message}`,
@@ -228,44 +249,39 @@ export class ConnectorRegistry {
         statusCode: 409,
       });
     }
-    // Run the input through Zod with the same schema the loader uses so we
-    // can't drift between bootup validation and runtime creation. Order
-    // matters: spread `input` last only after providing defaults, otherwise
-    // `type` ends up duplicated by TypeScript.
-    const parsed = parseConnectorInstance({
-      enabled: input.enabled ?? true,
-      schedule: input.schedule ?? '*/30 * * * *',
-      scope: input.scope ?? {
-        repos: { include: ['**'], exclude: [] },
-        teams: { include: ['**'], exclude: [] },
-        cappedAt: 100,
-        cappedAcknowledged: false,
-      },
-      entities: input.entities ?? {
-        repository: true,
-        team: true,
-        pipeline: true,
-        codeowners: true,
-        environment: false,
-        deployment: false,
-        branchProtection: false,
-        workflowRun: false,
-      },
-      lastRuns: [],
+    const base = {
       id: input.id,
-      type: 'github' as const,
       name: input.name,
-      installationId: input.installationId,
-      org: input.org,
-      // `app` is intentionally optional in the schema; only include it
-      // when the caller provided one so YAML doesn't accumulate empty
-      // override blocks.
-      ...(input.app ? { app: input.app } : {}),
-    });
+      enabled: input.enabled ?? true,
+      lastRuns: [] as LastRun[],
+      ...(input.schedule !== undefined ? { schedule: input.schedule } : {}),
+    };
+    // Zod fills every omitted block with the same defaults the loader uses, so
+    // runtime creation and boot-time validation cannot drift.
+    const candidate =
+      input.type === 'github'
+        ? {
+            ...base,
+            type: 'github' as const,
+            installationId: input.installationId,
+            org: input.org,
+            ...(input.scope !== undefined ? { scope: input.scope } : {}),
+            ...(input.entities !== undefined ? { entities: input.entities } : {}),
+            ...(input.app ? { app: input.app } : {}),
+          }
+        : {
+            ...base,
+            type: 'kubernetes' as const,
+            cluster: input.cluster,
+            access: input.access,
+            ...(input.scope !== undefined ? { scope: input.scope } : {}),
+            ...(input.mapping !== undefined ? { mapping: input.mapping } : {}),
+          };
+    const parsed = parseConnectorInstance(candidate);
 
     this.connectors.set(parsed.id, parsed);
     await this.persist();
-    if (parsed.enabled) await this.runner.start(parsed as GitHubConnectorConfig);
+    if (parsed.enabled) await this.runner.start(parsed);
     return parsed;
   }
 
@@ -285,26 +301,26 @@ export class ConnectorRegistry {
 
     // Merge: explicit undefined means "leave alone", null is treated as a
     // legitimate value. The wizard sends a complete object for scope/entities
-    // so partial merges happen only at the top level. `app: null` clears
-    // an existing override; `app: {...}` replaces it; `app: undefined`
-    // leaves it alone.
-    const mergedApp =
-      input.app === null
-        ? undefined
-        : input.app !== undefined
-          ? input.app
-          : existing.type === 'github'
-            ? existing.app
-            : undefined;
-    const next = parseConnectorInstance({
-      ...existing,
-      ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.schedule !== undefined ? { schedule: input.schedule } : {}),
-      ...(input.scope !== undefined ? { scope: input.scope } : {}),
-      ...(input.entities !== undefined ? { entities: input.entities } : {}),
-      app: mergedApp,
-    });
+    // so partial merges happen only at the top level.
+    const patch: Record<string, unknown> = {};
+    for (const key of [
+      'enabled',
+      'name',
+      'schedule',
+      'scope',
+      'entities',
+      'cluster',
+      'access',
+      'mapping',
+    ] as const) {
+      if (input[key] !== undefined) patch[key] = input[key];
+    }
+    if (existing.type === 'github') {
+      // `app: null` clears an existing override; `app: {...}` replaces it; `app: undefined` leaves it alone.
+      patch.app =
+        input.app === null ? undefined : input.app !== undefined ? input.app : existing.app;
+    }
+    const next = parseConnectorInstance({ ...existing, ...patch });
 
     this.connectors.set(id, next);
     await this.persist();
@@ -314,7 +330,7 @@ export class ConnectorRegistry {
     // changed; the runner is expected to no-op idempotently when nothing of
     // operational consequence changed.
     await this.runner.stop(id);
-    if (next.enabled) await this.runner.start(next as GitHubConnectorConfig);
+    if (next.enabled) await this.runner.start(next);
     return next;
   }
 
@@ -335,7 +351,7 @@ export class ConnectorRegistry {
 
   async triggerSync(id: string, mode: 'full' | 'incremental' = 'full'): Promise<SyncRuntimeStatus> {
     const connector = this.get(id);
-    return this.runner.triggerSync(connector as GitHubConnectorConfig, mode);
+    return this.runner.triggerSync(connector, mode);
   }
 
   getStatus(id: string): SyncRuntimeStatus {

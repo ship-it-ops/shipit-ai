@@ -304,3 +304,74 @@ describe('ConnectorRegistry — startRunner boot resilience', () => {
     expect(warn).toHaveBeenCalled();
   });
 });
+
+describe('ConnectorRegistry — kubernetes instances', () => {
+  let tmpDir: string;
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-registry-k8s-'));
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates a kubernetes instance with defaults, persists it and starts the runner with it', async () => {
+    const started: ConnectorInstanceConfig[] = [];
+    const runner: ConnectorRunner = {
+      start: async (c) => {
+        started.push(c);
+      },
+      stop: async () => undefined,
+      triggerSync: async (c) => ({ connectorId: c.id, state: 'idle' }),
+      getStatus: (id) => ({ connectorId: id, state: 'idle' }),
+    };
+    const registry = new ConnectorRegistry({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      initial: [],
+      runner,
+    });
+    const created = await registry.create({
+      type: 'kubernetes',
+      id: 'k8s-demo',
+      name: 'Demo',
+      cluster: { name: 'shipit-demo' },
+      access: { mode: 'in-cluster' },
+    });
+    expect(created.type).toBe('kubernetes');
+    if (created.type !== 'kubernetes') throw new Error('unreachable');
+    expect(created.schedule).toBe('*/5 * * * *');
+    expect(created.scope.kinds).toEqual(['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob']);
+    expect(started.map((c) => c.id)).toEqual(['k8s-demo']);
+    const yaml = parseYaml(readFileSync(join(tmpDir, 'shipit.config.local.yaml'), 'utf-8')) as {
+      connectors: { instances: Array<{ id: string; type: string }> };
+    };
+    expect(yaml.connectors.instances).toEqual([
+      expect.objectContaining({ id: 'k8s-demo', type: 'kubernetes' }),
+    ]);
+  });
+
+  it('update merges the mapping block and strips blocks of the other type', async () => {
+    const registry = new ConnectorRegistry({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      initial: [],
+    });
+    await registry.create({
+      type: 'kubernetes',
+      id: 'k8s-demo',
+      name: 'Demo',
+      cluster: { name: 'shipit-demo' },
+      access: { mode: 'in-cluster' },
+    });
+    const updated = await registry.update(
+      'k8s-demo',
+      { mapping: { repoLink: { githubOrg: 'Ship-It-Ops' } }, entities: { repository: false } },
+      undefined,
+    );
+    if (updated.type !== 'kubernetes') throw new Error('unreachable');
+    expect(updated.mapping.repoLink).toEqual({
+      annotation: 'shipit.ai/github-repo',
+      githubOrg: 'Ship-It-Ops',
+      nameMatch: true,
+    });
+    expect(updated).not.toHaveProperty('entities');
+  });
+});
