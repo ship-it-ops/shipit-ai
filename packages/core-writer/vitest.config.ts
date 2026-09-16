@@ -1,16 +1,42 @@
 import { defineConfig } from 'vitest/config';
+import { resolve } from 'node:path';
 
-// Explicit (default-settings) project config. Two reasons it must exist:
-//  1. Vitest 4 discovers configs by walking up from the cwd; without a local
-//     config a per-package `vitest run` would climb to the root
-//     `vitest.config.ts` and resolve its `test.projects` relative to this
-//     package. A local config stops that walk.
-//  2. Vitest 4 dropped `dist` from its default `exclude`, so the compiled
-//     `dist/**/*.test.js` copies would be collected alongside the sources.
-//     Scoping `include` to `src` keeps the run to TypeScript sources only.
+// Resolve @shipit-ai/* workspace packages to their TypeScript SOURCE rather than
+// their built `dist/`. The CI `integration` job runs `vitest run .integration`
+// straight after `pnpm install` with NO build step, so workspace `dist/`
+// directories don't exist there. Under vite 7.3.5 a runtime import of an unbuilt
+// workspace package hard-fails with "Failed to resolve entry for package"
+// (older vite fell back to source); aliasing to src restores that and makes the
+// suite independent of build state. The unit `test` job goes through `turbo`
+// (which builds deps first), so it never hit this. vitest transpiles the TS
+// source on the fly. See packages/api-server/vitest.config.ts and
+// packages/event-bus/vitest.config.ts for the same fix.
+//
+// `/schema` is listed before the bare `@shipit-ai/shared` so vite's prefix match
+// doesn't rewrite the subpath against the package root. Aliases for packages not
+// in a given test's graph are simply unused.
+const r = (...p: string[]) => resolve(__dirname, '..', ...p);
+
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@shipit-ai/shared/schema': r('shared/src/schema/index.ts'),
+      '@shipit-ai/shared': r('shared/src/index.ts'),
+      '@shipit-ai/event-bus': r('event-bus/src/index.ts'),
+      '@shipit-ai/connector-sdk': r('connector-sdk/src/index.ts'),
+      '@shipit-ai/connector-github': r('connectors/github/src/index.ts'),
+      '@shipit-ai/connector-kubernetes': r('connectors/kubernetes/src/index.ts'),
+    },
+  },
   test: {
     name: 'core-writer',
+    // Vitest 4 discovers configs by walking up from the cwd; without a local
+    // config a per-package `vitest run` would climb to the root
+    // `vitest.config.ts` and resolve its `test.projects` relative to this
+    // package. A local config stops that walk.
+    //
+    // Vitest 4 no longer excludes `dist` by default; scope to TS sources so the
+    // compiled dist/**/*.test.js copies aren't collected after a build.
     include: ['src/**/*.test.ts'],
   },
 });

@@ -84,7 +84,9 @@ function merge(
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
 
-// Mirrors the MCP generator's BOTH direction over dependency edges.
+// Mirrors packages/mcp-server/src/cypher/generator.ts (generateBlastRadiusCypher,
+// BOTH direction, DEPENDENCY_EDGE_PATTERN) — must stay in sync with it by hand;
+// there is no shared constant between core-writer and mcp-server to import.
 const BLAST = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
   WHERE n._absent_since IS NULL RETURN DISTINCT n.id AS id`;
 const BLAST_INCLUDING_ABSENT = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
@@ -93,6 +95,12 @@ const BLAST_INCLUDING_ABSENT = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|
 describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', () => {
   let client: Neo4jClient;
   let writer: CoreWriter;
+  let connected = false;
+  // Captured at the end of run 1; run 2 asserts the graph is byte-for-byte
+  // unchanged by its own (fully-duplicate) processBatch call, before the sweep
+  // marks anything absent.
+  let nodeCountAfterRun1 = 0;
+  let edgeCountAfterRun1 = 0;
 
   const wipe = () =>
     client.executeWrite(async (tx) => tx.run('MATCH (n) DETACH DELETE n'), DATABASE);
@@ -100,10 +108,15 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
     client.executeRead(async (tx) => (await tx.run(cypher, params)).records, DATABASE);
   const ids = async (cypher: string, params: Record<string, unknown> = {}) =>
     (await rows(cypher, params)).map((r) => String(r.get('id'))).sort();
+  const count = async (cypher: string, params: Record<string, unknown> = {}) => {
+    const c = (await rows(cypher, params))[0].get('c') as { toNumber?: () => number } | number;
+    return typeof c === 'object' && c.toNumber ? c.toNumber() : Number(c);
+  };
 
   beforeAll(async () => {
     client = new Neo4jClient();
     await client.connect({ uri: URI!, username: USER, password: PASSWORD, database: DATABASE });
+    connected = true;
     writer = new CoreWriter(
       new Neo4jNodeWriter(client, DATABASE),
       new Neo4jLinkingKeyIndex(client, DATABASE),
@@ -114,7 +127,9 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
   });
 
   afterAll(async () => {
-    await wipe();
+    // If beforeAll's connect() threw, `driver` is still null — wiping would
+    // mask the real connection error behind "Neo4j client not connected".
+    if (connected) await wipe();
     await client?.close();
   });
 
@@ -167,8 +182,26 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
 
     // Success criterion 3: blast radius from the repository reaches every workload
     expect(await ids(BLAST, { id: REPO_ID })).toEqual(ALL_DEPLOYMENTS);
+
+    // Structural edges nothing above checks: web-ui RUNS_IN its Namespace, that
+    // Namespace is PART_OF the Cluster, and web-ui RUNS_IN_ENV an Environment.
+    // Their re-emission in run 2 (for the survivors, not web-ui) is exactly what
+    // keeps run 2's node/edge counts stable below — load-bearing for that check.
+    expect(
+      await count(
+        `MATCH (d:Deployment {id: $id})-[:RUNS_IN]->(:Namespace)-[:PART_OF]->(:Cluster)
+         MATCH (d)-[:RUNS_IN_ENV]->(:Environment)
+         RETURN count(d) AS c`,
+        { id: WEB_UI_ID },
+      ),
+    ).toBe(1);
+
+    nodeCountAfterRun1 = await count('MATCH (n) RETURN count(n) AS c');
+    edgeCountAfterRun1 = await count('MATCH ()-[r]->() RETURN count(r) AS c');
   });
 
+  // Depends on run 1's graph (the wipe is beforeAll, not beforeEach) — running
+  // this file with `-t 'run 2'` in isolation is expected to fail.
   it('run 2: a vanished workload is marked absent and hidden from the traversal', async () => {
     const T2 = '2026-09-16T12:10:00.000Z';
     const ctx = contextAt(T2);
@@ -180,8 +213,16 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
     );
     const rerun = await writer.processBatch(envelopes(k8s, K8S_CONNECTOR));
     expect(rerun.errors).toEqual([]);
-    // Unchanged content dedups; the touch path still refreshes `_last_synced`.
-    expect(rerun.duplicatesSkipped).toBeGreaterThan(0);
+    // Unchanged content is deduped — nothing is (re)written; only `_last_synced`
+    // is touched. (`duplicatesSkipped > 0` would also pass if cross-run dedup
+    // were completely broken — each envelope re-walks the whole payload, so a
+    // single run already produces dozens of within-run duplicates on its own.)
+    expect(rerun.nodesWritten).toBe(0);
+    expect(rerun.freshnessSkipped).toBe(0);
+    // Graph-level idempotency: the vanished web-ui nodes are still present at
+    // this point (only the sweep below marks them absent), so this must be exact.
+    expect(await count('MATCH (n) RETURN count(n) AS c')).toBe(nodeCountAfterRun1);
+    expect(await count('MATCH ()-[r]->() RETURN count(r) AS c')).toBe(edgeCountAfterRun1);
 
     const sweep = await writer.processBatch([
       controlEnvelope(K8S_CONNECTOR, '2026-09-16T12:05:00.000Z'),

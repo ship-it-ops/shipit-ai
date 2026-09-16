@@ -25,7 +25,7 @@ export const WEB_UI_ID = 'shipit://deployment/default/shipit-demo/shipit/deploym
 export const REDIS_ID = 'shipit://deployment/default/shipit-demo/shipit/statefulset/redis';
 export const WEB_UI_ARTIFACT_ID =
   'shipit://build-artifact/default/us-central1-docker.pkg.dev/ship-it-ai-portal/shipit-ai/web-ui@sha-97189de';
-export const ALL_DEPLOYMENTS = [API_SERVER_ID, REDIS_ID, WEB_UI_ID].sort();
+export const ALL_DEPLOYMENTS = Object.freeze([API_SERVER_ID, REDIS_ID, WEB_UI_ID].sort());
 
 export const referenceRepo: GitHubRepo = {
   name: 'ShipIt-AI',
