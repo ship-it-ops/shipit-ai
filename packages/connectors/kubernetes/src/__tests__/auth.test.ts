@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -157,11 +157,38 @@ describe('validateKubeconfigText', () => {
     });
   });
 
+  it('rejects token-file behind a double-quoted YAML-escaped key', () => {
+    const escapedKey = tokenKubeconfig().replace('token: abc123', '"token-file": /etc/hosts');
+    expect(validateKubeconfigText(escapedKey)).toMatchObject({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+    });
+  });
+
   it('never echoes kubeconfig contents (e.g. a bearer token) into a parse-error message', () => {
     const malformed = `not valid yaml: [\ntoken: SUPER-SECRET-TOKEN-abc123`;
     const result = validateKubeconfigText(malformed);
     expect(result).toMatchObject({ ok: false, code: 'KUBECONFIG_INVALID' });
-    expect((result as { message: string }).message).not.toContain('SUPER-SECRET');
+    const message = (result as { message: string }).message;
+    expect(message).not.toContain('SUPER-SECRET');
+    expect(message).not.toContain('not valid yaml: [');
+  });
+
+  it('never lets the yaml parser print a process warning containing kubeconfig contents (e.g. an unresolved tag on a token)', () => {
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    try {
+      const tagged = tokenKubeconfig().replace(
+        'token: abc123',
+        'token: !mytag SUPER-SECRET-TOKEN-abc123',
+      );
+      // Whether this kubeconfig ends up ok or rejected is irrelevant here —
+      // only that parsing it never reaches process.emitWarning, which would
+      // print the offending source line (the token) straight to stderr.
+      validateKubeconfigText(tagged);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

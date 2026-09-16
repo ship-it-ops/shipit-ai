@@ -156,7 +156,10 @@ const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v 
 export function validateKubeconfigText(text: string, context?: string): KubeconfigValidation {
   let parsed: unknown;
   try {
-    parsed = parseYaml(text);
+    // logLevel 'silent': the yaml package's default ('warn') calls
+    // process.emitWarning with a source snippet for e.g. an unresolved tag —
+    // which would print a bearer token straight to stderr on a "valid" parse.
+    parsed = parseYaml(text, { logLevel: 'silent' });
   } catch (err) {
     const e = err as { name?: string; linePos?: Array<{ line?: number }> };
     const line = e.linePos?.[0]?.line;
