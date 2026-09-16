@@ -287,6 +287,11 @@ export type KubernetesMappingConfig = KubernetesConnectorConfig['mapping'];
 export type KubernetesScopeConfig = KubernetesConnectorConfig['scope'];
 export type KubernetesAccessConfig = KubernetesConnectorConfig['access'];
 
+/** Fully-defaulted mapping block — what an instance gets when `mapping` is omitted. */
+export const KUBERNETES_DEFAULT_MAPPING: KubernetesMappingConfig = kubernetesMappingSchema.parse(
+  {},
+);
+
 // Discriminated union — add new connector kinds here as they're built. The
 // `type` literal must be unique per kind so Zod can pick the right schema.
 // Exported so the registry can validate single instances without having to

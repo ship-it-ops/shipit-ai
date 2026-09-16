@@ -153,6 +153,7 @@ export {
   LOGICAL_SECRETS,
   secretsRegistrySchema,
   KUBERNETES_WORKLOAD_KINDS,
+  KUBERNETES_DEFAULT_MAPPING,
 } from './config/index.js';
 export type {
   Config,
