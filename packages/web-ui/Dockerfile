@@ -21,6 +21,16 @@ ENV SHIPIT_API_URL=${SHIPIT_API_URL}
 RUN pnpm turbo build --filter=@shipit-ai/web-ui
 
 FROM base AS runner
+# Runtime-stage hygiene (this is the only stage that ships and gets scanned):
+#  - `apk upgrade` picks up Alpine security patches released after the base
+#    tag was built (e.g. openssl/libcrypto3 CVE-2026-14456).
+#  - strip the npm CLI bundled with the node image. The server runs `node`
+#    against the standalone bundle and never invokes npm, but npm's vendored
+#    deps (tar, pacote, sigstore, brace-expansion, ...) lag upstream fixes for
+#    months and fail the image gate. The corepack pnpm shim `base` enabled is
+#    a separate package and is untouched. Must run before `USER nextjs`.
+RUN apk upgrade --no-cache \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
