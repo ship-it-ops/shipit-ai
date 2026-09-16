@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-15 | Total notes: 84
+Last updated: 2026-09-15 | Total notes: 85
 
 ## Investigations
 
@@ -32,6 +32,7 @@ Last updated: 2026-09-15 | Total notes: 84
 
 ## Decisions
 
+- [runtime-image-strips-bundled-npm-and-apk-upgrades](decisions/runtime-image-strips-bundled-npm-and-apk-upgrades.md) | decision | active | core | 2026-09-15 | runtime stages `apk upgrade` + rm base-image npm CLI; unblocks infra Trivy gate; retire infra picomatch trivyignore after
 - [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
 - [agent-context-initialized](decisions/agent-context-initialized.md) | decision | active | core | 2026-05-20 | docs/agent scaffolded during MCP Access stage one
 - [mcp-tool-metadata-as-pure-data-module](decisions/mcp-tool-metadata-as-pure-data-module.md) | decision | active | core | 2026-05-20 | tool descriptions live in metadata.ts not register
