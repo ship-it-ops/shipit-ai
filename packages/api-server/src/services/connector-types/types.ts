@@ -16,6 +16,8 @@ export interface BuildContext {
   lookupRepositoryNames?(org: string): Promise<string[]>;
   lookupTeamSlugs?(org: string): Promise<string[]>;
   listConnectors(): ConnectorInstanceConfig[];
+  /** Structured warn sink; defaults to console. Tests inject a spy so output stays pristine. */
+  logger?: { warn(message: string, meta?: unknown): void };
 }
 
 export type BuiltConnector = ShipItConnector & { getWarnings?(): string[] };

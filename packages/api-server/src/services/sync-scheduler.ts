@@ -110,6 +110,7 @@ export class SyncScheduler implements ConnectorRunner {
       lookupRepositoryNames: opts.lookupRepositoryNames,
       lookupTeamSlugs: opts.lookupTeamSlugs,
       listConnectors: () => this.registry.list(),
+      logger: console,
     };
 
     const queueName = opts.queueName ?? DEFAULT_QUEUE;

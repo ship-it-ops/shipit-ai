@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -1380,6 +1380,22 @@ current-context: demo
       caDataPath: join(keyDir, 'k8s-ca-k8s-tok.pem'),
     });
     expect(readFileSync(join(keyDir, 'k8s-token-k8s-tok'), 'utf-8')).toBe('tok\n');
+  });
+
+  it('POST /kubernetes/credentials validates caData before writing the token — no orphaned token file on 400', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: {
+        connectorId: 'k8s-tok-bad-ca',
+        mode: 'token',
+        token: 'a-live-token',
+        caData: 'not-a-pem',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION_ERROR');
+    expect(existsSync(join(keyDir, 'k8s-token-k8s-tok-bad-ca'))).toBe(false);
   });
 
   it('POST / creates a kubernetes connector and GET /:id returns it with defaults', async () => {

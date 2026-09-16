@@ -164,6 +164,7 @@ describe('kubernetes connector type', () => {
       ctx(),
     );
     expect(missing).toMatchObject({ ok: false, code: 'CREDENTIALS_UNREADABLE' });
+    const warn = vi.fn();
     const built = await type.build(
       k8s({ mode: 'in-cluster' }),
       ctx({
@@ -171,6 +172,7 @@ describe('kubernetes connector type', () => {
         lookupRepositoryNames: async () => {
           throw new Error('neo4j down');
         },
+        logger: { warn },
       }),
     );
     if (!built.ok) throw new Error(built.message);
@@ -179,6 +181,11 @@ describe('kubernetes connector type', () => {
       knownRepositories: [],
       knownTeams: [],
     });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('graph lookups failed'),
+      expect.objectContaining({ err: 'neo4j down' }),
+    );
   });
 
   it('probe returns version, scoped namespaces and per-kind access', async () => {

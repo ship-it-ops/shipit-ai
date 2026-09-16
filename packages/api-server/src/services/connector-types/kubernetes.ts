@@ -212,8 +212,9 @@ export function makeKubernetesConnectorType(
             ctx.lookupTeamSlugs?.(githubOrg) ?? Promise.resolve([]),
           ]);
         } catch (err) {
-          console.warn(
-            `kubernetes connector ${cfg.id}: graph lookups failed, name-match tiers disabled this run: ${(err as Error).message}`,
+          (ctx.logger ?? console).warn(
+            `kubernetes connector ${cfg.id}: graph lookups failed, name-match tiers disabled this run`,
+            { err: (err as Error).message },
           );
           knownRepositories = [];
           knownTeams = [];

@@ -185,6 +185,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       readPrivateKey: (p) => readFileSync(join(getAllowedKeyDir(), basename(p)), 'utf-8'),
       keyDir: getAllowedKeyDir(),
       listConnectors: () => registry.list(),
+      logger: console,
     };
   };
 
@@ -1160,15 +1161,17 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
             error: { code: 'VALIDATION_ERROR', message: 'token is required for mode token' },
           });
         }
+        // Validate everything BEFORE writing anything — a rejected caData must
+        // never leave a live ServiceAccount token sitting on disk unreferenced.
+        if (body.caData && !/-----BEGIN CERTIFICATE-----/.test(body.caData)) {
+          return reply.status(400).send({
+            error: { code: 'VALIDATION_ERROR', message: 'caData must be a PEM certificate' },
+          });
+        }
         const tokenPath = join(dir, `k8s-token-${body.connectorId}`);
         writeSecretFile(tokenPath, token + '\n');
         let caDataPath: string | undefined;
         if (body.caData) {
-          if (!/-----BEGIN CERTIFICATE-----/.test(body.caData)) {
-            return reply.status(400).send({
-              error: { code: 'VALIDATION_ERROR', message: 'caData must be a PEM certificate' },
-            });
-          }
           caDataPath = join(dir, `k8s-ca-${body.connectorId}.pem`);
           writeSecretFile(caDataPath, body.caData.trim() + '\n');
         }
