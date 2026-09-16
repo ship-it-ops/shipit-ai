@@ -29,6 +29,15 @@ const COMPACT_PARAM: McpToolParamSpec = {
   default: 'false',
 };
 
+const INCLUDE_ABSENT_PARAM: McpToolParamSpec = {
+  name: 'include_absent',
+  type: 'boolean',
+  required: false,
+  description:
+    'Include entities the owning connector no longer sees (marked absent by the sync sweep).',
+  default: 'false',
+};
+
 export const MCP_TOOLS: readonly McpToolMetadata[] = [
   {
     name: 'blast_radius',
@@ -71,6 +80,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         description: "Shorthand for include_environments: ['production'].",
         default: 'false',
       },
+      INCLUDE_ABSENT_PARAM,
       COMPACT_PARAM,
     ],
   },
@@ -95,6 +105,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         description: 'Return 1-hop neighbors grouped by relationship type.',
         default: 'true',
       },
+      INCLUDE_ABSENT_PARAM,
       COMPACT_PARAM,
     ],
   },
@@ -136,6 +147,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         description: 'Max path length (1-10).',
         default: '6',
       },
+      INCLUDE_ABSENT_PARAM,
       COMPACT_PARAM,
     ],
   },
@@ -177,6 +189,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         description: 'Property to sort by.',
         default: 'name',
       },
+      INCLUDE_ABSENT_PARAM,
       COMPACT_PARAM,
     ],
   },

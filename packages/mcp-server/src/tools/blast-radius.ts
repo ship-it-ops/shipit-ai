@@ -57,17 +57,37 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
         .boolean()
         .default(false)
         .describe("Convenience flag: equivalent to include_environments: ['production']"),
+      include_absent: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Include entities the owning connector no longer sees (marked absent by the sync sweep). Default false.',
+        ),
       compact: z.boolean().default(false).describe('Strip _meta envelope for compact responses'),
     },
     async (params) => {
-      const { node, depth, direction, include_environments, production_only, compact } = params;
+      const {
+        node,
+        depth,
+        direction,
+        include_environments,
+        production_only,
+        include_absent,
+        compact,
+      } = params;
 
       const environments = production_only ? ['production'] : include_environments;
 
       const startTime = Date.now();
 
       try {
-        const cypher = generateBlastRadiusCypher(node, depth, direction, environments);
+        const cypher = generateBlastRadiusCypher(
+          node,
+          depth,
+          direction,
+          environments,
+          include_absent,
+        );
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 
         if (result.records.length === 0) {

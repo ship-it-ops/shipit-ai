@@ -20,14 +20,20 @@ export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): voi
         .boolean()
         .default(true)
         .describe('Return 1-hop neighbors grouped by relationship type'),
+      include_absent: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Include entities the owning connector no longer sees (marked absent by the sync sweep). Default false.',
+        ),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
-      const { entity, include_claims, include_neighbors, compact } = params;
+      const { entity, include_claims, include_neighbors, include_absent, compact } = params;
       const startTime = Date.now();
 
       try {
-        const cypher = generateEntityDetailCypher(entity, include_neighbors);
+        const cypher = generateEntityDetailCypher(entity, include_neighbors, include_absent);
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 
         if (result.records.length === 0) {
