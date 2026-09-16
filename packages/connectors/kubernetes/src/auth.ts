@@ -7,6 +7,7 @@ import {
   KubeConfig,
   VersionApi,
 } from '@kubernetes/client-node';
+import { parse as parseYaml } from 'yaml';
 
 export type KubernetesErrorCode =
   | 'IN_CLUSTER_UNAVAILABLE'
@@ -78,109 +79,222 @@ export interface InClusterProbe {
 }
 const defaultProbe: InClusterProbe = { env: process.env, fileExists: existsSync };
 
+/** Allowlisted shape fed straight to `KubeConfig#loadFromOptions`; nothing on
+ *  this type can reference the filesystem or an external process. */
+export interface KubeconfigOptions {
+  clusters: Array<{
+    name: string;
+    server: string;
+    caData?: string;
+    tlsServerName?: string;
+    skipTLSVerify: false;
+  }>;
+  users: Array<{
+    name: string;
+    token?: string;
+    certData?: string;
+    keyData?: string;
+    username?: string;
+    password?: string;
+  }>;
+  contexts: Array<{ name: string; cluster: string; user: string; namespace?: string }>;
+  currentContext: string;
+}
+
 export type KubeconfigValidation =
-  | { ok: true; contexts: string[]; currentContext: string }
+  | { ok: true; contexts: string[]; currentContext: string; options: KubeconfigOptions }
   | { ok: false; code: 'KUBECONFIG_INVALID' | 'UNSUPPORTED_AUTH_PLUGIN'; message: string };
+
+const FILE_REFERENCE_MESSAGE =
+  'file references (token-file, certificate-authority, client-certificate, client-key) are not allowed; inline the *-data fields instead';
+const AUTH_PLUGIN_MESSAGE =
+  'kubeconfig user relies on an exec/auth-provider plugin, which cannot run inside ShipIt; paste a ServiceAccount token instead';
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+interface NamedEntry {
+  name: string;
+  inner: Record<string, unknown>;
+}
+
+/** `clusters`/`users`/`contexts` all share the `[{ name, <key>: {...} }]` shape. */
+function parseNamedList(
+  root: Record<string, unknown>,
+  listKey: string,
+  innerKey: string,
+): NamedEntry[] | null {
+  const list = root[listKey];
+  if (!Array.isArray(list)) return null;
+  const out: NamedEntry[] = [];
+  for (const entry of list) {
+    if (!isPlainObject(entry)) return null;
+    const name = entry.name;
+    const inner = entry[innerKey];
+    if (typeof name !== 'string' || !isPlainObject(inner)) return null;
+    out.push({ name, inner });
+  }
+  return out;
+}
+
+const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 /**
  * Spec §Access modes: exactly one context (or an explicit one); no exec /
  * auth-provider plugins (the binary is not in the pod); no file references
  * (nothing else is mounted); no insecure-skip-tls-verify.
+ *
+ * client-node's own kubeconfig loader is never used on user-supplied text:
+ * its `findToken()` reads `user['token-file']` off the filesystem DURING
+ * parsing, before any validation runs, and would follow the reference
+ * however it is spelled (block/flow style, quoted or unquoted key). We parse
+ * the YAML ourselves, validate every cluster/user/context entry structurally,
+ * and only ever hand `KubeConfig` an allowlisted, already-inlined result via
+ * `loadFromOptions` (see `KubeconfigOptions`).
  */
-const FILE_REFERENCE_KEY =
-  /^\s*(token-file|certificate-authority|client-certificate|client-key)\s*:/m;
-
 export function validateKubeconfigText(text: string, context?: string): KubeconfigValidation {
-  // Must run before loadFromString: client-node's findToken() reads
-  // user['token-file'] off the filesystem DURING parsing, before any of the
-  // checks below run, which would let a pasted kubeconfig exfiltrate any
-  // readable pod file (e.g. the ServiceAccount token) as a bearer credential.
-  if (FILE_REFERENCE_KEY.test(text)) {
-    return {
-      ok: false,
-      code: 'KUBECONFIG_INVALID',
-      message:
-        'file references (token-file, certificate-authority, client-certificate, client-key) are not allowed; inline the *-data fields instead',
-    };
-  }
-  const kc = new KubeConfig();
+  let parsed: unknown;
   try {
-    kc.loadFromString(text);
+    parsed = parseYaml(text);
   } catch (err) {
-    const e = err as { reason?: string; mark?: { line?: number; column?: number } };
-    const where =
-      e.mark && typeof e.mark.line === 'number'
-        ? ` (line ${e.mark.line + 1}${typeof e.mark.column === 'number' ? `, column ${e.mark.column + 1}` : ''})`
-        : '';
-    const reason = typeof e.reason === 'string' && e.reason ? e.reason : 'not valid YAML';
+    const e = err as { name?: string; linePos?: Array<{ line?: number }> };
+    const line = e.linePos?.[0]?.line;
+    const where = typeof line === 'number' ? ` (line ${line})` : '';
+    const reason = typeof e.name === 'string' && e.name ? e.name : 'YAMLParseError';
     return {
       ok: false,
       code: 'KUBECONFIG_INVALID',
       message: `kubeconfig does not parse: ${reason}${where}`,
     };
   }
-  const contexts = kc.getContexts().map((c) => c.name);
-  if (context) {
-    if (!contexts.includes(context)) {
-      return {
-        ok: false,
-        code: 'KUBECONFIG_INVALID',
-        message: `context "${context}" not found (have: ${contexts.join(', ') || 'none'})`,
-      };
-    }
-    kc.setCurrentContext(context);
-  } else if (contexts.length !== 1) {
+  if (!isPlainObject(parsed)) {
+    return { ok: false, code: 'KUBECONFIG_INVALID', message: 'kubeconfig root must be a mapping' };
+  }
+
+  const clusters = parseNamedList(parsed, 'clusters', 'cluster');
+  const users = parseNamedList(parsed, 'users', 'user');
+  const contexts = parseNamedList(parsed, 'contexts', 'context');
+  if (!clusters || !users || !contexts) {
     return {
       ok: false,
       code: 'KUBECONFIG_INVALID',
       message:
-        contexts.length === 0
-          ? 'kubeconfig has no contexts'
-          : `kubeconfig has ${contexts.length} contexts; pass "context" to pick one`,
+        'kubeconfig must have clusters, users and contexts arrays of { name, cluster|user|context }',
     };
-  } else if (!kc.getCurrentContext()) {
-    kc.setCurrentContext(contexts[0]);
   }
-  const user = kc.getCurrentUser();
-  const cluster = kc.getCurrentCluster();
-  if (!cluster?.server) {
+
+  // Forbidden keys are checked on every entry, not just the selected
+  // context: an unselected user/cluster is still attacker-controlled input.
+  for (const { inner: cluster } of clusters) {
+    if ('certificate-authority' in cluster) {
+      return { ok: false, code: 'KUBECONFIG_INVALID', message: FILE_REFERENCE_MESSAGE };
+    }
+    if (cluster['insecure-skip-tls-verify']) {
+      return {
+        ok: false,
+        code: 'KUBECONFIG_INVALID',
+        message: 'insecure-skip-tls-verify is not allowed; supply certificate-authority-data',
+      };
+    }
+  }
+  for (const { inner: user } of users) {
+    if ('exec' in user || 'auth-provider' in user) {
+      return { ok: false, code: 'UNSUPPORTED_AUTH_PLUGIN', message: AUTH_PLUGIN_MESSAGE };
+    }
+    if ('token-file' in user || 'client-certificate' in user || 'client-key' in user) {
+      return { ok: false, code: 'KUBECONFIG_INVALID', message: FILE_REFERENCE_MESSAGE };
+    }
+  }
+
+  const contextNames = contexts.map((c) => c.name);
+  let currentContext: string;
+  if (context) {
+    if (!contextNames.includes(context)) {
+      return {
+        ok: false,
+        code: 'KUBECONFIG_INVALID',
+        message: `context "${context}" not found (have: ${contextNames.join(', ') || 'none'})`,
+      };
+    }
+    currentContext = context;
+  } else if (contextNames.length !== 1) {
+    return {
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+      message:
+        contextNames.length === 0
+          ? 'kubeconfig has no contexts'
+          : `kubeconfig has ${contextNames.length} contexts; pass "context" to pick one`,
+    };
+  } else {
+    currentContext = contextNames[0];
+  }
+
+  const selected = contexts.find((c) => c.name === currentContext)!;
+  const clusterName = asString(selected.inner.cluster);
+  const userName = asString(selected.inner.user);
+  const selectedCluster = clusterName ? clusters.find((c) => c.name === clusterName) : undefined;
+  const selectedUser = userName ? users.find((u) => u.name === userName) : undefined;
+  if (!selectedCluster) {
+    return {
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+      message: `context "${currentContext}" references unknown cluster "${clusterName ?? ''}"`,
+    };
+  }
+  if (!selectedUser) {
+    return {
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+      message: `context "${currentContext}" references unknown user "${userName ?? ''}"`,
+    };
+  }
+  if (!asString(selectedCluster.inner.server)) {
     return {
       ok: false,
       code: 'KUBECONFIG_INVALID',
       message: 'current context has no cluster.server',
     };
   }
-  if (cluster.skipTLSVerify) {
-    return {
-      ok: false,
-      code: 'KUBECONFIG_INVALID',
-      message: 'insecure-skip-tls-verify is not allowed; supply certificate-authority-data',
-    };
-  }
-  if (cluster.caFile || user?.certFile || user?.keyFile) {
-    return {
-      ok: false,
-      code: 'KUBECONFIG_INVALID',
-      message:
-        'file references are not allowed; inline certificate-authority-data / client-certificate-data / client-key-data',
-    };
-  }
-  if (user?.exec || user?.authProvider) {
-    return {
-      ok: false,
-      code: 'UNSUPPORTED_AUTH_PLUGIN',
-      message:
-        'kubeconfig user relies on an exec/auth-provider plugin, which cannot run inside ShipIt; paste a ServiceAccount token instead',
-    };
-  }
-  if (!user || !(user.token || user.certData || user.keyData || user.username)) {
+  const u = selectedUser.inner;
+  const hasToken = Boolean(asString(u.token));
+  const hasCert = Boolean(asString(u['client-certificate-data']) && asString(u['client-key-data']));
+  const hasBasicAuth = Boolean(asString(u.username) && asString(u.password));
+  if (!hasToken && !hasCert && !hasBasicAuth) {
     return {
       ok: false,
       code: 'KUBECONFIG_INVALID',
       message: 'kubeconfig user carries no token, client certificate or basic-auth credentials',
     };
   }
-  return { ok: true, contexts, currentContext: kc.getCurrentContext() };
+
+  const options: KubeconfigOptions = {
+    clusters: clusters.map((c) => ({
+      name: c.name,
+      server: asString(c.inner.server) ?? '',
+      caData: asString(c.inner['certificate-authority-data']),
+      tlsServerName: asString(c.inner['tls-server-name']),
+      skipTLSVerify: false,
+    })),
+    users: users.map((usr) => ({
+      name: usr.name,
+      token: asString(usr.inner.token),
+      certData: asString(usr.inner['client-certificate-data']),
+      keyData: asString(usr.inner['client-key-data']),
+      username: asString(usr.inner.username),
+      password: asString(usr.inner.password),
+    })),
+    contexts: contexts.map((c) => ({
+      name: c.name,
+      cluster: asString(c.inner.cluster) ?? '',
+      user: asString(c.inner.user) ?? '',
+      namespace: asString(c.inner.namespace),
+    })),
+    currentContext,
+  };
+
+  return { ok: true, contexts: contextNames, currentContext, options };
 }
 
 export function buildKubeConfig(
@@ -204,8 +318,8 @@ export function buildKubeConfig(
     case 'kubeconfig': {
       const v = validateKubeconfigText(creds.kubeconfig, creds.context);
       if (!v.ok) throw new KubernetesError(v.code, v.message);
-      kc.loadFromString(creds.kubeconfig);
-      kc.setCurrentContext(v.currentContext);
+      // Only the allowlisted `options` (never the raw text) reach KubeConfig.
+      kc.loadFromOptions(v.options);
       return kc;
     }
     case 'token': {

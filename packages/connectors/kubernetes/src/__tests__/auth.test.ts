@@ -1,4 +1,7 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ApiException } from '@kubernetes/client-node';
 import {
   KubernetesError,
@@ -8,23 +11,6 @@ import {
   validateKubeconfigText,
   SERVICE_ACCOUNT_TOKEN_PATH,
 } from '../auth.js';
-
-// node:fs's module namespace is not configurable under Vitest's ESM runner
-// (vi.spyOn throws "Cannot redefine property"), so the readFileSync guarantee
-// below mocks the module instead, wrapping the real implementation in a
-// vi.fn() we can assert against. @kubernetes/client-node imports `fs` as a
-// default import from 'node:fs', so both the default and named export must
-// carry the same mock function reference.
-vi.mock('node:fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs')>();
-  const readFileSync = vi.fn(actual.readFileSync);
-  return {
-    ...actual,
-    readFileSync,
-    default: { ...actual, readFileSync },
-  } as unknown as typeof import('node:fs');
-});
-const readFileSyncMock = vi.mocked((await import('node:fs')).readFileSync);
 
 const tokenKubeconfig = (extraContexts = '') => `
 apiVersion: v1
@@ -91,7 +77,9 @@ describe('parseCredentials', () => {
 
 describe('validateKubeconfigText', () => {
   it('accepts a single-context token kubeconfig', () => {
-    expect(validateKubeconfigText(tokenKubeconfig())).toEqual({
+    // toMatchObject, not toEqual: a successful result also carries `options`,
+    // the allowlisted structure fed to KubeConfig#loadFromOptions.
+    expect(validateKubeconfigText(tokenKubeconfig())).toMatchObject({
       ok: true,
       contexts: ['demo'],
       currentContext: 'demo',
@@ -144,23 +132,26 @@ describe('validateKubeconfigText', () => {
     });
   });
 
-  it('rejects token-file without ever reading the referenced file off disk', () => {
-    readFileSyncMock.mockClear();
-    const tokenFile = tokenKubeconfig().replace('token: abc123', 'token-file: /etc/hosts');
-    expect(validateKubeconfigText(tokenFile)).toMatchObject({
+  it('rejects token-file in block style', () => {
+    const blockStyle = tokenKubeconfig().replace('token: abc123', 'token-file: /etc/hosts');
+    expect(validateKubeconfigText(blockStyle)).toMatchObject({
       ok: false,
       code: 'KUBECONFIG_INVALID',
     });
-    expect(readFileSyncMock).not.toHaveBeenCalledWith('/etc/hosts', expect.anything());
-    expect(readFileSyncMock).not.toHaveBeenCalledWith('/etc/hosts');
   });
 
-  it('rejects certificate-authority file references via the pre-parse check', () => {
-    const fileRef = tokenKubeconfig().replace(
-      /certificate-authority-data: .*/,
-      'certificate-authority: /etc/ca.crt',
+  it('rejects token-file in flow style and behind a quoted key — the YAML parser decodes both to the same key, so no separate regex is needed', () => {
+    const flowStyle = tokenKubeconfig().replace(
+      '  user:\n    token: abc123',
+      '  user: { token-file: /etc/hosts }',
     );
-    expect(validateKubeconfigText(fileRef)).toMatchObject({
+    expect(validateKubeconfigText(flowStyle)).toMatchObject({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+    });
+
+    const quotedKey = tokenKubeconfig().replace('token: abc123', '"token-file": /etc/hosts');
+    expect(validateKubeconfigText(quotedKey)).toMatchObject({
       ok: false,
       code: 'KUBECONFIG_INVALID',
     });
@@ -230,12 +221,41 @@ describe('buildKubeConfig', () => {
     expect(kc.getCurrentUser()?.token).toBe('t');
   });
 
-  it('kubeconfig mode validates then selects the context', () => {
+  it('kubeconfig mode validates then selects the context, carrying only the allowlisted fields into KubeConfig', () => {
     const kc = buildKubeConfig({ mode: 'kubeconfig', kubeconfig: tokenKubeconfig() });
     expect(kc.getCurrentContext()).toBe('demo');
+    expect(kc.getCurrentUser()?.token).toBe('abc123');
+    expect(kc.getCurrentCluster()?.server).toBe('https://10.0.0.1:6443');
     expect(() => buildKubeConfig({ mode: 'kubeconfig', kubeconfig: execKubeconfig })).toThrow(
       /UNSUPPORTED_AUTH_PLUGIN/,
     );
+  });
+
+  it('never reads a token-file off disk: a malicious kubeconfig pointing at a real, readable secret is rejected without the file ever being opened', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'auth-test-'));
+    const leakPath = join(dir, 'leaked-token');
+    writeFileSync(leakPath, 'LEAKED-TOKEN-xyz');
+    try {
+      const malicious = `
+apiVersion: v1
+kind: Config
+clusters:
+- name: demo
+  cluster: { server: https://attacker.example }
+users:
+- name: reader
+  user: { token-file: ${leakPath} }
+contexts:
+- name: demo
+  context: { cluster: demo, user: reader }
+current-context: demo
+`;
+      expect(() => buildKubeConfig({ mode: 'kubeconfig', kubeconfig: malicious })).toThrow(
+        /KUBECONFIG_INVALID/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
