@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   deriveNodeContentHash,
   type CanonicalNode,
@@ -278,6 +278,34 @@ describe('CoreWriter', () => {
       const stored = stateful.store.get('shipit://repository/default/org/repo-a');
       expect(stored?.version).toBe(EPOCH_NEW);
       expect(stored?.lastSynced).toBe('2026-06-21T00:00:00Z');
+    });
+
+    it('a freshness-rejected delivery still confirms presence (touches _last_synced) without writing content', async () => {
+      const stateful = createStatefulNodeWriter();
+      writer = new CoreWriter(
+        stateful,
+        linkingKeyIndex,
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+
+      await writer.processEvent(
+        makeEnvelope([versionedNode('repo-d', 5, '2026-06-01T00:00:00Z')], []),
+      );
+
+      const laterSync = '2026-07-01T00:00:00Z';
+      const r = await writer.processEvent(
+        makeEnvelope([versionedNode('repo-d', 3, laterSync)], []),
+      );
+
+      expect(r.freshnessSkipped).toBe(1);
+      expect(stateful.touchLastSynced).toHaveBeenCalledWith(
+        'shipit://repository/default/org/repo-d',
+        laterSync,
+      );
+      // The rejected (older) content never overwrote the stored, newer version.
+      const stored = stateful.store.get('shipit://repository/default/org/repo-d');
+      expect(stored?.version).toBe(5);
     });
 
     it('writes an equal-version delivery whose content differs (passed content dedup)', async () => {
@@ -575,6 +603,19 @@ describe('CoreWriter', () => {
   });
 
   describe('CoreWriter — sync.completed control envelopes', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+    let error: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warn.mockRestore();
+      error.mockRestore();
+    });
+
     function controlEnvelope(
       connectorId: string,
       startedAt: string,
@@ -611,6 +652,10 @@ describe('CoreWriter', () => {
       expect(result.absentMarked).toBe(2);
       expect(nodeWriter.writeNode).not.toHaveBeenCalled();
       expect(result.errors).toEqual([]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('sweep k8s-demo: marked 2 node(s) absent'),
+      );
     });
 
     it('ignores control envelopes for incremental runs', async () => {

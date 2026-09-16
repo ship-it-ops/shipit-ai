@@ -298,8 +298,18 @@ export class CoreWriter {
           if (written) {
             nodesWritten++;
           } else {
-            // Freshness guard rejected (older than stored). Do NOT touchLastSynced
-            // — moving "Synced" forward for content we refused to write would lie.
+            // Freshness guard rejected (older than stored). The connector still
+            // SAW this entity this run, and `_last_synced` is now also the
+            // absence sweep's presence signal — so confirm presence (which also
+            // clears `_absent_since`) without writing the refused content. The
+            // stored, newer content stays; only the "seen at" stamp advances.
+            if (typeof node._last_synced === 'string') {
+              try {
+                await this.nodeWriter.touchLastSynced(nodeToWrite.id, node._last_synced);
+              } catch {
+                // non-critical: presence touch failed, leave it stale
+              }
+            }
             freshnessSkipped++;
             console.warn(
               `[CoreWriter] freshness-skip ${nodeToWrite.id} incoming _event_version=${String(node._event_version)} not newer than stored`,
