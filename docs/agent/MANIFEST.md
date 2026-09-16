@@ -1,9 +1,10 @@
 # Agent Context
 
-Last updated: 2026-09-14 | Total notes: 82
+Last updated: 2026-09-15 | Total notes: 84
 
 ## Investigations
 
+- [sync-runtime-itest-connection-closed-teardown-race](investigations/sync-runtime-itest-connection-closed-teardown-race.md) | investigation | active | standard | 2026-09-15 | CI Integration red w/ all tests green = sync-runtime teardown race; test now awaits job settle; flip to fixed after ~20 green runs
 - [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
 - [backend-images-runtime-module-not-found](investigations/backend-images-runtime-module-not-found.md) | investigation | completed | standard | 2026-06-11 | root node_modules copy broke resolution; pnpm deploy fixes
 - [setup-wizard-manifest-launch-enoent](investigations/setup-wizard-manifest-launch-enoent.md) | investigation | completed | core | 2026-06-11 | manifest template JSON never reaches /data in cluster
@@ -81,7 +82,8 @@ Last updated: 2026-09-14 | Total notes: 82
 - [mcp-access-stage-2-real-login](plans/mcp-access-stage-2-real-login.md) | plan | completed | standard | 2026-06-23 | SHIPPED (#48/#67): bearer enforcement + token CRUD + API Keys UI; only mcp-server infra exposure remains
 - [login-user-as-person-entity](plans/login-user-as-person-entity.md) | plan | completed | core | 2026-06-23 | SHIPPED (#67, hardened #73): login upserts a Person via event-bus; shared canonical-id merges with connector
 - [saas-tier-shared-github-app](plans/saas-tier-shared-github-app.md) | plan | active | standard | 2026-05-21 | hosted SaaS tier with ship-it-ops-owned App
-- [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | active | core | 2026-06-04 | deploy distributed stack as-is on GKE; learn K8s
+- [k8s-deployment-architecture](plans/k8s-deployment-architecture.md) | plan | completed | core | 2026-09-15 | IMPLEMENTED in shipit-ai-infra (GKE + Helm, manual build→deploy); portal-demo live since June; reconciled 2026-09-15
+- [pr-74-review-fixes](plans/pr-74-review-fixes.md) | plan | completed | standard | 2026-09-15 | DONE 2026-06-16: CodeQL + 3 should-fix + 1 nit for #74; residual write-race follow-ups noted in-plan
 - [gsm-secret-store-implementation](plans/gsm-secret-store-implementation.md) | plan | completed | core | 2026-06-10 | 12-task TDD plan for GSM secrets + config export
 - [deployment-runtime-modes](plans/deployment-runtime-modes.md) | plan | superseded | core | 2026-06-04 | SUPERSEDED Vercel/serverless/embedded exploration; see k8s plan
 - [manual-edit-write-path](plans/manual-edit-write-path.md) | plan | completed | core | 2026-08-21 | COMPLETE: v1a+v1b + all 3 follow-ups merged to main (PR #88)
