@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-09-15
 author: claude-session-2026-06-04-deployment
 tags: [deployment, kubernetes, gke, distributed, hosting, learning]
 importance: core
@@ -10,7 +10,7 @@ importance: core
 
 # Kubernetes (GKE) Deployment Architecture
 
-> **Status: DESIGN — pending review.** Deploys the existing **distributed**
+> **Status: IMPLEMENTED (2026-09-15 reconcile).** Built in the sibling `shipit-ai-infra` repo (Terraform + Helm, manual build-images → deploy workflows); portal-demo.shipitops.com has run on GKE since June. Design text below kept as the reference architecture. Deploys the existing **distributed**
 > system unchanged onto managed Kubernetes. No application code changes — this is
 > infrastructure/IaC work. Supersedes `deployment-runtime-modes` (the Vercel /
 > serverless / embedded exploration). See decision
@@ -112,9 +112,13 @@ keep the heavy graph DB on Aura Free, off-budget and off-node.
 
 ## Status
 
-Design captured, pending review. Next step after approval: `writing-plans` to
-produce the step-by-step build (cluster → manifests → secrets → ingress →
-deploy), following the build order above.
+Implemented — reconciled 2026-09-15. The design was built in the sibling `shipit-ai-infra`
+repo (Terraform for the GKE cluster + Helm charts; two manual `workflow_dispatch` steps,
+`build-images.yml` then `deploy.yml` with an immutable `sha-<short>` tag) and
+portal-demo.shipitops.com has served from it since June 2026. This plan was still marked
+`active` because no one flipped it after the infra work landed. Operational knowledge
+(logs, secrets in GSM, NEG-drain 502 signature) lives in the investigations linked from the
+MANIFEST and in the infra repo's own `docs/agent/`.
 
 ## Still-relevant open items (independent of hosting)
 

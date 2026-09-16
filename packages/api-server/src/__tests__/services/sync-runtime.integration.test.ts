@@ -52,6 +52,18 @@ function makeRegistry(): ConnectorRegistry {
 
 const GLOBAL_APP = { appId: '', privateKey: '' } as never;
 
+// Poll until `predicate` holds. Used to let an enqueued job reach a terminal
+// state before afterEach tears the worker down — see the first test.
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000, everyMs = 50): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(`timed out after ${timeoutMs}ms waiting for the sync job to settle`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
+}
+
 describe.skipIf(!REDIS)('wireSyncRuntime — real Redis/BullMQ integration', () => {
   const runtimes: SyncRuntime[] = [];
   let q = 0;
@@ -91,7 +103,22 @@ describe.skipIf(!REDIS)('wireSyncRuntime — real Redis/BullMQ integration', () 
     // reports it running — proof the NoopRunner was actually replaced.
     const status = await registry.triggerSync(CONNECTOR.id, 'incremental');
     expect(status.state).toBe('running');
-    expect(registry.getStatus(CONNECTOR.id).state).toBe('running');
+    // The live worker (concurrency 1) may already have picked the job up and
+    // settled it by the time we look, so don't pin 'running' here: anything
+    // other than the NoopRunner's 'idle' proves the swap happened.
+    expect(registry.getStatus(CONNECTOR.id).state).not.toBe('idle');
+
+    // Let the job reach a terminal state BEFORE afterEach closes the worker.
+    // Tearing the worker down mid-job races BullMQ's in-flight Redis commands
+    // against the connection close and surfaces as an unhandled
+    // `Connection is closed.` rejection that fails the CI run with every test
+    // green (docs/agent/investigations/sync-runtime-itest-connection-closed-
+    // teardown-race.md). No GitHub App is configured in this test, so the
+    // processor records a failed run — which is also the strongest proof that
+    // the live scheduler, not the NoopRunner, actually ran the job.
+    await waitFor(() => registry.getStatus(CONNECTOR.id).state !== 'running');
+    expect(registry.getStatus(CONNECTOR.id).state).toBe('failed');
+    expect(registry.getStatus(CONNECTOR.id).lastError).toContain('No GitHub App configured');
   });
 
   it('catches the REAL colon-queue-name throw and degrades to the NoopRunner', async () => {

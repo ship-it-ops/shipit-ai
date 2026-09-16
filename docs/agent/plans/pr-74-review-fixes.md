@@ -1,8 +1,8 @@
 ---
 type: plan
-status: active
+status: completed
 created: 2026-06-16
-updated: 2026-06-16
+updated: 2026-09-15
 author: claude-opus-4-8
 tags: [pr-74, code-review, security, concurrency, rate-limit, core-writer]
 importance: standard
