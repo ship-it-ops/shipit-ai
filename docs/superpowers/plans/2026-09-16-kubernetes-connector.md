@@ -6923,47 +6923,39 @@ server.post<{ Body: KubernetesCredentialsBody }>(
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     if (body.mode === 'kubeconfig') {
       if (!body.kubeconfig) {
-        return reply
-          .status(400)
-          .send({
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'kubeconfig is required for mode kubeconfig',
-            },
-          });
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'kubeconfig is required for mode kubeconfig',
+          },
+        });
       }
       const v = validateKubeconfigText(body.kubeconfig, body.context?.trim() || undefined);
       if (!v.ok) return reply.status(400).send({ error: { code: v.code, message: v.message } });
       const kubeconfigPath = join(dir, `kubeconfig-${body.connectorId}.yaml`);
       writeSecretFile(kubeconfigPath, body.kubeconfig);
-      return reply
-        .status(201)
-        .send({
-          mode: 'kubeconfig',
-          kubeconfigPath,
-          context: v.currentContext,
-          contexts: v.contexts,
-        });
+      return reply.status(201).send({
+        mode: 'kubeconfig',
+        kubeconfigPath,
+        context: v.currentContext,
+        contexts: v.contexts,
+      });
     }
     if (body.mode === 'token') {
       const token = body.token?.trim();
       if (!token) {
-        return reply
-          .status(400)
-          .send({
-            error: { code: 'VALIDATION_ERROR', message: 'token is required for mode token' },
-          });
+        return reply.status(400).send({
+          error: { code: 'VALIDATION_ERROR', message: 'token is required for mode token' },
+        });
       }
       const tokenPath = join(dir, `k8s-token-${body.connectorId}`);
       writeSecretFile(tokenPath, token + '\n');
       let caDataPath: string | undefined;
       if (body.caData) {
         if (!/-----BEGIN CERTIFICATE-----/.test(body.caData)) {
-          return reply
-            .status(400)
-            .send({
-              error: { code: 'VALIDATION_ERROR', message: 'caData must be a PEM certificate' },
-            });
+          return reply.status(400).send({
+            error: { code: 'VALIDATION_ERROR', message: 'caData must be a PEM certificate' },
+          });
         }
         caDataPath = join(dir, `k8s-ca-${body.connectorId}.pem`);
         writeSecretFile(caDataPath, body.caData.trim() + '\n');
@@ -6972,11 +6964,9 @@ server.post<{ Body: KubernetesCredentialsBody }>(
         .status(201)
         .send({ mode: 'token', tokenPath, ...(caDataPath ? { caDataPath } : {}) });
     }
-    return reply
-      .status(400)
-      .send({
-        error: { code: 'VALIDATION_ERROR', message: 'mode must be "kubeconfig" or "token"' },
-      });
+    return reply.status(400).send({
+      error: { code: 'VALIDATION_ERROR', message: 'mode must be "kubeconfig" or "token"' },
+    });
   },
 );
 ```
@@ -6989,13 +6979,11 @@ const probeBody = request.body as
 if (probeBody?.type === 'kubernetes') {
   const k8s = getConnectorType('kubernetes');
   if (!k8s?.probe) {
-    return reply
-      .status(503)
-      .send({
-        ok: false,
-        code: 'SERVICE_UNAVAILABLE',
-        message: 'Kubernetes connector type is not registered.',
-      });
+    return reply.status(503).send({
+      ok: false,
+      code: 'SERVICE_UNAVAILABLE',
+      message: 'Kubernetes connector type is not registered.',
+    });
   }
   const pathErr = kubernetesAccessPathError(probeBody.access);
   if (pathErr)
