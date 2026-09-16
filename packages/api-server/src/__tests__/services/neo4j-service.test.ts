@@ -59,3 +59,71 @@ describe('Neo4jService.getGraphStats edge-count exclusion (unit)', () => {
     expect(stats.edgeCountsByType).not.toHaveProperty('VERIFIES');
   });
 });
+
+describe('Neo4jService absent-node filtering (unit)', () => {
+  function serviceWithSpy() {
+    const svc = Object.create(Neo4jService.prototype) as Neo4jService;
+    const seen: string[] = [];
+    vi.spyOn(
+      svc as unknown as { runQuery: typeof Neo4jService.prototype.runQuery },
+      'runQuery',
+    ).mockImplementation((async (cypher: string) => {
+      seen.push(cypher);
+      return [] as never;
+    }) as never);
+    return { svc, seen };
+  }
+
+  it('getOverview excludes absent nodes by default and includes them on request', async () => {
+    const { svc, seen } = serviceWithSpy();
+    await svc.getOverview(SYSTEM_CONTEXT, { limit: 10 });
+    expect(seen[0]).toContain('n._absent_since IS NULL');
+    await svc.getOverview(SYSTEM_CONTEXT, { limit: 10, includeAbsent: true });
+    expect(seen[1]).not.toContain('_absent_since');
+  });
+
+  it('searchEntities excludes absent nodes by default and includes them on request', async () => {
+    const { svc, seen } = serviceWithSpy();
+    await svc.searchEntities(SYSTEM_CONTEXT, { q: 'api' });
+    expect(seen[0]).toContain('n._absent_since IS NULL');
+    await svc.searchEntities(SYSTEM_CONTEXT, { q: 'api', includeAbsent: true });
+    expect(seen[1]).not.toContain('_absent_since');
+  });
+
+  it('getSources and getGraphStats node counts exclude absent nodes by default', async () => {
+    const { svc, seen } = serviceWithSpy();
+    await svc.getSources();
+    expect(seen[0]).toContain('n._absent_since IS NULL');
+    await svc.getGraphStats(SYSTEM_CONTEXT);
+    const labelsQuery = seen.find((q) => q.includes('db.labels()'))!;
+    expect(labelsQuery).toContain('n._absent_since IS NULL');
+  });
+
+  it('getNeighborhood drops absent nodes and their edges unless includeAbsent', async () => {
+    const svc = Object.create(Neo4jService.prototype) as Neo4jService;
+    const record = {
+      get: (k: string) =>
+        k === 'nodes'
+          ? [
+              { properties: { id: 'a', name: 'a' }, labels: ['Deployment'] },
+              {
+                properties: { id: 'b', name: 'b', _absent_since: '2026-09-16T10:00:00.000Z' },
+                labels: ['Deployment'],
+              },
+            ]
+          : [{ source: 'a', target: 'b', type: 'DEPENDS_ON', props: {} }],
+    };
+    vi.spyOn(
+      svc as unknown as { runQuery: typeof Neo4jService.prototype.runQuery },
+      'runQuery',
+    ).mockResolvedValue([record] as never);
+
+    const hidden = await svc.getNeighborhood(SYSTEM_CONTEXT, 'a', 1);
+    expect(hidden.nodes.map((n) => n.data.id)).toEqual(['a']);
+    expect(hidden.edges).toEqual([]);
+
+    const shown = await svc.getNeighborhood(SYSTEM_CONTEXT, 'a', 1, { includeAbsent: true });
+    expect(shown.nodes.map((n) => n.data.id)).toEqual(['a', 'b']);
+    expect(shown.edges).toHaveLength(1);
+  });
+});

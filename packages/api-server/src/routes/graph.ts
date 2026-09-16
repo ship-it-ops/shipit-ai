@@ -10,46 +10,66 @@ declare module 'fastify' {
 const graphRoutes: FastifyPluginAsync = async (server) => {
   const neo4j = server.neo4jService;
 
+  // Absence sweep (Kubernetes connector v1): default reads hide nodes the
+  // owning connector no longer sees; `includeAbsent=true` opts back in.
+  // Any other value (absent, `1`, `false`, …) means false.
+  const includeAbsent = (q: { includeAbsent?: string } | undefined): boolean =>
+    q?.includeAbsent === 'true';
+
   // GET /api/graph/stats
-  server.get('/stats', async (request) => {
-    return neo4j.getGraphStats(request.ctx);
+  server.get<{
+    Querystring: { includeAbsent?: string };
+  }>('/stats', async (request) => {
+    return neo4j.getGraphStats(request.ctx, { includeAbsent: includeAbsent(request.query) });
   });
 
   // GET /api/graph/overview
   server.get<{
-    Querystring: { limit?: string; sourceSystem?: string; sourceConnectorId?: string };
+    Querystring: {
+      limit?: string;
+      sourceSystem?: string;
+      sourceConnectorId?: string;
+      includeAbsent?: string;
+    };
   }>('/overview', async (request) => {
     const limit = Math.min(Number(request.query.limit ?? 100), 500);
     return neo4j.getOverview(request.ctx, {
       limit,
       sourceSystem: request.query.sourceSystem,
       sourceConnectorId: request.query.sourceConnectorId,
+      includeAbsent: includeAbsent(request.query),
     });
   });
 
   // GET /api/graph/sources — distinct (sourceSystem, connectorId) pairs in
   // the graph with entity counts. Populates the catalog/explore source
   // facet so it adapts to whatever connectors actually wrote data.
-  server.get('/sources', async () => {
-    return neo4j.getSources();
+  server.get<{
+    Querystring: { includeAbsent?: string };
+  }>('/sources', async (request) => {
+    return neo4j.getSources({ includeAbsent: includeAbsent(request.query) });
   });
 
   // GET /api/graph/neighborhood/:id
   server.get<{
     Params: { id: string };
-    Querystring: { depth?: string };
+    Querystring: { depth?: string; includeAbsent?: string };
   }>('/neighborhood/:id', async (request) => {
     const depth = Math.min(Number(request.query.depth ?? 2), 5);
-    return neo4j.getNeighborhood(request.ctx, request.params.id, depth);
+    return neo4j.getNeighborhood(request.ctx, request.params.id, depth, {
+      includeAbsent: includeAbsent(request.query),
+    });
   });
 
   // GET /api/graph/blast-radius/:id
   server.get<{
     Params: { id: string };
-    Querystring: { depth?: string };
+    Querystring: { depth?: string; includeAbsent?: string };
   }>('/blast-radius/:id', async (request) => {
     const depth = Math.min(Number(request.query.depth ?? 3), 5);
-    return neo4j.getBlastRadius(request.ctx, request.params.id, depth);
+    return neo4j.getBlastRadius(request.ctx, request.params.id, depth, {
+      includeAbsent: includeAbsent(request.query),
+    });
   });
 
   // GET /api/graph/search
@@ -62,6 +82,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
       sourceSystem?: string;
       sourceConnectorId?: string;
       limit?: string;
+      includeAbsent?: string;
     };
   }>('/search', async (request) => {
     const { label, q, tier, owner, sourceSystem, sourceConnectorId, limit } = request.query;
@@ -78,6 +99,7 @@ const graphRoutes: FastifyPluginAsync = async (server) => {
       q,
       filters,
       limit: limit ? Math.min(Number(limit), 100) : 25,
+      includeAbsent: includeAbsent(request.query),
     });
 
     // Shape consumed by the global command palette + entity search dropdowns.
