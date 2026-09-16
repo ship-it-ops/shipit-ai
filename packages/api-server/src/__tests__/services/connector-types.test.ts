@@ -23,8 +23,10 @@ const gh = connectorInstanceSchema.parse({
 }) as GitHubConnectorConfig;
 
 describe('connector-types registry', () => {
-  it('knows github (incremental poll) and nothing else yet', () => {
+  it('knows github (incremental poll) and kubernetes (full poll, sweeps absent)', () => {
     expect(getConnectorType('github')?.pollMode).toBe('incremental');
+    expect(getConnectorType('kubernetes')?.pollMode).toBe('full');
+    expect(getConnectorType('kubernetes')?.sweepsAbsent).toBe(true);
     expect(getConnectorType('nope')).toBeUndefined();
     expect(() => connectorTypeFor({ ...gh, type: 'nope' as never })).toThrow(
       /No connector type registered/,

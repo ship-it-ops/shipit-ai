@@ -188,4 +188,63 @@ describe('ConnectorAppStore', () => {
     await expect(svc.sync([sharedConnector('gh-a')])).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
   });
+
+  function k8sConnector(id: string, access: Record<string, unknown>): ConnectorInstanceConfig {
+    return connectorInstanceSchema.parse({
+      id,
+      type: 'kubernetes',
+      name: id,
+      cluster: { name: 'demo' },
+      access,
+    });
+  }
+
+  it('mirrors a kubeconfig file into the blob and materializes it back (0600)', async () => {
+    const store = fakeGsmStore();
+    const appStore = new ConnectorAppStore({ store, keyDir });
+    const path = join(keyDir, 'kubeconfig-k8s-demo.yaml');
+    writeFileSync(path, 'apiVersion: v1\n');
+    const inst = k8sConnector('k8s-demo', { mode: 'kubeconfig', kubeconfigPath: path });
+
+    await appStore.sync([inst]);
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, { kubeconfig?: string }>;
+    };
+    expect(blob.connectors['k8s-demo'].kubeconfig).toBe('apiVersion: v1\n');
+
+    rmSync(path);
+    const rehydrated = await appStore.loadAndMaterialize();
+    expect(rehydrated?.map((c) => c.id)).toEqual(['k8s-demo']);
+    expect(readFileSync(path, 'utf-8')).toBe('apiVersion: v1\n');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('mirrors token + CA files for token mode and leaves in-cluster instances secret-free', async () => {
+    const store = fakeGsmStore();
+    const appStore = new ConnectorAppStore({ store, keyDir });
+    const tokenPath = join(keyDir, 'k8s-token-k8s-tok');
+    const caPath = join(keyDir, 'k8s-ca-k8s-tok.pem');
+    writeFileSync(tokenPath, 'tok\n');
+    writeFileSync(caPath, 'PEM\n');
+    await appStore.sync([
+      k8sConnector('k8s-tok', {
+        mode: 'token',
+        server: 'https://h',
+        tokenPath,
+        caDataPath: caPath,
+      }),
+      k8sConnector('k8s-in', { mode: 'in-cluster' }),
+    ]);
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, Record<string, unknown>>;
+    };
+    expect(blob.connectors['k8s-tok']).toMatchObject({ k8sToken: 'tok\n', k8sCa: 'PEM\n' });
+    expect(Object.keys(blob.connectors['k8s-in'])).toEqual(['instance']);
+
+    rmSync(tokenPath);
+    rmSync(caPath);
+    await appStore.loadAndMaterialize();
+    expect(readFileSync(tokenPath, 'utf-8')).toBe('tok\n');
+    expect(readFileSync(caPath, 'utf-8')).toBe('PEM\n');
+  });
 });

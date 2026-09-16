@@ -1,5 +1,6 @@
 import type { ConnectorInstanceConfig } from '@shipit-ai/shared';
 import { githubConnectorType } from './github.js';
+import { kubernetesConnectorType } from './kubernetes.js';
 import type { ConnectorType } from './types.js';
 
 export type {
@@ -16,6 +17,7 @@ export type {
 // parameter is contravariant), so entries are widened once, here.
 export const CONNECTOR_TYPES: Readonly<Record<string, ConnectorType>> = {
   github: githubConnectorType as unknown as ConnectorType,
+  kubernetes: kubernetesConnectorType as unknown as ConnectorType,
 };
 
 export function getConnectorType(type: string): ConnectorType | undefined {

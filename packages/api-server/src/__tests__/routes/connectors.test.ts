@@ -23,6 +23,33 @@ vi.mock('@shipit-ai/connector-github', async (importOriginal) => {
 });
 import { createAppJWTOctokit } from '@shipit-ai/connector-github';
 
+// Fake Kubernetes API clients so the Kubernetes probe/route tests never hit a
+// real cluster. Swaps out defaultClientFactory only — everything else in the
+// package (buildKubeConfig, classifyError, validateKubeconfigText, …) keeps
+// its real implementation.
+const fakeK8sClients = {
+  version: { getCode: vi.fn().mockResolvedValue({ gitVersion: 'v1.31.2' }) },
+  core: {
+    listNamespace: vi
+      .fn()
+      .mockResolvedValue({ items: [{ metadata: { name: 'shipit' } }], metadata: {} }),
+    readNamespace: vi.fn(),
+    listNode: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+    listNamespacedPod: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+  },
+  apps: {
+    listNamespacedDeployment: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+    listNamespacedStatefulSet: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+    listNamespacedDaemonSet: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+    listNamespacedReplicaSet: vi.fn().mockResolvedValue({ items: [], metadata: {} }),
+  },
+  batch: { listNamespacedCronJob: vi.fn().mockResolvedValue({ items: [], metadata: {} }) },
+};
+vi.mock('@shipit-ai/connector-kubernetes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@shipit-ai/connector-kubernetes')>();
+  return { ...actual, defaultClientFactory: () => fakeK8sClients };
+});
+
 // One server, one registry, fresh per top-level describe so the ETag-flow
 // assertions and CRUD assertions don't tangle. We bind the registry to a
 // throwaway tmp directory so the persist() call doesn't touch the real repo.
@@ -1244,5 +1271,214 @@ describe('GitHub owner-check endpoint', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe('VALIDATION_ERROR');
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Kubernetes connector routes', () => {
+  let server: FastifyInstance;
+  let tmpDir: string;
+  let keyDir: string;
+  const previousKeyDir = process.env.SHIPIT_GITHUB_APP_KEY_DIR;
+
+  const kubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: demo
+  cluster:
+    server: https://10.0.0.1:6443
+    certificate-authority-data: ${Buffer.from('ca').toString('base64')}
+users:
+- name: reader
+  user:
+    token: abc
+contexts:
+- name: demo
+  context:
+    cluster: demo
+    user: reader
+current-context: demo
+`;
+
+  beforeAll(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-k8s-routes-'));
+    keyDir = join(tmpDir, 'keys');
+    process.env.SHIPIT_GITHUB_APP_KEY_DIR = keyDir;
+    const registry = new ConnectorRegistry({
+      localConfigPath: join(tmpDir, 'shipit.config.local.yaml'),
+      initial: [],
+    });
+    server = await createServer({ connectorRegistry: registry, config: makeTestConfig() });
+    await server.ready();
+  });
+
+  afterAll(async () => {
+    await server.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+    if (previousKeyDir === undefined) delete process.env.SHIPIT_GITHUB_APP_KEY_DIR;
+    else process.env.SHIPIT_GITHUB_APP_KEY_DIR = previousKeyDir;
+  });
+
+  it('POST /kubernetes/credentials stores a validated kubeconfig under the key dir with mode 0600', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'k8s-demo', mode: 'kubeconfig', kubeconfig },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body).toEqual({
+      mode: 'kubeconfig',
+      kubeconfigPath: join(keyDir, 'kubeconfig-k8s-demo.yaml'),
+      context: 'demo',
+      contexts: ['demo'],
+    });
+    expect(readFileSync(body.kubeconfigPath, 'utf-8')).toBe(kubeconfig);
+    expect(statSync(body.kubeconfigPath).mode & 0o777).toBe(0o600);
+  });
+
+  it('POST /kubernetes/credentials rejects exec kubeconfigs, bad ids and unknown modes', async () => {
+    const exec = kubeconfig.replace(
+      'token: abc',
+      'exec:\n      apiVersion: client.authentication.k8s.io/v1beta1\n      command: gke-gcloud-auth-plugin',
+    );
+    const r1 = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'k8s-demo', mode: 'kubeconfig', kubeconfig: exec },
+    });
+    expect(r1.statusCode).toBe(400);
+    expect(r1.json().error.code).toBe('UNSUPPORTED_AUTH_PLUGIN');
+    const r2 = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: '../etc', mode: 'kubeconfig', kubeconfig },
+    });
+    expect(r2.statusCode).toBe(400);
+    const r3 = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'x', mode: 'password' },
+    });
+    expect(r3.statusCode).toBe(400);
+  });
+
+  it('POST /kubernetes/credentials stores a token and PEM CA for mode token', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: {
+        connectorId: 'k8s-tok',
+        mode: 'token',
+        token: ' tok ',
+        caData: '-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({
+      mode: 'token',
+      tokenPath: join(keyDir, 'k8s-token-k8s-tok'),
+      caDataPath: join(keyDir, 'k8s-ca-k8s-tok.pem'),
+    });
+    expect(readFileSync(join(keyDir, 'k8s-token-k8s-tok'), 'utf-8')).toBe('tok\n');
+  });
+
+  it('POST / creates a kubernetes connector and GET /:id returns it with defaults', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: {
+        id: 'k8s-demo',
+        type: 'kubernetes',
+        name: 'Demo',
+        cluster: { name: 'shipit-demo' },
+        access: {
+          mode: 'kubeconfig',
+          kubeconfigPath: join(keyDir, 'kubeconfig-k8s-demo.yaml'),
+          context: 'demo',
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.headers.etag).toBeDefined();
+    const get = await server.inject({ method: 'GET', url: '/api/connectors/k8s-demo' });
+    expect(get.json()).toMatchObject({
+      type: 'kubernetes',
+      schedule: '*/5 * * * *',
+      scope: { kinds: ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob'] },
+      lastRuns: [],
+    });
+  });
+
+  it('POST / and PATCH /:id refuse credential paths outside the key dir', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: {
+        id: 'k8s-bad',
+        type: 'kubernetes',
+        name: 'Bad',
+        cluster: { name: 'c' },
+        access: { mode: 'kubeconfig', kubeconfigPath: '/etc/passwd' },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('CREDENTIAL_PATH_NOT_ALLOWED');
+    const patch = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/k8s-demo',
+      payload: { access: { mode: 'token', server: 'https://h', tokenPath: '/etc/shadow' } },
+    });
+    expect(patch.statusCode).toBe(400);
+    expect(patch.json().error.code).toBe('CREDENTIAL_PATH_NOT_ALLOWED');
+  });
+
+  it('POST / still requires installationId/org for github and rejects unknown types', async () => {
+    const gh = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { id: 'gh-x', type: 'github', name: 'X' },
+    });
+    expect(gh.statusCode).toBe(400);
+    const unknown = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { id: 'x', type: 'datadog', name: 'X' },
+    });
+    expect(unknown.statusCode).toBe(400);
+  });
+
+  it('POST /probe with type kubernetes returns version, namespaces and per-kind access', async () => {
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/probe',
+      payload: { type: 'kubernetes', access: { mode: 'token', server: 'https://h', token: 't' } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'ok' },
+    });
+  });
+
+  it('POST /probe with type kubernetes rejects out-of-dir paths and surfaces connector codes as 400', async () => {
+    const bad = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/probe',
+      payload: {
+        type: 'kubernetes',
+        access: { mode: 'kubeconfig', kubeconfigPath: '/etc/passwd' },
+      },
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().code).toBe('CREDENTIAL_PATH_NOT_ALLOWED');
+    const noCluster = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/probe',
+      payload: { type: 'kubernetes', access: { mode: 'in-cluster' } },
+    });
+    expect(noCluster.statusCode).toBe(400);
+    expect(noCluster.json().code).toBe('IN_CLUSTER_UNAVAILABLE');
   });
 });
