@@ -93,16 +93,18 @@ export class ConnectorAppStore implements ConnectorDurableStore {
         // durable config blob.
         const { lastRuns: _ignored, ...instance } = c;
         const record: BlobRecord = { instance: instance as ConnectorInstanceConfig };
-        const keyPath = c.app?.privateKeyPath;
-        if (c.app?.id && keyPath) {
-          const pemPath = join(this.keyDir, basename(keyPath));
-          if (existsSync(pemPath)) {
-            record.pem = readFileSync(pemPath, 'utf-8');
-          }
-          const secretPath = join(this.keyDir, `github-app-${c.app.id}.webhook-secret`);
-          if (existsSync(secretPath)) {
-            const s = readFileSync(secretPath, 'utf-8').trim();
-            if (s) record.webhookSecret = s;
+        if (c.type === 'github') {
+          const keyPath = c.app?.privateKeyPath;
+          if (c.app?.id && keyPath) {
+            const pemPath = join(this.keyDir, basename(keyPath));
+            if (existsSync(pemPath)) {
+              record.pem = readFileSync(pemPath, 'utf-8');
+            }
+            const secretPath = join(this.keyDir, `github-app-${c.app.id}.webhook-secret`);
+            if (existsSync(secretPath)) {
+              const s = readFileSync(secretPath, 'utf-8').trim();
+              if (s) record.webhookSecret = s;
+            }
           }
         }
         blob.connectors[c.id] = record;
@@ -182,7 +184,7 @@ export class ConnectorAppStore implements ConnectorDurableStore {
         continue;
       }
       const inst = parsed.data;
-      if (record.pem && inst.app?.id && inst.app?.privateKeyPath) {
+      if (inst.type === 'github' && record.pem && inst.app?.id && inst.app?.privateKeyPath) {
         const pemPath = join(this.keyDir, basename(inst.app.privateKeyPath));
         writeFileSync(pemPath, record.pem, { encoding: 'utf-8', mode: 0o600 });
         chmodSync(pemPath, 0o600);

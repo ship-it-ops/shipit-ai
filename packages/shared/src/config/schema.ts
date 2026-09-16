@@ -158,11 +158,143 @@ const githubConnectorSchema = z.object({
 export type GitHubConnectorConfig = z.infer<typeof githubConnectorSchema>;
 export type LastRun = z.infer<typeof lastRunSchema>;
 
+// ── Kubernetes connector instance ─────────────────────────────────────────
+// One instance per cluster: `cluster.name` scopes every canonical id the
+// connector emits, the way a GitHub org scopes repository ids. Credentials
+// NEVER live here — `access` references FILES inside the key dir (written by
+// POST /api/connectors/kubernetes/credentials, mirrored into the connector-apps
+// GSM blob). Design: docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md
+
+export const KUBERNETES_WORKLOAD_KINDS = [
+  'Deployment',
+  'StatefulSet',
+  'DaemonSet',
+  'CronJob',
+] as const;
+export type KubernetesWorkloadKind = (typeof KUBERNETES_WORKLOAD_KINDS)[number];
+
+const K8S_CLUSTER_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+const HTTPS_URL = /^https:\/\/\S+$/;
+
+function isValidRegex(pattern: string): boolean {
+  try {
+    new RegExp(pattern);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const kubernetesAccessSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('in-cluster') }),
+  z.object({
+    mode: z.literal('kubeconfig'),
+    kubeconfigPath: z.string().min(1),
+    context: z.string().min(1).optional(),
+  }),
+  z.object({
+    mode: z.literal('token'),
+    server: z.string().regex(HTTPS_URL, 'server must be an https:// URL'),
+    tokenPath: z.string().min(1),
+    caDataPath: z.string().min(1).optional(),
+  }),
+]);
+
+const kubernetesScopeSchema = z
+  .object({
+    namespaces: z
+      .object({
+        include: z.array(z.string().min(1)).default(['*']),
+        exclude: z
+          .array(z.string().min(1))
+          .default(['kube-system', 'kube-public', 'kube-node-lease']),
+      })
+      .prefault({}),
+    kinds: z
+      .array(z.enum(KUBERNETES_WORKLOAD_KINDS))
+      .min(1)
+      .default([...KUBERNETES_WORKLOAD_KINDS]),
+  })
+  .prefault({});
+
+const kubernetesMappingSchema = z
+  .object({
+    service: z
+      .object({
+        nameFrom: z
+          .array(z.enum(['part-of', 'name', 'workload']))
+          .min(1)
+          .default(['part-of', 'name', 'workload']),
+        includeComponent: z.boolean().default(false),
+      })
+      .prefault({}),
+    environment: z
+      .object({
+        label: z.string().min(1).default('environment'),
+        namespaceRules: z
+          .array(
+            z.object({
+              pattern: z
+                .string()
+                .min(1)
+                .refine(isValidRegex, { message: 'pattern must be a valid regular expression' }),
+              environment: z.string().min(1),
+            }),
+          )
+          .default([
+            { pattern: '^(prod|production)', environment: 'production' },
+            { pattern: '^(stag|staging)', environment: 'staging' },
+            { pattern: '^(dev|development)', environment: 'development' },
+          ]),
+        default: z.string().min(1).nullable().default(null),
+      })
+      .prefault({}),
+    ownership: z.object({ teamLabel: z.string().min(1).default('team') }).prefault({}),
+    repoLink: z
+      .object({
+        annotation: z.string().min(1).default('shipit.ai/github-repo'),
+        githubOrg: z.string().min(1).nullable().default(null),
+        nameMatch: z.boolean().default(true),
+      })
+      .prefault({}),
+  })
+  .prefault({});
+
+const kubernetesConnectorSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('kubernetes'),
+  enabled: z.boolean().default(true),
+  name: z.string().min(1),
+  schedule: z.string().default('*/5 * * * *').refine(isCrontabShape, {
+    message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "*/5 * * * *".',
+  }),
+  cluster: z.object({
+    name: z
+      .string()
+      .regex(
+        K8S_CLUSTER_NAME,
+        'cluster.name must be lowercase DNS-label style ([a-z0-9-], max 63 chars)',
+      ),
+  }),
+  access: kubernetesAccessSchema,
+  scope: kubernetesScopeSchema,
+  mapping: kubernetesMappingSchema,
+  lastRuns: z.array(lastRunSchema).default([]),
+});
+
+export type KubernetesConnectorConfig = z.infer<typeof kubernetesConnectorSchema>;
+export type KubernetesMappingConfig = KubernetesConnectorConfig['mapping'];
+export type KubernetesScopeConfig = KubernetesConnectorConfig['scope'];
+export type KubernetesAccessConfig = KubernetesConnectorConfig['access'];
+
 // Discriminated union — add new connector kinds here as they're built. The
 // `type` literal must be unique per kind so Zod can pick the right schema.
 // Exported so the registry can validate single instances without having to
 // navigate ZodDefault wrappers from the top-level configSchema.
-export const connectorInstanceSchema = z.discriminatedUnion('type', [githubConnectorSchema]);
+export const connectorInstanceSchema = z.discriminatedUnion('type', [
+  githubConnectorSchema,
+  kubernetesConnectorSchema,
+]);
 
 export type ConnectorInstanceConfig = z.infer<typeof connectorInstanceSchema>;
 

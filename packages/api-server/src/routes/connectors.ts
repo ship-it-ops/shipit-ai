@@ -231,7 +231,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         // GitHub's numeric id to string for the lookup.
         const usedBy = new Map<string, string>();
         for (const c of registry.list()) {
-          if (c.installationId) usedBy.set(c.installationId, c.id);
+          if (c.type === 'github' && c.installationId) usedBy.set(c.installationId, c.id);
         }
         // Always use the slug-based PUBLIC install URL — appending
         // /installations/new to html_url breaks for org-owned Apps because

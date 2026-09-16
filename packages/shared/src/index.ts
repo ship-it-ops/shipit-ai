@@ -152,6 +152,7 @@ export {
   resolveAppCredentials,
   LOGICAL_SECRETS,
   secretsRegistrySchema,
+  KUBERNETES_WORKLOAD_KINDS,
 } from './config/index.js';
 export type {
   Config,
@@ -166,4 +167,9 @@ export type {
   AuthConfig,
   SecretEntry,
   SecretsRegistry,
+  KubernetesConnectorConfig,
+  KubernetesMappingConfig,
+  KubernetesScopeConfig,
+  KubernetesAccessConfig,
+  KubernetesWorkloadKind,
 } from './config/index.js';

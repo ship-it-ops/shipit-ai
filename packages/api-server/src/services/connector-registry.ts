@@ -289,7 +289,13 @@ export class ConnectorRegistry {
     // an existing override; `app: {...}` replaces it; `app: undefined`
     // leaves it alone.
     const mergedApp =
-      input.app === null ? undefined : input.app !== undefined ? input.app : existing.app;
+      input.app === null
+        ? undefined
+        : input.app !== undefined
+          ? input.app
+          : existing.type === 'github'
+            ? existing.app
+            : undefined;
     const next = parseConnectorInstance({
       ...existing,
       ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
