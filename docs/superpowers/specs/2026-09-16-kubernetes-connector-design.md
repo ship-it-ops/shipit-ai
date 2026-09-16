@@ -98,7 +98,7 @@ calls is the connector package; the two envelope kinds are the only bus change.
 
 ```
 src/
-  index.ts              exports KubernetesConnector, types, buildKubeClients
+  index.ts              exports KubernetesConnector, types, defaultClientFactory
   connector.ts          KubernetesConnector implements ShipItConnector
   auth.ts               access modes -> KubeConfig; validation; client factory seam
   fetchers/
@@ -135,18 +135,20 @@ namespaces (and their environments) are published before the workloads that refe
 Ordering is best-effort: the writer batches asynchronously, and an edge whose target has not
 landed yet is dropped and re-emitted on the next run.
 
-| entity type | API calls                                                                                                                                                                                                                                                                                                                         | cursor                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `Cluster`   | `GET /version`; `list nodes` (bounded probe of the first node only, `limit 1`; `continue` intentionally not threaded)                                                                                                                                                                                                             | none                                 |
-| `Namespace` | `list namespaces` `limit 500` + `continue`                                                                                                                                                                                                                                                                                        | the `continue` token                 |
-| `Workload`  | per included namespace: `list deployments/statefulsets/daemonsets/cronjobs` (`limit 500`, `continue`) and **one** `list pods` + **one** `list replicasets` per namespace, matched to workloads in memory by owner-reference chain (`Pod -> ReplicaSet -> Deployment`, `Pod -> StatefulSet`, `Pod -> DaemonSet`, `Job -> CronJob`) | `<namespaceIndex>~<kind>~<continue>` |
+| entity type | API calls                                                                                                                                                                                                                                                                                                       | cursor                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `Cluster`   | `GET /version`; `list nodes` (bounded probe of the first node only, `limit 1`; `continue` intentionally not threaded)                                                                                                                                                                                           | none                                 |
+| `Namespace` | `list namespaces` `limit 500` + `continue`                                                                                                                                                                                                                                                                      | the `continue` token                 |
+| `Workload`  | per included namespace: `list deployments/statefulsets/daemonsets/cronjobs` (`limit 500`, `continue`) and **one** `list pods` + **one** `list replicasets` per namespace, matched to workloads in memory by owner-reference chain (`Pod -> ReplicaSet -> Deployment`, `Pod -> StatefulSet`, `Pod -> DaemonSet`) | `<namespaceIndex>~<kind>~<continue>` |
 
 Namespace filtering: `scope.namespaces.include` globs (default `['*']`) minus
 `scope.namespaces.exclude` (default `['kube-system', 'kube-public', 'kube-node-lease']`).
 `scope.kinds` defaults to all four workload kinds.
 
-Pod rollups: `readyPods` and `restarts` sum over every pod owned by a workload (all
-revisions mid-rollout). Image digests are attributed only to pods owned by the
+Pod rollups: CronJobs get no pod rollup in v1 — ready counts, restarts and image digests
+are Deployment/StatefulSet/DaemonSet only. For those three kinds, `readyPods` and
+`restarts` sum over every pod owned by a workload (all revisions mid-rollout). Image
+digests are attributed only to pods owned by the
 ReplicaSet(s) at the Deployment's highest numeric `deployment.kubernetes.io/revision`
 annotation (all owned ReplicaSets when none carry the annotation); a container with more
 than one distinct digest among those pods is ambiguous and the digest is omitted entirely.
@@ -387,10 +389,15 @@ Promise<void>`; the BullMQ producer uses job id `<connectorId>~sync-completed~<s
 not written to the optional replay stream.
 
 **Emission.** `sync-scheduler.ts` publishes it after `harness.runSync` returns
-`status === 'success'` for `mode === 'full'` — never for `partial` or `failed`, because a
-partial run has not proven the missing nodes are gone. `startedAt` is the job's start
-timestamp on the api-server clock, the same clock the normalizers use for `_last_synced`.
-Both are `toISOString()` UTC strings, so the lexical `<` in the sweep is chronological.
+`status === 'success' && mode === 'full' && type.sweepsAbsent` — never for `partial` or
+`failed`, because a partial run has not proven the missing nodes are gone, and never for a
+type that has not opted in (see the per-type opt-in note below). `startedAt` is the job's
+start timestamp on the api-server clock, the same clock the normalizers use for
+`_last_synced`. Both are `toISOString()` UTC strings, so the lexical `<` in the sweep is
+chronological. `publishControl` enforces this: it rejects any `startedAt` that does not
+round-trip unchanged through `new Date(startedAt).toISOString()`, because the writer's sweep
+compares it lexically against `_last_synced` and a non-canonical string would silently break
+that comparison.
 
 **Writer.** `CoreWriter.processBatch` handles `event.kind === 'sync.completed'` before the
 `payload.nodes` branch:
@@ -405,9 +412,14 @@ RETURN count(n) AS marked
 ```
 
 `writeNode`'s `SET` and `touchLastSynced` both add `n._absent_since = null`, so any node the
-connector re-confirms — changed or unchanged — is present again. Idempotency entries are
-kept for absent nodes, so a workload that reappears with identical content is a cheap
-touch, not a rewrite. Edges of absent nodes are untouched; they hide with the node.
+connector re-confirms — changed or unchanged — is present again. This includes the
+freshness-rejected path: when the in-Cypher freshness guard refuses an incoming node because
+a strictly newer version is already stored, the writer still calls `touchLastSynced` (not
+`writeNode`) to advance `_last_synced`, because the connector saw the entity this run even
+though its content was not written — the same call the plain duplicate (idempotent-skip)
+path makes. Idempotency entries are kept for absent nodes, so a workload that reappears with
+identical content is a cheap touch, not a rewrite. Edges of absent nodes are untouched; they
+hide with the node.
 
 **Known limitation — shared global nodes.** `_source_connector_id` is overwritten by the most
 recent writer. A `LogicalService` or `Environment` emitted by two clusters can be marked
@@ -454,6 +466,8 @@ exhaustive (see Revisit Triggers in the design decision).
 | `FORBIDDEN:<kind>`        | fetch                      | 403 listing one kind → that entity type errors, others continue, run is `partial`; probe reports the kind as `forbidden` |
 | `NAMESPACE_SCOPE_EMPTY`   | fetch                      | include/exclude left no namespaces; run is `failed`                                                                      |
 | `SCOPE_INVALID`           | authenticate               | `scope.cluster` or `scope.mapping` missing — a factory/build bug, not user-facing input                                  |
+| `TIMEOUT`                 | authenticate, probe, fetch | a call exceeded the 30 s per-call timeout, or the client threw `TimeoutError`/`ETIMEDOUT`/`UND_ERR_CONNECT_TIMEOUT`      |
+| `API_ERROR`               | authenticate, probe, fetch | any other API server response (non-401/403 `ApiException`) or unclassified error; message truncated to 200 chars         |
 
 Every `authenticate()` failure is `<CODE>: message` (the `KubernetesError` constructor
 prefixes the code). API errors: `classifyError` builds the message from `err.body.message`
@@ -518,7 +532,7 @@ acceptance test.
 ## Infra brief (cross-repo, `shipit-ai-infra`)
 
 - `ClusterRole shipit-reader`: `get`, `list`, `watch` on `namespaces`, `nodes`, `pods`,
-  `deployments`, `replicasets`, `statefulsets`, `daemonsets`, `jobs`, `cronjobs`;
+  `deployments`, `replicasets`, `statefulsets`, `daemonsets`, `cronjobs`;
   `ClusterRoleBinding` to the existing `api-server` ServiceAccount.
 - Annotation `shipit.ai/github-repo: Ship-It-Ops/ShipIt-AI` on the four chart workloads.
 - No new GSM container: uploaded credentials ride in the existing `shipit-connector-apps`
@@ -534,7 +548,8 @@ acceptance test.
   picker seeded from the probe, kinds, per-kind RBAC warnings), **Configure** (environment
   rules, team label, repo-link org and annotation hint, schedule field reuse), **Review**
   (dry-run summary via the SDK `dryRun`).
-- Card and drawer adapters keyed by type via `summarize`; the GitHub-specific fields move
+- Card and drawer adapters keyed by type via a `summarize` adapter, to be introduced in
+  Spec 2 (v1's factory has no such seam — see §Connector-type factory); the GitHub-specific fields move
   behind the adapter.
 - `lib/entity-types.ts` registers `Cluster`, `Namespace`, `BuildArtifact`, `Environment`
   (only `LogicalService`, `RuntimeService`, `Repository`, `Deployment`, `Pipeline`,

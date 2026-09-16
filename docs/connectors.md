@@ -203,14 +203,18 @@ Credentials never live in YAML. Store them first, then reference the returned pa
 curl -X POST localhost:3001/api/connectors/kubernetes/credentials \
   -H 'Content-Type: application/json' \
   -d '{ "connectorId": "k8s-demo", "mode": "token", "token": "<sa-token>", "caData": "-----BEGIN CERTIFICATE-----..." }'
-# → { "mode": "token", "tokenPath": "~/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "~/.shipit/keys/k8s-ca-k8s-demo.pem" }
+# → { "mode": "token", "tokenPath": "/home/shipit/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "/home/shipit/.shipit/keys/k8s-ca-k8s-demo.pem" }
 
 curl -X POST localhost:3001/api/connectors -H 'Content-Type: application/json' -d '{
   "id": "k8s-demo", "type": "kubernetes", "name": "Demo cluster",
   "cluster": { "name": "shipit-demo" },
-  "access": { "mode": "token", "server": "https://10.0.0.1:6443", "tokenPath": "~/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "~/.shipit/keys/k8s-ca-k8s-demo.pem" }
+  "access": { "mode": "token", "server": "https://10.0.0.1:6443", "tokenPath": "/home/shipit/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "/home/shipit/.shipit/keys/k8s-ca-k8s-demo.pem" }
 }'
 ```
+
+The returned paths are absolute, inside the key dir (`~/.shipit/keys` by default, override with
+`SHIPIT_GITHUB_APP_KEY_DIR`) — paste them into the create body exactly as returned; `~` is not
+expanded and an unexpanded tilde is rejected by the path allowlist.
 
 `POST /api/connectors/probe` with `{ "type": "kubernetes", "access": { ... } }` checks access before you
 save: it returns the server version, the namespaces in scope and, per workload kind, `ok`, `forbidden`,
@@ -230,9 +234,11 @@ rules:
     resources: [deployments, replicasets, statefulsets, daemonsets]
     verbs: [get, list, watch]
   - apiGroups: [batch]
-    resources: [jobs, cronjobs]
+    resources: [cronjobs]
     verbs: [get, list, watch]
 ```
+
+`watch` is granted for the planned streaming mode (see Not in v1); v1 only ever lists.
 
 Bind it to the ShipIt ServiceAccount (in-cluster) or to the ServiceAccount whose token you paste.
 A workload kind the account may not list is reported as `FORBIDDEN:<kind>` on the run and the run is
@@ -252,6 +258,8 @@ mapping:
     label: environment # also `env`; workload label, then namespace label
     namespaceRules: # then namespace-name regexes
       - { pattern: '^(prod|production)', environment: production }
+      - { pattern: '^(stag|staging)', environment: staging }
+      - { pattern: '^(dev|development)', environment: development }
     default: null # then this; otherwise no Environment
   ownership: { teamLabel: team } # slugified → GitHub team
   repoLink:

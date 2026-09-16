@@ -7,7 +7,7 @@
 ## What the app does
 
 The api-server's scheduler runs a `kubernetes` connector that lists namespaces, nodes, pods,
-deployments, replicasets, statefulsets, daemonsets, jobs and cronjobs — read-only — using the
+deployments, replicasets, statefulsets, daemonsets and cronjobs — read-only — using the
 pod's ServiceAccount when `access.mode: in-cluster`. It links workloads to GitHub repositories
 via the `shipit.ai/github-repo` annotation. No new secrets: uploaded credentials ride in the
 existing `shipit-connector-apps` GSM container.
@@ -16,7 +16,7 @@ existing `shipit-connector-apps` GSM container.
 
 1. `charts/shipit-ai/templates/clusterrole-shipit-reader.yaml`:
    - `ClusterRole shipit-reader` with `get, list, watch` on core `namespaces, nodes, pods`;
-     apps `deployments, replicasets, statefulsets, daemonsets`; batch `jobs, cronjobs`.
+     apps `deployments, replicasets, statefulsets, daemonsets`; batch `cronjobs`.
    - `ClusterRoleBinding shipit-reader` → `ServiceAccount {{ .Values.apiServer.serviceAccountName }}`
      in the release namespace.
 2. Annotation `shipit.ai/github-repo: Ship-It-Ops/ShipIt-AI` on the four app Deployments and the
