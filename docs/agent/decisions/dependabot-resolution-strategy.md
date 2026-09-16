@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-09-14
+updated: 2026-09-15
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -342,6 +342,45 @@ local build rather than committing it (as in round 4).
 - `packages/web-ui/package.json` — next, eslint-config-next.
 - `packages/api-server/package.json` — fastify.
 - `pnpm-lock.yaml`.
+
+## Update 2026-09-15 — override prune (25 → 4)
+
+The revisit trigger ("list grows past ~15") had been firing for two rounds. Method: remove
+every override except the exact `vite` pin, `pnpm install` (non-frozen) so the lockfile
+re-resolves, then compare each package's natural resolution against the override's minimum;
+re-add only the ones that regressed. `pnpm audit` was clean at baseline, so this is pure
+anti-bloat — no security posture changed.
+
+### Dropped (21) — parents already resolve at or above the patched minimum
+
+hono, @hono/node-server, express-rate-limit, fast-uri@3, flatted, path-to-regexp,
+brace-expansion@1/@2/@5, qs, ip-address, yaml, ws, undici, form-data, js-yaml,
+@babel/core, protobufjs, find-my-way, body-parser — and **uuid, which had no consumer left
+in the tree at all** (bullmq dropped it; the override was dead).
+
+### Kept (4)
+
+| override              | why it still has to stay                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vite: 7.3.5` (exact) | round-4 GHSAs; pnpm won't re-resolve off the cached 7.3.3 with a caret                                                                                                                                                                                                                                                                                                                                    |
+| `esbuild: ^0.28.1`    | `vite@7.3.5` declares `esbuild ^0.27.0` → 0.27.7, which `pnpm audit` flags (GHSA-g7r4-m6w7-qqqr)                                                                                                                                                                                                                                                                                                          |
+| `picomatch: ^4.0.4`   | without it `micromatch@4.0.8` (via `@next/eslint-plugin-next → fast-glob`) resolves `picomatch@2.3.2`. **Security-obsolete** (2.3.2 IS the patched 2.x; audit does not flag it) — kept only because the global override has forced micromatch across a major onto 4.x since round 1 and dropping it changes a resolution the suite hasn't run against. Drop candidate: remove, or scope to `picomatch@4`. |
+| `postcss: ^8.5.26`    | without it `next@16.3.5`'s exact `postcss 8.5.23` pin reappears alongside web-ui's own `^8.5.26`. **Security-obsolete** (8.5.23 is the patched floor for GHSA-fxqj-rqcc-2cmp; audit clean). Drop candidate.                                                                                                                                                                                               |
+
+Side effects worth knowing: esbuild collapsed from two versions (0.28.1 + 0.28.2 and ~25
+`@esbuild/*` platform packages) to one — a dedupe win; `yaml` is now split 2.9.0
+(lint-staged) / 2.9.1 (workspaces + vite peer), both ≥ 2.8.3, harmless.
+
+Gotcha: `pnpm turbo build` fails in a fresh checkout with no `.env` — `next.config.mjs`
+substitutes `${SHIPIT_API_URL}` from `shipit.config.yaml` with no fallback. CI sets
+`SHIPIT_API_URL=http://localhost:3001` at workflow level (`turbo.json` lists it under
+`build.env`); set it on the command line locally.
+
+### Verification (this round)
+
+`pnpm audit` clean · `pnpm install --frozen-lockfile` up to date · `turbo typecheck --force`
+14/14 · `test --force` 14/14 · `build --force` 9/9 · `lint --force` 0 errors (18 pre-existing
+warnings) · `format:check` clean.
 
 ## Related
 
