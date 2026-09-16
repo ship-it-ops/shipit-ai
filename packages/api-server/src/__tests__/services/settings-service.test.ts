@@ -150,6 +150,27 @@ describe('SettingsService.setConnectorWebhookSecret', () => {
       NoResolvableAppError,
     );
   });
+
+  it('throws NoResolvableAppError for a kubernetes connector — no App to anchor a webhook secret to', async () => {
+    const kubernetesConnector = {
+      type: 'kubernetes',
+      id: 'k8s-x',
+      name: 'x',
+      cluster: { name: 'c' },
+      access: { mode: 'in-cluster' },
+    } as unknown as GitHubConnectorConfig;
+    const svc = new SettingsService({
+      secretStore: fakeStore(),
+      // A configured global App must NOT be inherited by a kubernetes instance.
+      globalApp: { id: 'global-app', webhookPublicUrl: 'https://x.example/api/webhooks/github' },
+      registry: fakeRegistry([kubernetesConnector]),
+      connectorAppStore: fakeAppStore(),
+      env,
+    });
+    await expect(svc.setConnectorWebhookSecret('k8s-x')).rejects.toBeInstanceOf(
+      NoResolvableAppError,
+    );
+  });
 });
 
 describe('SettingsService allow-list + getters', () => {

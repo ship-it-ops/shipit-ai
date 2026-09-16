@@ -38,13 +38,14 @@ const fakeBuild = vi.fn();
 vi.mock('../../services/connector-types/index.js', () => ({
   getConnectorType: (type: string) =>
     type === 'github'
-      ? { type: 'github', pollMode: 'incremental', build: fakeBuild }
+      ? { type: 'github', pollMode: 'incremental', sweepsAbsent: false, build: fakeBuild }
       : type === 'fullpoll'
-        ? { type: 'fullpoll', pollMode: 'full', build: fakeBuild }
+        ? { type: 'fullpoll', pollMode: 'full', sweepsAbsent: true, build: fakeBuild }
         : undefined,
   connectorTypeFor: (cfg: { type: string }) => ({
     type: cfg.type,
     pollMode: cfg.type === 'fullpoll' ? 'full' : 'incremental',
+    sweepsAbsent: cfg.type === 'fullpoll',
     build: fakeBuild,
   }),
 }));
@@ -195,6 +196,31 @@ describe('SyncScheduler — connector types', () => {
       data: { connectorId: 'k', mode: 'incremental' },
       log: () => undefined,
     });
+    expect(eventBus.publishControl).not.toHaveBeenCalled();
+  });
+
+  it('does not sweep a github connector on a successful full run — GitHub full syncs are not exhaustive', async () => {
+    const registry = {
+      get: vi.fn().mockReturnValue({ id: 'gh', type: 'github' }),
+      recordRun: vi.fn().mockResolvedValue(undefined),
+      list: () => [],
+    };
+    const eventBus = {
+      publish: vi.fn().mockResolvedValue(undefined),
+      publishControl: vi.fn().mockResolvedValue(undefined),
+    };
+    makeScheduler({ registry: registry as never, eventBus: eventBus as never });
+    fakeBuild.mockResolvedValue({
+      ok: true,
+      connector: fakeConnector(),
+      sdkConfig: { id: 'gh', type: 'github', credentials: {}, scope: {} },
+    });
+
+    await capturedProcessor!({ data: { connectorId: 'gh', mode: 'full' }, log: () => undefined });
+    expect(registry.recordRun).toHaveBeenCalledWith(
+      'gh',
+      expect.objectContaining({ status: 'success' }),
+    );
     expect(eventBus.publishControl).not.toHaveBeenCalled();
   });
 

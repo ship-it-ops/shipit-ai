@@ -5,6 +5,10 @@ import type { BuildResult, ConnectorType } from './types.js';
 export const githubConnectorType: ConnectorType<GitHubConnectorConfig> = {
   type: 'github',
   pollMode: 'incremental',
+  // GitHub full syncs are bounded by scope.repos.include/exclude, scope.cappedAt,
+  // and the entities.* toggles — a full run is not exhaustive, so unseen nodes
+  // are not necessarily gone. Never trigger the absence sweep.
+  sweepsAbsent: false,
 
   async build(cfg, ctx): Promise<BuildResult> {
     // Per-connector override wins over the global App; absence of both surfaces

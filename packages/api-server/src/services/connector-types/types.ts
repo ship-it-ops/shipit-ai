@@ -39,6 +39,13 @@ export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInst
    * `full` and every successful poll triggers the absence sweep.
    */
   readonly pollMode: 'full' | 'incremental';
+  /**
+   * True only when a successful full run is EXHAUSTIVE for everything this
+   * type writes (Kubernetes lists the whole scope every run). GitHub full
+   * syncs are bounded by scope/cap/entity toggles, so unseen ≠ gone — they
+   * must not sweep.
+   */
+  readonly sweepsAbsent: boolean;
   build(cfg: C, ctx: BuildContext): Promise<BuildResult>;
   /** Types whose probe lives in the factory (Kubernetes); GitHub's stays in the route. */
   probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>;

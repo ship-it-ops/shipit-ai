@@ -315,7 +315,12 @@ export class SyncScheduler implements ConnectorRunner {
       job.log(`failed to persist run history: ${(err as Error).message}`);
     }
 
-    if (result.status === 'success' && mode === 'full') {
+    // The absence sweep is a per-type opt-in (`sweepsAbsent`): only a type
+    // whose successful full run is EXHAUSTIVE for everything it writes may
+    // trigger it. A GitHub full sync is bounded by scope/cap/entity toggles,
+    // so unseen != gone there — publishing sync.completed for it would sweep
+    // still-existing nodes as absent.
+    if (result.status === 'success' && mode === 'full' && type.sweepsAbsent) {
       try {
         await this.eventBus.publishControl(connectorId, {
           kind: 'sync.completed',

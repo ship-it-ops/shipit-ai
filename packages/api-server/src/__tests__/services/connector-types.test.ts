@@ -30,6 +30,10 @@ describe('connector-types registry', () => {
       /No connector type registered/,
     );
   });
+
+  it('github does not sweep absent nodes — its full sync is bounded, not exhaustive', () => {
+    expect(getConnectorType('github')?.sweepsAbsent).toBe(false);
+  });
 });
 
 describe('github connector type', () => {
