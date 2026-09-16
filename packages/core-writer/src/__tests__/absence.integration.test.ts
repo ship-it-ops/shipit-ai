@@ -2,6 +2,7 @@
  * Neo4j-backed integration test for the absence sweep (Kubernetes connector v1):
  *   - markAbsent stamps `_absent_since` only on the connector's nodes whose
  *     `_last_synced` predates the run start
+ *   - the confirmation floor: a run that confirmed NOTHING marks nothing
  *   - mergeNode (writeNode) clears `_absent_since`
  *   - touchLastSynced clears `_absent_since` even when the timestamp is not newer
  * Gated on NEO4J_TEST_URI; wipes the graph after each test. Runs serially in the
@@ -84,9 +85,33 @@ describe.skipIf(!URI)('core-writer absence sweep — integration', () => {
     ).toBe(0);
   });
 
+  it('marks nothing when no node of this run reached the graph (confirmation floor)', async () => {
+    // Both nodes predate the run start: the run's entity writes never landed
+    // (swallowed write error, or a jobId-dedup blackout). Sweeping here would
+    // stamp the connector's entire graph absent.
+    await writer.writeNode(workload('api-server', 'k8s-a', '2026-09-16T10:00:00.000Z'), [], {});
+    await writer.writeNode(workload('web-ui', 'k8s-a', '2026-09-16T10:01:00.000Z'), [], {});
+
+    const marked = await writer.markAbsent(
+      'k8s-a',
+      '2026-09-16T10:05:00.000Z',
+      '2026-09-16T10:06:00.000Z',
+    );
+
+    expect(marked).toBe(0);
+    expect(
+      await absentSince('shipit://deployment/default/demo/shipit/deployment/api-server'),
+    ).toBeNull();
+    expect(
+      await absentSince('shipit://deployment/default/demo/shipit/deployment/web-ui'),
+    ).toBeNull();
+  });
+
   it('a later writeNode clears _absent_since', async () => {
     const node = workload('api-server', 'k8s-a', '2026-09-16T10:00:00.000Z');
     await writer.writeNode(node, [], {});
+    // A node confirmed by this run, so the sweep clears its confirmation floor.
+    await writer.writeNode(workload('web-ui', 'k8s-a', '2026-09-16T10:05:30.000Z'), [], {});
     await writer.markAbsent('k8s-a', '2026-09-16T10:05:00.000Z', '2026-09-16T10:06:00.000Z');
     expect(await absentSince(node.id)).not.toBeNull();
 
@@ -99,6 +124,7 @@ describe.skipIf(!URI)('core-writer absence sweep — integration', () => {
   it('touchLastSynced clears _absent_since even when the timestamp does not advance', async () => {
     const node = workload('api-server', 'k8s-a', '2026-09-16T10:00:00.000Z');
     await writer.writeNode(node, [], {});
+    await writer.writeNode(workload('web-ui', 'k8s-a', '2026-09-16T10:05:30.000Z'), [], {});
     await writer.markAbsent('k8s-a', '2026-09-16T10:05:00.000Z', '2026-09-16T10:06:00.000Z');
     await writer.touchLastSynced(node.id, '2026-09-16T09:00:00.000Z');
     expect(await absentSince(node.id)).toBeNull();

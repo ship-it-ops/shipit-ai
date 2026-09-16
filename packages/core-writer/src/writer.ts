@@ -157,6 +157,10 @@ export class CoreWriter {
     let claimsConflictSkipped = 0;
     let absentMarked = 0;
     const errors: string[] = [];
+    // Connectors whose writes failed earlier in THIS batch. A control envelope
+    // that follows such a failure cannot distinguish "deleted from the cluster"
+    // from "we failed to write it", so it must not sweep.
+    const failedConnectors = new Set<string>();
 
     for (const event of batch) {
       // Control envelopes carry no entities. `sync.completed` (Kubernetes
@@ -165,6 +169,13 @@ export class CoreWriter {
       if (event.kind === 'sync.completed') {
         const control = event.control;
         if (control && control.mode === 'full') {
+          if (failedConnectors.has(event.connector_id)) {
+            // Not an error of its own — the write failure is already in `errors`.
+            console.warn(
+              `[CoreWriter] sweep skipped for ${event.connector_id}: a write failed earlier in this batch, so unseen nodes cannot be judged absent`,
+            );
+            continue;
+          }
           try {
             const marked = await this.nodeWriter.markAbsent(
               event.connector_id,
@@ -319,6 +330,7 @@ export class CoreWriter {
           errors.push(
             `Error writing node ${node.id}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          failedConnectors.add(event.connector_id);
         }
       }
 
@@ -332,6 +344,7 @@ export class CoreWriter {
           errors.push(
             `Error writing edge ${edge.type} ${edge.from}->${edge.to}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          failedConnectors.add(event.connector_id);
         }
       }
     }

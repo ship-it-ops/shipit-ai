@@ -151,12 +151,23 @@ export async function touchLastSynced(
   );
 }
 
+function toCount(value: { toNumber?: () => number } | number | undefined): number {
+  return typeof value === 'object' && value?.toNumber ? value.toNumber() : Number(value ?? 0);
+}
+
 /**
  * Absence sweep (sync.completed). Stamp `_absent_since` on every node this
  * connector instance wrote that it did NOT re-confirm during the run that
  * started at `startedAt`. Both timestamps are `toISOString()` UTC strings from
  * the api-server clock, so the lexical `<` is chronological. Nodes without a
  * `_last_synced` cannot be judged and are left alone. Returns the count marked.
+ *
+ * Confirmation floor: a successful full run always re-confirms at least the
+ * Cluster node, so ZERO nodes at `_last_synced >= startedAt` proves this run's
+ * entities never reached the graph — a swallowed per-node write error, or a
+ * BullMQ jobId-dedup blackout where the entity jobs of an earlier run are still
+ * queued while a later run's control envelope arrives. Marking on that evidence
+ * would stamp the connector's whole graph absent, so mark nothing instead.
  */
 export async function markAbsent(
   tx: ManagedTransaction,
@@ -164,6 +175,21 @@ export async function markAbsent(
   startedAt: string,
   now: string,
 ): Promise<number> {
+  const confirmed = await tx.run(
+    `MATCH (n)
+     WHERE n._source_connector_id = $connectorId
+       AND n._last_synced IS NOT NULL
+       AND n._last_synced >= $startedAt
+     RETURN count(n) AS confirmed`,
+    { connectorId, startedAt },
+  );
+  if (toCount(confirmed.records[0]?.get('confirmed')) === 0) {
+    console.warn(
+      `[CoreWriter] sweep skipped: no entity from this run reached the graph (connector ${connectorId}, startedAt ${startedAt})`,
+    );
+    return 0;
+  }
+
   const result = await tx.run(
     `MATCH (n)
      WHERE n._source_connector_id = $connectorId
@@ -174,9 +200,7 @@ export async function markAbsent(
      RETURN count(n) AS marked`,
     { connectorId, startedAt, now },
   );
-  const marked = result.records[0]?.get('marked') as
-    { toNumber?: () => number } | number | undefined;
-  return typeof marked === 'object' && marked?.toNumber ? marked.toNumber() : Number(marked ?? 0);
+  return toCount(result.records[0]?.get('marked'));
 }
 
 export async function mergeEdge(tx: ManagedTransaction, edge: CanonicalEdge): Promise<void> {

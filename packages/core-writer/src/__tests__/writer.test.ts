@@ -689,6 +689,62 @@ describe('CoreWriter', () => {
       expect(result.absentMarked).toBe(0);
     });
 
+    it('never sweeps a connector whose write failed earlier in the same batch', async () => {
+      const nodeWriter = createMockNodeWriter();
+      (nodeWriter.writeNode as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('neo4j unavailable'),
+      );
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const failing = makeEnvelope([makeNode('repo-a')], []);
+      failing.connector_id = 'k8s-demo';
+      const result = await writer.processBatch([
+        failing,
+        controlEnvelope('k8s-demo', '2026-09-16T10:00:00.000Z'),
+      ]);
+
+      // The node's _last_synced is stale because the write failed, not because
+      // the workload is gone — sweeping here would stamp a live node absent.
+      expect(nodeWriter.markAbsent).not.toHaveBeenCalled();
+      expect(result.absentMarked).toBe(0);
+      // The write failure is reported once; the skip itself is not an error.
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('neo4j unavailable');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('sweep skipped for k8s-demo: a write failed earlier in this batch'),
+      );
+    });
+
+    it('a failure for one connector does not block another connector sweep', async () => {
+      const nodeWriter = createMockNodeWriter();
+      (nodeWriter.writeNode as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('neo4j unavailable'),
+      );
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const failing = makeEnvelope([makeNode('repo-a')], []);
+      failing.connector_id = 'k8s-other';
+      const result = await writer.processBatch([
+        failing,
+        controlEnvelope('k8s-demo', '2026-09-16T10:00:00.000Z'),
+      ]);
+      expect(nodeWriter.markAbsent).toHaveBeenCalledTimes(1);
+      expect(nodeWriter.markAbsent).toHaveBeenCalledWith(
+        'k8s-demo',
+        '2026-09-16T10:00:00.000Z',
+        expect.any(String),
+      );
+      expect(result.absentMarked).toBe(2);
+    });
+
     it('entity envelopes are unaffected and report absentMarked: 0', async () => {
       const nodeWriter = createMockNodeWriter();
       const writer = new CoreWriter(
