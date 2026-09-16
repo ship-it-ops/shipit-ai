@@ -87,15 +87,36 @@ export type KubeconfigValidation =
  * auth-provider plugins (the binary is not in the pod); no file references
  * (nothing else is mounted); no insecure-skip-tls-verify.
  */
+const FILE_REFERENCE_KEY =
+  /^\s*(token-file|certificate-authority|client-certificate|client-key)\s*:/m;
+
 export function validateKubeconfigText(text: string, context?: string): KubeconfigValidation {
+  // Must run before loadFromString: client-node's findToken() reads
+  // user['token-file'] off the filesystem DURING parsing, before any of the
+  // checks below run, which would let a pasted kubeconfig exfiltrate any
+  // readable pod file (e.g. the ServiceAccount token) as a bearer credential.
+  if (FILE_REFERENCE_KEY.test(text)) {
+    return {
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+      message:
+        'file references (token-file, certificate-authority, client-certificate, client-key) are not allowed; inline the *-data fields instead',
+    };
+  }
   const kc = new KubeConfig();
   try {
     kc.loadFromString(text);
   } catch (err) {
+    const e = err as { reason?: string; mark?: { line?: number; column?: number } };
+    const where =
+      e.mark && typeof e.mark.line === 'number'
+        ? ` (line ${e.mark.line + 1}${typeof e.mark.column === 'number' ? `, column ${e.mark.column + 1}` : ''})`
+        : '';
+    const reason = typeof e.reason === 'string' && e.reason ? e.reason : 'not valid YAML';
     return {
       ok: false,
       code: 'KUBECONFIG_INVALID',
-      message: `kubeconfig does not parse: ${(err as Error).message}`,
+      message: `kubeconfig does not parse: ${reason}${where}`,
     };
   }
   const contexts = kc.getContexts().map((c) => c.name);
@@ -252,13 +273,16 @@ export function classifyError(err: unknown): KubernetesError {
         'the API server rejected the credentials (401)',
         401,
       );
+    // ApiException#message concatenates the raw HTTP status line, body and
+    // headers (which may carry Set-Cookie behind an auth proxy); only the
+    // body's own `message` field, if present, is safe to surface.
+    const bodyMessage = (err.body as { message?: unknown } | undefined)?.message;
+    const summary = (
+      typeof bodyMessage === 'string' && bodyMessage ? bodyMessage : `HTTP ${status}`
+    ).slice(0, 200);
     if (status === 403)
-      return new KubernetesError('FORBIDDEN', `permission denied (403): ${err.message}`, 403);
-    return new KubernetesError(
-      'API_ERROR',
-      `API server returned ${status}: ${err.message}`,
-      status,
-    );
+      return new KubernetesError('FORBIDDEN', `permission denied (403): ${summary}`, 403);
+    return new KubernetesError('API_ERROR', `API server returned ${status}: ${summary}`, status);
   }
   const e = err as
     | {

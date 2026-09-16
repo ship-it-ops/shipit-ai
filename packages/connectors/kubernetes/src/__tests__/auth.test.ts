@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { ApiException } from '@kubernetes/client-node';
 import {
   KubernetesError,
@@ -8,6 +8,23 @@ import {
   validateKubeconfigText,
   SERVICE_ACCOUNT_TOKEN_PATH,
 } from '../auth.js';
+
+// node:fs's module namespace is not configurable under Vitest's ESM runner
+// (vi.spyOn throws "Cannot redefine property"), so the readFileSync guarantee
+// below mocks the module instead, wrapping the real implementation in a
+// vi.fn() we can assert against. @kubernetes/client-node imports `fs` as a
+// default import from 'node:fs', so both the default and named export must
+// carry the same mock function reference.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const readFileSync = vi.fn(actual.readFileSync);
+  return {
+    ...actual,
+    readFileSync,
+    default: { ...actual, readFileSync },
+  } as unknown as typeof import('node:fs');
+});
+const readFileSyncMock = vi.mocked((await import('node:fs')).readFileSync);
 
 const tokenKubeconfig = (extraContexts = '') => `
 apiVersion: v1
@@ -126,6 +143,35 @@ describe('validateKubeconfigText', () => {
       code: 'KUBECONFIG_INVALID',
     });
   });
+
+  it('rejects token-file without ever reading the referenced file off disk', () => {
+    readFileSyncMock.mockClear();
+    const tokenFile = tokenKubeconfig().replace('token: abc123', 'token-file: /etc/hosts');
+    expect(validateKubeconfigText(tokenFile)).toMatchObject({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+    });
+    expect(readFileSyncMock).not.toHaveBeenCalledWith('/etc/hosts', expect.anything());
+    expect(readFileSyncMock).not.toHaveBeenCalledWith('/etc/hosts');
+  });
+
+  it('rejects certificate-authority file references via the pre-parse check', () => {
+    const fileRef = tokenKubeconfig().replace(
+      /certificate-authority-data: .*/,
+      'certificate-authority: /etc/ca.crt',
+    );
+    expect(validateKubeconfigText(fileRef)).toMatchObject({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+    });
+  });
+
+  it('never echoes kubeconfig contents (e.g. a bearer token) into a parse-error message', () => {
+    const malformed = `not valid yaml: [\ntoken: SUPER-SECRET-TOKEN-abc123`;
+    const result = validateKubeconfigText(malformed);
+    expect(result).toMatchObject({ ok: false, code: 'KUBECONFIG_INVALID' });
+    expect((result as { message: string }).message).not.toContain('SUPER-SECRET');
+  });
 });
 
 describe('buildKubeConfig', () => {
@@ -219,9 +265,41 @@ describe('classifyError', () => {
         Object.assign(new Error('self signed'), { code: 'DEPTH_ZERO_SELF_SIGNED_CERT' }),
       ),
     ).toMatchObject({ code: 'TLS_ERROR' });
+    expect(classifyError(new Error('weird'))).toMatchObject({ code: 'API_ERROR' });
+  });
+
+  it('classifies KubernetesError as a passthrough and every timeout signal as TIMEOUT', () => {
     expect(
       classifyError(new KubernetesError('TIMEOUT', 'list pods exceeded 30000 ms')),
     ).toMatchObject({ code: 'TIMEOUT' });
-    expect(classifyError(new Error('weird'))).toMatchObject({ code: 'API_ERROR' });
+    expect(classifyError(Object.assign(new Error('x'), { name: 'TimeoutError' }))).toMatchObject({
+      code: 'TIMEOUT',
+    });
+    expect(classifyError(Object.assign(new Error('x'), { code: 'ETIMEDOUT' }))).toMatchObject({
+      code: 'TIMEOUT',
+    });
+    expect(
+      classifyError(
+        Object.assign(new TypeError('fetch failed'), {
+          cause: { code: 'UND_ERR_CONNECT_TIMEOUT', message: 'timeout' },
+        }),
+      ),
+    ).toMatchObject({ code: 'TIMEOUT' });
+  });
+
+  it('never leaks ApiException headers/body into the classified message', () => {
+    const forbidden = classifyError(
+      new ApiException(
+        403,
+        'HTTP-Code: 403\nMessage: x\nBody: {"message":"deployments is forbidden"}\nHeaders: {"set-cookie":"SECRETCOOKIE"}',
+        { message: 'deployments is forbidden' },
+        { 'set-cookie': 'SECRETCOOKIE' },
+      ),
+    );
+    expect(forbidden.message).toContain('deployments is forbidden');
+    expect(forbidden.message).not.toContain('SECRETCOOKIE');
+
+    const noBodyMessage = classifyError(new ApiException(500, 'boom', 'not an object', {}));
+    expect(noBodyMessage.message).toContain('HTTP 500');
   });
 });
