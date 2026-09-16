@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createMockNeo4jClient, createMockRecord } from './helpers/mock-neo4j.js';
+import { captureTool } from './helpers/capture-tool.js';
+import { registerGraphStats } from '../tools/graph-stats.js';
 
 describe('graph_stats tool', () => {
   it('should return correct stats response shape', async () => {
@@ -58,5 +60,17 @@ describe('graph_stats tool', () => {
     const neo4j = createMockNeo4jClient();
     const result = await neo4j.runCypher('MATCH (n) UNWIND labels(n)', {});
     expect(result.records.length).toBe(0);
+  });
+});
+
+describe('graph_stats include_absent', () => {
+  it('threads include_absent into the generated Cypher', async () => {
+    const excluding = createMockNeo4jClient();
+    await captureTool(registerGraphStats as never, excluding as never)({ include_absent: false });
+    expect(excluding.runCypher.mock.calls[0][0] as string).toContain('n._absent_since IS NULL');
+
+    const including = createMockNeo4jClient();
+    await captureTool(registerGraphStats as never, including as never)({ include_absent: true });
+    expect(including.runCypher.mock.calls[0][0] as string).not.toContain('_absent_since');
   });
 });

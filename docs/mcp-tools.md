@@ -115,6 +115,11 @@ Analyze downstream/upstream impact of a node in the knowledge graph. Returns aff
 
 Get detailed information about a single entity including properties, claims, and neighbors.
 
+Looking an entity up by id always returns it, even once the sync sweep has marked
+it absent — `absent_since` on the returned node carries the sweep timestamp (and is
+`null` for a live entity), so a deleted workload never reads as still deployed.
+`include_absent` governs the **neighbors**.
+
 | Parameter           | Type    | Required | Default | Description                                                                            |
 | ------------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
 | `entity`            | string  | yes      | —       | Entity canonical ID                                                                    |
@@ -132,7 +137,8 @@ Get detailed information about a single entity including properties, claims, and
       "id": "shipit://logicalservice/default/config-service",
       "label": "LogicalService",
       "properties": { "name": "config-service", "tier": 1, "owner": "platform-team" },
-      "effective_properties": { ... }
+      "effective_properties": { ... },
+      "absent_since": null
     },
     "claims": [...],
     "neighbors": {
@@ -150,11 +156,12 @@ Get detailed information about a single entity including properties, claims, and
 
 Find owners, code owners, and on-call personnel for an entity. Traverses `OWNS`, `CODEOWNER_OF`, `MEMBER_OF`, and `ON_CALL_FOR` relationships.
 
-| Parameter       | Type    | Required | Default | Description                                               |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------- |
-| `entity`        | string  | yes      | —       | Entity canonical ID                                       |
-| `include_chain` | boolean | no       | false   | Return full ownership chain (CODEOWNERS → Team → Members) |
-| `compact`       | boolean | no       | false   | Strip `_meta` envelope                                    |
+| Parameter        | Type    | Required | Default | Description                                                                            |
+| ---------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `entity`         | string  | yes      | —       | Entity canonical ID                                                                    |
+| `include_chain`  | boolean | no       | false   | Return full ownership chain (CODEOWNERS → Team → Members)                              |
+| `include_absent` | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`        | boolean | no       | false   | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -228,9 +235,9 @@ Search and filter entities in the knowledge graph by label and property values.
 
 Return aggregate statistics about the knowledge graph.
 
-| Parameter | Type | Required | Default | Description |
-| --------- | ---- | -------- | ------- | ----------- |
-| _(none)_  | —    | —        | —       | —           |
+| Parameter        | Type    | Required | Default | Description                                                                            |
+| ---------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `include_absent` | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
 
 **Response:**
 

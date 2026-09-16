@@ -130,6 +130,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
         description: 'Return full ownership chain (CODEOWNERS → Team → Members).',
         default: 'false',
       },
+      INCLUDE_ABSENT_PARAM,
       COMPACT_PARAM,
     ],
   },
@@ -156,7 +157,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Return aggregate statistics about the knowledge graph: node counts by label, edge counts by type, environments, totals, and freshness summary.',
     docAnchor: 'graph_stats',
-    params: [],
+    params: [INCLUDE_ABSENT_PARAM],
   },
   {
     name: 'search_entities',

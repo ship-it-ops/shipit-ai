@@ -67,6 +67,10 @@ export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): voi
           label: labels[0] ?? 'Unknown',
           properties: Object.fromEntries(Object.entries(props).filter(([k]) => !k.startsWith('_'))),
           effective_properties: effectiveProperties,
+          // entity_detail returns an absent node by id on purpose, so it must say
+          // so: the `_`-prefix filter above strips `_absent_since`, and without
+          // this an agent reads a deleted workload as still deployed.
+          absent_since: (props._absent_since as string | undefined) ?? null,
         };
 
         let claims: unknown[] | undefined;

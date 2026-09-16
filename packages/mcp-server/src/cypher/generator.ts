@@ -87,14 +87,25 @@ export function generateEntityDetailCypher(
   };
 }
 
-export function generateFindOwnersCypher(entityId: string, includeChain: boolean): CypherQuery {
+export function generateFindOwnersCypher(
+  entityId: string,
+  includeChain: boolean,
+  includeAbsent = false,
+): CypherQuery {
+  // The echoed entity is filtered too: the caller asked about a specific id, and
+  // a swept entity must not come back looking live unless it was asked for.
+  const absent = (alias: string) => (includeAbsent ? '' : ` WHERE ${alias}._absent_since IS NULL`);
+  const entityMatch = includeAbsent
+    ? 'MATCH (entity {id: $entityId})'
+    : 'MATCH (entity {id: $entityId}) WHERE entity._absent_since IS NULL';
+
   if (!includeChain) {
     return {
       query: `
-        MATCH (entity {id: $entityId})
-        OPTIONAL MATCH (owner)-[:OWNS]->(entity)
-        OPTIONAL MATCH (codeowner)-[:CODEOWNER_OF]->(entity)
-        OPTIONAL MATCH (oncall)-[:ON_CALL_FOR]->(entity)
+        ${entityMatch}
+        OPTIONAL MATCH (owner)-[:OWNS]->(entity)${absent('owner')}
+        OPTIONAL MATCH (codeowner)-[:CODEOWNER_OF]->(entity)${absent('codeowner')}
+        OPTIONAL MATCH (oncall)-[:ON_CALL_FOR]->(entity)${absent('oncall')}
         RETURN entity,
                collect(DISTINCT owner) AS owners,
                collect(DISTINCT codeowner) AS codeowners,
@@ -105,11 +116,11 @@ export function generateFindOwnersCypher(entityId: string, includeChain: boolean
 
   return {
     query: `
-      MATCH (entity {id: $entityId})
-      OPTIONAL MATCH (owner)-[:OWNS]->(entity)
-      OPTIONAL MATCH (codeowner)-[:CODEOWNER_OF]->(entity)
-      OPTIONAL MATCH (oncall)-[:ON_CALL_FOR]->(entity)
-      OPTIONAL MATCH (member)-[:MEMBER_OF]->(owner)
+      ${entityMatch}
+      OPTIONAL MATCH (owner)-[:OWNS]->(entity)${absent('owner')}
+      OPTIONAL MATCH (codeowner)-[:CODEOWNER_OF]->(entity)${absent('codeowner')}
+      OPTIONAL MATCH (oncall)-[:ON_CALL_FOR]->(entity)${absent('oncall')}
+      OPTIONAL MATCH (member)-[:MEMBER_OF]->(owner)${absent('member')}
       RETURN entity,
              collect(DISTINCT owner) AS owners,
              collect(DISTINCT codeowner) AS codeowners,
@@ -191,25 +202,30 @@ export function generateSearchEntitiesCypher(
   return { query: betterQuery, params };
 }
 
-export function generateGraphStatsCypher(): CypherQuery {
+export function generateGraphStatsCypher(includeAbsent = false): CypherQuery {
+  const nodeWhere = includeAbsent ? '' : ' WHERE n._absent_since IS NULL';
+  const edgeWhere = includeAbsent
+    ? ''
+    : ' WHERE a._absent_since IS NULL AND b._absent_since IS NULL';
+  const deploymentWhere = includeAbsent ? '' : ' WHERE d._absent_since IS NULL';
   return {
     query: `
       CALL {
-        MATCH (n) WHERE n._absent_since IS NULL
+        MATCH (n)${nodeWhere}
         UNWIND labels(n) AS label
         RETURN label, count(*) AS cnt
       }
       WITH collect({label: label, count: cnt}) AS node_counts,
            sum(cnt) AS total_nodes
       CALL {
-        MATCH (a)-[r]->(b) WHERE a._absent_since IS NULL AND b._absent_since IS NULL
+        MATCH (a)-[r]->(b)${edgeWhere}
         RETURN type(r) AS rel_type, count(*) AS cnt
       }
       WITH node_counts, total_nodes,
            collect({type: rel_type, count: cnt}) AS edge_counts,
            sum(cnt) AS total_edges
       CALL {
-        MATCH (d:Deployment) WHERE d._absent_since IS NULL
+        MATCH (d:Deployment)${deploymentWhere}
         RETURN collect(DISTINCT d.environment) AS environments
       }
       RETURN node_counts, total_nodes, edge_counts, total_edges, environments`,

@@ -193,11 +193,27 @@ describe('Cypher Generator', () => {
       ).not.toContain('_absent_since');
     });
 
-    it('graph stats always exclude absent nodes and their edges', () => {
+    it('graph stats exclude absent nodes and their edges by default, and include them on request', () => {
       const q = generateGraphStatsCypher().query;
       expect(q).toContain('MATCH (n) WHERE n._absent_since IS NULL');
       expect(q).toContain('a._absent_since IS NULL AND b._absent_since IS NULL');
       expect(q).toContain('MATCH (d:Deployment) WHERE d._absent_since IS NULL');
+      // Every read accepts include_absent; graph_stats used to hard-code the exclusion.
+      expect(generateGraphStatsCypher(true).query).not.toContain('_absent_since');
+    });
+
+    it('find_owners excludes absent owners, codeowners, on-call, members and the echoed entity', () => {
+      const q = generateFindOwnersCypher(id, true).query;
+      for (const alias of ['entity', 'owner', 'codeowner', 'oncall', 'member']) {
+        expect(q).toContain(`${alias}._absent_since IS NULL`);
+      }
+      // Without include_chain there is no `member` leg, but the rest still filter.
+      const shallow = generateFindOwnersCypher(id, false).query;
+      for (const alias of ['entity', 'owner', 'codeowner', 'oncall']) {
+        expect(shallow).toContain(`${alias}._absent_since IS NULL`);
+      }
+      expect(generateFindOwnersCypher(id, true, true).query).not.toContain('_absent_since');
+      expect(generateFindOwnersCypher(id, false, true).query).not.toContain('_absent_since');
     });
   });
 });

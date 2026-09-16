@@ -16,14 +16,20 @@ export function registerFindOwners(server: McpServer, neo4j: Neo4jClient): void 
         .boolean()
         .default(false)
         .describe('Return full ownership chain (CODEOWNERS -> Team -> Members)'),
+      include_absent: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Include entities the owning connector no longer sees (marked absent by the sync sweep). Default false.',
+        ),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
-      const { entity, include_chain, compact } = params;
+      const { entity, include_chain, include_absent, compact } = params;
       const startTime = Date.now();
 
       try {
-        const cypher = generateFindOwnersCypher(entity, include_chain);
+        const cypher = generateFindOwnersCypher(entity, include_chain, include_absent);
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 
         if (result.records.length === 0) {
