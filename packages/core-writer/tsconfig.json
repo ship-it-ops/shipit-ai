@@ -5,5 +5,10 @@
     "rootDir": "./src"
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../shared" }, { "path": "../event-bus" }]
+  "references": [
+    { "path": "../shared" },
+    { "path": "../event-bus" },
+    { "path": "../connectors/github" },
+    { "path": "../connectors/kubernetes" }
+  ]
 }

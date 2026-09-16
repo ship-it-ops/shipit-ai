@@ -211,6 +211,12 @@ importers:
         specifier: ^6.1.0
         version: 6.1.0
     devDependencies:
+      '@shipit-ai/connector-github':
+        specifier: workspace:*
+        version: link:../connectors/github
+      '@shipit-ai/connector-kubernetes':
+        specifier: workspace:*
+        version: link:../connectors/kubernetes
       '@types/node':
         specifier: ^26.0.0
         version: 26.0.1
