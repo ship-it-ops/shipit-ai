@@ -176,9 +176,12 @@ export class EventBusProducer {
    */
   async publishControl(connectorId: string, control: SyncCompletedControl): Promise<void> {
     const startedAtMs = Date.parse(control.startedAt);
-    if (!Number.isFinite(startedAtMs)) {
+    if (
+      !Number.isFinite(startedAtMs) ||
+      new Date(startedAtMs).toISOString() !== control.startedAt
+    ) {
       throw new Error(
-        `publishControl: startedAt must be an ISO-8601 timestamp, got "${control.startedAt}"`,
+        `publishControl: startedAt must be a canonical ISO-8601 UTC timestamp (Date#toISOString), got "${control.startedAt}"`,
       );
     }
     const envelope: EventEnvelope = {

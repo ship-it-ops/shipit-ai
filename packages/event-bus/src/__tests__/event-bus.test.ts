@@ -537,17 +537,20 @@ describe('EventBusProducer.publishControl', () => {
     expect(mockXadd).not.toHaveBeenCalled();
   });
 
-  it('rejects a startedAt that is not ISO-8601', async () => {
-    const producer = new EventBusProducer(TEST_CONFIG);
-    await expect(
-      producer.publishControl('k8s-demo', {
-        kind: 'sync.completed',
-        startedAt: 'yesterday',
-        mode: 'full',
-      }),
-    ).rejects.toThrow(/startedAt/);
-    expect(mockAddBulk).not.toHaveBeenCalled();
-  });
+  it.each(['yesterday', '09/16/2026', '2026-09-16T10:00:00Z'])(
+    'rejects a startedAt that is not canonical ISO-8601 (%s)',
+    async (startedAt) => {
+      const producer = new EventBusProducer(TEST_CONFIG);
+      await expect(
+        producer.publishControl('k8s-demo', {
+          kind: 'sync.completed',
+          startedAt,
+          mode: 'full',
+        }),
+      ).rejects.toThrow(/startedAt/);
+      expect(mockAddBulk).not.toHaveBeenCalled();
+    },
+  );
 
   it('BullMQEventBusClient.publishControl delegates to the producer', async () => {
     const client = new BullMQEventBusClient({ redisUrl: 'redis://localhost:6379' });
