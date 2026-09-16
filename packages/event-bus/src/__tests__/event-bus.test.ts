@@ -506,3 +506,56 @@ describe('BullMQEventBusClient', () => {
     expect(mockDisconnect).toHaveBeenCalled();
   });
 });
+
+// ── EventBusProducer.publishControl ────────────────────────────────────
+describe('EventBusProducer.publishControl', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enqueues one sync.completed envelope with a colon-free, run-scoped job id and skips the stream', async () => {
+    const producer = new EventBusProducer(TEST_CONFIG);
+    const startedAt = '2026-09-16T10:00:00.000Z';
+
+    await producer.publishControl('k8s-demo', { kind: 'sync.completed', startedAt, mode: 'full' });
+
+    expect(mockAddBulk).toHaveBeenCalledTimes(1);
+    const jobs = mockAddBulk.mock.calls[0][0] as Array<{
+      name: string;
+      data: EventEnvelope;
+      opts: { jobId: string };
+    }>;
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].name).toBe('event');
+    expect(jobs[0].opts.jobId).toBe(`k8s-demo~sync-completed~${Date.parse(startedAt)}`);
+    expect(jobs[0].opts.jobId).not.toContain(':');
+    expect(jobs[0].data.kind).toBe('sync.completed');
+    expect(jobs[0].data.connector_id).toBe('k8s-demo');
+    expect(jobs[0].data.control).toEqual({ kind: 'sync.completed', startedAt, mode: 'full' });
+    expect(jobs[0].data.payload).toEqual({ nodes: [], edges: [] });
+    // TEST_CONFIG enables the replay stream; control envelopes must never land there.
+    expect(mockXadd).not.toHaveBeenCalled();
+  });
+
+  it('rejects a startedAt that is not ISO-8601', async () => {
+    const producer = new EventBusProducer(TEST_CONFIG);
+    await expect(
+      producer.publishControl('k8s-demo', {
+        kind: 'sync.completed',
+        startedAt: 'yesterday',
+        mode: 'full',
+      }),
+    ).rejects.toThrow(/startedAt/);
+    expect(mockAddBulk).not.toHaveBeenCalled();
+  });
+
+  it('BullMQEventBusClient.publishControl delegates to the producer', async () => {
+    const client = new BullMQEventBusClient({ redisUrl: 'redis://localhost:6379' });
+    await client.publishControl('gh-acme', {
+      kind: 'sync.completed',
+      startedAt: '2026-09-16T10:00:00.000Z',
+      mode: 'full',
+    });
+    expect(mockAddBulk).toHaveBeenCalledTimes(1);
+  });
+});

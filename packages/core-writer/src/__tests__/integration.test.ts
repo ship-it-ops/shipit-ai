@@ -309,6 +309,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
           });
         }
       }),
+      publishControl: vi.fn().mockResolvedValue(undefined),
       subscribe: vi.fn().mockResolvedValue(undefined),
       replay: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),

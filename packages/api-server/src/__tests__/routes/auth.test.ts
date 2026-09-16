@@ -137,6 +137,7 @@ function buildMockEventBus(): EventBusClient & {
       }
       mock.published.push({ events, connectorId });
     },
+    async publishControl() {},
     async subscribe() {},
     async replay() {},
     async close() {},

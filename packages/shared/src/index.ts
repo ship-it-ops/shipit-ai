@@ -17,7 +17,13 @@ export type {
   ShipItSchema,
 } from './types/schema.js';
 
-export type { EventEnvelope, EventHandler, EventBusClient } from './types/events.js';
+export type {
+  EventEnvelope,
+  EventHandler,
+  EventBusClient,
+  EventKind,
+  SyncCompletedControl,
+} from './types/events.js';
 
 export type { RenameSignal, MergeEvent, IdentityMatchStep } from './types/identity.js';
 
