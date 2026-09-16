@@ -57,6 +57,34 @@ function ownedBy(refs: V1OwnerReference[] | undefined, kind: string, name: strin
   return (refs ?? []).some((o) => o.kind === kind && o.name === name);
 }
 
+const REVISION_ANNOTATION = 'deployment.kubernetes.io/revision';
+
+/**
+ * Of a Deployment's owned ReplicaSets, the one(s) at the highest numeric
+ * `deployment.kubernetes.io/revision` — the current rollout target. `null`
+ * when none carry a parseable revision, so callers fall back to "all owned".
+ */
+function newestRevisionReplicaSets(replicaSets: V1ReplicaSet[]): V1ReplicaSet[] | null {
+  let maxRevision: number | undefined;
+  const withRevision: Array<{ rs: V1ReplicaSet; revision: number }> = [];
+  for (const rs of replicaSets) {
+    const raw = rs.metadata?.annotations?.[REVISION_ANNOTATION];
+    if (raw === undefined) continue;
+    const revision = Number(raw);
+    if (!Number.isFinite(revision)) continue;
+    withRevision.push({ rs, revision });
+    if (maxRevision === undefined || revision > maxRevision) maxRevision = revision;
+  }
+  if (maxRevision === undefined) return null;
+  return withRevision.filter((r) => r.revision === maxRevision).map((r) => r.rs);
+}
+
+function podsOwnedByReplicaSets(pods: V1Pod[], rsNames: Set<string>): V1Pod[] {
+  return pods.filter((p) =>
+    (p.metadata?.ownerReferences ?? []).some((o) => o.kind === 'ReplicaSet' && rsNames.has(o.name)),
+  );
+}
+
 /** Roll a namespace's pods up to one workload. Deployment → ReplicaSet → Pod; others own pods directly. */
 export function summarizePods(
   kind: WorkloadKind,
@@ -67,28 +95,45 @@ export function summarizePods(
   if (!cache || kind === 'CronJob') return summary;
   const name = object.metadata?.name ?? '';
   let owned: V1Pod[];
+  let digestPods: V1Pod[];
   if (kind === 'Deployment') {
-    const rsNames = new Set(
-      cache.replicaSets
-        .filter((rs) => ownedBy(rs.metadata?.ownerReferences, 'Deployment', name))
-        .map((rs) => rs.metadata?.name ?? ''),
+    const ownedReplicaSets = cache.replicaSets.filter((rs) =>
+      ownedBy(rs.metadata?.ownerReferences, 'Deployment', name),
     );
-    owned = cache.pods.filter((p) =>
-      (p.metadata?.ownerReferences ?? []).some(
-        (o) => o.kind === 'ReplicaSet' && rsNames.has(o.name),
-      ),
-    );
+    const rsNames = new Set(ownedReplicaSets.map((rs) => rs.metadata?.name ?? ''));
+    owned = podsOwnedByReplicaSets(cache.pods, rsNames);
+    // readyPods/restarts count every owned pod (old + new revisions mid-rollout);
+    // image digests are attributed only to the newest revision's pods so a
+    // rolling update never stamps the new tag with the old digest.
+    const newest = newestRevisionReplicaSets(ownedReplicaSets);
+    const digestRsNames = newest ? new Set(newest.map((rs) => rs.metadata?.name ?? '')) : rsNames;
+    digestPods = podsOwnedByReplicaSets(cache.pods, digestRsNames);
   } else {
     owned = cache.pods.filter((p) => ownedBy(p.metadata?.ownerReferences, kind, name));
+    digestPods = owned;
   }
   for (const pod of owned) {
     if ((pod.status?.conditions ?? []).some((c) => c.type === 'Ready' && c.status === 'True'))
       summary.readyPods++;
     for (const cs of pod.status?.containerStatuses ?? []) {
       summary.restarts += cs.restartCount ?? 0;
-      const digest = digestFromImageId(cs.imageID);
-      if (digest && !summary.imageDigests[cs.name]) summary.imageDigests[cs.name] = digest;
     }
+  }
+  // Collect every digest seen per container among the digest-eligible pods;
+  // a container with more than one distinct digest is ambiguous (e.g. pods
+  // of the "newest" ReplicaSet still transitioning) and is omitted entirely.
+  const seen = new Map<string, Set<string>>();
+  for (const pod of digestPods) {
+    for (const cs of pod.status?.containerStatuses ?? []) {
+      const digest = digestFromImageId(cs.imageID);
+      if (!digest) continue;
+      const digests = seen.get(cs.name) ?? new Set<string>();
+      digests.add(digest);
+      seen.set(cs.name, digests);
+    }
+  }
+  for (const [container, digests] of seen) {
+    if (digests.size === 1) summary.imageDigests[container] = [...digests][0];
   }
   return summary;
 }
@@ -101,6 +146,7 @@ export function summarizePods(
 export class WorkloadFetcher {
   private readonly cache = new Map<string, NamespaceCache>();
   private readonly forbiddenKinds = new Set<WorkloadKind>();
+  private rollupsForbidden = false;
   readonly warnings: string[] = [];
 
   constructor(
@@ -219,6 +265,10 @@ export class WorkloadFetcher {
   private async namespaceCache(namespace: string): Promise<NamespaceCache> {
     const hit = this.cache.get(namespace);
     if (hit) return hit;
+    // A cluster-wide RBAC gap on pods/replicasets would otherwise re-issue
+    // both list calls and re-warn for every namespace; once denied, skip the
+    // API entirely and hand back an empty rollup for the rest of this run.
+    if (this.rollupsForbidden) return { pods: [], replicaSets: [] };
     const [pods, replicaSets] = await Promise.all([
       this.listAll<V1Pod>(
         (c) => this.clients.core.listNamespacedPod({ namespace, limit: PAGE_LIMIT, _continue: c }),
@@ -252,9 +302,12 @@ export class WorkloadFetcher {
       } catch (err) {
         const classified = classifyError(err);
         if (classified.code === 'FORBIDDEN') {
-          this.warnings.push(
-            `FORBIDDEN:${what} — pod/replicaset rollups (ready counts, restarts, digests) disabled for this namespace`,
-          );
+          if (!this.rollupsForbidden) {
+            this.rollupsForbidden = true;
+            this.warnings.push(
+              'FORBIDDEN:pods — pod/replicaset rollups (ready counts, restarts, digests) disabled; grant list on pods and replicasets to the ShipIt ServiceAccount',
+            );
+          }
           return out;
         }
         throw classified;

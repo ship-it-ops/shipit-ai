@@ -110,7 +110,9 @@ describe('KubernetesConnector', () => {
     expect(r.error).toMatch(/^IN_CLUSTER_UNAVAILABLE/);
 
     const badScope = new KubernetesConnector(() => fakeClients());
-    expect((await badScope.authenticate(config({ cluster: '' }))).error).toMatch(/scope\.cluster/);
+    expect((await badScope.authenticate(config({ cluster: '' }))).error).toMatch(
+      /^SCOPE_INVALID: scope\.cluster/,
+    );
   });
 
   it('fetch walks Cluster → Namespace (scoped) → Workload and normalize dedupes shared nodes', async () => {
@@ -222,5 +224,25 @@ describe('KubernetesConnector', () => {
     const b = one.nodes.find((n) => n.id === id)!;
     expect(b.properties).toEqual(a.properties);
     expect(b._event_version).toEqual(a._event_version);
+  });
+
+  it('refetchWorkload classifies failures the same way fetch() does', async () => {
+    const c = new KubernetesConnector(() =>
+      fakeClients({
+        apps: {
+          listNamespacedDeployment: vi
+            .fn()
+            .mockRejectedValue(new ApiException(403, 'deployments is forbidden', {}, {})),
+          listNamespacedStatefulSet: vi.fn().mockResolvedValue(list([])),
+          listNamespacedDaemonSet: vi.fn().mockResolvedValue(list([])),
+          listNamespacedReplicaSet: vi.fn().mockResolvedValue(list([])),
+        },
+      }),
+    );
+    await c.authenticate(config());
+    await expect(c.refetchWorkload('shipit', 'Deployment', 'api-server')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      status: 403,
+    });
   });
 });

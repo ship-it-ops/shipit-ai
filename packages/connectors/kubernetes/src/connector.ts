@@ -52,9 +52,9 @@ export interface KubernetesScopeOptions {
 
 function parseScope(scope: Record<string, unknown>): KubernetesScopeOptions {
   const cluster = typeof scope.cluster === 'string' ? scope.cluster.trim() : '';
-  if (!cluster) throw new Error('scope.cluster is required');
+  if (!cluster) throw new KubernetesError('SCOPE_INVALID', 'scope.cluster is required');
   if (!scope.mapping || typeof scope.mapping !== 'object')
-    throw new Error('scope.mapping is required');
+    throw new KubernetesError('SCOPE_INVALID', 'scope.mapping is required');
   const namespaces =
     (scope.namespaces as { include?: string[]; exclude?: string[] } | undefined) ?? {};
   const kinds = (
@@ -226,19 +226,26 @@ export class KubernetesConnector implements ShipItConnector {
     return { nodes: [...nodes.values()], edges: [...edges.values()] };
   }
 
-  /** Refetch seam for a later watch/webhook layer: one workload through the same normalize(). */
+  /**
+   * Refetch seam for a later watch/webhook layer: one workload through the same normalize().
+   * Not found ⇒ empty entity; the absence sweep handles deletions.
+   */
   async refetchWorkload(
     namespace: string,
     kind: WorkloadKind,
     name: string,
   ): Promise<CanonicalEntity> {
     const clients = this.requireClients();
-    const ref =
-      this.namespaces.find((n) => n.name === namespace) ??
-      (await fetchNamespaceRef(clients, namespace, this.timeoutMs));
-    const fetcher = new WorkloadFetcher(clients, [ref], [kind], this.timeoutMs);
-    const raw = await fetcher.fetchOne(name);
-    return raw ? this.normalize([raw]) : { nodes: [], edges: [] };
+    try {
+      const ref =
+        this.namespaces.find((n) => n.name === namespace) ??
+        (await fetchNamespaceRef(clients, namespace, this.timeoutMs));
+      const fetcher = new WorkloadFetcher(clients, [ref], [kind], this.timeoutMs);
+      const raw = await fetcher.fetchOne(name);
+      return raw ? this.normalize([raw]) : { nodes: [], edges: [] };
+    } catch (err) {
+      throw classifyError(err);
+    }
   }
 
   async sync(mode: 'full' | 'incremental'): Promise<SyncResult> {

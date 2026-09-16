@@ -137,6 +137,59 @@ describe('summarizePods', () => {
   });
 });
 
+describe('summarizePods revision-aware digests', () => {
+  const digestA = 'docker-pullable://reg/repo/api-server@sha256:' + 'a'.repeat(64);
+  const digestB = 'docker-pullable://reg/repo/api-server@sha256:' + 'b'.repeat(64);
+  const rsOld: V1ReplicaSet = {
+    metadata: {
+      name: 'api-server-old',
+      annotations: { 'deployment.kubernetes.io/revision': '1' },
+      ownerReferences: [
+        { apiVersion: 'apps/v1', kind: 'Deployment', name: 'api-server', uid: 'u' },
+      ],
+    },
+  } as V1ReplicaSet;
+  const rsNew: V1ReplicaSet = {
+    metadata: {
+      name: 'api-server-new',
+      annotations: { 'deployment.kubernetes.io/revision': '2' },
+      ownerReferences: [
+        { apiVersion: 'apps/v1', kind: 'Deployment', name: 'api-server', uid: 'u' },
+      ],
+    },
+  } as V1ReplicaSet;
+
+  it('attributes image digests to the newest-revision ReplicaSet only, while counting ready/restarts across all revisions', () => {
+    const cache = {
+      replicaSets: [rsOld, rsNew],
+      pods: [
+        pod('api-server-old-1', { kind: 'ReplicaSet', name: 'api-server-old' }, true, 1, digestA),
+        pod('api-server-new-1', { kind: 'ReplicaSet', name: 'api-server-new' }, true, 2, digestB),
+      ],
+    };
+    expect(summarizePods('Deployment', apiServerDeployment, cache)).toEqual({
+      readyPods: 2,
+      restarts: 3,
+      imageDigests: { 'api-server': 'sha256:' + 'b'.repeat(64) },
+    });
+  });
+
+  it('omits the digest when the newest revision itself carries disagreeing digests', () => {
+    const cache = {
+      replicaSets: [rsOld, rsNew],
+      pods: [
+        pod('api-server-new-1', { kind: 'ReplicaSet', name: 'api-server-new' }, true, 0, digestA),
+        pod('api-server-new-2', { kind: 'ReplicaSet', name: 'api-server-new' }, true, 0, digestB),
+      ],
+    };
+    expect(summarizePods('Deployment', apiServerDeployment, cache)).toEqual({
+      readyPods: 2,
+      restarts: 0,
+      imageDigests: {},
+    });
+  });
+});
+
 describe('WorkloadFetcher', () => {
   const list = (items: unknown[], _continue?: string) => ({
     items,
@@ -239,5 +292,31 @@ describe('WorkloadFetcher', () => {
     expect(c.apps.listNamespacedDeployment).toHaveBeenCalledWith(
       expect.objectContaining({ namespace: 'shipit', fieldSelector: 'metadata.name=api-server' }),
     );
+  });
+
+  it('memoizes a cluster-wide pod/replicaset rollup denial across namespaces', async () => {
+    const c = clients({
+      core: {
+        listNamespacedPod: vi
+          .fn()
+          .mockRejectedValue(new ApiException(403, 'pods is forbidden', {}, {})),
+      },
+    });
+    const f = new WorkloadFetcher(c, [demoNamespace, ns2], ['Deployment']);
+    const summaries: unknown[] = [];
+    let cursor: string | undefined;
+    let more = true;
+    while (more) {
+      const r = await f.fetch(cursor);
+      summaries.push(...r.entities.map((e) => (e as { pods: unknown }).pods));
+      cursor = r.cursor;
+      more = r.has_more;
+    }
+    expect(summaries).toEqual([
+      { readyPods: 0, restarts: 0, imageDigests: {} },
+      { readyPods: 0, restarts: 0, imageDigests: {} },
+    ]);
+    expect(c.core.listNamespacedPod).toHaveBeenCalledTimes(1);
+    expect(f.warnings).toEqual([expect.stringMatching(/^FORBIDDEN:pods/)]);
   });
 });

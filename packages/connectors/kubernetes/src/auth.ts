@@ -18,6 +18,7 @@ export type KubernetesErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'NAMESPACE_SCOPE_EMPTY'
+  | 'SCOPE_INVALID'
   | 'TIMEOUT'
   | 'API_ERROR';
 

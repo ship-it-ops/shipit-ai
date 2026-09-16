@@ -27,7 +27,9 @@ export async function fetchClusterSummary(
   const raw: RawCluster = { __shipit: 'cluster', name: clusterName };
   if (version.gitVersion) raw.version = version.gitVersion;
   try {
-    const nodes = await withTimeout(clients.core.listNode({ limit: 100 }), timeoutMs, 'list nodes');
+    // Bounded probe of the first node only; `_continue` is intentionally not
+    // threaded because only `items[0]` is ever read below.
+    const nodes = await withTimeout(clients.core.listNode({ limit: 1 }), timeoutMs, 'list nodes');
     const first = nodes.items[0];
     if (first) {
       const provider = providerFromId(first.spec?.providerID);
