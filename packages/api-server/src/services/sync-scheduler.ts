@@ -302,6 +302,17 @@ export class SyncScheduler implements ConnectorRunner {
       if (result.status === 'success') result.status = 'partial';
     }
 
+    // Informational diagnostics (an unresolved repo link, a team label with no
+    // matching GitHub team). These describe enrichment that did not happen, not
+    // data that was skipped, so they must NOT touch `status`, `errors` or the
+    // degraded state — doing so made every Kubernetes-only run partial and
+    // silently disabled the absence sweep.
+    const notes = built.connector.getNotes?.() ?? [];
+    if (notes.length > 0) {
+      this.buildContext.logger?.warn?.(`connector ${connectorId} notes`, { notes });
+      job.log(`notes: ${notes.join('; ')}`);
+    }
+
     // Persist the outcome to the registry's history (cap 20). Best-effort —
     // a write failure shouldn't take down the worker.
     try {
@@ -311,6 +322,7 @@ export class SyncScheduler implements ConnectorRunner {
         status: result.status,
         entitiesSynced: result.entities_synced,
         errors: result.errors,
+        ...(notes.length > 0 ? { notes } : {}),
       });
     } catch (err) {
       job.log(`failed to persist run history: ${(err as Error).message}`);

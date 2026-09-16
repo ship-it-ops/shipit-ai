@@ -99,6 +99,23 @@ describe('Neo4jService absent-node filtering (unit)', () => {
     expect(labelsQuery).toContain('n._absent_since IS NULL');
   });
 
+  it('getGraphStats edge count filters BOTH endpoints under the same includeAbsent guard', async () => {
+    const { svc, seen } = serviceWithSpy();
+    await svc.getGraphStats(SYSTEM_CONTEXT);
+    const relQuery = seen.find((q) => q.includes('db.relationshipTypes()'))!;
+    // Without this the dashboard reports a node total that excludes swept
+    // workloads next to an edge total that still counts their relationships.
+    expect(relQuery).toContain('a._absent_since IS NULL');
+    expect(relQuery).toContain('b._absent_since IS NULL');
+
+    seen.length = 0;
+    await svc.getGraphStats(SYSTEM_CONTEXT, { includeAbsent: true });
+    const inclusive = seen.find((q) => q.includes('db.relationshipTypes()'))!;
+    expect(inclusive).not.toContain('_absent_since');
+    // …and the node count stays consistent with it.
+    expect(seen.find((q) => q.includes('db.labels()'))!).not.toContain('_absent_since');
+  });
+
   it('getNeighborhood drops absent nodes and their edges unless includeAbsent', async () => {
     const svc = Object.create(Neo4jService.prototype) as Neo4jService;
     const record = {

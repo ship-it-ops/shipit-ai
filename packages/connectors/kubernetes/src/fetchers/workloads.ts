@@ -28,8 +28,12 @@ interface Position {
   kindIndex: number;
 }
 
-// Cursor = JSON [nsIndex, kindIndex, continueToken]; K8s continue tokens are opaque.
-function encodeCursor(nsIndex: number, kindIndex: number, continueToken?: string): string {
+/**
+ * Cursor = JSON [nsIndex, kindIndex, continueToken]; K8s continue tokens are
+ * opaque. Exported so a caller that wants exactly one (namespace, kind) page —
+ * the connection probe — can address a slot without owning the encoding.
+ */
+export function encodeCursor(nsIndex: number, kindIndex: number, continueToken?: string): string {
   return JSON.stringify([nsIndex, kindIndex, continueToken ?? null]);
 }
 

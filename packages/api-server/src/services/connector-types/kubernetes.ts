@@ -6,6 +6,7 @@ import {
   buildKubeConfig,
   classifyError,
   defaultClientFactory,
+  encodeCursor,
   fetchNamespaces,
   withTimeout,
   type ClientFactory,
@@ -21,6 +22,12 @@ import {
 import type { BuildContext, BuildResult, ConnectorType, ProbeResult } from './types.js';
 
 const PROBE_TIMEOUT_MS = 30_000;
+/**
+ * Overall budget. `PROBE_TIMEOUT_MS` is per call and the probe issues several
+ * serially, so without this a single request could hold a socket for minutes —
+ * and the endpoint allows 30/min.
+ */
+const PROBE_BUDGET_MS = 60_000;
 
 // Pinned read — basename() over the trusted key dir. The route layer already
 // rejected paths outside the dir (isAllowedKeyPath); this keeps the sink safe
@@ -120,11 +127,31 @@ function probeCredentials(
       };
     }
     default:
-      throw new Error(`unknown access mode "${(access as { mode?: string }).mode ?? ''}"`);
+      // Static: `access.mode` is unvalidated user input and this reaches a 400 body.
+      throw new Error('unknown access mode; expected one of in-cluster, kubeconfig, token');
   }
 }
 
 async function probeKubernetes(
+  body: KubernetesProbeBody,
+  ctx: BuildContext,
+  clientFactory: ClientFactory,
+): Promise<ProbeResult> {
+  try {
+    return await withTimeout(
+      runProbe(body, ctx, clientFactory),
+      PROBE_BUDGET_MS,
+      'connection probe',
+    );
+  } catch (err) {
+    // withTimeout throws a TIMEOUT KubernetesError; classifyError passes it through
+    // so the budget surfaces in the same shape as every other probe failure.
+    const e = classifyError(err);
+    return { ok: false, code: e.code, message: e.message };
+  }
+}
+
+async function runProbe(
   body: KubernetesProbeBody,
   ctx: BuildContext,
   clientFactory: ClientFactory,
@@ -159,20 +186,25 @@ async function probeKubernetes(
   const kinds = body.kinds?.length ? body.kinds : [...KUBERNETES_WORKLOAD_KINDS];
   const kindStatus: Record<string, 'ok' | 'forbidden' | 'error' | 'skipped'> = {};
   const target = namespaces[0];
-  for (const kind of kinds) {
-    if (!target) {
-      kindStatus[kind] = 'skipped';
-      continue;
-    }
+  if (!target) {
+    for (const kind of kinds) kindStatus[kind] = 'skipped';
+    return { ok: true, cluster: { version }, namespaces, kinds: kindStatus };
+  }
+  // ONE fetcher for every kind: it lists the target namespace's pods and
+  // ReplicaSets once and reuses them, where a fetcher per kind paged all of
+  // them again for each of the four kinds. The explicit cursor addresses
+  // exactly one (namespace, kind) page, so per-kind attribution is unchanged.
+  const fetcher = new WorkloadFetcher(
+    clients,
+    [{ name: target, labels: {}, annotations: {} }],
+    kinds,
+    PROBE_TIMEOUT_MS,
+  );
+  for (const [index, kind] of kinds.entries()) {
+    const warningsBefore = fetcher.warnings.length;
     try {
-      const fetcher = new WorkloadFetcher(
-        clients,
-        [{ name: target, labels: {}, annotations: {} }],
-        [kind],
-        PROBE_TIMEOUT_MS,
-      );
-      await fetcher.fetch();
-      kindStatus[kind] = fetcher.warnings.length > 0 ? 'forbidden' : 'ok';
+      await fetcher.fetch(encodeCursor(0, index));
+      kindStatus[kind] = fetcher.warnings.length > warningsBefore ? 'forbidden' : 'ok';
     } catch {
       kindStatus[kind] = 'error';
     }

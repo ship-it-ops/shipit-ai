@@ -71,7 +71,7 @@ function makeScheduler(overrides: Partial<ConstructorParameters<typeof SyncSched
   });
 }
 
-function fakeConnector(warnings: string[] = []) {
+function fakeConnector(warnings: string[] = [], notes: string[] = []) {
   return {
     manifest: {
       name: 'fake',
@@ -86,6 +86,7 @@ function fakeConnector(warnings: string[] = []) {
     normalize: vi.fn(),
     sync: vi.fn(),
     getWarnings: () => warnings,
+    getNotes: () => notes,
   };
 }
 
@@ -251,6 +252,63 @@ describe('SyncScheduler — connector types', () => {
       state: 'degraded',
       lastError: 'FORBIDDEN:CronJob — denied',
     });
+  });
+
+  it('connector notes stay informational: the run is still success and still sweeps', async () => {
+    const registry = {
+      get: vi.fn().mockReturnValue({ id: 'k', type: 'fullpoll' }),
+      recordRun: vi.fn().mockResolvedValue(undefined),
+      list: () => [],
+    };
+    const eventBus = { publish: vi.fn(), publishControl: vi.fn().mockResolvedValue(undefined) };
+    const scheduler = makeScheduler({
+      registry: registry as never,
+      eventBus: eventBus as never,
+    });
+    const notes = [
+      'repoLink.githubOrg unresolved: name-match tiers disabled (set mapping.repoLink.githubOrg or configure exactly one GitHub connector)',
+    ];
+    fakeBuild.mockResolvedValue({
+      ok: true,
+      connector: fakeConnector([], notes),
+      sdkConfig: { id: 'k', type: 'fullpoll', credentials: {}, scope: {} },
+    });
+
+    await capturedProcessor!({ data: { connectorId: 'k', mode: 'full' }, log: () => undefined });
+
+    // Notes are recorded but never touch status, errors or the degraded state —
+    // otherwise the default Kubernetes-only install never sweeps.
+    expect(registry.recordRun).toHaveBeenCalledWith(
+      'k',
+      expect.objectContaining({ status: 'success', errors: [], notes }),
+    );
+    expect(eventBus.publishControl).toHaveBeenCalledWith(
+      'k',
+      expect.objectContaining({ kind: 'sync.completed', mode: 'full' }),
+    );
+    expect(scheduler.getStatus('k')).toMatchObject({ state: 'idle' });
+    expect(scheduler.getStatus('k').lastError).toBeUndefined();
+  });
+
+  it('omits `notes` from the run record when the connector reported none', async () => {
+    const registry = {
+      get: vi.fn().mockReturnValue({ id: 'k', type: 'fullpoll' }),
+      recordRun: vi.fn().mockResolvedValue(undefined),
+      list: () => [],
+    };
+    const scheduler = makeScheduler({ registry: registry as never });
+    fakeBuild.mockResolvedValue({
+      ok: true,
+      connector: fakeConnector(),
+      sdkConfig: { id: 'k', type: 'fullpoll', credentials: {}, scope: {} },
+    });
+
+    await capturedProcessor!({ data: { connectorId: 'k', mode: 'full' }, log: () => undefined });
+    expect(registry.recordRun).toHaveBeenCalledWith(
+      'k',
+      expect.not.objectContaining({ notes: [] }),
+    );
+    void scheduler;
   });
 
   it('records a build failure as a failed run without running the harness', async () => {

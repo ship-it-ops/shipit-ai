@@ -102,6 +102,13 @@ export const lastRunSchema = z.object({
   status: z.enum(['success', 'partial', 'failed']),
   entitiesSynced: z.number().int().nonnegative(),
   errors: z.array(z.string()).default([]),
+  /**
+   * Informational diagnostics from the connector (unresolved repo/team links).
+   * NEVER a degradation: unlike `errors` these do not affect `status`, so they
+   * cannot suppress the absence sweep. Optional so runs recorded before this
+   * field existed still parse.
+   */
+  notes: z.array(z.string()).optional(),
 });
 
 // ── Per-connector App override ────────────────────────────────────────────

@@ -12,6 +12,16 @@ import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
 import { getConnectorType } from '../services/connector-types/index.js';
 import type { BuildContext } from '../services/connector-types/types.js';
+import {
+  ConnectorVersionConflictError,
+  type ConnectorRegistry,
+} from '../services/connector-registry.js';
+import {
+  GitHubAppVersionConflictError,
+  type GitHubAppService,
+} from '../services/github-app-service.js';
+import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
+import type { Config } from '@shipit-ai/shared';
 
 // Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
 // body (so the wizard's per-org override panel can validate creds
@@ -77,16 +87,6 @@ function writeSecretFile(path: string, content: string): void {
 }
 
 const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-import {
-  ConnectorVersionConflictError,
-  type ConnectorRegistry,
-} from '../services/connector-registry.js';
-import {
-  GitHubAppVersionConflictError,
-  type GitHubAppService,
-} from '../services/github-app-service.js';
-import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
-import type { Config } from '@shipit-ai/shared';
 
 declare module 'fastify' {
   interface FastifyInstance {

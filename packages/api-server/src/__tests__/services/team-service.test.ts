@@ -32,6 +32,14 @@ describe('TeamService.listTeams', () => {
     expect(queries[0]).toMatch(/OWNS\s*\|\s*CODEOWNER_OF/);
   });
 
+  it('excludes swept (absent) entities from the owned count', async () => {
+    const { neo4j, queries } = makeNeo4j([[]]);
+    await new TeamService(neo4j).listTeams();
+    // The Kubernetes connector emits Team -[:OWNS]-> LogicalService, so without
+    // this a swept service is hidden everywhere else but still counted here.
+    expect(queries[0]).toContain('owned._absent_since IS NULL');
+  });
+
   it('maps ownedCount from the query result', async () => {
     const { neo4j } = makeNeo4j([
       [
@@ -55,6 +63,16 @@ describe('TeamService.listTeams', () => {
 });
 
 describe('TeamService.getTeam', () => {
+  it('excludes swept (absent) entities from the owned-entities list', async () => {
+    const { neo4j, queries } = makeNeo4j([
+      [record({ t: { properties: { id: 't1', name: 'Platform', slug: 'platform' } } })],
+      [],
+    ]);
+    await new TeamService(neo4j).getTeam('t1');
+    const ownedQuery = queries.find((q) => q.includes('OWNS|CODEOWNER_OF'))!;
+    expect(ownedQuery).toContain('n._absent_since IS NULL');
+  });
+
   it('traverses CODEOWNER_OF when listing what a team owns', async () => {
     const { neo4j, queries } = makeNeo4j([
       [

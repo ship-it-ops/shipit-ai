@@ -20,7 +20,12 @@ export interface BuildContext {
   logger?: { warn(message: string, meta?: unknown): void };
 }
 
-export type BuiltConnector = ShipItConnector & { getWarnings?(): string[] };
+export type BuiltConnector = ShipItConnector & {
+  /** Skipped-data warnings; these degrade the run to `partial` and block the sweep. */
+  getWarnings?(): string[];
+  /** Informational diagnostics; recorded on the run, never a degradation. */
+  getNotes?(): string[];
+};
 
 export type BuildResult =
   | { ok: true; connector: BuiltConnector; sdkConfig: ConnectorConfig }

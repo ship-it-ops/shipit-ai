@@ -167,8 +167,14 @@ export class Neo4jService {
     // so the dashboard edgeCount mirrors the node-count exclusion above and counts
     // only user-facing topology — otherwise the manual-edit/verify/merge audit
     // edges inflate it.
+    // Both endpoints must also pass the absent filter, or a swept workload's
+    // relationships keep counting while the workload itself does not — the two
+    // dashboard numbers then stop agreeing the first time the sweep runs.
+    const edgeEndpointClause = opts.includeAbsent
+      ? ''
+      : ' AND a._absent_since IS NULL AND b._absent_since IS NULL';
     const edgeCountsResult = await this.runQuery(
-      `CALL db.relationshipTypes() YIELD relationshipType WHERE NOT relationshipType IN ${INTERNAL_REL_TYPES_CYPHER} RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count`,
+      `CALL db.relationshipTypes() YIELD relationshipType WHERE NOT relationshipType IN ${INTERNAL_REL_TYPES_CYPHER} RETURN relationshipType, COUNT { MATCH (a)-[r]->(b) WHERE type(r) = relationshipType${edgeEndpointClause} } AS count`,
     );
 
     const nodesByLabel: Record<string, number> = {};

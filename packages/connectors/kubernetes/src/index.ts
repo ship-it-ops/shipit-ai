@@ -20,7 +20,7 @@ export type {
 } from './auth.js';
 export { fetchClusterSummary } from './fetchers/cluster.js';
 export { fetchNamespaces, fetchNamespaceRef } from './fetchers/namespaces.js';
-export { WorkloadFetcher, summarizePods } from './fetchers/workloads.js';
+export { WorkloadFetcher, summarizePods, encodeCursor } from './fetchers/workloads.js';
 export { matchesScope, withTimeout } from './fetchers/common.js';
 export { normalizeCluster } from './normalizers/cluster.js';
 export { normalizeNamespace } from './normalizers/namespace.js';

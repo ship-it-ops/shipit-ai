@@ -202,6 +202,50 @@ describe('kubernetes connector type', () => {
     });
   });
 
+  it('probe pages the namespace pods and replicasets ONCE for all four kinds', async () => {
+    const clients = fakeClients();
+    const type = makeKubernetesConnectorType(() => clients);
+    await type.probe!(
+      { type: 'kubernetes', access: { mode: 'token', server: 'https://h', token: 't' } },
+      ctx(),
+    );
+    // One shared WorkloadFetcher: a fetcher per kind re-paged every pod of the
+    // target namespace for each of Deployment / StatefulSet / DaemonSet.
+    expect(clients.core.listNamespacedPod).toHaveBeenCalledTimes(1);
+    expect(clients.apps.listNamespacedReplicaSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('probe gives up on the overall budget even when every single call is under its own timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      // 25 s each: none trips the 30 s per-call timeout, three in series trip the 60 s budget.
+      const slow =
+        <T>(value: T) =>
+        () =>
+          new Promise<T>((resolve) => setTimeout(() => resolve(value), 25_000));
+      const clients = fakeClients({
+        version: { getCode: vi.fn().mockImplementation(slow({ gitVersion: 'v1.31.2' })) },
+        core: {
+          listNamespace: vi.fn().mockImplementation(slow(list([{ metadata: { name: 'shipit' } }]))),
+          readNamespace: vi.fn(),
+          listNode: vi.fn().mockImplementation(slow(list([]))),
+          listNamespacedPod: vi.fn().mockImplementation(slow(list([]))),
+        },
+      });
+      const type = makeKubernetesConnectorType(() => clients);
+      const pending = type.probe!(
+        { type: 'kubernetes', access: { mode: 'token', server: 'https://h', token: 't' } },
+        ctx(),
+      );
+      await vi.advanceTimersByTimeAsync(90_000);
+      const r = await pending;
+      expect(r).toMatchObject({ ok: false, code: 'TIMEOUT' });
+      expect(String((r as { message: string }).message)).toContain('connection probe');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('probe maps failures to structured codes', async () => {
     const unauthorized = makeKubernetesConnectorType(() =>
       fakeClients({
