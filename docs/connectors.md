@@ -271,6 +271,11 @@ mapping:
 Name tiers only link to repositories and teams GitHub has already synced. Put
 `shipit.ai/github-repo: <org>/<repo>` on a workload (or its namespace) to pin the link.
 
+Narrowing the scope — adding to `namespaces.exclude`, or removing a kind from `kinds` —
+makes the next full run mark every workload in the newly-excluded set absent. That is by
+design: the run no longer sees them, and the sweep cannot tell "out of scope" from "deleted".
+Widen the scope again and the next run brings them back.
+
 ### Absence
 
 After every successful run the connector's unseen nodes get `_absent_since` and disappear from
@@ -278,6 +283,27 @@ the catalog, graph and MCP tools. Pass `includeAbsent=true` (API) or `include_ab
 (MCP) to see them. Nothing is deleted. Only connector types that opt into the sweep run it —
 Kubernetes does in v1; GitHub does not, because its full sync is capped and filtered, so an
 unseen repository isn't proven gone.
+
+**A `partial` run never sweeps.** Only warnings that mean _data was skipped_ make a run
+partial, and today that is exactly the `FORBIDDEN:<kind>` warnings — a kind (or pods /
+replicasets) the ServiceAccount may not list. Such a run has not seen the whole cluster, so
+marking its unseen nodes absent would hide live workloads. The catch is that the denial is
+usually permanent: every run reports it, every run is partial, and the sweep never runs at
+all. If the connector sits at `degraded` with a `FORBIDDEN:` message, either grant the
+missing verb (see [Read-only RBAC](#read-only-rbac)) or drop that kind from `scope.kinds`, so
+runs go back to `success` and absence tracking resumes.
+
+Link diagnostics — an unresolved `repoLink.githubOrg`, a `team` label that matches no synced
+GitHub team — are **notes**, not warnings. They are recorded on the run and logged, they
+never change its status, and they never block the sweep: they report enrichment that did not
+happen, not cluster data that was missed.
+
+**The sweep confirms before it marks.** core-writer first checks that at least one node of
+this connector carries a `_last_synced` at or after the run's start. A successful full run
+always re-confirms at least the Cluster node, so zero confirmations means the run's entities
+never reached the graph (a write failed, or the queue was still draining an older run) — the
+sweep marks nothing and logs instead. A write failure recorded in the same batch as the
+control envelope also skips the sweep for that connector.
 
 ### Not in v1
 

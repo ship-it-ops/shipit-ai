@@ -399,17 +399,59 @@ round-trip unchanged through `new Date(startedAt).toISOString()`, because the wr
 compares it lexically against `_last_synced` and a non-canonical string would silently break
 that comparison.
 
+**What makes a run `partial`.** The connector exposes two channels. `getWarnings()` carries
+only _skipped-data_ warnings — today exactly the fetchers' `FORBIDDEN:<kind>` messages — and
+those still push into `result.errors`, degrade `success` to `partial` and therefore suppress
+the sweep. `getNotes()` carries informational diagnostics produced by the normalizers (an
+unresolved `repoLink.githubOrg`, a `team` label matching no synced GitHub team); the scheduler
+logs them and stores them on the run record as an optional `notes: string[]`, and they never
+touch `status`, `errors` or the connector's degraded state. Both lists are deduped per run.
+The split is load-bearing: `nameMatch` defaults to `true` and `githubOrg` is `null` in any
+Kubernetes-only install, so treating those diagnostics as warnings made _every_ run partial
+and silently disabled the absence sweep in the most common first-install configuration.
+
 **Writer.** `CoreWriter.processBatch` handles `event.kind === 'sync.completed'` before the
 `payload.nodes` branch:
 
 ```cypher
 MATCH (n)
 WHERE n._source_connector_id = $connectorId
+  AND n._last_synced IS NOT NULL
   AND n._last_synced < $startedAt
   AND n._absent_since IS NULL
 SET n._absent_since = $now
 RETURN count(n) AS marked
 ```
+
+**Confirmation floor.** `markAbsent` runs a count first and marks nothing when it is zero:
+
+```cypher
+MATCH (n)
+WHERE n._source_connector_id = $connectorId
+  AND n._last_synced IS NOT NULL
+  AND n._last_synced >= $startedAt
+RETURN count(n) AS confirmed
+```
+
+A successful full run always re-confirms at least the Cluster node, so zero confirmations
+proves this run's entities never reached the graph — and the sweep would then mark the
+connector's _entire_ graph absent. Two reachable paths produce that state: a per-node write
+error (`processBatch` collects them into `errors[]` and continues, leaving that node's
+`_last_synced` stale) and a BullMQ jobId-dedup blackout (entity job ids exclude
+`_last_synced`, so an unchanged workload reuses its id; if core-writer is backlogged across
+two polls, run N+1's identical entity jobs are dropped while its control envelope — which
+carries a fresh id — is not). On zero the writer returns 0 and logs the connector and
+`startedAt`.
+
+**Same-batch skip.** `processBatch` also tracks which connectors had a node or edge write
+fail in the current batch and skips the sweep for a `sync.completed` envelope belonging to
+one of them, logging why rather than pushing a second error.
+
+**Residual limitation.** A node whose write failed in an _earlier_ batch of the same run is
+not covered by either guard: the floor only needs one confirmation from the run, and the
+same-batch check only sees this batch. Such a node can be marked absent until the next run
+touches it — at which point the duplicate/touch path clears `_absent_since` within one poll
+(5 minutes at the Kubernetes default `schedule`).
 
 `writeNode`'s `SET` and `touchLastSynced` both add `n._absent_since = null`, so any node the
 connector re-confirms — changed or unchanged — is present again. This includes the
@@ -432,8 +474,15 @@ internal-label exclusion in `neo4j-service.ts` (catalog list, overview, neighbor
 and in the MCP tools' Cypher (`blast_radius`, `entity_detail` neighbors, `search_entities`,
 `dependency_chain`, `find_owners`, `graph_stats`); each read accepts `include_absent`
 (`includeAbsent` query param / MCP argument, default `false`). `entity_detail` on an absent
-node by id still returns it, with `_absent_since` projected like `_last_synced_age_seconds`.
-`graph_query` (raw Cypher) is unchanged.
+node by id still returns it: the tool strips every `_`-prefixed property, so the node carries
+`absent_since` (the sweep timestamp, `null` when live) as an ordinary projected field, and its
+`include_absent` governs the neighbors. `graph_query` (raw Cypher) is unchanged.
+
+`team-service`'s two ownership queries filter the owned node as well — the connector emits
+`Team -[:OWNS]-> LogicalService`, so a swept service would otherwise still show in the teams
+list's owned counts and on the team detail page. They take no `include_absent` in v1. The
+api-server's `getGraphStats` applies the filter to both endpoints of the edge count as well as
+the node count, so the dashboard's two totals stay consistent once the sweep has run.
 
 The sweep is a per-connector-type opt-in (`ConnectorType.sweepsAbsent`): Kubernetes is
 `true`, GitHub is `false`, because a GitHub full sync is not exhaustive (`scope.cappedAt`
