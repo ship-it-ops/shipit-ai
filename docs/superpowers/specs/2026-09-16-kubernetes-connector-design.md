@@ -61,7 +61,7 @@ from the cluster disappears from default views after the next successful sync.
 | --- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | 1   | **Both access paths in v1**: in-cluster ServiceAccount **and** uploaded credentials (kubeconfig or token). | In-cluster proves the demo with zero stored secrets; uploaded credentials cover any reachable cluster and local dev.       |
 | 2   | **Poll on the existing scheduler**, default every 5 minutes, full list per run.                            | Reuses harness, run history and status UI unchanged. A watch needs a long-lived process the platform does not have.        |
-| 3   | **Mark absent via an end-of-sync sweep**, no hard delete.                                                  | Keeps history and anything an agent cited moments ago; generic, so GitHub gets it for free.                                |
+| 3   | **Mark absent via an end-of-sync sweep**, no hard delete.                                                  | Keeps history and anything an agent cited moments ago; generic; per-type opt-in (`sweepsAbsent`), GitHub off in v1.        |
 | 4   | **Tiered repository linking with confidence**: explicit annotation > image-name match > app-label match.   | Works on the demo out of the box; operators can pin the truth with one annotation.                                         |
 | 5   | **Full Connector Hub wizard mirroring GitHub** (Spec 2).                                                   | Uploaded credentials need a real UI path; the demo must show the feature.                                                  |
 | 6   | **Connector-type registry (factory)** in the api-server instead of GitHub branches in five places.         | Third connector becomes an additive module.                                                                                |
@@ -73,10 +73,9 @@ from the cluster disappears from default views after the next successful sync.
 BullMQ repeat job (cron per instance)          POST /api/connectors/probe
         |                                              |
         v                                              v
-sync-scheduler ──> connectorTypes.get(cfg.type) ──> KubernetesType
-                        |  build(cfg, ctx) -> { connector, sdkConfig }
+sync-scheduler ──> getConnectorType(cfg.type) ──> KubernetesType
+                        |  build(cfg, ctx) -> BuildResult { connector, sdkConfig }
                         |  probe(body, ctx)  -> ProbeResult
-                        |  validateCreate(body) / summarize(cfg)
                         v
               ConnectorHarness.runSync('full')
                  authenticate -> discover -> fetch(pages) -> normalize -> publish
@@ -88,7 +87,7 @@ sync-scheduler ──> connectorTypes.get(cfg.type) ──> KubernetesType
                  core-writer  ── nodes + edges (existing path)
                         ^
                         |  envelope kind:'sync.completed' { startedAt }
-sync-scheduler ─────────┘  (emitted only when status === 'success' && mode === 'full')
+sync-scheduler ─────────┘  (emitted only when status === 'success' && mode === 'full' && type.sweepsAbsent)
                  core-writer sweep: _absent_since = now on unseen nodes of that instance
 ```
 
@@ -119,11 +118,11 @@ src/
 
 `ConnectorConfig.credentials` carries one of:
 
-| mode         | credentials                          | how the `KubeConfig` is built                                                                                                                                                                                                                                                                          |
-| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `in-cluster` | none                                 | `loadFromCluster()`; fails `IN_CLUSTER_UNAVAILABLE` when the SA token file is absent                                                                                                                                                                                                                   |
-| `kubeconfig` | `kubeconfig` (YAML text)             | `loadFromString()`; **must** have exactly one context (or a configured `context`), and the user entry must use `token`, `client-certificate-data`/`client-key-data` or basic auth. `exec` and `auth-provider` are rejected with `UNSUPPORTED_AUTH_PLUGIN` because the plugin binary is not in the pod. |
-| `token`      | `server`, `caData` (base64), `token` | assembled into a single-context `KubeConfig`; `insecureSkipTlsVerify` is **not** offered                                                                                                                                                                                                               |
+| mode         | credentials                          | how the `KubeConfig` is built                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in-cluster` | none                                 | `loadFromCluster()`; fails `IN_CLUSTER_UNAVAILABLE` when the SA token file is absent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `kubeconfig` | `kubeconfig` (YAML text)             | Parsed by the connector itself with the `yaml` package (`{ logLevel: 'silent' }`), structure-validated, field-allowlisted, and loaded via `KubeConfig.loadFromOptions` — `loadFromString()` is never called on user-supplied text (its `findToken()` reads file-referencing keys off the filesystem during parsing, before any validation runs). Must have exactly one context (or a configured `context`); the user entry must carry `token`, `client-certificate-data`/`client-key-data` or basic auth. Rejected before anything loads: any user carrying `token-file`, `client-certificate`, `client-key` (→ `KUBECONFIG_INVALID`) or `exec`/`auth-provider` (→ `UNSUPPORTED_AUTH_PLUGIN`); any cluster carrying `certificate-authority` (file) or `insecure-skip-tls-verify`; forbidden keys are checked in EVERY entry, not only the selected context. YAML parse errors report only the error name and line, never the message or a snippet. |
+| `token`      | `server`, `caData` (base64), `token` | assembled into a single-context `KubeConfig`; `insecureSkipTlsVerify` is **not** offered                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 A `ClientFactory` (`KubeConfig -> { core, apps, batch, version }`) is injected through the
 constructor so tests substitute fakes without touching the network — the same pattern the
@@ -136,15 +135,26 @@ namespaces (and their environments) are published before the workloads that refe
 Ordering is best-effort: the writer batches asynchronously, and an edge whose target has not
 landed yet is dropped and re-emitted on the next run.
 
-| entity type | API calls                                                                                                                                                                                                                                                                                            | cursor                               |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| `Cluster`   | `GET /version`; `list nodes` (first page only, `limit 100`)                                                                                                                                                                                                                                          | none                                 |
-| `Namespace` | `list namespaces` `limit 500` + `continue`                                                                                                                                                                                                                                                           | the `continue` token                 |
-| `Workload`  | per included namespace: `list deployments/statefulsets/daemonsets/cronjobs` (`limit 500`, `continue`) and **one** `list pods` per namespace, matched to workloads in memory by owner-reference chain (`Pod -> ReplicaSet -> Deployment`, `Pod -> StatefulSet`, `Pod -> DaemonSet`, `Job -> CronJob`) | `<namespaceIndex>~<kind>~<continue>` |
+| entity type | API calls                                                                                                                                                                                                                                                                                                                         | cursor                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `Cluster`   | `GET /version`; `list nodes` (bounded probe of the first node only, `limit 1`; `continue` intentionally not threaded)                                                                                                                                                                                                             | none                                 |
+| `Namespace` | `list namespaces` `limit 500` + `continue`                                                                                                                                                                                                                                                                                        | the `continue` token                 |
+| `Workload`  | per included namespace: `list deployments/statefulsets/daemonsets/cronjobs` (`limit 500`, `continue`) and **one** `list pods` + **one** `list replicasets` per namespace, matched to workloads in memory by owner-reference chain (`Pod -> ReplicaSet -> Deployment`, `Pod -> StatefulSet`, `Pod -> DaemonSet`, `Job -> CronJob`) | `<namespaceIndex>~<kind>~<continue>` |
 
 Namespace filtering: `scope.namespaces.include` globs (default `['*']`) minus
 `scope.namespaces.exclude` (default `['kube-system', 'kube-public', 'kube-node-lease']`).
 `scope.kinds` defaults to all four workload kinds.
+
+Pod rollups: `readyPods` and `restarts` sum over every pod owned by a workload (all
+revisions mid-rollout). Image digests are attributed only to pods owned by the
+ReplicaSet(s) at the Deployment's highest numeric `deployment.kubernetes.io/revision`
+annotation (all owned ReplicaSets when none carry the annotation); a container with more
+than one distinct digest among those pods is ambiguous and the digest is omitted entirely.
+A single `rollupsForbidden` flag: the first 403 on `pods` or `replicasets` disables
+pod/ReplicaSet rollups for the rest of the run and emits one warning — `FORBIDDEN:pods —
+pod/replicaset rollups (ready counts, restarts, digests) disabled; grant list on pods and
+replicasets to the ShipIt ServiceAccount` — workloads still sync without those fields. A
+403 on a workload kind itself is reported per kind as `FORBIDDEN:<kind>`.
 
 `normalize(raw)` type-sniffs like the GitHub connector: a record with `apiVersion` +
 `kind` dispatches on `kind`; the cluster summary and the per-workload pod summary are
@@ -152,7 +162,9 @@ wrapped records (`{ __shipit: 'cluster' | 'workload', ... }`) so the sniffing is
 unambiguous.
 
 `refetchWorkload(namespace, kind, name)` fetches one workload plus its pods and runs the
-same `normalize()`; unused in v1, kept for the watch/webhook layer.
+same `normalize()`; errors are classified via `classifyError`, and a workload that no
+longer exists returns an empty entity (`{ nodes: [], edges: [] }`) rather than throwing —
+the absence sweep handles deletions. Unused in v1, kept for the watch/webhook layer.
 
 ## Config schema (shared)
 
@@ -229,33 +241,49 @@ and never persists it. Rate limits mirror the GitHub probe.
 `packages/api-server/src/services/connector-types/`:
 
 ```ts
-export interface ConnectorType<C extends ConnectorInstanceConfig> {
+export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInstanceConfig> {
   readonly type: C['type'];
-  build(
-    cfg: C,
-    ctx: BuildContext,
-  ): Promise<{ connector: ShipItConnector; sdkConfig: ConnectorConfig }>;
-  probe(body: unknown, ctx: BuildContext): Promise<ProbeResult>;
-  validateCreate(body: unknown): CreateResult<C>; // structural checks the route used to inline
-  summarize(cfg: C): ConnectorSummary; // { subtitle, counts } for GET /api/connectors
+  readonly pollMode: 'full' | 'incremental'; // mode the repeatable poll job enqueues
+  readonly sweepsAbsent: boolean; // true only when a successful full run is exhaustive
+  build(cfg: C, ctx: BuildContext): Promise<BuildResult>;
+  probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>; // Kubernetes only; GitHub's probe stays in the route
 }
-export function getConnectorType(type: string): ConnectorType<ConnectorInstanceConfig>;
+export function getConnectorType(type: string): ConnectorType | undefined;
 ```
 
+`BuildContext` also carries the live `globalApp` reference, `readPrivateKey`/`keyDir`,
+`listConnectors()`, optional `lookupRepositoryNames`/`lookupTeamSlugs` (graph lookups the
+Kubernetes linking tiers use — absent in unit tests / no Neo4j, in which case the tiers
+simply do not match) and an optional structured `logger` (`warn`), used when a lookup
+throws so `build` continues with empty known-name lists instead of failing.
+
 - `github.ts` moves the existing scheduler credential resolution (`resolveAppCredentials`,
-  PEM read, `installationId`) and the existing probe body unchanged.
-- `kubernetes.ts` reads the credential files for the configured mode and builds the
-  connector with the real client factory. `probe` builds a transient connector, calls
-  `/version`, lists namespaces (first page), and attempts one `list` per configured kind in
-  the first included namespace, returning `{ ok, cluster: { version }, namespaces: [...],
-kinds: { Deployment: 'ok' | 'forbidden', ... } }` so the wizard can warn before saving.
-- Call sites that switch to the factory: `sync-scheduler.ts` (construct + credentials),
-  `routes/connectors.ts` `POST /` and `POST /probe` (dispatch on `body.type`, defaulting to
-  `github` for backward compatibility), `connector-registry.ts` `CreateConnectorInput` /
-  `UpdateConnectorInput` (become per-type unions validated by Zod), and `GET /api/connectors`
-  (summary via `summarize`). `webhook-refetch-queue.ts` stays GitHub-specific.
+  PEM read, `installationId`) into `build`; `pollMode: 'incremental'`, `sweepsAbsent: false`;
+  its probe stays inline in the route.
+- `kubernetes.ts` reads the credential files for the configured mode, resolves `githubOrg`
+  (explicit, else the sole enabled GitHub connector's, else `null`) and the known-repository
+  / known-team lists, and builds the connector with the real client factory; `pollMode:
+'full'`, `sweepsAbsent: true`. `probe` builds a transient connector, calls `/version`,
+  lists namespaces (first page), and attempts one `list` per configured kind in the first
+  included namespace, returning `{ ok, cluster: { version }, namespaces: [...], kinds: {
+<Kind>: 'ok' | 'forbidden' | 'error' | 'skipped', ... } }` so the wizard can warn before
+  saving.
+- There is no `validateCreate`/`summarize` seam: `routes/connectors.ts` `POST /` and
+  `GET /` still branch inline on `body.type` and return the stored config as-is. A per-type
+  adapter for create-time validation and list summaries was planned but not built in v1 —
+  the factory covers `build`, `pollMode`, `sweepsAbsent` and `probe` only.
+- Call sites that use the factory: `sync-scheduler.ts` (`pollMode` for the repeat job,
+  `build` for credentials/connector construction, `sweepsAbsent` for the sweep gate) and
+  `routes/connectors.ts` `POST /probe` (dispatches to `getConnectorType('kubernetes').probe`
+  when `body.type === 'kubernetes'`, else the existing GitHub probe body).
+  `connector-registry.ts` validates create/update bodies against the Zod
+  `connectorInstanceSchema` discriminated union directly. `webhook-refetch-queue.ts` stays
+  GitHub-specific.
 - The BullMQ queue name stays `shipit-sync-github` so existing repeat jobs need no
   migration; a rename is a separate housekeeping change.
+- `@kubernetes/client-node` is an api-server **dev** dependency only — the factory itself
+  never imports it directly (it goes through `@shipit-ai/connector-kubernetes`), but the
+  route/factory unit tests construct `ApiException` to simulate 401/403 responses.
 
 ## Data model
 
@@ -299,6 +327,10 @@ Team target **predicted** ids built with the same helpers the GitHub connector u
 (`buildScopedCanonicalId('Repository', 'default', githubOrg, repoName)` and
 `('Team', 'default', githubOrg, teamSlug)`).
 
+Within one `normalize()` batch the connector keeps the highest-confidence edge per
+`(type, from, to)`: several workloads of one service may link the same repository at
+different tiers, and `mergeEdge` is last-writer-wins.
+
 ### Service identity
 
 `serviceName` = first present of, per `mapping.service.nameFrom`: `app.kubernetes.io/part-of`,
@@ -324,10 +356,12 @@ Evaluated in order; the first hit wins and sets `link_method` and the edge confi
 Tiers 2 and 3 need `mapping.repoLink.githubOrg`; when `null`, the factory fills it from the
 **sole** enabled GitHub connector's `org` and leaves the tiers disabled (with a run warning)
 when there are zero or several. Tier-1 annotations whose value is not `<org>/<repo>` are
-ignored and counted in the run's `errors`. Because the connector never queries Neo4j,
-"equals a repository name" is implemented as emitting the edge to the predicted id; the
-writer drops it when no such node exists. The edge property `link_method` lets the UI and
-`entity_detail` show _how_ a link was inferred.
+ignored and counted in the run's `errors`. The connector never queries Neo4j itself. At
+build time the api-server passes it the repository names and team slugs GitHub already
+synced for `githubOrg` (`knownRepositories` / `knownTeams`, source casing), so tiers 2–3
+match case-insensitively and emit the predicted id with the repository's real casing. The
+writer's MATCH-on-both-ends drop remains the backstop. The edge property `link_method` lets
+the UI and `entity_detail` show _how_ a link was inferred.
 
 ### Environment derivation (`environment.ts`)
 
@@ -389,8 +423,13 @@ and in the MCP tools' Cypher (`blast_radius`, `entity_detail` neighbors, `search
 node by id still returns it, with `_absent_since` projected like `_last_synced_age_seconds`.
 `graph_query` (raw Cypher) is unchanged.
 
-GitHub instances get the sweep automatically: a repository deleted from the org becomes
-absent after the next successful full sync.
+The sweep is a per-connector-type opt-in (`ConnectorType.sweepsAbsent`): Kubernetes is
+`true`, GitHub is `false`, because a GitHub full sync is not exhaustive (`scope.cappedAt`
+defaults to 100 until acknowledged, plus repo include/exclude and `entities.*` toggles), so
+unseen ≠ gone there, and a manual "Sync now" would otherwise stamp still-existing nodes
+absent. The scheduler publishes `sync.completed` only when `status === 'success' && mode
+=== 'full' && type.sweepsAbsent`. GitHub's opt-in is deferred until its full sync becomes
+exhaustive (see Revisit Triggers in the design decision).
 
 ## Validation
 
@@ -414,9 +453,18 @@ absent after the next successful full sync.
 | `UNAUTHORIZED`            | fetch                      | 401 → harness `authFailed` → instance `degraded` (existing path)                                                         |
 | `FORBIDDEN:<kind>`        | fetch                      | 403 listing one kind → that entity type errors, others continue, run is `partial`; probe reports the kind as `forbidden` |
 | `NAMESPACE_SCOPE_EMPTY`   | fetch                      | include/exclude left no namespaces; run is `failed`                                                                      |
+| `SCOPE_INVALID`           | authenticate               | `scope.cluster` or `scope.mapping` missing — a factory/build bug, not user-facing input                                  |
 
-Per-call timeout 30 s; `limit 500` with `continue` on every list; pods listed once per
-namespace. A run that raises outside a per-type fetch is `failed` exactly as today.
+Every `authenticate()` failure is `<CODE>: message` (the `KubernetesError` constructor
+prefixes the code). API errors: `classifyError` builds the message from `err.body.message`
+(truncated to 200 chars) or `HTTP <status>` — never from `err.message`, which concatenates
+the raw status line, response body and headers (which may carry `Set-Cookie` behind an auth
+proxy).
+
+Per-call timeout 30 s; `limit 500` with `continue` on every list except the Cluster node
+probe (bounded to the first node, `limit 1`, `continue` not threaded); pods and
+replicasets listed once per namespace. A run that raises outside a per-type fetch is
+`failed` exactly as today.
 
 ## Safety
 
@@ -435,10 +483,19 @@ namespace. A run that raises outside a per-type fetch is `failed` exactly as tod
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | connector unit                     | normalizers over fixture objects (each kind, namespace, node list) with exact node/edge snapshots; `linking.ts` table-driven over all three tiers and the disabled-org case; `environment.ts` and ownership rules; `auth.ts` mode detection and kubeconfig rejection cases                                                                                                |
 | connector with fake clients        | injected `ClientFactory`: paging via `continue`, per-kind `403` → partial, empty scope → `NAMESPACE_SCOPE_EMPTY`, `refetchWorkload` produces the same output as a full pass                                                                                                                                                                                               |
-| api-server unit                    | factory `build`/`probe`/`validateCreate` for both types; credentials route path allowlist and rejection codes; scheduler emits `sync.completed` only on `success` + `full`; registry create/update with the union                                                                                                                                                         |
+| api-server unit                    | factory `build`/`probe` for both types (`pollMode`/`sweepsAbsent` registered per type, credential file reads, `resolveGithubOrg`, graph-lookup failures tolerated); credentials route path allowlist and rejection codes; scheduler emits `sync.completed` only on `success` + `full` + `sweepsAbsent`; registry create/update with the union                             |
 | core-writer integration (CI Neo4j) | sweep marks only the instance's unseen nodes; `writeNode` clears; `touchLastSynced` clears; reads exclude absent by default and include on request                                                                                                                                                                                                                        |
 | acceptance                         | a `reference-cluster.ts` fixture combined with the GitHub fixtures runs both normalizers through the writer and asserts the cross-source graph: Deployment → BuildArtifact → Repository, LogicalService → Repository, Team OWNS LogicalService, and `blast_radius` from the repository reaching the deployments — this seeds the currently unused `reference-graph` suite |
 | manual                             | in-cluster on the demo after the infra brief; a local `kind` cluster via pasted kubeconfig and via token                                                                                                                                                                                                                                                                  |
+
+The Neo4j-backed suites (`absence.integration`, `acceptance/cross-source.integration`) skip
+without `NEO4J_TEST_URI` and are exercised by the CI `integration` job. That job runs
+`vitest run .integration` straight after `pnpm install`, with no build step, so
+`packages/core-writer/vitest.config.ts` aliases `@shipit-ai/*` workspace packages (including
+the GitHub and Kubernetes connector packages) to their `src` entry points — the same fix
+already applied in `packages/api-server/vitest.config.ts` and
+`packages/event-bus/vitest.config.ts` — so the unbuilt integration job can collect the
+acceptance test.
 
 ## Success criteria (v1 is done when)
 
@@ -497,8 +554,8 @@ namespace. A run that raises outside a per-type fetch is `failed` exactly as tod
 4. Spec 2 UI.
 
 No instance exists until one is created, so shipping the backend is inert for existing
-deployments; the only behavior change visible before an instance exists is the sweep on
-GitHub instances, which is gated to successful full runs.
+deployments; in v1 only Kubernetes instances sweep absence — GitHub does not, until its
+full sync becomes exhaustive.
 
 ## Related
 

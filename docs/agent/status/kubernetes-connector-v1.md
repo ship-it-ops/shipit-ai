@@ -9,7 +9,11 @@ agent: claude-session-2026-09-16-k8s-connector
 tags: [connectors, kubernetes, scheduler, core-writer]
 ---
 
-# Kubernetes connector v1 — design approved, implementation plan + build in progress
+# Kubernetes connector v1 — implementation complete on branch, awaiting review/PR
+
+All 13 tasks (connector package, shared schema, event-bus control envelope, core-writer
+absence sweep, api-server connector-type factory + credentials + probe, docs) are committed
+on `k8s-connector-v1`. Nothing has been pushed or opened as a PR yet.
 
 ## Scope
 
@@ -28,6 +32,8 @@ tags: [connectors, kubernetes, scheduler, core-writer]
 `docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`. Spec 2 (Connector Hub UI)
 and the infra brief (ClusterRole + chart annotation) follow separately.
 
+Plan: `docs/superpowers/plans/2026-09-16-kubernetes-connector.md`.
+
 ## Done when
 
-`branch k8s-connector-v1 deleted on remote` — replace with `PR #N merged` once the PR opens.
+PR from k8s-connector-v1 merged into main.

@@ -95,7 +95,7 @@ ShipIt-AI/
 │   ├── connector-sdk/       # Connector interface, harness, sync state machine, dry-run
 │   ├── connectors/
 │   │   ├── github/          # GitHub App/PAT connector (repos, teams, pipelines, CODEOWNERS)
-│   │   └── kubernetes/      # Kubernetes connector (planned)
+│   │   └── kubernetes/      # Kubernetes connector (workloads, namespaces, images; polling)
 │   ├── api-server/          # Fastify REST API — connectors, schema, graph queries
 │   ├── mcp-server/          # Model Context Protocol server — 8 tools for AI agents
 │   └── web-ui/              # Next.js 14 dashboard with Cytoscape.js graph visualization
@@ -166,10 +166,10 @@ See [docs/schema-guide.md](docs/schema-guide.md) for the full schema reference.
 
 ## Connectors
 
-| Connector  | Status             | Entities                                       |
-| ---------- | ------------------ | ---------------------------------------------- |
-| GitHub     | Available          | Repository, Team, Person, Pipeline, CODEOWNERS |
-| Kubernetes | Planned (Phase 1b) | Deployment, Namespace, Cluster                 |
+| Connector  | Status    | Entities                                                                                                              |
+| ---------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| GitHub     | Available | Repository, Team, Person, Pipeline, CODEOWNERS                                                                        |
+| Kubernetes | Available | Cluster, Namespace, Environment, Deployment (Deployment/StatefulSet/DaemonSet/CronJob), BuildArtifact, LogicalService |
 
 See [docs/connectors.md](docs/connectors.md) for setup guides and the custom connector SDK.
 
@@ -210,7 +210,7 @@ ADRs capture the architectural decisions behind the codebase and the trade-offs 
 
 ### Phase 1b (Weeks 5-8)
 
-- Kubernetes connector (Watch API + hourly reconciliation)
+- ~~Kubernetes connector~~ — shipped (polling, absence sweep); Watch API streaming follows
 - Additional MCP tools: `recent_changes`, `health_check`, `list_violations`, `change_impact`, `team_topology`
 - Onboarding wizard (7-step first-run flow)
 - Acceptance test suite with reference graph fixtures

@@ -23,16 +23,22 @@ node, and nothing emits `LogicalService`, so the service-centric UI (Incident Mo
 1. **Both access modes in v1**: in-cluster ServiceAccount and uploaded kubeconfig/token
    (files in the key dir, durable via the existing `shipit-connector-apps` GSM blob).
    Kubeconfigs using `exec`/`auth-provider` are rejected — the plugin binary is not in the pod.
+   Kubeconfig text is parsed and allowlisted by the connector itself (`yaml` package →
+   `KubeConfig.loadFromOptions`); client-node's own loader never parses raw kubeconfig text.
 2. **Poll on the existing BullMQ scheduler** (default every 5 min, full list). No watch;
    the connector keeps a `refetchWorkload()` seam for a later watch/webhook layer.
 3. **Absence via end-of-sync sweep**: scheduler publishes a `sync.completed { startedAt }`
    control envelope only after a `success` + `full` run; the writer sets `_absent_since` on
    that instance's nodes whose `_last_synced` predates the run; every write/touch clears it;
-   default reads (api + MCP) exclude absent unless `include_absent`. No hard delete.
+   default reads (api + MCP) exclude absent unless `include_absent`. No hard delete. The
+   sweep is a per-type opt-in (`sweepsAbsent`): Kubernetes on, GitHub off until its full
+   sync is exhaustive.
 4. **Tiered repository linking** as explicit edges (never linking-key merges, which are
    same-entity): annotation `shipit.ai/github-repo` (1.0) > image-name match (0.7) >
    `app.kubernetes.io/name` match (0.6); edges target predicted Repository ids and the
-   writer drops them when the target is missing.
+   writer drops them when the target is missing. Name tiers compare against
+   api-server-supplied known-name lists (source casing); batches keep the best edge per
+   endpoint pair.
 5. **Connector-type factory** in api-server (`services/connector-types/`) replaces GitHub
    branches in scheduler, registry create, probe and summary.
 6. **Emit `LogicalService`** per app (global id `shipit://logical-service/default/<name>`,
@@ -50,7 +56,9 @@ node, and nothing emits `LogicalService`, so the service-centric UI (Incident Mo
 
 ## Consequences
 
-- GitHub instances gain the sweep for free (deleted repos become absent).
+- The sweep is opt-in per connector type (`sweepsAbsent`), not automatic: Kubernetes'
+  full list is exhaustive so it sweeps; GitHub's full sync is capped/filtered so it does
+  not, until that changes (see Revisit Triggers).
 - Envelope gains an optional `kind`; existing producers/consumers unaffected.
 - One instance per cluster; `Environment` and `LogicalService` ids are global so later
   sources (Backstage, Datadog) merge by primary key.
@@ -61,6 +69,8 @@ node, and nothing emits `LogicalService`, so the service-centric UI (Incident Mo
 - A customer needs sub-minute freshness → add the watch layer on the refetch seam.
 - Argo CD / Flux present in a target cluster → add tracking-id as tier 2.
 - Graph outgrows demo scale → the parked Neo4j index question becomes active.
+- GitHub full sync becomes exhaustive (cap acknowledged, no include/exclude) → enable
+  `sweepsAbsent` for GitHub.
 
 ## Related
 

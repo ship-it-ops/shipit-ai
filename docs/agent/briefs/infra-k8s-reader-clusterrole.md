@@ -1,0 +1,31 @@
+# Infra brief — read-only ClusterRole for the Kubernetes connector + demo annotations
+
+**For:** `Ship-It-Ops/shipit-ai-infra` (Helm chart `charts/shipit-ai`).
+**From:** app repo, 2026-09-16. **Enables:** the in-cluster Kubernetes connector
+(`docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`, success criterion 1).
+
+## What the app does
+
+The api-server's scheduler runs a `kubernetes` connector that lists namespaces, nodes, pods,
+deployments, replicasets, statefulsets, daemonsets, jobs and cronjobs — read-only — using the
+pod's ServiceAccount when `access.mode: in-cluster`. It links workloads to GitHub repositories
+via the `shipit.ai/github-repo` annotation. No new secrets: uploaded credentials ride in the
+existing `shipit-connector-apps` GSM container.
+
+## What infra needs to add
+
+1. `charts/shipit-ai/templates/clusterrole-shipit-reader.yaml`:
+   - `ClusterRole shipit-reader` with `get, list, watch` on core `namespaces, nodes, pods`;
+     apps `deployments, replicasets, statefulsets, daemonsets`; batch `jobs, cronjobs`.
+   - `ClusterRoleBinding shipit-reader` → `ServiceAccount {{ .Values.apiServer.serviceAccountName }}`
+     in the release namespace.
+2. Annotation `shipit.ai/github-repo: Ship-It-Ops/ShipIt-AI` on the four app Deployments and the
+   Redis StatefulSet (pod-template annotations are not needed; the connector reads the
+   workload's own metadata).
+3. Nothing else: no new GSM container, no env vars, no Terraform IAM.
+
+## Verification
+
+After deploy: `POST /api/connectors/probe` with `{ "type": "kubernetes", "access": { "mode": "in-cluster" } }`
+returns `ok: true` with every kind `ok`; create the `k8s-demo` instance and confirm 5 workload
+nodes plus one `shipit-ai` LogicalService linked to the `ShipIt-AI` repository.
