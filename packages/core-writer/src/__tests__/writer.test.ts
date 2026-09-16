@@ -65,6 +65,7 @@ function createMockNodeWriter(): NodeWriter {
     writeEdge: vi.fn().mockResolvedValue(undefined),
     getExistingClaims: vi.fn().mockResolvedValue({ claims: [], claimsRev: 0 }),
     touchLastSynced: vi.fn().mockResolvedValue(undefined),
+    markAbsent: vi.fn().mockResolvedValue(2),
   };
 }
 
@@ -100,6 +101,7 @@ function createStatefulNodeWriter(): NodeWriter & {
       const existing = store.get(nodeId);
       if (existing && lastSynced > existing.lastSynced) existing.lastSynced = lastSynced;
     }),
+    markAbsent: vi.fn().mockResolvedValue(0),
   };
 }
 
@@ -452,6 +454,7 @@ describe('CoreWriter', () => {
         ),
         writeEdge: vi.fn().mockResolvedValue(undefined),
         touchLastSynced: vi.fn().mockResolvedValue(undefined),
+        markAbsent: vi.fn().mockResolvedValue(0),
       };
     }
 
@@ -568,6 +571,91 @@ describe('CoreWriter', () => {
       // Now idempotency IS recorded → a third identical delivery dedups.
       expect(await idem.isDuplicate(key)).toBe(true);
       warn.mockRestore();
+    });
+  });
+
+  describe('CoreWriter — sync.completed control envelopes', () => {
+    function controlEnvelope(
+      connectorId: string,
+      startedAt: string,
+      mode: 'full' | 'incremental' = 'full',
+    ): EventEnvelope {
+      return {
+        id: randomUUID(),
+        timestamp: new Date().toISOString(),
+        connector_id: connectorId,
+        idempotency_key: `${connectorId}~sync-completed~${Date.parse(startedAt)}`,
+        payload: { nodes: [], edges: [] },
+        kind: 'sync.completed',
+        control: { kind: 'sync.completed', startedAt, mode },
+      };
+    }
+
+    it('calls markAbsent with the connector id and run start and reports the count', async () => {
+      const nodeWriter = createMockNodeWriter();
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const result = await writer.processBatch([
+        controlEnvelope('k8s-demo', '2026-09-16T10:00:00.000Z'),
+      ]);
+      expect(nodeWriter.markAbsent).toHaveBeenCalledTimes(1);
+      expect(nodeWriter.markAbsent).toHaveBeenCalledWith(
+        'k8s-demo',
+        '2026-09-16T10:00:00.000Z',
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      );
+      expect(result.absentMarked).toBe(2);
+      expect(nodeWriter.writeNode).not.toHaveBeenCalled();
+      expect(result.errors).toEqual([]);
+    });
+
+    it('ignores control envelopes for incremental runs', async () => {
+      const nodeWriter = createMockNodeWriter();
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const result = await writer.processBatch([
+        controlEnvelope('k8s-demo', '2026-09-16T10:00:00.000Z', 'incremental'),
+      ]);
+      expect(nodeWriter.markAbsent).not.toHaveBeenCalled();
+      expect(result.absentMarked).toBe(0);
+    });
+
+    it('records a sweep failure as an error instead of throwing', async () => {
+      const nodeWriter = createMockNodeWriter();
+      (nodeWriter.markAbsent as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const result = await writer.processBatch([
+        controlEnvelope('k8s-demo', '2026-09-16T10:00:00.000Z'),
+      ]);
+      expect(result.errors).toEqual(['Error sweeping absent nodes for k8s-demo: boom']);
+      expect(result.absentMarked).toBe(0);
+    });
+
+    it('entity envelopes are unaffected and report absentMarked: 0', async () => {
+      const nodeWriter = createMockNodeWriter();
+      const writer = new CoreWriter(
+        nodeWriter,
+        new InMemoryLinkingKeyIndex(),
+        new InMemoryIdempotencyChecker(),
+        DEFAULT_CONFIG,
+      );
+      const result = await writer.processBatch([makeEnvelope([makeNode('repo-a')], [])]);
+      expect(nodeWriter.markAbsent).not.toHaveBeenCalled();
+      expect(result.absentMarked).toBe(0);
+      expect(result.nodesWritten).toBe(1);
     });
   });
 });

@@ -89,7 +89,8 @@ export async function mergeNode(
           n._source_org = $sourceOrg,
           n._source_id = $sourceId,
           n._source_connector_id = $sourceConnectorId,
-          n._event_version = $eventVersion
+          n._event_version = $eventVersion,
+          n._absent_since = null
     )
     FOREACH (_ IN CASE WHEN (NOT reject AND NOT claimsConflict) THEN [1] ELSE [] END |
       SET n += $effectiveProps,
@@ -142,10 +143,40 @@ export async function touchLastSynced(
 ): Promise<void> {
   await tx.run(
     `MATCH (n {id: $id})
+     SET n._absent_since = null
+     WITH n
      WHERE n._last_synced IS NULL OR n._last_synced < $lastSynced
      SET n._last_synced = $lastSynced`,
     { id: nodeId, lastSynced },
   );
+}
+
+/**
+ * Absence sweep (sync.completed). Stamp `_absent_since` on every node this
+ * connector instance wrote that it did NOT re-confirm during the run that
+ * started at `startedAt`. Both timestamps are `toISOString()` UTC strings from
+ * the api-server clock, so the lexical `<` is chronological. Nodes without a
+ * `_last_synced` cannot be judged and are left alone. Returns the count marked.
+ */
+export async function markAbsent(
+  tx: ManagedTransaction,
+  connectorId: string,
+  startedAt: string,
+  now: string,
+): Promise<number> {
+  const result = await tx.run(
+    `MATCH (n)
+     WHERE n._source_connector_id = $connectorId
+       AND n._last_synced IS NOT NULL
+       AND n._last_synced < $startedAt
+       AND n._absent_since IS NULL
+     SET n._absent_since = $now
+     RETURN count(n) AS marked`,
+    { connectorId, startedAt, now },
+  );
+  const marked = result.records[0]?.get('marked') as
+    { toNumber?: () => number } | number | undefined;
+  return typeof marked === 'object' && marked?.toNumber ? marked.toNumber() : Number(marked ?? 0);
 }
 
 export async function mergeEdge(tx: ManagedTransaction, edge: CanonicalEdge): Promise<void> {

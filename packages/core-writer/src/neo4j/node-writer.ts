@@ -7,6 +7,7 @@ import type { NodeWriter, WriteNodeResult } from '../writer.js';
 import { Neo4jClient } from './client.js';
 import {
   getExistingClaims,
+  markAbsent,
   mergeEdge,
   mergeNode,
   touchLastSynced,
@@ -48,6 +49,12 @@ export class Neo4jNodeWriter implements NodeWriter {
   async touchLastSynced(nodeId: string, lastSynced: string): Promise<void> {
     await this.client.executeWrite(async (tx) => {
       await touchLastSynced(tx, nodeId, lastSynced);
+    }, this.database);
+  }
+
+  async markAbsent(connectorId: string, startedAt: string, now: string): Promise<number> {
+    return this.client.executeWrite(async (tx) => {
+      return markAbsent(tx, connectorId, startedAt, now);
     }, this.database);
   }
 }
