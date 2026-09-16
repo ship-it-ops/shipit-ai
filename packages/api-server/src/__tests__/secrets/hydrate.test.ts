@@ -158,6 +158,58 @@ describe('hydrateSecrets — pre-set env wins when GSM returns null', () => {
     // The env var must be unchanged (no-clobber is a no-op when GSM is null).
     expect(env.GITHUB_APP_ID).toBe('preset-id');
   });
+
+  it('never reads GSM for a consume:env secret the platform already injected, even when GSM would deny it', async () => {
+    // Production shape (2026-09-16, sha-e30da0f deploy): NEO4J_PASSWORD and
+    // SHIPIT_SESSION_SECRET reach the pod through an ExternalSecret → k8s
+    // Secret → envFrom, and the api-server GSA deliberately holds NO
+    // secretAccessor grant on those two containers. Reading them from GSM
+    // anyway throws PERMISSION_DENIED (gRPC code 7), which the store
+    // re-throws by design (a missing grant must be loud) — and boot crashed.
+    // A value the platform already put in env must short-circuit the read.
+    const env: NodeJS.ProcessEnv = {
+      NEO4J_PASSWORD: 'from-eso',
+      SHIPIT_SESSION_SECRET: 'from-eso-too',
+    };
+    const denied = Object.assign(
+      new Error(
+        "7 PERMISSION_DENIED: Permission 'secretmanager.versions.access' denied on resource",
+      ),
+      { code: 7 },
+    );
+    const store = {
+      kind: 'gsm',
+      read: vi.fn(async () => {
+        throw denied;
+      }),
+      write: vi.fn(),
+    } as unknown as SecretStore;
+    const reg: SecretsRegistry = {
+      'neo4j-aura-password': {
+        gsmContainer: 'shipit-neo4j-aura-password',
+        consume: 'env',
+        env: 'NEO4J_PASSWORD',
+        writable: false,
+        required: true,
+      },
+      'session-secret': {
+        gsmContainer: 'shipit-session-secret',
+        consume: 'env',
+        env: 'SHIPIT_SESSION_SECRET',
+        writable: false,
+        required: true,
+      },
+    } as unknown as SecretsRegistry;
+
+    const { resolved, hydrated } = await hydrateSecrets(store, reg, env);
+
+    expect(store.read).not.toHaveBeenCalled();
+    expect(resolved.get('neo4j-aura-password')).toBe('from-eso');
+    expect(resolved.get('session-secret')).toBe('from-eso-too');
+    expect(hydrated).toEqual(expect.arrayContaining(['neo4j-aura-password', 'session-secret']));
+    // Required fail-fast is satisfied by the pre-set env values.
+    expect(env.NEO4J_PASSWORD).toBe('from-eso');
+  });
 });
 
 describe('hydrateSecrets — basic consume modes', () => {

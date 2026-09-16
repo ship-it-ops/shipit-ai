@@ -61,11 +61,20 @@ export async function hydrateSecrets(
   // the wizard tooling uses.
   for (const [key, entry] of Object.entries(registry)) {
     if (entry.consume === 'env') {
-      const value = await store.read(key);
+      // Pre-set env wins AND the store is not consulted for it. This matters
+      // beyond efficiency: ESO-delivered bootstrap secrets (NEO4J_PASSWORD,
+      // SHIPIT_SESSION_SECRET) reach the pod via a k8s Secret → envFrom, and
+      // the api-server GSA deliberately holds NO secretAccessor grant on those
+      // containers — reading them from GSM throws PERMISSION_DENIED and
+      // crashed boot on the 2026-09-16 sha-e30da0f deploy.
       // No-clobber: empty-string env (e.g. a placeholder GITHUB_APP_ID="" from
       // a chart ConfigMap) counts as unset and gets filled from GSM.
       // Do NOT change this to === undefined.
-      if (value != null && entry.env && !env[entry.env]) env[entry.env] = value;
+      const preset = entry.env ? env[entry.env] : undefined;
+      if (!preset) {
+        const value = await store.read(key);
+        if (value != null && entry.env) env[entry.env] = value;
+      }
       // Snapshot the EFFECTIVE env value so resolved.get() returns whatever the
       // process will actually use — operator-pre-set wins over GSM, and that
       // pre-set value must be visible through the accessor even when GSM returns null.

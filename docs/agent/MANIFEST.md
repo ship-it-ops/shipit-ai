@@ -1,9 +1,10 @@
 # Agent Context
 
-Last updated: 2026-09-15 | Total notes: 85
+Last updated: 2026-09-16 | Total notes: 86
 
 ## Investigations
 
+- [deploy-e30da0f-boot-crash-gsm-read-of-eso-delivered-secrets](investigations/deploy-e30da0f-boot-crash-gsm-read-of-eso-delivered-secrets.md) | investigation | fixed | core | 2026-09-16 | #96 hydration read ESO-delivered neo4j/session secrets from GSM w/o grant → PERMISSION_DENIED boot crash; pre-set env now skips read
 - [sync-runtime-itest-connection-closed-teardown-race](investigations/sync-runtime-itest-connection-closed-teardown-race.md) | investigation | active | standard | 2026-09-15 | CI Integration red w/ all tests green = sync-runtime teardown race; test now awaits job settle; flip to fixed after ~20 green runs
 - [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
 - [backend-images-runtime-module-not-found](investigations/backend-images-runtime-module-not-found.md) | investigation | completed | standard | 2026-06-11 | root node_modules copy broke resolution; pnpm deploy fixes
