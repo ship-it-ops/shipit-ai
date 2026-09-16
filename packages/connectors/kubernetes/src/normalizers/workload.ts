@@ -145,7 +145,12 @@ export function normalizeWorkload(raw: RawWorkload, ctx: NormalizerContext): Nor
       image: parseImageRef(c.image),
     }));
   for (const i of images) {
-    const digest = raw.pods.imageDigests[i.container];
+    // `imageDigests` is a plain object literal, so a container legally named
+    // `constructor` / `toString` / `valueOf` would otherwise read a truthy
+    // Object.prototype member straight into the BuildArtifact id and `sha`.
+    const digest = Object.hasOwn(raw.pods.imageDigests, i.container)
+      ? raw.pods.imageDigests[i.container]
+      : undefined;
     if (digest) i.image.digest = digest;
   }
 

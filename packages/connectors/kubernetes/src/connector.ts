@@ -107,6 +107,7 @@ export class KubernetesConnector implements ShipItConnector {
   private namespaces: NamespaceRef[] = [];
   private workloadFetcher: WorkloadFetcher | null = null;
   private readonly warnings = new Set<string>();
+  private readonly notes = new Set<string>();
 
   constructor(
     clientFactory: ClientFactory = defaultClientFactory,
@@ -117,9 +118,24 @@ export class KubernetesConnector implements ShipItConnector {
     this.inClusterProbe = options.inClusterProbe;
   }
 
-  /** Non-fatal run problems (e.g. `FORBIDDEN:<kind>`); the scheduler folds them into the run record. */
+  /**
+   * Skipped-data warnings only (e.g. `FORBIDDEN:<kind>`): something the cluster
+   * holds is missing from this run, so the scheduler degrades it to `partial`
+   * and the absence sweep is suppressed. Link diagnostics belong in
+   * {@link getNotes} — they mean "could not enrich", not "data was skipped".
+   */
   getWarnings(): string[] {
     return [...this.warnings];
+  }
+
+  /**
+   * Informational run diagnostics (unresolved repo/team links, an optional
+   * cluster probe that failed). Recorded on the run, never a degradation:
+   * every workload without a matching GitHub team would otherwise turn every
+   * run `partial` and permanently disable the sweep.
+   */
+  getNotes(): string[] {
+    return [...this.notes];
   }
 
   async authenticate(config: ConnectorConfig): Promise<AuthResult> {
@@ -140,6 +156,7 @@ export class KubernetesConnector implements ShipItConnector {
     this.namespaces = [];
     this.workloadFetcher = null;
     this.warnings.clear();
+    this.notes.clear();
     return { success: true };
   }
 
@@ -153,11 +170,12 @@ export class KubernetesConnector implements ShipItConnector {
     const scope = this.requireScope();
     try {
       switch (entityType) {
-        case 'Cluster':
-          return {
-            entities: [await fetchClusterSummary(clients, scope.cluster, this.timeoutMs)],
-            has_more: false,
-          };
+        case 'Cluster': {
+          const notes: string[] = [];
+          const summary = await fetchClusterSummary(clients, scope.cluster, this.timeoutMs, notes);
+          for (const n of notes) this.notes.add(n);
+          return { entities: [summary], has_more: false };
+        }
         case 'Namespace': {
           const page = await fetchNamespaces(clients, scope.namespaces, cursor, this.timeoutMs);
           if (!cursor) this.namespaces = [];
@@ -221,7 +239,10 @@ export class KubernetesConnector implements ShipItConnector {
         const prev = edges.get(key);
         if (!prev || e._confidence > prev._confidence) edges.set(key, e);
       }
-      for (const w of out.warnings) this.warnings.add(w);
+      // Normalizer diagnostics are notes, not warnings: they report a link that
+      // could not be resolved, not cluster data that was skipped. The githubOrg
+      // one repeats per workload, so the Set collapses it to one per run.
+      for (const w of out.warnings) this.notes.add(w);
     }
     return { nodes: [...nodes.values()], edges: [...edges.values()] };
   }

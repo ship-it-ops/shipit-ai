@@ -63,6 +63,32 @@ describe('fetchClusterSummary', () => {
     });
   });
 
+  it('reports a non-forbidden node probe failure as a note and still returns the summary', async () => {
+    const notes: string[] = [];
+    const hung = {
+      version: { getCode: vi.fn().mockResolvedValue({ gitVersion: 'v1.31.2' }) },
+      core: { listNode: vi.fn().mockReturnValue(new Promise(() => {})) },
+    } as unknown as KubeClients;
+    expect(await fetchClusterSummary(hung, 'shipit-demo', 5, notes)).toEqual({
+      __shipit: 'cluster',
+      name: 'shipit-demo',
+      version: 'v1.31.2',
+    });
+    expect(notes).toEqual(['node probe failed: TIMEOUT']);
+  });
+
+  it('stays silent for a forbidden node list — RBAC denial is normal, not a note', async () => {
+    const notes: string[] = [];
+    const denied = {
+      version: { getCode: vi.fn().mockResolvedValue({ gitVersion: 'v1.31.2' }) },
+      core: {
+        listNode: vi.fn().mockRejectedValue(new ApiException(403, 'nodes is forbidden', {}, {})),
+      },
+    } as unknown as KubeClients;
+    await fetchClusterSummary(denied, 'shipit-demo', 5, notes);
+    expect(notes).toEqual([]);
+  });
+
   it('maps providerID schemes', () => {
     expect(providerFromId('aws:///us-east-1a/i-123')).toBe('aws');
     expect(providerFromId('azure:///subscriptions/x')).toBe('azure');
@@ -272,6 +298,35 @@ describe('WorkloadFetcher', () => {
     expect(kinds).toEqual(['Deployment', 'Deployment']);
     expect(f.warnings).toEqual([expect.stringMatching(/^FORBIDDEN:CronJob/)]);
     expect(c.batch.listNamespacedCronJob).toHaveBeenCalledTimes(1);
+  });
+
+  it('clamps a stale cursor whose kindIndex outran a shrunken scope.kinds', async () => {
+    const c = clients();
+    const f = new WorkloadFetcher(c, [demoNamespace], ['Deployment']);
+    // Written when scope.kinds still had 4 entries; `kinds` is down to 1.
+    const r = await f.fetch(JSON.stringify([0, 3, null]));
+    expect(r.entities.map((e) => (e as { kind: string }).kind)).toEqual(['Deployment']);
+    expect(r.has_more).toBe(false);
+  });
+
+  it('treats a garbage cursor index as the start rather than NaN', async () => {
+    const c = clients();
+    const f = new WorkloadFetcher(c, [demoNamespace], ['Deployment']);
+    const r = await f.fetch(JSON.stringify([-5, 'x', null]));
+    expect(r.entities).toHaveLength(1);
+  });
+
+  it('holds only the current namespace in the pod/replicaset cache', async () => {
+    const c = clients();
+    const f = new WorkloadFetcher(c, [demoNamespace, ns2], ['Deployment']);
+    let cursor: string | undefined;
+    let more = true;
+    while (more) {
+      const r = await f.fetch(cursor);
+      cursor = r.cursor;
+      more = r.has_more;
+    }
+    expect((f as unknown as { cache: Map<string, unknown> }).cache.size).toBe(1);
   });
 
   it('non-403 failures propagate as classified errors with status', async () => {

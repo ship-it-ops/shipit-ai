@@ -217,6 +217,30 @@ describe('normalizeWorkload — Deployment with annotation (demo api-server)', (
 });
 
 describe('normalizeWorkload — other kinds and fallbacks', () => {
+  it('a container named after an Object.prototype member gets no digest', () => {
+    // `constructor` is a legal DNS-1123 container name; an unguarded
+    // `imageDigests[name]` read returns Object.prototype.constructor — a truthy
+    // function — which would land in the BuildArtifact id and in `sha`.
+    const deployment = {
+      ...apiServerDeployment,
+      metadata: { ...apiServerDeployment.metadata, name: 'proto' },
+      spec: {
+        ...apiServerDeployment.spec!,
+        template: {
+          spec: { containers: [{ name: 'constructor', image: 'ghcr.io/acme/proto:1.0.0' }] },
+        },
+      },
+    };
+    const out = normalizeWorkload(
+      rawWorkload('Deployment', deployment, { readyPods: 1, restarts: 0, imageDigests: {} }),
+      demoContext,
+    );
+    const artifact = out.nodes.find((n) => n.label === 'BuildArtifact')!;
+    expect(artifact.id).toBe('shipit://build-artifact/default/ghcr.io/acme/proto@1.0.0');
+    expect(artifact.properties.sha).toBeUndefined();
+    expect(Object.keys(artifact.properties)).not.toContain('sha');
+  });
+
   it('StatefulSet without annotation links by app label (tier 3) and reports Available when ready', () => {
     const out = normalizeWorkload(rawWorkload('StatefulSet', redisStatefulSet), demoContext);
     const dep = out.nodes.find((n) => n.label === 'Deployment')!;

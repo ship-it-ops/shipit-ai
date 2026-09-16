@@ -1,4 +1,4 @@
-import type { KubeClients } from '../auth.js';
+import { classifyError, type KubeClients } from '../auth.js';
 import type { RawCluster } from '../types.js';
 import { DEFAULT_TIMEOUT_MS, withTimeout } from './common.js';
 
@@ -17,11 +17,17 @@ export function providerFromId(providerId: string | undefined): string | undefin
   }
 }
 
-/** One record per run. Version is required (authenticate already proved it); nodes are optional. */
+/**
+ * One record per run. Version is required (authenticate already proved it);
+ * nodes are optional. A denied node list is normal RBAC and stays silent; any
+ * other failure (notably a 30 s TIMEOUT on a hung list) is pushed to `notes`
+ * so it is visible on the run instead of costing 30 s invisibly.
+ */
 export async function fetchClusterSummary(
   clients: KubeClients,
   clusterName: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  notes?: string[],
 ): Promise<RawCluster> {
   const version = await withTimeout(clients.version.getCode(), timeoutMs, 'GET /version');
   const raw: RawCluster = { __shipit: 'cluster', name: clusterName };
@@ -40,8 +46,13 @@ export async function fetchClusterSummary(
         labels['failure-domain.beta.kubernetes.io/region'];
       if (region) raw.region = region;
     }
-  } catch {
-    // RBAC may deny `list nodes`; provider/region simply stay unset.
+  } catch (err) {
+    // RBAC may deny `list nodes`; provider/region simply stay unset. Anything
+    // else is worth surfacing — the run continues either way.
+    const classified = classifyError(err);
+    if (classified.code !== 'FORBIDDEN') {
+      notes?.push(`node probe failed: ${classified.code}`);
+    }
   }
   return raw;
 }

@@ -158,7 +158,9 @@ describe('validateKubeconfigText', () => {
   });
 
   it('rejects token-file behind a double-quoted YAML-escaped key', () => {
-    const escapedKey = tokenKubeconfig().replace('token: abc123', '"token-file": /etc/hosts');
+    // `-` is `-`: the key only reads as `token-file` after the YAML parser
+    // decodes the escape, so this exercises the decoding path, not the literal.
+    const escapedKey = tokenKubeconfig().replace('token: abc123', '"token\\u002Dfile": /etc/hosts');
     expect(validateKubeconfigText(escapedKey)).toMatchObject({
       ok: false,
       code: 'KUBECONFIG_INVALID',

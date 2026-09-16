@@ -67,7 +67,12 @@ export function parseCredentials(raw: Record<string, string>): KubernetesAccessC
         caData: raw.caData || undefined,
       };
     default:
-      throw new KubernetesError('KUBECONFIG_INVALID', `unknown access mode "${raw.mode ?? ''}"`);
+      // Deliberately static: `raw.mode` is unvalidated, unbounded user input
+      // and this message is rendered in a 400 body.
+      throw new KubernetesError(
+        'KUBECONFIG_INVALID',
+        'unknown access mode; expected one of in-cluster, kubeconfig, token',
+      );
   }
 }
 

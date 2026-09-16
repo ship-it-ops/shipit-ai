@@ -33,10 +33,32 @@ function encodeCursor(nsIndex: number, kindIndex: number, continueToken?: string
   return JSON.stringify([nsIndex, kindIndex, continueToken ?? null]);
 }
 
-function decodeCursor(cursor: string | undefined): Position & { continueToken?: string } {
+/** Non-integer, negative or out-of-range → the nearest valid slot, never NaN. */
+function clampIndex(value: unknown, count: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  const i = Math.trunc(value);
+  if (i < 0) return 0;
+  // `count` may be 0 for nsIndex on an empty namespace list; fetch() early-returns.
+  return count > 0 && i >= count ? count - 1 : i;
+}
+
+/**
+ * A cursor survives a config change: shrinking `scope.kinds` mid-run leaves a
+ * `kindIndex` past the end, which used to reach `listKind` with
+ * `kind === undefined` and throw a raw TypeError instead of a KubernetesError.
+ */
+function decodeCursor(
+  cursor: string | undefined,
+  nsCount: number,
+  kindCount: number,
+): Position & { continueToken?: string } {
   if (!cursor) return { nsIndex: 0, kindIndex: 0 };
   const [nsIndex, kindIndex, continueToken] = JSON.parse(cursor) as [number, number, string | null];
-  return { nsIndex, kindIndex, continueToken: continueToken ?? undefined };
+  return {
+    nsIndex: clampIndex(nsIndex, nsCount),
+    kindIndex: clampIndex(kindIndex, kindCount),
+    continueToken: typeof continueToken === 'string' ? continueToken : undefined,
+  };
 }
 
 function advance(pos: Position, kindCount: number): Position {
@@ -157,7 +179,11 @@ export class WorkloadFetcher {
   ) {}
 
   async fetch(cursor?: string): Promise<FetchResult> {
-    let pos: Position & { continueToken?: string } = decodeCursor(cursor);
+    let pos: Position & { continueToken?: string } = decodeCursor(
+      cursor,
+      this.namespaces.length,
+      this.kinds.length,
+    );
     while (
       pos.nsIndex < this.namespaces.length &&
       this.forbiddenKinds.has(this.kinds[pos.kindIndex])
@@ -285,6 +311,10 @@ export class WorkloadFetcher {
       ),
     ]);
     const entry = { pods, replicaSets };
+    // advance() only ever moves forward through namespaces, so an earlier
+    // namespace's pods/ReplicaSets are dead weight — on a large cluster that is
+    // every pod object of the run held for the whole run.
+    this.cache.clear();
     this.cache.set(namespace, entry);
     return entry;
   }

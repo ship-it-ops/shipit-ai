@@ -29,10 +29,20 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
+/**
+ * Compile a namespace scope once, then test many names against it: a page of
+ * namespaces would otherwise recompile every glob for every name.
+ */
+export function compileScope(include: string[], exclude: string[]): (name: string) => boolean {
+  const includeRe = include.map(globToRegExp);
+  const excludeRe = exclude.map(globToRegExp);
+  return (name: string) =>
+    includeRe.some((re) => re.test(name)) && !excludeRe.some((re) => re.test(name));
+}
+
 /** Namespace scope: any include glob must match and no exclude glob may match. */
 export function matchesScope(name: string, include: string[], exclude: string[]): boolean {
-  if (!include.some((g) => globToRegExp(g).test(name))) return false;
-  return !exclude.some((g) => globToRegExp(g).test(name));
+  return compileScope(include, exclude)(name);
 }
 
 export function toNamespaceRef(ns: V1Namespace): NamespaceRef {

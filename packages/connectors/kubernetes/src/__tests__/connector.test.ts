@@ -203,6 +203,58 @@ describe('KubernetesConnector', () => {
     await drain(c, 'Namespace');
     await drain(c, 'Workload');
     expect(c.getWarnings()).toEqual([expect.stringMatching(/^FORBIDDEN:CronJob/)]);
+    // skipped data degrades the run; it must not be filed as an informational note
+    expect(c.getNotes()).toEqual([]);
+  });
+
+  it('an unresolved repo link is a note, not a warning, and collapses to one per run', async () => {
+    const c = new KubernetesConnector(() => fakeClients());
+    await c.authenticate(config({ githubOrg: null }));
+    await drain(c, 'Namespace');
+    c.normalize(await drain(c, 'Workload'));
+
+    // 4 workloads each produce the same diagnostic; the Set keeps one.
+    expect(c.getNotes()).toEqual([
+      'repoLink.githubOrg unresolved: name-match tiers disabled (set mapping.repoLink.githubOrg or configure exactly one GitHub connector)',
+    ]);
+    // The whole point: nothing here may make the run partial and kill the sweep.
+    expect(c.getWarnings()).toEqual([]);
+  });
+
+  it('an unmatched team label is a note, not a warning', async () => {
+    const c = new KubernetesConnector(() =>
+      fakeClients({
+        core: {
+          listNamespace: vi
+            .fn()
+            .mockResolvedValue(
+              list([ns('shipit', { environment: 'production', team: 'Platform Team' })]),
+            ),
+          readNamespace: vi.fn(),
+          listNode: vi.fn().mockResolvedValue(list([])),
+          listNamespacedPod: vi.fn().mockResolvedValue(list([])),
+        },
+      }),
+    );
+    await c.authenticate(config({ knownTeams: [] }));
+    await drain(c, 'Namespace');
+    c.normalize(await drain(c, 'Workload'));
+
+    expect(c.getNotes()).toEqual([
+      'team label "Platform Team" matches no GitHub team in Ship-It-Ops',
+    ]);
+    expect(c.getWarnings()).toEqual([]);
+  });
+
+  it('authenticate clears notes as well as warnings so a rerun starts clean', async () => {
+    const c = new KubernetesConnector(() => fakeClients());
+    await c.authenticate(config({ githubOrg: null }));
+    await drain(c, 'Namespace');
+    c.normalize(await drain(c, 'Workload'));
+    expect(c.getNotes()).toHaveLength(1);
+
+    await c.authenticate(config({ githubOrg: null }));
+    expect(c.getNotes()).toEqual([]);
   });
 
   it('sync() runs the full loop and reports counts', async () => {

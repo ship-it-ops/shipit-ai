@@ -3,7 +3,7 @@ import type { NamespaceRef, RawNamespace } from '../types.js';
 import {
   DEFAULT_TIMEOUT_MS,
   PAGE_LIMIT,
-  matchesScope,
+  compileScope,
   toNamespaceRef,
   withTimeout,
 } from './common.js';
@@ -26,9 +26,8 @@ export async function fetchNamespaces(
     timeoutMs,
     'list namespaces',
   );
-  const items = list.items.filter((ns) =>
-    matchesScope(ns.metadata?.name ?? '', scope.include, scope.exclude),
-  );
+  const inScope = compileScope(scope.include, scope.exclude);
+  const items = list.items.filter((ns) => inScope(ns.metadata?.name ?? ''));
   const next = list.metadata?._continue || undefined;
   return {
     entities: items.map((object) => ({ __shipit: 'namespace', object })),
