@@ -31,7 +31,7 @@ Last updated: 2026-09-16 | Total notes: 88
 
 <!-- always-read at session start -->
 
-- [kubernetes-connector-v1](status/kubernetes-connector-v1.md) | status | active | core | 2026-09-16 | K8s connector v1: implemented + reviewed + final fix wave on k8s-connector-v1, awaiting PR
+- [kubernetes-connector-v1](status/kubernetes-connector-v1.md) | status | active | core | 2026-09-16 | K8s connector v1: implemented + reviewed + final fix wave on k8s-connector-v1; PR #113 open, awaiting review/CI
 
 ## Decisions
 

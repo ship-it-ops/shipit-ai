@@ -43,7 +43,7 @@ Plan: `docs/superpowers/plans/2026-09-16-kubernetes-connector.md`.
 
 ## Done when
 
-PR from k8s-connector-v1 merged into main.
+PR #113 merged into main (https://github.com/ship-it-ops/shipit-ai/pull/113).
 
 ## Follow-ups (post-merge)
 
