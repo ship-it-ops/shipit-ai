@@ -2,8 +2,18 @@ FROM node:22-alpine AS builder
 RUN corepack enable pnpm
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
+# core-writer's workspace closure. Each line is one Docker layer, ordered
+# roughly from least-changing to most-changing for cache efficiency:
+#   shared → event-bus → connector-sdk → connectors/* → core-writer
+# connector-sdk and connectors/* are devDependencies of core-writer, but the
+# builder still needs them: `tsc` compiles every file under src/, including
+# src/__tests__/acceptance/*, which imports both connector packages. The
+# `deploy --legacy --prod` below strips devDependencies, so the runtime image
+# is unchanged.
 COPY packages/shared/ packages/shared/
 COPY packages/event-bus/ packages/event-bus/
+COPY packages/connector-sdk/ packages/connector-sdk/
+COPY packages/connectors/ packages/connectors/
 COPY packages/core-writer/ packages/core-writer/
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo build --filter=@shipit-ai/core-writer

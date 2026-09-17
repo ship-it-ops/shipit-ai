@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-16 | Total notes: 88
+Last updated: 2026-09-16 | Total notes: 89
 
 ## Investigations
 
@@ -109,6 +109,7 @@ Last updated: 2026-09-16 | Total notes: 88
 
 ## Scars
 
+- [docker-builder-copies-fixed-package-set](scars/docker-builder-copies-fixed-package-set.md) | scar | active | core | 2026-09-16 | image build red in CI, turbo build green locally = Dockerfile builder COPY list missing a workspace (dev)dependency; tsc compiles tests too
 - [integration-tests-sharing-a-db-must-run-serially](scars/integration-tests-sharing-a-db-must-run-serially.md) | scar | active | core | 2026-06-19 | integration tests green alone but red together = vitest parallel files clobbering a shared real DB; --no-file-parallelism or isolate
 - [pnpm-install-under-live-next-dev-serves-stale-bundle](scars/pnpm-install-under-live-next-dev-serves-stale-bundle.md) | scar | active | core | 2026-06-19 | empty/blank local web-ui right after pnpm install = stale next dev serving old node_modules; restart before suspecting data loss
 - [tailwind-spacing-screen-key-shadows-h-screen](scars/tailwind-spacing-screen-key-shadows-h-screen.md) | scar | active | core | 2026-06-18 | a `--spacing-screen` @theme key shadows Tailwind's reserved h-screen → 100vh becomes 16px, shell collapses
