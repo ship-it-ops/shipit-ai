@@ -88,4 +88,17 @@ describe('ids and keys', () => {
     expect(normalizeServiceName('shipit-ai/api-server')).toBe('shipit-ai/api-server');
     expect(slugify('Platform Team')).toBe('platform-team');
   });
+
+  // Dash trimming is an index walk, not `/^-+|-+$/g` (js/polynomial-redos): a
+  // long run of dashes made that regex backtrack quadratically. These pin the
+  // behaviour at both edges of the input.
+  it('trims dash runs at both ends without backtracking', () => {
+    const run = '-'.repeat(5000);
+    expect(normalizeServiceName(`a${run}`)).toBe('a');
+    expect(normalizeServiceName(`${run}a${run}`)).toBe('a');
+    expect(slugify(`a${run}`)).toBe('a');
+    expect(slugify(`${run}a${run}`)).toBe('a');
+    expect(normalizeServiceName('-----')).toBe('');
+    expect(slugify('-----')).toBe('');
+  });
 });

@@ -5,7 +5,7 @@
 // live GitHub API without writing anything.
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
@@ -81,9 +81,20 @@ function kubernetesAccessPathError(
   return null;
 }
 
+// Self-guarding credential write. Every caller already builds `path` as
+// `join(getAllowedKeyDir(), <regex-validated connectorId>)`, but CodeQL does
+// not accept a regex as a path sanitizer (js/path-injection), and a regex is
+// the wrong last line of defence anyway. Re-canonicalise here and refuse
+// anything that is not a file sitting directly in the key dir, so the sink
+// itself — not its callers — enforces the containment.
 function writeSecretFile(path: string, content: string): void {
-  writeFileSync(path, content, { encoding: 'utf-8', mode: 0o600 });
-  chmodSync(path, 0o600);
+  const dir = getAllowedKeyDir();
+  const resolved = resolvePath(path);
+  if (!resolved.startsWith(dir + sep) || dirname(resolved) !== dir) {
+    throw new Error('refusing to write a credential outside the key directory');
+  }
+  writeFileSync(resolved, content, { encoding: 'utf-8', mode: 0o600 });
+  chmodSync(resolved, 0o600);
 }
 
 const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;

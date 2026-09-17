@@ -46,23 +46,37 @@ export function parseImageRef(ref: string): ParsedImage {
   return { registry, repository, tag, digest, name };
 }
 
+// Strip leading and trailing `-`. The obvious `/^-+|-+$/g` backtracks
+// quadratically on a long run of dashes (CodeQL js/polynomial-redos): the
+// engine retries `-+$` from every position in the run. Leading dashes are
+// anchored so `/^-+/` is linear; trailing dashes are counted with an index
+// walk instead of a regex. Same result, no backtracking.
+function trimDashes(s: string): string {
+  const start = s.replace(/^-+/, '');
+  let end = start.length;
+  while (end > 0 && start[end - 1] === '-') end--;
+  return start.slice(0, end);
+}
+
 /** Lower-case, `[a-z0-9._/-]` only — the LogicalService id segment. */
 export function normalizeServiceName(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._/-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return trimDashes(
+    raw
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9._/-]+/g, '-'),
+  );
 }
 
 /** GitHub-team-slug style: lower-case, spaces → `-`, `[a-z0-9._-]` only. */
 export function slugify(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  return trimDashes(
+    raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9._-]+/g, '-'),
+  );
 }
 
 function imageIdentity(image: ParsedImage): string {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createServer } from '../../server.js';
 import { ConnectorRegistry } from '../../services/connector-registry.js';
@@ -1360,6 +1360,46 @@ current-context: demo
       payload: { connectorId: 'x', mode: 'password' },
     });
     expect(r3.statusCode).toBe(400);
+  });
+
+  // The credential writes are the js/path-injection sinks — connectorId is the
+  // only attacker-controlled part of the filename. CONNECTOR_ID turns every
+  // traversal shape away at the door, and writeSecretFile independently
+  // re-canonicalises the path and refuses anything that is not a file sitting
+  // directly in the key dir, so neither check alone is load-bearing.
+  it('POST /kubernetes/credentials cannot write outside the key dir', async () => {
+    for (const connectorId of [
+      '../etc/passwd',
+      'a/../../b',
+      '../../k8s',
+      'a/b',
+      './x',
+      '..',
+      '/abs',
+    ]) {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/connectors/kubernetes/credentials',
+        payload: { connectorId, mode: 'kubeconfig', kubeconfig },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('VALIDATION_ERROR');
+    }
+    // Nothing escaped one level up (keyDir's parent), for either write mode.
+    expect(existsSync(join(tmpDir, 'kubeconfig-passwd.yaml'))).toBe(false);
+    expect(existsSync(join(tmpDir, 'k8s-token-passwd'))).toBe(false);
+
+    // The most adversarial id the regex does allow still lands flat in the dir.
+    const nasty = `a-_-${'-'.repeat(40)}_`;
+    const ok = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: nasty, mode: 'kubeconfig', kubeconfig },
+    });
+    expect(ok.statusCode).toBe(201);
+    expect(dirname(ok.json().kubeconfigPath)).toBe(keyDir);
+    expect(ok.json().kubeconfigPath).toBe(join(keyDir, `kubeconfig-${nasty}.yaml`));
+    expect(readFileSync(ok.json().kubeconfigPath, 'utf-8')).toBe(kubeconfig);
   });
 
   it('POST /kubernetes/credentials stores a token and PEM CA for mode token', async () => {
