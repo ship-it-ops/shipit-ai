@@ -307,14 +307,22 @@ jobs:
           #   ship-it-ops/ship-code → skills/ship-reviewed-prs/examples/
           #   ci-github-actions-claude-code-action.yml
           prompt: '/ship-reviewed-prs:review-pr ${{ github.event.pull_request.number }} --non-interactive'
-          # Keep the agent's tool calls + text in the runner log for one more
-          # PR cycle so the --non-interactive fix above is observable end-to-
-          # end (we want to confirm the skill reaches the gh submit path, not
-          # just that the job exits clean). Remove in a follow-up PR once a
-          # clean review is visible on a real PR — the verbose output is
-          # noisy for routine runs.
-
-          # show_full_output: true
+          # Keep the agent's tool calls + text in the runner log.
+          #
+          # Re-enabled to diagnose PR #113, where this job ran to completion
+          # (25 turns, ~$3.10, exit 0, zero permission denials) and posted
+          # nothing at all — no review, no comment — while the same workflow
+          # posted APPROVE reviews on #109-#112. With the output hidden there
+          # is no way to tell whether the skill stalled partway through its
+          # three-step submission (create PENDING review → post inline
+          # comments → submit the verdict), which would leave an invisible
+          # pending review, or whether it simply ended with the review as
+          # text. The PRs that worked were small; #113 is 87 files and ~15.5k
+          # added lines, so the large-diff path is the suspect.
+          #
+          # Remove again once a large-diff review is observed submitting
+          # end-to-end — the verbose output is noisy for routine runs.
+          show_full_output: true
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           # Skill source: https://github.com/ship-it-ops/ship-code/tree/main/skills/ship-reviewed-prs
