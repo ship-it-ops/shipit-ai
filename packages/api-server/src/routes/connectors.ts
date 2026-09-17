@@ -3,12 +3,25 @@
 // PATCH and DELETE so concurrent edits surface as 409 instead of silently
 // clobbering each other. The probe endpoint validates credentials against the
 // live GitHub API without writing anything.
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
+import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
+import { getConnectorType } from '../services/connector-types/index.js';
+import type { BuildContext } from '../services/connector-types/types.js';
+import {
+  ConnectorVersionConflictError,
+  type ConnectorRegistry,
+} from '../services/connector-registry.js';
+import {
+  GitHubAppVersionConflictError,
+  type GitHubAppService,
+} from '../services/github-app-service.js';
+import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
+import type { Config } from '@shipit-ai/shared';
 
 // Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
 // body (so the wizard's per-org override panel can validate creds
@@ -49,16 +62,42 @@ const PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE =
   'privateKeyPath must point at a file directly inside the configured keys ' +
   'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). ' +
   'Subdirectories and paths outside it are not allowed.';
-import {
-  ConnectorVersionConflictError,
-  type ConnectorRegistry,
-} from '../services/connector-registry.js';
-import {
-  GitHubAppVersionConflictError,
-  type GitHubAppService,
-} from '../services/github-app-service.js';
-import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
-import type { Config } from '@shipit-ai/shared';
+
+const CREDENTIAL_PATH_NOT_ALLOWED_MESSAGE =
+  'Credential paths must point at a file directly inside the configured keys ' +
+  'directory (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys). Use POST ' +
+  '/api/connectors/kubernetes/credentials to store them there.';
+
+// Same predicate as the PEM allowlist, applied to every *Path in a Kubernetes
+// `access` block (create, patch and probe bodies).
+function kubernetesAccessPathError(
+  access: { kubeconfigPath?: string; tokenPath?: string; caDataPath?: string } | undefined,
+): string | null {
+  for (const key of ['kubeconfigPath', 'tokenPath', 'caDataPath'] as const) {
+    const candidate = access?.[key]?.trim();
+    if (candidate && !isAllowedKeyPath(candidate))
+      return `${key}: ${CREDENTIAL_PATH_NOT_ALLOWED_MESSAGE}`;
+  }
+  return null;
+}
+
+// Self-guarding credential write. Every caller already builds `path` as
+// `join(getAllowedKeyDir(), <regex-validated connectorId>)`, but CodeQL does
+// not accept a regex as a path sanitizer (js/path-injection), and a regex is
+// the wrong last line of defence anyway. Re-canonicalise here and refuse
+// anything that is not a file sitting directly in the key dir, so the sink
+// itself — not its callers — enforces the containment.
+function writeSecretFile(path: string, content: string): void {
+  const dir = getAllowedKeyDir();
+  const resolved = resolvePath(path);
+  if (!resolved.startsWith(dir + sep) || dirname(resolved) !== dir) {
+    throw new Error('refusing to write a credential outside the key directory');
+  }
+  writeFileSync(resolved, content, { encoding: 'utf-8', mode: 0o600 });
+  chmodSync(resolved, 0o600);
+}
+
+const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -74,7 +113,7 @@ function parseIfMatch(header: unknown): string | undefined {
   return header.replace(/^"|"$/g, '');
 }
 
-interface CreateConnectorBody {
+interface CreateGitHubConnectorBody {
   id: string;
   type: 'github';
   name: string;
@@ -89,6 +128,25 @@ interface CreateConnectorBody {
   // connector inherits connectors.github.app.*.
   app?: { id?: string; privateKeyPath?: string };
 }
+interface CreateKubernetesConnectorBody {
+  id: string;
+  type: 'kubernetes';
+  name: string;
+  enabled?: boolean;
+  schedule?: string;
+  cluster: { name: string };
+  access: {
+    mode: string;
+    kubeconfigPath?: string;
+    context?: string;
+    server?: string;
+    tokenPath?: string;
+    caDataPath?: string;
+  };
+  scope?: unknown;
+  mapping?: unknown;
+}
+type CreateConnectorBody = CreateGitHubConnectorBody | CreateKubernetesConnectorBody;
 
 interface UpdateConnectorBody {
   enabled?: boolean;
@@ -98,6 +156,18 @@ interface UpdateConnectorBody {
   entities?: unknown;
   // Set to null to clear an existing override and fall back to global App.
   app?: { id?: string; privateKeyPath?: string } | null;
+  cluster?: unknown;
+  access?: { kubeconfigPath?: string; tokenPath?: string; caDataPath?: string } | null;
+  mapping?: unknown;
+}
+
+interface KubernetesCredentialsBody {
+  connectorId: string;
+  mode: 'kubeconfig' | 'token';
+  kubeconfig?: string;
+  context?: string;
+  token?: string;
+  caData?: string;
 }
 
 interface ProbeBody {
@@ -117,6 +187,18 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // from the run store, not from the YAML in-memory copy (which is now
   // always empty).
   const runStore = registry.getRunStore();
+
+  // Build context for factory probes run from routes (no memoization needed).
+  const routeBuildContext = (): BuildContext => {
+    const cfg = (server as unknown as { config?: Config }).config;
+    return {
+      globalApp: cfg?.connectors.github.app ?? { id: '', privateKeyPath: '' },
+      readPrivateKey: (p) => readFileSync(join(getAllowedKeyDir(), basename(p)), 'utf-8'),
+      keyDir: getAllowedKeyDir(),
+      listConnectors: () => registry.list(),
+      logger: console,
+    };
+  };
 
   // GET /api/connectors — list. Pipelines one Redis LRANGE per connector
   // (batched via listManyLatest) so 10 connectors cost one round trip,
@@ -231,7 +313,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         // GitHub's numeric id to string for the lookup.
         const usedBy = new Map<string, string>();
         for (const c of registry.list()) {
-          if (c.installationId) usedBy.set(c.installationId, c.id);
+          if (c.type === 'github' && c.installationId) usedBy.set(c.installationId, c.id);
         }
         // Always use the slug-based PUBLIC install URL — appending
         // /installations/new to html_url breaks for org-owned Apps because
@@ -669,50 +751,80 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // 400 on validation failure (Zod error from the registry).
   server.post<{ Body: CreateConnectorBody }>('/', async (request, reply) => {
     const body = request.body;
-    if (!body || !body.id || body.type !== 'github' || !body.name) {
+    if (!body || !body.id || !body.name || (body.type !== 'github' && body.type !== 'kubernetes')) {
       return reply.status(400).send({
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'id, type ("github"), and name are required',
+          message: 'id, type ("github" | "kubernetes"), and name are required',
         },
       });
     }
-    if (!body.installationId || !body.org) {
-      return reply.status(400).send({
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'installationId and org are required for github connectors',
-        },
-      });
-    }
-    // Defense-in-depth: per-connector App overrides land in YAML and are
-    // read by the scheduler at sync time. Pin the override path to the
-    // allowed key dir so an admin write can't aim the runtime at an
-    // arbitrary file (same allowlist the probe and PUT /github/app use).
-    const createOverridePath = body.app?.privateKeyPath?.trim();
-    if (createOverridePath && !isAllowedKeyPath(createOverridePath)) {
-      return reply.status(400).send({
-        error: {
-          code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
-          message: PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE,
-        },
-      });
+    if (body.type === 'github') {
+      if (!body.installationId || !body.org) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'installationId and org are required for github connectors',
+          },
+        });
+      }
+      // Defense-in-depth: per-connector App overrides land in YAML and are
+      // read by the scheduler at sync time. Pin the override path to the
+      // allowed key dir so an admin write can't aim the runtime at an
+      // arbitrary file (same allowlist the probe and PUT /github/app use).
+      const createOverridePath = body.app?.privateKeyPath?.trim();
+      if (createOverridePath && !isAllowedKeyPath(createOverridePath)) {
+        return reply.status(400).send({
+          error: {
+            code: 'PRIVATE_KEY_PATH_NOT_ALLOWED',
+            message: PRIVATE_KEY_PATH_NOT_ALLOWED_MESSAGE,
+          },
+        });
+      }
+    } else {
+      if (!body.cluster?.name || !body.access?.mode) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'cluster.name and access.mode are required for kubernetes connectors',
+          },
+        });
+      }
+      const pathErr = kubernetesAccessPathError(body.access);
+      if (pathErr) {
+        return reply
+          .status(400)
+          .send({ error: { code: 'CREDENTIAL_PATH_NOT_ALLOWED', message: pathErr } });
+      }
     }
     try {
-      const created = await registry.create({
-        id: body.id,
-        type: 'github',
-        name: body.name,
-        enabled: body.enabled,
-        installationId: body.installationId,
-        org: body.org,
-        schedule: body.schedule,
-        // `scope`/`entities` come through unknown to keep the route ignorant
-        // of the schema shape; the registry runs them through Zod.
-        scope: body.scope as never,
-        entities: body.entities as never,
-        app: body.app,
-      });
+      const created =
+        body.type === 'github'
+          ? await registry.create({
+              type: 'github',
+              id: body.id,
+              name: body.name,
+              enabled: body.enabled,
+              installationId: body.installationId,
+              org: body.org,
+              schedule: body.schedule,
+              // `scope`/`entities` come through unknown to keep the route ignorant
+              // of the schema shape; the registry runs them through Zod.
+              scope: body.scope as never,
+              entities: body.entities as never,
+              app: body.app,
+            })
+          : await registry.create({
+              type: 'kubernetes',
+              id: body.id,
+              name: body.name,
+              enabled: body.enabled,
+              schedule: body.schedule,
+              cluster: body.cluster,
+              access: body.access as never,
+              scope: body.scope as never,
+              mapping: body.mapping as never,
+            });
       reply.header('ETag', `"${registry.getHash(created.id)}"`);
       return reply.status(201).send(created);
     } catch (err) {
@@ -739,6 +851,26 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     '/probe',
     { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (request, reply) => {
+      const probeBody = request.body as
+        (ProbeBody & { type?: string; access?: Record<string, string> }) | undefined;
+      if (probeBody?.type === 'kubernetes') {
+        const k8s = getConnectorType('kubernetes');
+        if (!k8s?.probe) {
+          return reply.status(503).send({
+            ok: false,
+            code: 'SERVICE_UNAVAILABLE',
+            message: 'Kubernetes connector type is not registered.',
+          });
+        }
+        const pathErr = kubernetesAccessPathError(probeBody.access);
+        if (pathErr)
+          return reply
+            .status(400)
+            .send({ ok: false, code: 'CREDENTIAL_PATH_NOT_ALLOWED', message: pathErr });
+        const result = await k8s.probe(probeBody, routeBuildContext());
+        return reply.status(result.ok ? 200 : 400).send(result);
+      }
+
       const { installationId, suggestedOrg } = request.body ?? ({} as ProbeBody);
       if (!installationId) {
         return reply.status(400).send({
@@ -922,6 +1054,14 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           },
         });
       }
+      const patchAccessErr = request.body?.access
+        ? kubernetesAccessPathError(request.body.access)
+        : null;
+      if (patchAccessErr) {
+        return reply
+          .status(400)
+          .send({ error: { code: 'CREDENTIAL_PATH_NOT_ALLOWED', message: patchAccessErr } });
+      }
       const ifMatch = parseIfMatch(request.headers['if-match']);
       try {
         const updated = await registry.update(
@@ -933,6 +1073,9 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
             scope: request.body?.scope as never,
             entities: request.body?.entities as never,
             app: request.body?.app,
+            cluster: request.body?.cluster,
+            access: request.body?.access ?? undefined,
+            mapping: request.body?.mapping,
           },
           ifMatch,
         );
@@ -982,6 +1125,76 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       });
     }
   });
+
+  // POST /api/connectors/kubernetes/credentials — store a pasted kubeconfig or
+  // ServiceAccount token (+ PEM CA) as files inside the key dir and return the
+  // paths a subsequent POST /api/connectors can reference. Validated BEFORE
+  // writing; never echoes the secret back. Mirrors the per-org PEM flow.
+  server.post<{ Body: KubernetesCredentialsBody }>(
+    '/kubernetes/credentials',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (request, reply) => {
+      const body = request.body ?? ({} as KubernetesCredentialsBody);
+      if (!body.connectorId || !CONNECTOR_ID.test(body.connectorId)) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'connectorId is required ([A-Za-z0-9_-], max 64 chars)',
+          },
+        });
+      }
+      const dir = getAllowedKeyDir();
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      if (body.mode === 'kubeconfig') {
+        if (!body.kubeconfig) {
+          return reply.status(400).send({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'kubeconfig is required for mode kubeconfig',
+            },
+          });
+        }
+        const v = validateKubeconfigText(body.kubeconfig, body.context?.trim() || undefined);
+        if (!v.ok) return reply.status(400).send({ error: { code: v.code, message: v.message } });
+        const kubeconfigPath = join(dir, `kubeconfig-${body.connectorId}.yaml`);
+        writeSecretFile(kubeconfigPath, body.kubeconfig);
+        return reply.status(201).send({
+          mode: 'kubeconfig',
+          kubeconfigPath,
+          context: v.currentContext,
+          contexts: v.contexts,
+        });
+      }
+      if (body.mode === 'token') {
+        const token = body.token?.trim();
+        if (!token) {
+          return reply.status(400).send({
+            error: { code: 'VALIDATION_ERROR', message: 'token is required for mode token' },
+          });
+        }
+        // Validate everything BEFORE writing anything — a rejected caData must
+        // never leave a live ServiceAccount token sitting on disk unreferenced.
+        if (body.caData && !/-----BEGIN CERTIFICATE-----/.test(body.caData)) {
+          return reply.status(400).send({
+            error: { code: 'VALIDATION_ERROR', message: 'caData must be a PEM certificate' },
+          });
+        }
+        const tokenPath = join(dir, `k8s-token-${body.connectorId}`);
+        writeSecretFile(tokenPath, token + '\n');
+        let caDataPath: string | undefined;
+        if (body.caData) {
+          caDataPath = join(dir, `k8s-ca-${body.connectorId}.pem`);
+          writeSecretFile(caDataPath, body.caData.trim() + '\n');
+        }
+        return reply
+          .status(201)
+          .send({ mode: 'token', tokenPath, ...(caDataPath ? { caDataPath } : {}) });
+      }
+      return reply.status(400).send({
+        error: { code: 'VALIDATION_ERROR', message: 'mode must be "kubeconfig" or "token"' },
+      });
+    },
+  );
 
   // POST /api/connectors/:id/sync — enqueue an out-of-band sync. The runner
   // does the work; this endpoint returns the *initial* status snapshot only.

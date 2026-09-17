@@ -1,4 +1,9 @@
-import type { CanonicalEntity, EventBusClient, EventHandler } from '@shipit-ai/shared';
+import type {
+  CanonicalEntity,
+  EventBusClient,
+  EventHandler,
+  SyncCompletedControl,
+} from '@shipit-ai/shared';
 import type { EventBusConfig } from '../config.js';
 import { resolveConfig } from '../config.js';
 import { EventBusProducer } from './producer.js';
@@ -19,6 +24,10 @@ export class BullMQEventBusClient implements EventBusClient {
 
   async publish(events: CanonicalEntity[], connectorId: string): Promise<void> {
     await this.producer.publish(events, connectorId);
+  }
+
+  async publishControl(connectorId: string, control: SyncCompletedControl): Promise<void> {
+    await this.producer.publishControl(connectorId, control);
   }
 
   async subscribe(handler: EventHandler): Promise<void> {

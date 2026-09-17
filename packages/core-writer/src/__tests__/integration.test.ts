@@ -153,6 +153,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
       }),
       getExistingClaims: vi.fn().mockResolvedValue({ claims: [], claimsRev: 0 }),
       touchLastSynced: vi.fn().mockResolvedValue(undefined),
+      markAbsent: vi.fn().mockResolvedValue(0),
     };
 
     const linkingKeyIndex = new InMemoryLinkingKeyIndex();
@@ -309,6 +310,7 @@ describe('Integration: GitHub connector output -> Core Writer', () => {
           });
         }
       }),
+      publishControl: vi.fn().mockResolvedValue(undefined),
       subscribe: vi.fn().mockResolvedValue(undefined),
       replay: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),

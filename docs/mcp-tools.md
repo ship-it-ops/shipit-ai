@@ -83,14 +83,15 @@ All tools accept a `compact` boolean parameter (default `false`) to strip the `_
 
 Analyze downstream/upstream impact of a node in the knowledge graph. Returns affected nodes, paths, and summary statistics.
 
-| Parameter              | Type     | Required | Default      | Description                                                                     |
-| ---------------------- | -------- | -------- | ------------ | ------------------------------------------------------------------------------- |
-| `node`                 | string   | yes      | —            | Starting node canonical ID (e.g., `shipit://repository/default/config-service`) |
-| `depth`                | integer  | no       | 3            | Max traversal hops (1-6)                                                        |
-| `direction`            | enum     | no       | `DOWNSTREAM` | `DOWNSTREAM`, `UPSTREAM`, or `BOTH`                                             |
-| `include_environments` | string[] | no       | —            | Filter deployments by environment name                                          |
-| `production_only`      | boolean  | no       | false        | Shorthand for `include_environments: ["production"]`                            |
-| `compact`              | boolean  | no       | false        | Strip `_meta` envelope                                                          |
+| Parameter              | Type     | Required | Default      | Description                                                                            |
+| ---------------------- | -------- | -------- | ------------ | -------------------------------------------------------------------------------------- |
+| `node`                 | string   | yes      | —            | Starting node canonical ID (e.g., `shipit://repository/default/config-service`)        |
+| `depth`                | integer  | no       | 3            | Max traversal hops (1-6)                                                               |
+| `direction`            | enum     | no       | `DOWNSTREAM` | `DOWNSTREAM`, `UPSTREAM`, or `BOTH`                                                    |
+| `include_environments` | string[] | no       | —            | Filter deployments by environment name                                                 |
+| `production_only`      | boolean  | no       | false        | Shorthand for `include_environments: ["production"]`                                   |
+| `include_absent`       | boolean  | no       | false        | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`              | boolean  | no       | false        | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -114,12 +115,18 @@ Analyze downstream/upstream impact of a node in the knowledge graph. Returns aff
 
 Get detailed information about a single entity including properties, claims, and neighbors.
 
-| Parameter           | Type    | Required | Default | Description                                         |
-| ------------------- | ------- | -------- | ------- | --------------------------------------------------- |
-| `entity`            | string  | yes      | —       | Entity canonical ID                                 |
-| `include_claims`    | boolean | no       | false   | Return all PropertyClaims for each property         |
-| `include_neighbors` | boolean | no       | true    | Return 1-hop neighbors grouped by relationship type |
-| `compact`           | boolean | no       | false   | Strip `_meta` envelope                              |
+Looking an entity up by id always returns it, even once the sync sweep has marked
+it absent — `absent_since` on the returned node carries the sweep timestamp (and is
+`null` for a live entity), so a deleted workload never reads as still deployed.
+`include_absent` governs the **neighbors**.
+
+| Parameter           | Type    | Required | Default | Description                                                                            |
+| ------------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `entity`            | string  | yes      | —       | Entity canonical ID                                                                    |
+| `include_claims`    | boolean | no       | false   | Return all PropertyClaims for each property                                            |
+| `include_neighbors` | boolean | no       | true    | Return 1-hop neighbors grouped by relationship type                                    |
+| `include_absent`    | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`           | boolean | no       | false   | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -130,7 +137,8 @@ Get detailed information about a single entity including properties, claims, and
       "id": "shipit://logicalservice/default/config-service",
       "label": "LogicalService",
       "properties": { "name": "config-service", "tier": 1, "owner": "platform-team" },
-      "effective_properties": { ... }
+      "effective_properties": { ... },
+      "absent_since": null
     },
     "claims": [...],
     "neighbors": {
@@ -148,11 +156,12 @@ Get detailed information about a single entity including properties, claims, and
 
 Find owners, code owners, and on-call personnel for an entity. Traverses `OWNS`, `CODEOWNER_OF`, `MEMBER_OF`, and `ON_CALL_FOR` relationships.
 
-| Parameter       | Type    | Required | Default | Description                                               |
-| --------------- | ------- | -------- | ------- | --------------------------------------------------------- |
-| `entity`        | string  | yes      | —       | Entity canonical ID                                       |
-| `include_chain` | boolean | no       | false   | Return full ownership chain (CODEOWNERS → Team → Members) |
-| `compact`       | boolean | no       | false   | Strip `_meta` envelope                                    |
+| Parameter        | Type    | Required | Default | Description                                                                            |
+| ---------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `entity`         | string  | yes      | —       | Entity canonical ID                                                                    |
+| `include_chain`  | boolean | no       | false   | Return full ownership chain (CODEOWNERS → Team → Members)                              |
+| `include_absent` | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`        | boolean | no       | false   | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -173,12 +182,13 @@ Find owners, code owners, and on-call personnel for an entity. Traverses `OWNS`,
 
 Find the shortest dependency path between two entities in the knowledge graph.
 
-| Parameter   | Type    | Required | Default | Description              |
-| ----------- | ------- | -------- | ------- | ------------------------ |
-| `from`      | string  | yes      | —       | Source node canonical ID |
-| `to`        | string  | yes      | —       | Target node canonical ID |
-| `max_depth` | integer | no       | 6       | Max path length (1-10)   |
-| `compact`   | boolean | no       | false   | Strip `_meta` envelope   |
+| Parameter        | Type    | Required | Default | Description                                                                            |
+| ---------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `from`           | string  | yes      | —       | Source node canonical ID                                                               |
+| `to`             | string  | yes      | —       | Target node canonical ID                                                               |
+| `max_depth`      | integer | no       | 6       | Max path length (1-10)                                                                 |
+| `include_absent` | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`        | boolean | no       | false   | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -198,13 +208,14 @@ Find the shortest dependency path between two entities in the knowledge graph.
 
 Search and filter entities in the knowledge graph by label and property values.
 
-| Parameter          | Type    | Required | Default  | Description                                               |
-| ------------------ | ------- | -------- | -------- | --------------------------------------------------------- |
-| `label`            | string  | no       | —        | Filter by node label (e.g., `"LogicalService"`)           |
-| `property_filters` | object  | no       | —        | Filter by property values (e.g., `{"tier_effective": 1}`) |
-| `limit`            | integer | no       | 25       | Max results (1-100)                                       |
-| `sort_by`          | string  | no       | `"name"` | Property to sort by                                       |
-| `compact`          | boolean | no       | false    | Strip `_meta` envelope                                    |
+| Parameter          | Type    | Required | Default  | Description                                                                            |
+| ------------------ | ------- | -------- | -------- | -------------------------------------------------------------------------------------- |
+| `label`            | string  | no       | —        | Filter by node label (e.g., `"LogicalService"`)                                        |
+| `property_filters` | object  | no       | —        | Filter by property values (e.g., `{"tier_effective": 1}`)                              |
+| `limit`            | integer | no       | 25       | Max results (1-100)                                                                    |
+| `sort_by`          | string  | no       | `"name"` | Property to sort by                                                                    |
+| `include_absent`   | boolean | no       | false    | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
+| `compact`          | boolean | no       | false    | Strip `_meta` envelope                                                                 |
 
 **Response:**
 
@@ -224,9 +235,9 @@ Search and filter entities in the knowledge graph by label and property values.
 
 Return aggregate statistics about the knowledge graph.
 
-| Parameter | Type | Required | Default | Description |
-| --------- | ---- | -------- | ------- | ----------- |
-| _(none)_  | —    | —        | —       | —           |
+| Parameter        | Type    | Required | Default | Description                                                                            |
+| ---------------- | ------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `include_absent` | boolean | no       | false   | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
 
 **Response:**
 

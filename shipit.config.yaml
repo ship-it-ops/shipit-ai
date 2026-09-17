@@ -127,9 +127,17 @@ connectors:
       conditionalRequests: true
       maxConcurrentSyncs: 3
 
-  # Configured connector instances. Defaults to none on a fresh checkout;
-  # entries are added via the Connector Hub UI which writes them into
-  # shipit.config.local.yaml.
+  # Configured connector instances. Runtime-created instances land in
+  # shipit.config.local.yaml (and, on GSM deployments, the connector-apps blob).
+  # A Kubernetes instance looks like this (credentials are FILES in the key
+  # dir, written by POST /api/connectors/kubernetes/credentials — never inline):
+  #
+  #   - id: k8s-demo
+  #     type: kubernetes
+  #     name: Demo cluster
+  #     cluster: { name: shipit-demo }
+  #     access: { mode: in-cluster }
+  #     schedule: '*/5 * * * *'
   instances: []
 
 # In-app "Report a problem" widget. Files a GitHub issue in the target repo

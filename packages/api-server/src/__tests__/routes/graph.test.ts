@@ -67,6 +67,7 @@ function createMockNeo4jService(): Neo4jService {
       },
     ]),
     getOverview: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
+    getBlastRadius: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
     getSources: vi.fn().mockResolvedValue([
       { sourceSystem: 'github', sourceConnectorId: 'gh-acme', entityCount: 12 },
       { sourceSystem: 'github', sourceConnectorId: 'gh-contoso', entityCount: 5 },
@@ -118,7 +119,9 @@ describe('Graph routes', () => {
       method: 'GET',
       url: '/api/graph/neighborhood/test-node?depth=3',
     });
-    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 3);
+    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 3, {
+      includeAbsent: false,
+    });
   });
 
   it('GET /api/graph/neighborhood/:id caps depth at 5', async () => {
@@ -126,7 +129,9 @@ describe('Graph routes', () => {
       method: 'GET',
       url: '/api/graph/neighborhood/test-node?depth=99',
     });
-    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 5);
+    expect(mockNeo4j.getNeighborhood).toHaveBeenCalledWith(expect.anything(), 'test-node', 5, {
+      includeAbsent: false,
+    });
   });
 
   it('GET /api/graph/search returns search results', async () => {
@@ -177,6 +182,30 @@ describe('Graph routes', () => {
       limit: 50,
       sourceSystem: 'github',
       sourceConnectorId: 'gh-acme',
+      includeAbsent: false,
+    });
+  });
+
+  it('GET /api/graph/overview forwards includeAbsent=true', async () => {
+    await server.inject({ method: 'GET', url: '/api/graph/overview?includeAbsent=true' });
+    expect(mockNeo4j.getOverview).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ includeAbsent: true }),
+    );
+  });
+
+  it('GET /api/graph/search defaults includeAbsent to false', async () => {
+    await server.inject({ method: 'GET', url: '/api/graph/search?q=api' });
+    expect(mockNeo4j.searchEntities).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ includeAbsent: false }),
+    );
+  });
+
+  it('GET /api/graph/blast-radius/:id forwards includeAbsent', async () => {
+    await server.inject({ method: 'GET', url: '/api/graph/blast-radius/x?includeAbsent=true' });
+    expect(mockNeo4j.getBlastRadius).toHaveBeenLastCalledWith(expect.anything(), 'x', 3, {
+      includeAbsent: true,
     });
   });
 

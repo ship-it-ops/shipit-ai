@@ -40,8 +40,11 @@ export class TeamService {
 
   async listTeams(): Promise<TeamSummary[]> {
     const records = await this.neo4j.runQuery(
+      // Swept entities are hidden everywhere else; counting them here would
+      // report owned entities the user cannot open.
       `MATCH (t:Team)
        OPTIONAL MATCH (t)-[:OWNS|CODEOWNER_OF]->(owned)
+       WHERE owned._absent_since IS NULL
        OPTIONAL MATCH (p:Person)-[:MEMBER_OF]->(t)
        OPTIONAL MATCH (oc:Person)-[:ON_CALL_FOR]->(svc)<-[:OWNS]-(t)
        WITH t,
@@ -78,6 +81,7 @@ export class TeamService {
 
     const ownedRecords = await this.neo4j.runQuery(
       `MATCH (t:Team {id: $id})-[:OWNS|CODEOWNER_OF]->(n)
+       WHERE n._absent_since IS NULL
        RETURN DISTINCT n, labels(n) AS labels
        ORDER BY coalesce(n.tier, 99), n.name`,
       { id },

@@ -17,7 +17,13 @@ export type {
   ShipItSchema,
 } from './types/schema.js';
 
-export type { EventEnvelope, EventHandler, EventBusClient } from './types/events.js';
+export type {
+  EventEnvelope,
+  EventHandler,
+  EventBusClient,
+  EventKind,
+  SyncCompletedControl,
+} from './types/events.js';
 
 export type { RenameSignal, MergeEvent, IdentityMatchStep } from './types/identity.js';
 
@@ -146,6 +152,8 @@ export {
   resolveAppCredentials,
   LOGICAL_SECRETS,
   secretsRegistrySchema,
+  KUBERNETES_WORKLOAD_KINDS,
+  KUBERNETES_DEFAULT_MAPPING,
 } from './config/index.js';
 export type {
   Config,
@@ -160,4 +168,9 @@ export type {
   AuthConfig,
   SecretEntry,
   SecretsRegistry,
+  KubernetesConnectorConfig,
+  KubernetesMappingConfig,
+  KubernetesScopeConfig,
+  KubernetesAccessConfig,
+  KubernetesWorkloadKind,
 } from './config/index.js';

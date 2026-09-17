@@ -97,7 +97,13 @@ export class SettingsService {
     connectorId: string,
     fallbackUrl = '',
   ): Promise<WebhookSecretResult> {
-    const connector = this.registry.get(connectorId) as GitHubConnectorConfig;
+    const connector = this.registry.get(connectorId);
+    // A kubernetes connector has no GitHub App to anchor a webhook secret to —
+    // without this guard it would silently inherit the global GitHub App and
+    // mint a webhook secret for a connector that receives no webhooks.
+    if (connector.type !== 'github') {
+      throw new NoResolvableAppError(connectorId);
+    }
     const resolved = resolveAppCredentials(connector, this.globalApp);
     if (!resolved.id) {
       throw new NoResolvableAppError(connectorId);

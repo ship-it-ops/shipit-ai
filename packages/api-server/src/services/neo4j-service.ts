@@ -76,6 +76,19 @@ const INTERNAL_REL_TYPES_CYPHER = `[${INTERNAL_REL_TYPES.map((t) => `'${t}'`).jo
 // (and the audit/event labels above) out via this predicate.
 const EXCLUDE_INTERNAL_LABELS = `NONE(l IN labels(n) WHERE l STARTS WITH '_' OR l IN ${INTERNAL_EVENT_LABELS_CYPHER})`;
 
+// Absence sweep (Kubernetes connector v1): a node the owning connector no longer
+// sees carries `_absent_since`. Default reads hide it; `includeAbsent` shows it.
+const EXCLUDE_ABSENT = 'n._absent_since IS NULL';
+const absentClause = (includeAbsent: boolean | undefined): string =>
+  includeAbsent ? '' : ` AND ${EXCLUDE_ABSENT}`;
+const isAbsentNode = (props: Record<string, unknown>): boolean =>
+  props['_absent_since'] !== null && props['_absent_since'] !== undefined;
+
+export interface ReadOptions {
+  /** Include nodes marked absent by the sync sweep. Default false. */
+  includeAbsent?: boolean;
+}
+
 // JS mirror of the predicate above, for read paths that filter in application
 // code rather than Cypher (the APOC neighborhood traversal has no relationship
 // filter, so it would otherwise pull a verified entity's `[:VERIFIES]`-linked
@@ -141,21 +154,27 @@ export class Neo4jService {
   // filter logic lands. `runQuery` deliberately stays ctx-free — it's an
   // internal escape hatch called from worker services without a request
   // scope (claim-service, team-service, reconciliation, etc.).
-  async getGraphStats(_ctx: RequestContext): Promise<GraphStats> {
+  async getGraphStats(_ctx: RequestContext, opts: ReadOptions = {}): Promise<GraphStats> {
     // `db.labels()` returns every label including the `_LinkingKey` /
     // `_IdempotencyLog` housekeeping ones. Strip them at the application
     // layer so the dashboard's "node count" matches what users see in the
     // explorer; the internal nodes still count toward Neo4j's storage but
     // not toward the user-facing graph.
     const nodeCountsResult = await this.runQuery(
-      `CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' AND NOT label IN ${INTERNAL_EVENT_LABELS_CYPHER} RETURN label, COUNT { MATCH (n) WHERE label IN labels(n) } AS count`,
+      `CALL db.labels() YIELD label WHERE NOT label STARTS WITH '_' AND NOT label IN ${INTERNAL_EVENT_LABELS_CYPHER} RETURN label, COUNT { MATCH (n) WHERE label IN labels(n)${absentClause(opts.includeAbsent)} } AS count`,
     );
     // Exclude internal audit/bookkeeping rel types (EDITS/VERIFIES/MERGED/ABSORBED)
     // so the dashboard edgeCount mirrors the node-count exclusion above and counts
     // only user-facing topology — otherwise the manual-edit/verify/merge audit
     // edges inflate it.
+    // Both endpoints must also pass the absent filter, or a swept workload's
+    // relationships keep counting while the workload itself does not — the two
+    // dashboard numbers then stop agreeing the first time the sweep runs.
+    const edgeEndpointClause = opts.includeAbsent
+      ? ''
+      : ' AND a._absent_since IS NULL AND b._absent_since IS NULL';
     const edgeCountsResult = await this.runQuery(
-      `CALL db.relationshipTypes() YIELD relationshipType WHERE NOT relationshipType IN ${INTERNAL_REL_TYPES_CYPHER} RETURN relationshipType, COUNT { MATCH ()-[r]->() WHERE type(r) = relationshipType } AS count`,
+      `CALL db.relationshipTypes() YIELD relationshipType WHERE NOT relationshipType IN ${INTERNAL_REL_TYPES_CYPHER} RETURN relationshipType, COUNT { MATCH (a)-[r]->(b) WHERE type(r) = relationshipType${edgeEndpointClause} } AS count`,
     );
 
     const nodesByLabel: Record<string, number> = {};
@@ -193,6 +212,7 @@ export class Neo4jService {
     _ctx: RequestContext,
     nodeId: string,
     depth: number = 2,
+    opts: ReadOptions = {},
   ): Promise<NeighborhoodResult> {
     // Project edge endpoints by the canonical `id` property — `rel.start` /
     // `rel.end` would be Neo4j's internal numeric node ids, which the UI can't
@@ -233,6 +253,10 @@ export class Neo4jService {
       for (const node of nodes) {
         const id = String(node.properties.id ?? node.properties.name ?? '');
         if (node.labels.some(isInternalNodeLabel)) {
+          excludedIds.add(id);
+          continue;
+        }
+        if (!opts.includeAbsent && isAbsentNode(node.properties)) {
           excludedIds.add(id);
           continue;
         }
@@ -296,6 +320,7 @@ export class Neo4jService {
     _ctx: RequestContext,
     nodeId: string,
     depth: number = 3,
+    opts: ReadOptions = {},
   ): Promise<NeighborhoodResult> {
     // Ask APOC for one node beyond the cap so we can detect overflow rather
     // than silently truncate.
@@ -320,6 +345,10 @@ export class Neo4jService {
 
     const nodesMap = new Map<string, CytoscapeNode>();
     let edges: CytoscapeEdge[] = [];
+    // Same absence-sweep exclusion as getNeighborhood: drop nodes the owning
+    // connector no longer sees, and any edge that touches one, unless the
+    // caller opted in with includeAbsent.
+    const excludedIds = new Set<string>();
 
     for (const record of records) {
       const nodes = record.get('nodes') as Array<{
@@ -335,6 +364,10 @@ export class Neo4jService {
 
       for (const node of nodes) {
         const id = String(node.properties.id ?? node.properties.name ?? '');
+        if (!opts.includeAbsent && isAbsentNode(node.properties)) {
+          excludedIds.add(id);
+          continue;
+        }
         const nodeLabel = node.labels[0] ?? 'Unknown';
         if (!nodesMap.has(id)) {
           nodesMap.set(id, {
@@ -352,11 +385,14 @@ export class Neo4jService {
       }
 
       for (const rel of rels) {
+        const source = String(rel.source);
+        const target = String(rel.target);
+        if (excludedIds.has(source) || excludedIds.has(target)) continue;
         edges.push({
           data: {
             ...rel.props,
-            source: String(rel.source),
-            target: String(rel.target),
+            source,
+            target,
             type: rel.type,
           },
         });
@@ -381,7 +417,13 @@ export class Neo4jService {
   async getOverview(
     _ctx: RequestContext,
     limitOrOpts:
-      number | { limit?: number; sourceSystem?: string; sourceConnectorId?: string } = 100,
+      | number
+      | {
+          limit?: number;
+          sourceSystem?: string;
+          sourceConnectorId?: string;
+          includeAbsent?: boolean;
+        } = 100,
   ): Promise<NeighborhoodResult> {
     // Back-compat: callers passing a bare number still work.
     const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
@@ -401,7 +443,9 @@ export class Neo4jService {
       sourceClauses.push('n._source_connector_id = $sourceConnectorId');
       params.sourceConnectorId = opts.sourceConnectorId;
     }
-    const sourceWhere = sourceClauses.length ? ` AND ${sourceClauses.join(' AND ')}` : '';
+    const sourceWhere =
+      (sourceClauses.length ? ` AND ${sourceClauses.join(' AND ')}` : '') +
+      absentClause(opts.includeAbsent);
 
     const nodeRecords = await this.runQuery(
       `MATCH (n) WHERE ${EXCLUDE_INTERNAL_LABELS}${sourceWhere} RETURN n, labels(n) AS labels LIMIT $limit`,
@@ -466,14 +510,16 @@ export class Neo4jService {
       filters?: Record<string, unknown>;
       limit?: number;
       sortBy?: string;
+      includeAbsent?: boolean;
     },
   ): Promise<Neo4jRecord[]> {
-    const { label, q, filters = {}, limit = 25, sortBy } = opts;
+    const { label, q, filters = {}, limit = 25, sortBy, includeAbsent } = opts;
     const nodeLabel = label ? `:${label}` : '';
     // Always exclude the writer's internal `_LinkingKey` / `_IdempotencyLog`
     // nodes — they don't have a user-facing `name` or canonical `id` and
     // would otherwise contaminate the global command palette.
     const whereClause: string[] = ['coalesce(n._deleted, false) = false', EXCLUDE_INTERNAL_LABELS];
+    if (!includeAbsent) whereClause.push(EXCLUDE_ABSENT);
     const params: Record<string, unknown> = { limit: neo4j.int(limit) };
 
     if (q && q.trim()) {
@@ -505,12 +551,14 @@ export class Neo4jService {
    * — kept dynamic so a new connector type shows up without a UI deploy.
    * Excludes internal `_`-prefix bookkeeping labels.
    */
-  async getSources(): Promise<
+  async getSources(
+    opts: ReadOptions = {},
+  ): Promise<
     Array<{ sourceSystem: string; sourceConnectorId: string | null; entityCount: number }>
   > {
     const records = await this.runQuery(
       `MATCH (n)
-       WHERE ${EXCLUDE_INTERNAL_LABELS}
+       WHERE ${EXCLUDE_INTERNAL_LABELS}${absentClause(opts.includeAbsent)}
          AND n._source_system IS NOT NULL
        RETURN n._source_system AS sourceSystem,
               n._source_connector_id AS sourceConnectorId,

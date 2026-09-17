@@ -8,6 +8,8 @@ export {
   resolveAppCredentials,
   LOGICAL_SECRETS,
   secretsRegistrySchema,
+  KUBERNETES_WORKLOAD_KINDS,
+  KUBERNETES_DEFAULT_MAPPING,
 } from './schema.js';
 export type {
   Config,
@@ -20,4 +22,9 @@ export type {
   AuthConfig,
   SecretEntry,
   SecretsRegistry,
+  KubernetesConnectorConfig,
+  KubernetesMappingConfig,
+  KubernetesScopeConfig,
+  KubernetesAccessConfig,
+  KubernetesWorkloadKind,
 } from './schema.js';

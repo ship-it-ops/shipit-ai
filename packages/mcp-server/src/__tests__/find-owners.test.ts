@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createMockNeo4jClient, createMockRecord } from './helpers/mock-neo4j.js';
+import { captureTool } from './helpers/capture-tool.js';
+import { registerFindOwners } from '../tools/find-owners.js';
 
 describe('find_owners tool', () => {
   it('should return owners, codeowners, and on_call', async () => {
@@ -87,5 +89,31 @@ describe('find_owners tool', () => {
     const members = record.get('members') as Array<{ properties: { name: string } }>;
     expect(members.length).toBe(2);
     expect(members[0].properties.name).toBe('Alice Smith');
+  });
+});
+
+describe('find_owners include_absent', () => {
+  function run(includeAbsent: boolean) {
+    const neo4j = createMockNeo4jClient();
+    const handler = captureTool(registerFindOwners as never, neo4j as never);
+    return { neo4j, handler, includeAbsent };
+  }
+
+  it('threads include_absent into the generated Cypher', async () => {
+    const { neo4j, handler } = run(false);
+    await handler({ entity: 'x', include_chain: true, include_absent: false, compact: true });
+    const cypher = neo4j.runCypher.mock.calls[0][0] as string;
+    for (const alias of ['entity', 'owner', 'codeowner', 'oncall', 'member']) {
+      expect(cypher).toContain(`${alias}._absent_since IS NULL`);
+    }
+
+    const inclusive = run(true);
+    await inclusive.handler({
+      entity: 'x',
+      include_chain: true,
+      include_absent: true,
+      compact: true,
+    });
+    expect(inclusive.neo4j.runCypher.mock.calls[0][0] as string).not.toContain('_absent_since');
   });
 });

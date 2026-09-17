@@ -37,6 +37,10 @@ interface BlobRecord {
   // file content of `instance.app.privateKeyPath`.
   pem?: string;
   webhookSecret?: string;
+  // Kubernetes instances: file contents of the paths in `instance.access`.
+  kubeconfig?: string;
+  k8sToken?: string;
+  k8sCa?: string;
 }
 
 interface ConnectorAppsBlob {
@@ -60,6 +64,16 @@ export interface ConnectorAppStoreOptions {
   // (SHIPIT_GITHUB_APP_KEY_DIR, default ~/.shipit/keys).
   keyDir?: string;
   logger?: Logger;
+}
+
+function writeSecretFile(path: string, content: string): void {
+  writeFileSync(path, content, { encoding: 'utf-8', mode: 0o600 });
+  chmodSync(path, 0o600);
+}
+
+function readIfPresent(keyDir: string, configuredPath: string): string | undefined {
+  const p = join(keyDir, basename(configuredPath));
+  return existsSync(p) ? readFileSync(p, 'utf-8') : undefined;
 }
 
 export class ConnectorAppStore implements ConnectorDurableStore {
@@ -93,16 +107,32 @@ export class ConnectorAppStore implements ConnectorDurableStore {
         // durable config blob.
         const { lastRuns: _ignored, ...instance } = c;
         const record: BlobRecord = { instance: instance as ConnectorInstanceConfig };
-        const keyPath = c.app?.privateKeyPath;
-        if (c.app?.id && keyPath) {
-          const pemPath = join(this.keyDir, basename(keyPath));
-          if (existsSync(pemPath)) {
-            record.pem = readFileSync(pemPath, 'utf-8');
+        if (c.type === 'github') {
+          const keyPath = c.app?.privateKeyPath;
+          if (c.app?.id && keyPath) {
+            const pemPath = join(this.keyDir, basename(keyPath));
+            if (existsSync(pemPath)) {
+              record.pem = readFileSync(pemPath, 'utf-8');
+            }
+            const secretPath = join(this.keyDir, `github-app-${c.app.id}.webhook-secret`);
+            if (existsSync(secretPath)) {
+              const s = readFileSync(secretPath, 'utf-8').trim();
+              if (s) record.webhookSecret = s;
+            }
           }
-          const secretPath = join(this.keyDir, `github-app-${c.app.id}.webhook-secret`);
-          if (existsSync(secretPath)) {
-            const s = readFileSync(secretPath, 'utf-8').trim();
-            if (s) record.webhookSecret = s;
+        }
+        if (c.type === 'kubernetes') {
+          const a = c.access;
+          if (a.mode === 'kubeconfig') {
+            const kubeconfig = readIfPresent(this.keyDir, a.kubeconfigPath);
+            if (kubeconfig !== undefined) record.kubeconfig = kubeconfig;
+          } else if (a.mode === 'token') {
+            const token = readIfPresent(this.keyDir, a.tokenPath);
+            if (token !== undefined) record.k8sToken = token;
+            if (a.caDataPath) {
+              const ca = readIfPresent(this.keyDir, a.caDataPath);
+              if (ca !== undefined) record.k8sCa = ca;
+            }
           }
         }
         blob.connectors[c.id] = record;
@@ -182,17 +212,23 @@ export class ConnectorAppStore implements ConnectorDurableStore {
         continue;
       }
       const inst = parsed.data;
-      if (record.pem && inst.app?.id && inst.app?.privateKeyPath) {
+      if (inst.type === 'github' && record.pem && inst.app?.id && inst.app?.privateKeyPath) {
         const pemPath = join(this.keyDir, basename(inst.app.privateKeyPath));
-        writeFileSync(pemPath, record.pem, { encoding: 'utf-8', mode: 0o600 });
-        chmodSync(pemPath, 0o600);
+        writeSecretFile(pemPath, record.pem);
         if (record.webhookSecret) {
           const secretPath = join(this.keyDir, `github-app-${inst.app.id}.webhook-secret`);
-          writeFileSync(secretPath, record.webhookSecret + '\n', {
-            encoding: 'utf-8',
-            mode: 0o600,
-          });
-          chmodSync(secretPath, 0o600);
+          writeSecretFile(secretPath, record.webhookSecret + '\n');
+        }
+      }
+      if (inst.type === 'kubernetes') {
+        const a = inst.access;
+        if (a.mode === 'kubeconfig' && record.kubeconfig !== undefined) {
+          writeSecretFile(join(this.keyDir, basename(a.kubeconfigPath)), record.kubeconfig);
+        } else if (a.mode === 'token') {
+          if (record.k8sToken !== undefined)
+            writeSecretFile(join(this.keyDir, basename(a.tokenPath)), record.k8sToken);
+          if (a.caDataPath && record.k8sCa !== undefined)
+            writeSecretFile(join(this.keyDir, basename(a.caDataPath)), record.k8sCa);
         }
       }
       instances.push(inst);

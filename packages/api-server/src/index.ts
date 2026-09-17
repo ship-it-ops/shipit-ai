@@ -368,6 +368,25 @@ async function main() {
     // null inside wireSyncRuntime when disabled or no Redis; daily cleanup
     // started after the server listens.
     auditRetention: auditRetentionService,
+    keyDir: process.env.SHIPIT_GITHUB_APP_KEY_DIR,
+    // Kubernetes linking tiers compare against what GitHub already wrote, with
+    // the source's casing. `_source_org` is `github/<org>` on every GitHub node.
+    lookupRepositoryNames: async (org) =>
+      (
+        await neo4jService.runQuery(
+          'MATCH (r:Repository) WHERE r._source_org = $org RETURN r.name AS name',
+          { org: `github/${org}` },
+        )
+      ).map((r) => String(r.get('name'))),
+    lookupTeamSlugs: async (org) =>
+      (
+        await neo4jService.runQuery(
+          'MATCH (t:Team) WHERE t._source_org = $org RETURN t.slug AS slug',
+          {
+            org: `github/${org}`,
+          },
+        )
+      ).map((r) => String(r.get('slug'))),
   });
 
   try {

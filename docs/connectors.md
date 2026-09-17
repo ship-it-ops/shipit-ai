@@ -181,15 +181,134 @@ curl -X POST http://localhost:3001/api/connectors/github-main/sync \
   -d '{ "mode": "incremental" }'
 ```
 
-## Kubernetes Connector (Planned)
+## Kubernetes Connector
 
-The Kubernetes connector will support:
+Polls a cluster read-only (every 5 minutes by default, full list each run) and emits
+`Cluster`, `Namespace`, `Environment`, `Deployment` (one per Deployment / StatefulSet /
+DaemonSet / CronJob), `BuildArtifact` and `LogicalService` nodes with `PART_OF`, `RUNS_IN`,
+`RUNS_IN_ENV`, `RUNS_IMAGE`, `DEPLOYED_AS`, `IMPLEMENTED_BY`, `BUILT_FROM` and `OWNS` edges.
+One connector instance per cluster. Design: `docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`.
 
-- Watch API for real-time updates
-- Hourly reconciliation for drift detection
-- Entity types: Deployment, Namespace, Cluster
+### Access modes
 
-Linking key prefix: `k8s://`
+| mode         | what you provide                                                                  | notes                                                                                                                                                                      |
+| ------------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in-cluster` | nothing                                                                           | uses the api-server pod's ServiceAccount; needs the read-only ClusterRole below                                                                                            |
+| `kubeconfig` | a data-only kubeconfig (inline `*-data` fields), one context (or `context` named) | file references (`certificate-authority`, `client-certificate`, `client-key`, `token-file`), `exec` and `auth-provider` are rejected — mint a ServiceAccount token instead |
+| `token`      | `server`, a ServiceAccount token, optional CA PEM                                 | TLS verification is always on                                                                                                                                              |
+
+Credentials never live in YAML. Store them first, then reference the returned paths:
+
+```bash
+curl -X POST localhost:3001/api/connectors/kubernetes/credentials \
+  -H 'Content-Type: application/json' \
+  -d '{ "connectorId": "k8s-demo", "mode": "token", "token": "<sa-token>", "caData": "-----BEGIN CERTIFICATE-----..." }'
+# → { "mode": "token", "tokenPath": "/home/shipit/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "/home/shipit/.shipit/keys/k8s-ca-k8s-demo.pem" }
+
+curl -X POST localhost:3001/api/connectors -H 'Content-Type: application/json' -d '{
+  "id": "k8s-demo", "type": "kubernetes", "name": "Demo cluster",
+  "cluster": { "name": "shipit-demo" },
+  "access": { "mode": "token", "server": "https://10.0.0.1:6443", "tokenPath": "/home/shipit/.shipit/keys/k8s-token-k8s-demo", "caDataPath": "/home/shipit/.shipit/keys/k8s-ca-k8s-demo.pem" }
+}'
+```
+
+The returned paths are absolute, inside the key dir (`~/.shipit/keys` by default, override with
+`SHIPIT_GITHUB_APP_KEY_DIR`) — paste them into the create body exactly as returned; `~` is not
+expanded and an unexpanded tilde is rejected by the path allowlist.
+
+`POST /api/connectors/probe` with `{ "type": "kubernetes", "access": { ... } }` checks access before you
+save: it returns the server version, the namespaces in scope and, per workload kind, `ok`, `forbidden`,
+`error` or `skipped` (no namespace in scope).
+
+### Read-only RBAC
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: shipit-reader }
+rules:
+  - apiGroups: ['']
+    resources: [namespaces, nodes, pods]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list, watch]
+```
+
+`watch` is granted for the planned streaming mode (see Not in v1); v1 only ever lists.
+
+Bind it to the ShipIt ServiceAccount (in-cluster) or to the ServiceAccount whose token you paste.
+A workload kind the account may not list is reported as `FORBIDDEN:<kind>` on the run and the run is
+marked partial; everything else still syncs. If `pods` or `replicasets` specifically cannot be listed,
+ready counts, restarts and image digests are disabled for the rest of that run with a single
+`FORBIDDEN:pods` warning; workloads still sync.
+
+### Scope and mapping
+
+```yaml
+scope:
+  namespaces: { include: ['*'], exclude: [kube-system, kube-public, kube-node-lease] }
+  kinds: [Deployment, StatefulSet, DaemonSet, CronJob]
+mapping:
+  service: { nameFrom: [part-of, name, workload], includeComponent: false }
+  environment:
+    label: environment # also `env`; workload label, then namespace label
+    namespaceRules: # then namespace-name regexes
+      - { pattern: '^(prod|production)', environment: production }
+      - { pattern: '^(stag|staging)', environment: staging }
+      - { pattern: '^(dev|development)', environment: development }
+    default: null # then this; otherwise no Environment
+  ownership: { teamLabel: team } # slugified → GitHub team
+  repoLink:
+    annotation: shipit.ai/github-repo # tier 1: "<org>/<repo>", confidence 1.0
+    githubOrg: null # tier 2/3 org; null = the sole GitHub connector's org
+    nameMatch: true # tier 2: image name (0.7); tier 3: app.kubernetes.io/name (0.6)
+```
+
+Name tiers only link to repositories and teams GitHub has already synced. Put
+`shipit.ai/github-repo: <org>/<repo>` on a workload (or its namespace) to pin the link.
+
+Narrowing the scope — adding to `namespaces.exclude`, or removing a kind from `kinds` —
+makes the next full run mark every workload in the newly-excluded set absent. That is by
+design: the run no longer sees them, and the sweep cannot tell "out of scope" from "deleted".
+Widen the scope again and the next run brings them back.
+
+### Absence
+
+After every successful run the connector's unseen nodes get `_absent_since` and disappear from
+the catalog, graph and MCP tools. Pass `includeAbsent=true` (API) or `include_absent: true`
+(MCP) to see them. Nothing is deleted. Only connector types that opt into the sweep run it —
+Kubernetes does in v1; GitHub does not, because its full sync is capped and filtered, so an
+unseen repository isn't proven gone.
+
+**A `partial` run never sweeps.** Only warnings that mean _data was skipped_ make a run
+partial, and today that is exactly the `FORBIDDEN:<kind>` warnings — a kind (or pods /
+replicasets) the ServiceAccount may not list. Such a run has not seen the whole cluster, so
+marking its unseen nodes absent would hide live workloads. The catch is that the denial is
+usually permanent: every run reports it, every run is partial, and the sweep never runs at
+all. If the connector sits at `degraded` with a `FORBIDDEN:` message, either grant the
+missing verb (see [Read-only RBAC](#read-only-rbac)) or drop that kind from `scope.kinds`, so
+runs go back to `success` and absence tracking resumes.
+
+Link diagnostics — an unresolved `repoLink.githubOrg`, a `team` label that matches no synced
+GitHub team — are **notes**, not warnings. They are recorded on the run and logged, they
+never change its status, and they never block the sweep: they report enrichment that did not
+happen, not cluster data that was missed.
+
+**The sweep confirms before it marks.** core-writer first checks that at least one node of
+this connector carries a `_last_synced` at or after the run's start. A successful full run
+always re-confirms at least the Cluster node, so zero confirmations means the run's entities
+never reached the graph (a write failed, or the queue was still draining an older run) — the
+sweep marks nothing and logs instead. A write failure recorded in the same batch as the
+control envelope also skips the sweep for that connector.
+
+### Not in v1
+
+Watch API streaming, Argo CD / Flux link signals, OCI image-label provenance, Services/Ingress
+as nodes, Secrets/ConfigMaps/Events.
 
 ## Building a Custom Connector
 

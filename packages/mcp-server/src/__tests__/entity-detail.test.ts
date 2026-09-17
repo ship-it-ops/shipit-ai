@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createMockNeo4jClient, createMockRecord } from './helpers/mock-neo4j.js';
+import { captureTool, toolPayload } from './helpers/capture-tool.js';
+import { registerEntityDetail } from '../tools/entity-detail.js';
 
 describe('entity_detail tool', () => {
   it('should return entity detail with neighbors', async () => {
@@ -127,5 +129,52 @@ describe('entity_detail tool', () => {
     }>;
     expect(claims.length).toBe(2);
     expect(claims[0].property_key).toBe('tier');
+  });
+});
+
+describe('entity_detail absent projection', () => {
+  function handlerFor(props: Record<string, unknown>) {
+    const responses = new Map();
+    responses.set('MATCH (n {id: $entityId})', {
+      records: [createMockRecord({ node: { properties: props }, labels: ['Deployment'] })],
+      summary: { resultAvailableAfter: 1 },
+    });
+    return captureTool(registerEntityDetail as never, createMockNeo4jClient(responses) as never);
+  }
+
+  it('projects absent_since so a swept entity does not read as live', async () => {
+    const handler = handlerFor({
+      id: 'shipit://deployment/default/demo/shipit/deployment/web-ui',
+      name: 'web-ui',
+      _absent_since: '2026-09-16T12:10:00.000Z',
+    });
+    const payload = toolPayload(
+      await handler({
+        entity: 'x',
+        include_claims: false,
+        include_neighbors: false,
+        compact: true,
+      }),
+    );
+    const node = (payload as { node: Record<string, unknown> }).node;
+    expect(node.absent_since).toBe('2026-09-16T12:10:00.000Z');
+    // Still a non-underscore key, and the `_`-prefixed original stays stripped.
+    expect(node.properties).not.toHaveProperty('_absent_since');
+  });
+
+  it('projects absent_since as null for a live entity', async () => {
+    const handler = handlerFor({
+      id: 'shipit://deployment/default/demo/shipit/deployment/api-server',
+      name: 'api-server',
+    });
+    const payload = toolPayload(
+      await handler({
+        entity: 'x',
+        include_claims: false,
+        include_neighbors: false,
+        compact: true,
+      }),
+    );
+    expect((payload as { node: Record<string, unknown> }).node.absent_since).toBeNull();
   });
 });

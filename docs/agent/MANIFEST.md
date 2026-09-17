@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-16 | Total notes: 86
+Last updated: 2026-09-16 | Total notes: 89
 
 ## Investigations
 
@@ -31,8 +31,11 @@ Last updated: 2026-09-16 | Total notes: 86
 
 <!-- always-read at session start -->
 
+- [kubernetes-connector-v1](status/kubernetes-connector-v1.md) | status | active | core | 2026-09-16 | K8s connector v1: implemented + reviewed + final fix wave on k8s-connector-v1; PR #113 open, awaiting review/CI
+
 ## Decisions
 
+- [kubernetes-connector-v1-design](decisions/kubernetes-connector-v1-design.md) | decision | active | core | 2026-09-16 | K8s connector v1: both access modes, poll, per-type opt-in absence sweep, tiered repo links, LogicalService emission, connector-type factory
 - [runtime-image-strips-bundled-npm-and-apk-upgrades](decisions/runtime-image-strips-bundled-npm-and-apk-upgrades.md) | decision | active | core | 2026-09-15 | runtime stages `apk upgrade` + rm base-image npm CLI; unblocks infra Trivy gate; retire infra picomatch trivyignore after
 - [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
 - [agent-context-initialized](decisions/agent-context-initialized.md) | decision | active | core | 2026-05-20 | docs/agent scaffolded during MCP Access stage one
@@ -106,6 +109,7 @@ Last updated: 2026-09-16 | Total notes: 86
 
 ## Scars
 
+- [docker-builder-copies-fixed-package-set](scars/docker-builder-copies-fixed-package-set.md) | scar | active | core | 2026-09-16 | image build red in CI, turbo build green locally = Dockerfile builder COPY list missing a workspace (dev)dependency; tsc compiles tests too
 - [integration-tests-sharing-a-db-must-run-serially](scars/integration-tests-sharing-a-db-must-run-serially.md) | scar | active | core | 2026-06-19 | integration tests green alone but red together = vitest parallel files clobbering a shared real DB; --no-file-parallelism or isolate
 - [pnpm-install-under-live-next-dev-serves-stale-bundle](scars/pnpm-install-under-live-next-dev-serves-stale-bundle.md) | scar | active | core | 2026-06-19 | empty/blank local web-ui right after pnpm install = stale next dev serving old node_modules; restart before suspecting data loss
 - [tailwind-spacing-screen-key-shadows-h-screen](scars/tailwind-spacing-screen-key-shadows-h-screen.md) | scar | active | core | 2026-06-18 | a `--spacing-screen` @theme key shadows Tailwind's reserved h-screen → 100vh becomes 16px, shell collapses

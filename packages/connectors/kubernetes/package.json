@@ -22,7 +22,8 @@
   "dependencies": {
     "@kubernetes/client-node": "^1.0.0",
     "@shipit-ai/connector-sdk": "workspace:*",
-    "@shipit-ai/shared": "workspace:*"
+    "@shipit-ai/shared": "workspace:*",
+    "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

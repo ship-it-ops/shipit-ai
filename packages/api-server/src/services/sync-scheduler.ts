@@ -6,23 +6,23 @@
 //   - Adds a repeating job per enabled connector (cron from the connector's
 //     `schedule` field).
 //   - Lets callers enqueue an immediate one-shot job via `triggerSync`.
-//   - Constructs a fresh `GitHubConnector` + `ConnectorHarness` per job so
-//     runs don't share state and a panicking run can't poison the next one.
+//   - Builds a fresh connector + `ConnectorHarness` per job via the
+//     connector-type factory, so runs don't share state and a panicking run
+//     can't poison the next one.
 //   - On finish, records the outcome back into the registry's YAML history
 //     and updates the in-memory runtime status.
 //
 // Tests can skip this entirely by leaving the default NoopRunner in place.
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { resolve as resolvePath } from 'node:path';
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq';
-import { GitHubConnector, authenticateGitHubApp } from '@shipit-ai/connector-github';
+import { authenticateGitHubApp } from '@shipit-ai/connector-github';
 import { ConnectorHarness } from '@shipit-ai/connector-sdk';
 import { COMPLETED_JOB_RETENTION, FAILED_JOB_RETENTION } from '@shipit-ai/event-bus';
-import {
-  resolveAppCredentials,
-  type AppLike,
-  type EventBusClient,
-  type GitHubConnectorConfig,
-} from '@shipit-ai/shared';
+import type { AppLike, ConnectorInstanceConfig, EventBusClient } from '@shipit-ai/shared';
+import { getConnectorType } from './connector-types/index.js';
+import type { BuildContext } from './connector-types/types.js';
 import type {
   ConnectorRegistry,
   ConnectorRunner,
@@ -51,6 +51,12 @@ export interface SyncSchedulerOptions {
   // internal key scheme (`bull:<queue>:<key>`) and `new Queue(...)` throws
   // synchronously if you try. We hyphenate; do not reintroduce colons.
   queueName?: string;
+  // Absolute key directory credential files live in. Defaults to
+  // SHIPIT_GITHUB_APP_KEY_DIR / ~/.shipit/keys like the routes.
+  keyDir?: string;
+  // Graph lookups for the Kubernetes linking tiers (Task 11). Optional.
+  lookupRepositoryNames?: (org: string) => Promise<string[]>;
+  lookupTeamSlugs?: (org: string) => Promise<string[]>;
 }
 
 const DEFAULT_QUEUE = 'shipit-sync-github';
@@ -84,11 +90,28 @@ export class SyncScheduler implements ConnectorRunner {
   // pick up rotations.
   private privateKeyCache = new Map<string, string>();
   private statuses = new Map<string, SyncRuntimeStatus>();
+  // Context handed to every connector type's build() — carries the live
+  // App reference, the memoized key reader, and the graph lookups the
+  // Kubernetes linking tiers use.
+  private readonly buildContext: BuildContext;
 
   constructor(opts: SyncSchedulerOptions) {
     this.registry = opts.registry;
     this.eventBus = opts.eventBus;
     this.globalApp = opts.globalApp;
+
+    const keyDir = resolvePath(
+      opts.keyDir ?? process.env.SHIPIT_GITHUB_APP_KEY_DIR ?? `${homedir()}/.shipit/keys`,
+    );
+    this.buildContext = {
+      globalApp: this.globalApp,
+      readPrivateKey: (path) => this.readPrivateKey(path),
+      keyDir,
+      lookupRepositoryNames: opts.lookupRepositoryNames,
+      lookupTeamSlugs: opts.lookupTeamSlugs,
+      listConnectors: () => this.registry.list(),
+      logger: console,
+    };
 
     const queueName = opts.queueName ?? DEFAULT_QUEUE;
     const connection = parseRedisUrl(opts.redisUrl);
@@ -146,14 +169,15 @@ export class SyncScheduler implements ConnectorRunner {
     });
   }
 
-  async start(connector: GitHubConnectorConfig): Promise<void> {
+  async start(connector: ConnectorInstanceConfig): Promise<void> {
     if (!connector.enabled) return;
     // Adding the same repeatable job again is a no-op in BullMQ as long as
     // (jobName, repeat) match — the job key is derived from the cron
     // string. Update flow (stop+start) covers schedule changes.
+    const mode = getConnectorType(connector.type)?.pollMode ?? 'incremental';
     await this.queue.add(
       `poll:${connector.id}`,
-      { connectorId: connector.id, mode: 'incremental' },
+      { connectorId: connector.id, mode },
       { repeat: { pattern: connector.schedule } },
     );
     if (!this.statuses.has(connector.id)) {
@@ -175,7 +199,7 @@ export class SyncScheduler implements ConnectorRunner {
   }
 
   async triggerSync(
-    connector: GitHubConnectorConfig,
+    connector: ConnectorInstanceConfig,
     mode: 'full' | 'incremental',
   ): Promise<SyncRuntimeStatus> {
     await this.queue.add(`manual:${connector.id}`, {
@@ -214,17 +238,33 @@ export class SyncScheduler implements ConnectorRunner {
     return contents;
   }
 
+  private async failRun(
+    connectorId: string,
+    startedAt: string,
+    startTime: number,
+    message: string,
+  ): Promise<void> {
+    await this.registry.recordRun(connectorId, {
+      startedAt,
+      durationMs: Date.now() - startTime,
+      status: 'failed',
+      entitiesSynced: 0,
+      errors: [message],
+    });
+    this.statuses.set(connectorId, { connectorId, state: 'failed', startedAt, lastError: message });
+  }
+
   // ── Job processor ────────────────────────────────────────────────────
-  // Constructs a per-job connector + harness, runs the sync, and writes
-  // back. Anything that throws here is captured into the run record so a
-  // single failed sync doesn't leak as a worker-level "failed" event when
-  // the cause is recoverable (e.g. a transient 5xx from GitHub).
+  // Resolves the connector type, builds a per-job connector + harness, runs the
+  // sync, writes the run back, and — for a successful FULL run — publishes the
+  // sync.completed control envelope that drives the core-writer absence sweep.
   private async processJob(job: Job<SyncJobData>): Promise<void> {
     const startTime = Date.now();
+    const startedAt = new Date(startTime).toISOString();
     const { connectorId, mode } = job.data;
-    let cfg: GitHubConnectorConfig;
+    let cfg: ConnectorInstanceConfig;
     try {
-      cfg = this.registry.get(connectorId) as GitHubConnectorConfig;
+      cfg = this.registry.get(connectorId);
     } catch (err) {
       // Connector was deleted while a job was still queued — drop the run
       // silently. Recording status would resurrect a no-longer-extant id.
@@ -232,101 +272,87 @@ export class SyncScheduler implements ConnectorRunner {
       return;
     }
 
-    this.statuses.set(connectorId, {
-      connectorId,
-      state: 'running',
-      startedAt: new Date(startTime).toISOString(),
-    });
+    this.statuses.set(connectorId, { connectorId, state: 'running', startedAt });
 
-    // Resolve which App identity backs this run. Per-connector override
-    // wins over the global App; absence of both surfaces as a structured
-    // failure (no auth attempt, no misleading 401 from GitHub).
-    const resolved = resolveAppCredentials(cfg, this.globalApp);
-    if (!resolved.id || !resolved.privateKeyPath) {
-      const message = resolved.overridden
-        ? `Connector ${connectorId} overrides the GitHub App but is missing app.id or app.privateKeyPath.`
-        : `No GitHub App configured. Set GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY_PATH or set connector.app on each instance.`;
-      await this.registry.recordRun(connectorId, {
-        startedAt: new Date(startTime).toISOString(),
-        durationMs: Date.now() - startTime,
-        status: 'failed',
-        entitiesSynced: 0,
-        errors: [message],
-      });
-      this.statuses.set(connectorId, {
+    const type = getConnectorType(cfg.type);
+    if (!type) {
+      await this.failRun(
         connectorId,
-        state: 'failed',
-        startedAt: new Date(startTime).toISOString(),
-        lastError: message,
-      });
+        startedAt,
+        startTime,
+        `No connector type registered for "${cfg.type}"`,
+      );
+      return;
+    }
+    const built = await type.build(cfg, this.buildContext);
+    if (!built.ok) {
+      await this.failRun(connectorId, startedAt, startTime, built.message);
       return;
     }
 
-    let privateKey: string;
-    try {
-      privateKey = this.readPrivateKey(resolved.privateKeyPath);
-    } catch (err) {
-      const message = `Cannot read App private key at ${resolved.privateKeyPath}: ${(err as Error).message}`;
-      await this.registry.recordRun(connectorId, {
-        startedAt: new Date(startTime).toISOString(),
-        durationMs: Date.now() - startTime,
-        status: 'failed',
-        entitiesSynced: 0,
-        errors: [message],
-      });
-      this.statuses.set(connectorId, {
-        connectorId,
-        state: 'failed',
-        startedAt: new Date(startTime).toISOString(),
-        lastError: message,
-      });
-      return;
-    }
-
-    // The connector SDK expects credentials shape with appId / privateKey
-    // strings. We resolve from the cached file contents + the registry's
-    // per-instance installationId so each org is bound to its own
-    // installation.
-    const connector = new GitHubConnector();
-    const sdkConfig = {
-      id: cfg.id,
-      type: 'github',
-      credentials: {
-        appId: resolved.id,
-        privateKey,
-        installationId: cfg.installationId,
-      },
-      scope: { org: cfg.org },
-    };
-
-    const harness = new ConnectorHarness(connector, this.eventBus, sdkConfig);
+    const harness = new ConnectorHarness(built.connector, this.eventBus, built.sdkConfig);
     const result = await harness.runSync(mode);
+
+    // Non-fatal connector warnings (e.g. a kind the ServiceAccount may not
+    // list) make the run `partial`: something was skipped, so the absence
+    // sweep below must NOT run — it would mark the skipped kind absent.
+    const warnings = built.connector.getWarnings?.() ?? [];
+    if (warnings.length > 0) {
+      result.errors.push(...warnings);
+      if (result.status === 'success') result.status = 'partial';
+    }
+
+    // Informational diagnostics (an unresolved repo link, a team label with no
+    // matching GitHub team). These describe enrichment that did not happen, not
+    // data that was skipped, so they must NOT touch `status`, `errors` or the
+    // degraded state — doing so made every Kubernetes-only run partial and
+    // silently disabled the absence sweep.
+    const notes = built.connector.getNotes?.() ?? [];
+    if (notes.length > 0) {
+      this.buildContext.logger?.warn?.(`connector ${connectorId} notes`, { notes });
+      job.log(`notes: ${notes.join('; ')}`);
+    }
 
     // Persist the outcome to the registry's history (cap 20). Best-effort —
     // a write failure shouldn't take down the worker.
     try {
       await this.registry.recordRun(connectorId, {
-        startedAt: new Date(startTime).toISOString(),
+        startedAt,
         durationMs: result.duration_ms,
         status: result.status,
         entitiesSynced: result.entities_synced,
         errors: result.errors,
+        ...(notes.length > 0 ? { notes } : {}),
       });
     } catch (err) {
       job.log(`failed to persist run history: ${(err as Error).message}`);
     }
 
+    // The absence sweep is a per-type opt-in (`sweepsAbsent`): only a type
+    // whose successful full run is EXHAUSTIVE for everything it writes may
+    // trigger it. A GitHub full sync is bounded by scope/cap/entity toggles,
+    // so unseen != gone there — publishing sync.completed for it would sweep
+    // still-existing nodes as absent.
+    if (result.status === 'success' && mode === 'full' && type.sweepsAbsent) {
+      try {
+        await this.eventBus.publishControl(connectorId, {
+          kind: 'sync.completed',
+          startedAt,
+          mode,
+        });
+      } catch (err) {
+        job.log(`failed to publish sync.completed for ${connectorId}: ${(err as Error).message}`);
+      }
+    }
+
     // 401/403 are sticky — surface as "degraded" so the UI flags the
     // connector instead of letting the next polling tick repeat the
-    // failure silently. The harness reports auth state via a structured
-    // boolean on SyncResult; the previous string-match heuristic
-    // misclassified legitimate non-auth `forbidden` errors (e.g.
-    // "forbidden: repository is archived").
+    // failure silently. (Structured boolean from the harness, not a
+    // string match — see the old comment history for why.)
     const authFailed = result.authFailed === true;
-
     this.statuses.set(connectorId, {
       connectorId,
-      startedAt: new Date(startTime).toISOString(),
+      startedAt,
       state:
         result.status === 'success'
           ? 'idle'

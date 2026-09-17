@@ -6,6 +6,7 @@ import type {
   CanonicalEntity,
   CanonicalNode,
   EventEnvelope,
+  SyncCompletedControl,
 } from '@shipit-ai/shared';
 import { deriveNodeContentHash } from '@shipit-ai/shared';
 import type { ResolvedConfig } from '../config.js';
@@ -163,6 +164,38 @@ export class EventBusProducer {
 
       await pipeline.exec();
     }
+  }
+
+  /**
+   * Publish a control envelope (no entities). `sync.completed` tells the
+   * core-writer that a full run for `connectorId` finished successfully, so it
+   * can mark every node of that instance not re-confirmed since `startedAt` as
+   * absent. The job id is run-scoped (and colon-free, BullMQ 5) so a retried
+   * run cannot enqueue a second sweep for the same start time. Deliberately
+   * NOT written to the replay stream — it is not entity history.
+   */
+  async publishControl(connectorId: string, control: SyncCompletedControl): Promise<void> {
+    const startedAtMs = Date.parse(control.startedAt);
+    if (
+      !Number.isFinite(startedAtMs) ||
+      new Date(startedAtMs).toISOString() !== control.startedAt
+    ) {
+      throw new Error(
+        `publishControl: startedAt must be a canonical ISO-8601 UTC timestamp (Date#toISOString), got "${control.startedAt}"`,
+      );
+    }
+    const envelope: EventEnvelope = {
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      connector_id: connectorId,
+      idempotency_key: `${connectorId}~sync-completed~${startedAtMs}`.replace(/:/g, '~'),
+      payload: { nodes: [], edges: [] },
+      kind: 'sync.completed',
+      control,
+    };
+    await this.queue.addBulk([
+      { name: 'event', data: envelope, opts: { jobId: envelope.idempotency_key } },
+    ]);
   }
 
   async close(): Promise<void> {

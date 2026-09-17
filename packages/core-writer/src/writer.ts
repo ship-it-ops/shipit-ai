@@ -40,6 +40,8 @@ export interface WriteResult {
    * delivery/retry re-attempts and re-resolves on top of the committed manual claim.
    */
   claimsConflictSkipped: number;
+  /** Nodes stamped absent by sync.completed control envelopes in this batch. */
+  absentMarked: number;
   errors: string[];
 }
 
@@ -82,6 +84,12 @@ export interface NodeWriter {
    * the content write is skipped, but "last synced" should still advance.
    */
   touchLastSynced(nodeId: string, lastSynced: string): Promise<void>;
+  /**
+   * Absence sweep for one connector instance: stamp `_absent_since = now` on
+   * every node it wrote whose `_last_synced` predates `startedAt`. Returns the
+   * number of nodes marked. See queries.markAbsent.
+   */
+  markAbsent(connectorId: string, startedAt: string, now: string): Promise<number>;
 }
 
 export class CoreWriter {
@@ -111,9 +119,14 @@ export class CoreWriter {
         // Surface a one-line summary whenever a batch did something noteworthy so
         // freshness-skips (silent content suppression) and errors are observable.
         const r = await this.processBatch(batch);
-        if (r.freshnessSkipped > 0 || r.claimsConflictSkipped > 0 || r.errors.length > 0) {
+        if (
+          r.freshnessSkipped > 0 ||
+          r.claimsConflictSkipped > 0 ||
+          r.absentMarked > 0 ||
+          r.errors.length > 0
+        ) {
           console.warn(
-            `[CoreWriter] batch: ${r.nodesWritten} written, ${r.duplicatesSkipped} dup, ${r.freshnessSkipped} freshness-skipped, ${r.claimsConflictSkipped} claims-conflict-skipped, ${r.errors.length} errors`,
+            `[CoreWriter] batch: ${r.nodesWritten} written, ${r.duplicatesSkipped} dup, ${r.freshnessSkipped} freshness-skipped, ${r.claimsConflictSkipped} claims-conflict-skipped, ${r.absentMarked} marked-absent, ${r.errors.length} errors`,
           );
         }
       },
@@ -142,9 +155,48 @@ export class CoreWriter {
     let duplicatesSkipped = 0;
     let freshnessSkipped = 0;
     let claimsConflictSkipped = 0;
+    let absentMarked = 0;
     const errors: string[] = [];
+    // Connectors whose writes failed earlier in THIS batch. A control envelope
+    // that follows such a failure cannot distinguish "deleted from the cluster"
+    // from "we failed to write it", so it must not sweep.
+    const failedConnectors = new Set<string>();
 
     for (const event of batch) {
+      // Control envelopes carry no entities. `sync.completed` (Kubernetes
+      // connector v1 absence sweep) marks the instance's unseen nodes absent;
+      // only a successful FULL run proves the missing nodes are gone.
+      if (event.kind === 'sync.completed') {
+        const control = event.control;
+        if (control && control.mode === 'full') {
+          if (failedConnectors.has(event.connector_id)) {
+            // Not an error of its own — the write failure is already in `errors`.
+            console.warn(
+              `[CoreWriter] sweep skipped for ${event.connector_id}: a write failed earlier in this batch, so unseen nodes cannot be judged absent`,
+            );
+            continue;
+          }
+          try {
+            const marked = await this.nodeWriter.markAbsent(
+              event.connector_id,
+              control.startedAt,
+              new Date().toISOString(),
+            );
+            absentMarked += marked;
+            if (marked > 0) {
+              console.warn(
+                `[CoreWriter] sweep ${event.connector_id}: marked ${marked} node(s) absent (unseen since ${control.startedAt})`,
+              );
+            }
+          } catch (err) {
+            errors.push(
+              `Error sweeping absent nodes for ${event.connector_id}: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        continue;
+      }
+
       const { payload } = event;
       if (!payload || !Array.isArray(payload.nodes)) continue;
 
@@ -257,8 +309,18 @@ export class CoreWriter {
           if (written) {
             nodesWritten++;
           } else {
-            // Freshness guard rejected (older than stored). Do NOT touchLastSynced
-            // — moving "Synced" forward for content we refused to write would lie.
+            // Freshness guard rejected (older than stored). The connector still
+            // SAW this entity this run, and `_last_synced` is now also the
+            // absence sweep's presence signal — so confirm presence (which also
+            // clears `_absent_since`) without writing the refused content. The
+            // stored, newer content stays; only the "seen at" stamp advances.
+            if (typeof node._last_synced === 'string') {
+              try {
+                await this.nodeWriter.touchLastSynced(nodeToWrite.id, node._last_synced);
+              } catch {
+                // non-critical: presence touch failed, leave it stale
+              }
+            }
             freshnessSkipped++;
             console.warn(
               `[CoreWriter] freshness-skip ${nodeToWrite.id} incoming _event_version=${String(node._event_version)} not newer than stored`,
@@ -268,6 +330,7 @@ export class CoreWriter {
           errors.push(
             `Error writing node ${node.id}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          failedConnectors.add(event.connector_id);
         }
       }
 
@@ -281,6 +344,7 @@ export class CoreWriter {
           errors.push(
             `Error writing edge ${edge.type} ${edge.from}->${edge.to}: ${err instanceof Error ? err.message : String(err)}`,
           );
+          failedConnectors.add(event.connector_id);
         }
       }
     }
@@ -298,6 +362,7 @@ export class CoreWriter {
       duplicatesSkipped,
       freshnessSkipped,
       claimsConflictSkipped,
+      absentMarked,
       errors,
     };
   }

@@ -79,6 +79,7 @@ function createMockConnector(overrides: Partial<ShipItConnector> = {}): ShipItCo
 function createMockEventBus(): EventBusClient {
   return {
     publish: vi.fn().mockResolvedValue(undefined),
+    publishControl: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn().mockResolvedValue(undefined),
     replay: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),

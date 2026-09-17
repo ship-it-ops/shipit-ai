@@ -24,10 +24,16 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
         .default(25)
         .describe('Max results (1-100, default 25)'),
       sort_by: z.string().default('name').describe('Property to sort by'),
+      include_absent: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Include entities the owning connector no longer sees (marked absent by the sync sweep). Default false.',
+        ),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
-      const { label, property_filters, limit, sort_by, compact } = params;
+      const { label, property_filters, limit, sort_by, include_absent, compact } = params;
       const startTime = Date.now();
 
       try {
@@ -36,6 +42,7 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
           property_filters as Record<string, unknown> | undefined,
           limit,
           sort_by,
+          include_absent,
         );
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 

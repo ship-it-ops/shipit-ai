@@ -20,14 +20,20 @@ export function registerDependencyChain(server: McpServer, neo4j: Neo4jClient): 
         .max(10)
         .default(6)
         .describe('Max path length (1-10, default 6)'),
+      include_absent: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Include entities the owning connector no longer sees (marked absent by the sync sweep). Default false.',
+        ),
       compact: z.boolean().default(false).describe('Strip _meta envelope'),
     },
     async (params) => {
-      const { from, to, max_depth, compact } = params;
+      const { from, to, max_depth, include_absent, compact } = params;
       const startTime = Date.now();
 
       try {
-        const cypher = generateDependencyChainCypher(from, to, max_depth);
+        const cypher = generateDependencyChainCypher(from, to, max_depth, include_absent);
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 
         if (result.records.length === 0) {
