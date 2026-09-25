@@ -11,6 +11,7 @@ import {
   type ConnectorTypeId,
 } from '@/components/connectors/add-connector-picker';
 import { AddGitHubConnectorWizard } from '@/components/connectors/add-github-connector-wizard';
+import { AddKubernetesConnectorWizard } from '@/components/connectors/add-kubernetes-connector-wizard';
 import { useConnectors } from '@/lib/hooks/use-connectors';
 
 export default function ConnectorHubPage() {
@@ -38,9 +39,9 @@ export default function ConnectorHubPage() {
     // The picker disables non-available types, so this is reached only
     // for connectors that have a wizard. Belt-and-suspenders guard so a
     // future enum addition can't silently no-op.
-    if (type === 'github') {
+    if (type === 'github' || type === 'kubernetes') {
       setPickerOpen(false);
-      setActiveWizard('github');
+      setActiveWizard(type);
     }
   };
 
@@ -82,6 +83,12 @@ export default function ConnectorHubPage() {
       <AddConnectorPicker open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePick} />
       <AddGitHubConnectorWizard
         open={activeWizard === 'github'}
+        onOpenChange={(open) => {
+          if (!open) setActiveWizard(null);
+        }}
+      />
+      <AddKubernetesConnectorWizard
+        open={activeWizard === 'kubernetes'}
         onOpenChange={(open) => {
           if (!open) setActiveWizard(null);
         }}

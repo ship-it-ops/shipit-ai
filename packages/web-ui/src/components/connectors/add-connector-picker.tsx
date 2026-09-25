@@ -41,7 +41,7 @@ const CONNECTOR_TYPES: ConnectorType[] = [
     name: 'Kubernetes',
     glyph: 'kubernetes',
     description: 'Namespaces, deployments, services, pods',
-    status: 'coming-soon',
+    status: 'available',
   },
   {
     id: 'datadog',
