@@ -3,6 +3,7 @@ import type { NamespaceRef, RawNamespace } from '../types.js';
 import {
   DEFAULT_TIMEOUT_MS,
   PAGE_LIMIT,
+  abortable,
   compileScope,
   toNamespaceRef,
   withTimeout,
@@ -22,7 +23,8 @@ export async function fetchNamespaces(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<NamespacePage> {
   const list = await withTimeout(
-    clients.core.listNamespace({ limit: PAGE_LIMIT, _continue: cursor }),
+    (signal) =>
+      clients.core.listNamespace({ limit: PAGE_LIMIT, _continue: cursor }, abortable(signal)),
     timeoutMs,
     'list namespaces',
   );
@@ -43,7 +45,7 @@ export async function fetchNamespaceRef(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<NamespaceRef> {
   const ns = await withTimeout(
-    clients.core.readNamespace({ name }),
+    (signal) => clients.core.readNamespace({ name }, abortable(signal)),
     timeoutMs,
     `get namespace ${name}`,
   );

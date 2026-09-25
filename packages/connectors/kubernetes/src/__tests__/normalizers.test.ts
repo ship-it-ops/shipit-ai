@@ -251,8 +251,10 @@ describe('normalizeWorkload — other kinds and fallbacks', () => {
       ready_replicas: 1,
       status: 'Available',
       image: 'redis:7-alpine',
-      restarts: 0,
     });
+    // No rollup ran for this raw workload, so `restarts` is absent rather
+    // than a zero that would read as a measured fact.
+    expect(dep.properties).not.toHaveProperty('restarts');
     expect(edge(out, 'IMPLEMENTED_BY')[0]).toMatchObject({
       to: 'shipit://repository/default/Ship-It-Ops/ShipIt-AI',
       _confidence: 0.6,

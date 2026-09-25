@@ -191,11 +191,11 @@ One connector instance per cluster. Design: `docs/superpowers/specs/2026-09-16-k
 
 ### Access modes
 
-| mode         | what you provide                                                                  | notes                                                                                                                                                                      |
-| ------------ | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `in-cluster` | nothing                                                                           | uses the api-server pod's ServiceAccount; needs the read-only ClusterRole below                                                                                            |
-| `kubeconfig` | a data-only kubeconfig (inline `*-data` fields), one context (or `context` named) | file references (`certificate-authority`, `client-certificate`, `client-key`, `token-file`), `exec` and `auth-provider` are rejected — mint a ServiceAccount token instead |
-| `token`      | `server`, a ServiceAccount token, optional CA PEM                                 | TLS verification is always on                                                                                                                                              |
+| mode         | what you provide                                                                  | notes                                                                                                                                                                                                                                                                  |
+| ------------ | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `in-cluster` | nothing                                                                           | uses the api-server pod's ServiceAccount; needs the read-only ClusterRole below                                                                                                                                                                                        |
+| `kubeconfig` | a data-only kubeconfig (inline `*-data` fields), one context (or `context` named) | file references (`certificate-authority`, `client-certificate`, `client-key`, `token-file`), `exec`, `auth-provider` and `proxy-url` are rejected — mint a ServiceAccount token instead, and expose an endpoint the ShipIt pod can reach directly rather than proxying |
+| `token`      | `server`, a ServiceAccount token, optional CA PEM                                 | TLS verification is always on                                                                                                                                                                                                                                          |
 
 Credentials never live in YAML. Store them first, then reference the returned paths:
 
@@ -219,6 +219,11 @@ expanded and an unexpanded tilde is rejected by the path allowlist.
 `POST /api/connectors/probe` with `{ "type": "kubernetes", "access": { ... } }` checks access before you
 save: it returns the server version, the namespaces in scope and, per workload kind, `ok`, `forbidden`,
 `error` or `skipped` (no namespace in scope).
+
+The per-kind verdict is measured against **one** namespace — the first in scope, reported back as
+`probedNamespace` — not the whole cluster. A namespace-scoped RoleBinding elsewhere in the cluster can
+therefore still fail at sync time even when the probe is all-`ok`; `shipit-reader` below is a
+ClusterRole precisely so that access is uniform.
 
 ### Read-only RBAC
 

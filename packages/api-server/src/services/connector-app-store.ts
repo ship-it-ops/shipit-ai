@@ -19,7 +19,8 @@
 // (non-secret) instance config alongside the (secret) PEM in one GSM container
 // follows the existing `auth-admin-emails` precedent — GSM is the only durable
 // store in the v1 deployment; Postgres is the eventual home.
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { ensureKeyDir } from '../secrets/key-dir.js';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, resolve as resolvePath } from 'node:path';
 import type { ConnectorInstanceConfig } from '@shipit-ai/shared';
@@ -42,6 +43,9 @@ interface BlobRecord {
   k8sToken?: string;
   k8sCa?: string;
 }
+
+// The credential-bearing keys of a BlobRecord — everything except `instance`.
+type SecretKey = Exclude<keyof BlobRecord, 'instance'>;
 
 interface ConnectorAppsBlob {
   version: number;
@@ -101,15 +105,24 @@ export class ConnectorAppStore implements ConnectorDurableStore {
   async sync(connectors: ConnectorInstanceConfig[]): Promise<void> {
     if (!this.enabled) return;
     try {
+      // The blob is rebuilt wholesale, so a credential whose file is missing
+      // right now would be DROPPED from GSM — deleting the only durable copy.
+      // Read what is already stored so such a value can be carried forward.
+      const previous = await this.readBlob();
       const blob: ConnectorAppsBlob = { version: BLOB_VERSION, connectors: {} };
       for (const c of connectors) {
         // Run history is operational state owned by the run store, never the
         // durable config blob.
         const { lastRuns: _ignored, ...instance } = c;
         const record: BlobRecord = { instance: instance as ConnectorInstanceConfig };
+        // Only the keys this instance's mode actually uses are eligible to be
+        // carried forward: a connector switched from token to in-cluster must
+        // not resurrect the token it no longer references.
+        const expected = new Set<SecretKey>();
         if (c.type === 'github') {
           const keyPath = c.app?.privateKeyPath;
           if (c.app?.id && keyPath) {
+            expected.add('pem').add('webhookSecret');
             const pemPath = join(this.keyDir, basename(keyPath));
             if (existsSync(pemPath)) {
               record.pem = readFileSync(pemPath, 'utf-8');
@@ -124,17 +137,21 @@ export class ConnectorAppStore implements ConnectorDurableStore {
         if (c.type === 'kubernetes') {
           const a = c.access;
           if (a.mode === 'kubeconfig') {
+            expected.add('kubeconfig');
             const kubeconfig = readIfPresent(this.keyDir, a.kubeconfigPath);
             if (kubeconfig !== undefined) record.kubeconfig = kubeconfig;
           } else if (a.mode === 'token') {
+            expected.add('k8sToken');
             const token = readIfPresent(this.keyDir, a.tokenPath);
             if (token !== undefined) record.k8sToken = token;
             if (a.caDataPath) {
+              expected.add('k8sCa');
               const ca = readIfPresent(this.keyDir, a.caDataPath);
               if (ca !== undefined) record.k8sCa = ca;
             }
           }
         }
+        this.carryForward(record, previous?.connectors?.[c.id], expected, c.id);
         blob.connectors[c.id] = record;
       }
       const json = JSON.stringify(blob);
@@ -167,11 +184,50 @@ export class ConnectorAppStore implements ConnectorDurableStore {
     secret: string,
     connectors: ConnectorInstanceConfig[],
   ): Promise<void> {
-    mkdirSync(this.keyDir, { recursive: true, mode: 0o700 });
+    ensureKeyDir(this.keyDir);
     const secretPath = join(this.keyDir, `github-app-${appId}.webhook-secret`);
     writeFileSync(secretPath, secret + '\n', { encoding: 'utf-8', mode: 0o600 });
     chmodSync(secretPath, 0o600);
     await this.sync(connectors);
+  }
+
+  // Preserve a stored secret whose file we expected but could not read. The
+  // file is the source of truth when present; GSM is the fallback, never the
+  // other way round, so a rotation on disk always wins.
+  private carryForward(
+    record: BlobRecord,
+    prior: BlobRecord | undefined,
+    expected: Set<SecretKey>,
+    id: string,
+  ): void {
+    if (!prior) return;
+    for (const key of expected) {
+      if (record[key] !== undefined) continue;
+      const stored = prior[key];
+      if (stored === undefined) continue;
+      record[key] = stored;
+      this.logger.warn(
+        { id, key },
+        'connector-app-store: credential file missing at sync; carrying the stored value forward rather than dropping it from Secret Manager',
+      );
+    }
+  }
+
+  // Best-effort read of the current blob. A miss (no blob, unreadable, corrupt)
+  // is not fatal: it only means there is nothing to carry forward.
+  private async readBlob(): Promise<ConnectorAppsBlob | null> {
+    try {
+      const raw = await this.store.read('connector-apps');
+      if (!raw) return null;
+      const blob = JSON.parse(raw) as ConnectorAppsBlob;
+      return blob && typeof blob === 'object' && blob.connectors ? blob : null;
+    } catch (err) {
+      this.logger.warn(
+        { err },
+        'connector-app-store: could not read the existing blob; stored credentials cannot be carried forward this sync',
+      );
+      return null;
+    }
   }
 
   // Read the blob, materialize per-org PEM + webhook sidecar files to keyDir,
@@ -198,7 +254,7 @@ export class ConnectorAppStore implements ConnectorDurableStore {
     }
     if (!blob || typeof blob !== 'object' || !blob.connectors) return [];
 
-    mkdirSync(this.keyDir, { recursive: true, mode: 0o700 });
+    ensureKeyDir(this.keyDir);
     const instances: ConnectorInstanceConfig[] = [];
     for (const [id, record] of Object.entries(blob.connectors)) {
       // Re-validate against the live schema so a stale/corrupt entry can't

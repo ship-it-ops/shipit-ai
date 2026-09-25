@@ -217,6 +217,9 @@ importers:
       '@shipit-ai/connector-kubernetes':
         specifier: workspace:*
         version: link:../connectors/kubernetes
+      '@shipit-ai/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@types/node':
         specifier: ^26.0.0
         version: 26.0.1

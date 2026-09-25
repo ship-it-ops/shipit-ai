@@ -1465,6 +1465,76 @@ current-context: demo
     });
   });
 
+  // M5: the credential files the upload route wrote used to outlive the
+  // connector that referenced them — live ServiceAccount tokens sitting in the
+  // key dir with nothing pointing at them.
+  it('DELETE /:id removes the credential files that only that connector referenced', async () => {
+    await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: {
+        connectorId: 'k8s-doomed',
+        mode: 'token',
+        token: 'tok',
+        caData: '-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----',
+      },
+    });
+    const tokenPath = join(keyDir, 'k8s-token-k8s-doomed');
+    const caPath = join(keyDir, 'k8s-ca-k8s-doomed.pem');
+    expect(existsSync(tokenPath)).toBe(true);
+
+    const created = await server.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: {
+        id: 'k8s-doomed',
+        type: 'kubernetes',
+        name: 'Doomed',
+        cluster: { name: 'c' },
+        access: { mode: 'token', server: 'https://h', tokenPath, caDataPath: caPath },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const del = await server.inject({ method: 'DELETE', url: '/api/connectors/k8s-doomed' });
+    expect(del.statusCode).toBe(204);
+    expect(existsSync(tokenPath)).toBe(false);
+    expect(existsSync(caPath)).toBe(false);
+  });
+
+  it('DELETE /:id keeps a credential file another connector still references', async () => {
+    await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'k8s-shared', mode: 'kubeconfig', kubeconfig },
+    });
+    const shared = join(keyDir, 'kubeconfig-k8s-shared.yaml');
+    for (const id of ['k8s-one', 'k8s-two']) {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/api/connectors',
+        payload: {
+          id,
+          type: 'kubernetes',
+          name: id,
+          cluster: { name: 'c' },
+          access: { mode: 'kubeconfig', kubeconfigPath: shared, context: 'demo' },
+        },
+      });
+      expect(res.statusCode).toBe(201);
+    }
+
+    expect(
+      (await server.inject({ method: 'DELETE', url: '/api/connectors/k8s-one' })).statusCode,
+    ).toBe(204);
+    expect(existsSync(shared)).toBe(true);
+
+    expect(
+      (await server.inject({ method: 'DELETE', url: '/api/connectors/k8s-two' })).statusCode,
+    ).toBe(204);
+    expect(existsSync(shared)).toBe(false);
+  });
+
   it('POST / and PATCH /:id refuse credential paths outside the key dir', async () => {
     const res = await server.inject({
       method: 'POST',
@@ -1514,6 +1584,8 @@ current-context: demo
       ok: true,
       cluster: { version: 'v1.31.2' },
       namespaces: ['shipit'],
+      // The per-kind verdict is measured against this one namespace, not the cluster.
+      probedNamespace: 'shipit',
       kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'ok' },
     });
   });

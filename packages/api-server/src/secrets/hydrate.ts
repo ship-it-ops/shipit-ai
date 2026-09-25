@@ -9,7 +9,8 @@
 // errors propagate so a misconfigured Workload Identity fails the boot
 // loudly instead of silently starting an empty instance; a missing
 // secret version is just first-run and hydrates as "not set".
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { ensureKeyDir } from './key-dir.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SecretsRegistry } from '@shipit-ai/shared';
@@ -100,7 +101,7 @@ export async function hydrateSecrets(
     if (pem !== null) {
       hydrated.push(key);
       const keyDir = env.SHIPIT_GITHUB_APP_KEY_DIR || join(homedir(), '.shipit', 'keys');
-      mkdirSync(keyDir, { recursive: true, mode: 0o700 });
+      ensureKeyDir(keyDir);
       const appId = env.GITHUB_APP_ID;
       const filename = appId ? `github-app-${appId}.pem` : 'github-app.pem';
       pemPath = join(keyDir, filename);

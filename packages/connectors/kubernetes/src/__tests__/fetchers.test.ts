@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { V1Pod, V1ReplicaSet } from '@kubernetes/client-node';
 import { ApiException } from '@kubernetes/client-node';
-import { matchesScope, withTimeout } from '../fetchers/common.js';
+import { abortable, matchesScope, withTimeout } from '../fetchers/common.js';
+import { fetchNamespaces } from '../fetchers/namespaces.js';
 import { fetchClusterSummary, providerFromId } from '../fetchers/cluster.js';
 import { WorkloadFetcher, summarizePods, digestFromImageId } from '../fetchers/workloads.js';
 import type { KubeClients } from '../auth.js';
@@ -18,11 +19,56 @@ describe('matchesScope', () => {
 });
 
 describe('withTimeout', () => {
-  it('rejects with a TIMEOUT KubernetesError when the promise is slow', async () => {
-    await expect(withTimeout(new Promise(() => {}), 5, 'list pods')).rejects.toMatchObject({
+  it('rejects with a TIMEOUT KubernetesError when the call is slow', async () => {
+    await expect(withTimeout(() => new Promise(() => {}), 5, 'list pods')).rejects.toMatchObject({
       code: 'TIMEOUT',
     });
-    await expect(withTimeout(Promise.resolve(1), 5, 'x')).resolves.toBe(1);
+    await expect(withTimeout(() => Promise.resolve(1), 5, 'x')).resolves.toBe(1);
+  });
+
+  // M2: racing a timer against the call left the request running and holding
+  // its socket. The deadline must cancel the request, not just stop waiting.
+  it('aborts the signal it hands the call when the deadline passes', async () => {
+    let captured: AbortSignal | undefined;
+    await expect(
+      withTimeout(
+        (signal) => {
+          captured = signal;
+          return new Promise(() => {});
+        },
+        5,
+        'list pods',
+      ),
+    ).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(captured?.aborted).toBe(true);
+  });
+
+  it('leaves the signal unaborted when the call resolves in time', async () => {
+    let captured: AbortSignal | undefined;
+    await withTimeout(
+      (signal) => {
+        captured = signal;
+        return Promise.resolve('ok');
+      },
+      1_000,
+      'x',
+    );
+    expect(captured?.aborted).toBe(false);
+  });
+});
+
+describe('abortable', () => {
+  it('produces request options whose middleware sets the signal on the request', async () => {
+    const controller = new AbortController();
+    const options = abortable(controller.signal);
+    let signalOnRequest: AbortSignal | undefined;
+    const ctx = {
+      setSignal(s: AbortSignal) {
+        signalOnRequest = s;
+      },
+    };
+    options.middleware![0].pre(ctx as never);
+    expect(signalOnRequest).toBe(controller.signal);
   });
 });
 
@@ -130,6 +176,36 @@ describe('summarizePods', () => {
   const digest =
     'docker-pullable://us-central1-docker.pkg.dev/p/shipit-ai/api-server@sha256:' + 'a'.repeat(64);
 
+  // A workload whose rollup never ran (CronJob, or pods/replicasets denied)
+  // used to report readyPods/restarts as 0 — indistinguishable from a real
+  // zero, so a crash-looping workload read as "restarts: 0" as if it were fact.
+  it('omits readyPods and restarts when no rollup ran', () => {
+    const summary = summarizePods('Deployment', { metadata: { name: 'api-server' } }, null);
+    expect(summary.readyPods).toBeUndefined();
+    expect(summary.restarts).toBeUndefined();
+    expect(summary.imageDigests).toEqual({});
+  });
+
+  it('omits readyPods and restarts for a CronJob, which owns no pods directly', () => {
+    const summary = summarizePods(
+      'CronJob',
+      { metadata: { name: 'nightly' } },
+      { pods: [], replicaSets: [] },
+    );
+    expect(summary.readyPods).toBeUndefined();
+    expect(summary.restarts).toBeUndefined();
+  });
+
+  it('reports a genuine zero when the rollup ran and found no restarts', () => {
+    const summary = summarizePods(
+      'StatefulSet',
+      { metadata: { name: 'redis' } },
+      { pods: [pod('redis-0', { kind: 'StatefulSet', name: 'redis' }, true, 0)], replicaSets: [] },
+    );
+    expect(summary.restarts).toBe(0);
+    expect(summary.readyPods).toBe(1);
+  });
+
   it('walks Deployment → ReplicaSet → Pod and rolls up readiness, restarts and digests', () => {
     const cache = {
       replicaSets: [rs],
@@ -149,11 +225,8 @@ describe('summarizePods', () => {
       restarts: 0,
       imageDigests: {},
     });
-    expect(summarizePods('CronJob', apiServerDeployment, cache)).toEqual({
-      readyPods: 0,
-      restarts: 0,
-      imageDigests: {},
-    });
+    // A CronJob owns no pods directly, so nothing was measured for it.
+    expect(summarizePods('CronJob', apiServerDeployment, cache)).toEqual({ imageDigests: {} });
   });
 
   it('extracts only sha256 digests from imageID', () => {
@@ -271,6 +344,8 @@ describe('WorkloadFetcher', () => {
     expect(c.apps.listNamespacedDeployment).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ namespace: 'shipit', _continue: 'tok', limit: 500 }),
+      // every list call carries the deadline's abort options (M2)
+      expect.objectContaining({ middlewareMergeStrategy: 'append' }),
     );
     // pods + replicasets listed ONCE per namespace, not per workload
     expect(c.core.listNamespacedPod).toHaveBeenCalledTimes(2);
@@ -346,6 +421,7 @@ describe('WorkloadFetcher', () => {
     expect(raw?.object.metadata?.name).toBe('api-server');
     expect(c.apps.listNamespacedDeployment).toHaveBeenCalledWith(
       expect.objectContaining({ namespace: 'shipit', fieldSelector: 'metadata.name=api-server' }),
+      expect.objectContaining({ middlewareMergeStrategy: 'append' }),
     );
   });
 
@@ -373,5 +449,24 @@ describe('WorkloadFetcher', () => {
     ]);
     expect(c.core.listNamespacedPod).toHaveBeenCalledTimes(1);
     expect(f.warnings).toEqual([expect.stringMatching(/^FORBIDDEN:pods/)]);
+  });
+});
+
+describe('fetchNamespaces', () => {
+  it('threads the deadline signal into the request so a timeout cancels the list call', async () => {
+    const listNamespace = vi.fn().mockResolvedValue({ items: [], metadata: {} });
+    const clients = { core: { listNamespace } } as unknown as KubeClients;
+
+    await fetchNamespaces(clients, { include: ['*'], exclude: [] }, undefined);
+
+    const options = listNamespace.mock.calls[0][1];
+    let signalOnRequest: AbortSignal | undefined;
+    options.middleware[0].pre({
+      setSignal(s: AbortSignal) {
+        signalOnRequest = s;
+      },
+    });
+    expect(signalOnRequest).toBeInstanceOf(AbortSignal);
+    expect(signalOnRequest!.aborted).toBe(false);
   });
 });

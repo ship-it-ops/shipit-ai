@@ -86,6 +86,23 @@ describe('validateKubeconfigText', () => {
     });
   });
 
+  // A cluster's `proxy-url` is dropped by the option allowlist, so a
+  // proxy-only kubeconfig used to validate cleanly and then fail at connect
+  // time as an opaque API_UNREACHABLE. Reject it where we can still say why.
+  it('rejects a kubeconfig whose cluster needs a proxy-url', () => {
+    const proxied = tokenKubeconfig().replace(
+      '    server: https://10.0.0.1:6443',
+      '    server: https://10.0.0.1:6443\n    proxy-url: socks5://localhost:1080',
+    );
+    expect(validateKubeconfigText(proxied)).toMatchObject({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+    });
+    const result = validateKubeconfigText(proxied);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain('proxy-url');
+  });
+
   it('requires an explicit context when several exist, and accepts it when given', () => {
     const two = tokenKubeconfig(`- name: other
   context:

@@ -17,6 +17,7 @@ import {
 } from '@shipit-ai/connector-kubernetes';
 import { CoreWriter } from '../../writer.js';
 import { DEFAULT_CONFIG } from '../../config.js';
+import { generateBlastRadiusCypher } from '@shipit-ai/mcp-server/cypher';
 import { Neo4jClient } from '../../neo4j/client.js';
 import { Neo4jNodeWriter } from '../../neo4j/node-writer.js';
 import { Neo4jLinkingKeyIndex } from '../../neo4j/linking-key-index.js';
@@ -84,13 +85,10 @@ function merge(
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
 
-// Mirrors packages/mcp-server/src/cypher/generator.ts (generateBlastRadiusCypher,
-// BOTH direction, DEPENDENCY_EDGE_PATTERN) — must stay in sync with it by hand;
-// there is no shared constant between core-writer and mcp-server to import.
-const BLAST = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
-  WHERE n._absent_since IS NULL RETURN DISTINCT n.id AS id`;
-const BLAST_INCLUDING_ABSENT = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
-  RETURN DISTINCT n.id AS id`;
+// The REAL generator mcp-server serves blast_radius from — not a hand-kept
+// copy of its Cypher, which could not catch a divergence in the generator
+// (M7). BOTH traverses dependency edges only, which is what this acceptance
+// case is about: repository → workloads.
 
 describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', () => {
   let client: Neo4jClient;
@@ -101,6 +99,22 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
   // marks anything absent.
   let nodeCountAfterRun1 = 0;
   let edgeCountAfterRun1 = 0;
+
+  // Deployment ids reachable from the repository, through the generator the
+  // MCP tool actually runs. `depth: 2` matches repository → service → workload.
+  const blastDeploymentIds = async (includeAbsent: boolean): Promise<string[]> => {
+    const { query, params } = generateBlastRadiusCypher(
+      REPO_ID,
+      2,
+      'BOTH',
+      undefined,
+      includeAbsent,
+    );
+    return (await rows(query, params))
+      .filter((r) => (r.get('labels') as string[]).includes('Deployment'))
+      .map((r) => String((r.get('node') as { properties: { id: string } }).properties.id))
+      .sort();
+  };
 
   const wipe = () =>
     client.executeWrite(async (tx) => tx.run('MATCH (n) DETACH DELETE n'), DATABASE);
@@ -186,7 +200,7 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
       ).toEqual([TEAM_ID]);
 
       // Success criterion 3: blast radius from the repository reaches every workload
-      expect(await ids(BLAST, { id: REPO_ID })).toEqual(ALL_DEPLOYMENTS);
+      expect(await blastDeploymentIds(false)).toEqual(ALL_DEPLOYMENTS);
 
       // Structural edges nothing above checks: web-ui RUNS_IN its Namespace, that
       // Namespace is PART_OF the Cluster, and web-ui RUNS_IN_ENV an Environment.
@@ -243,10 +257,10 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
       );
 
       // Success criterion 4: hidden by default, visible on request
-      expect(await ids(BLAST, { id: REPO_ID })).toEqual(
+      expect(await blastDeploymentIds(false)).toEqual(
         ALL_DEPLOYMENTS.filter((id) => id !== WEB_UI_ID),
       );
-      expect(await ids(BLAST_INCLUDING_ABSENT, { id: REPO_ID })).toEqual(ALL_DEPLOYMENTS);
+      expect(await blastDeploymentIds(true)).toEqual(ALL_DEPLOYMENTS);
 
       // GitHub's nodes belong to another instance and are never swept by k8s
       expect(
