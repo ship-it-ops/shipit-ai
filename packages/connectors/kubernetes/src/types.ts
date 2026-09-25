@@ -38,13 +38,18 @@ export interface NamespaceRef {
 
 /** Per-workload rollup of its pods (one pod list per namespace, matched in memory). */
 export interface PodSummary {
-  readyPods: number;
-  restarts: number;
+  /**
+   * Undefined when no rollup ran — a CronJob, or pods/replicasets denied by
+   * RBAC. A reported 0 is a measured zero; absence means "not measured", so a
+   * crash-looping workload never reads as `restarts: 0` as if that were fact.
+   */
+  readyPods?: number;
+  restarts?: number;
   /** container name → image digest (`sha256:…`) from `status.containerStatuses[].imageID`. */
   imageDigests: Record<string, string>;
 }
 
-export const EMPTY_POD_SUMMARY: PodSummary = { readyPods: 0, restarts: 0, imageDigests: {} };
+export const EMPTY_POD_SUMMARY: PodSummary = { imageDigests: {} };
 
 export interface RawWorkload {
   __shipit: 'workload';

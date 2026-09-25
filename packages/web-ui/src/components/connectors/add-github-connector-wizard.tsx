@@ -581,7 +581,9 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       toast({
         variant: 'ok',
         title: 'GitHub connector created',
-        description: `Initial sync started for ${created.org}.`,
+        // `created` is the Connector union now; this wizard only ever makes a
+        // GitHub one, and `org` is the value we just submitted.
+        description: `Initial sync started for ${org}.`,
       });
       handleOpenChange(false);
     } catch (err) {

@@ -1,15 +1,19 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-22
 author: claude-session-2026-09-16-k8s-connector
 branch: k8s-connector-v1
 agent: claude-session-2026-09-16-k8s-connector
 tags: [connectors, kubernetes, scheduler, core-writer]
 ---
 
-# Kubernetes connector v1 — implementation complete on branch, awaiting review/PR
+# Kubernetes connector v1 — SHIPPED (PR #113 merged 2026-09-17, commit 7647893)
+
+Reconciled 2026-09-22: PR #113 is `MERGED`, `k8s-connector-v1` is gone from the remote, and
+7647893 is on `main`. Post-merge follow-ups moved to
+[kubernetes-connector-v1-followups](../plans/kubernetes-connector-v1-followups.md).
 
 All 13 tasks (connector package, shared schema, event-bus control envelope, core-writer
 absence sweep, api-server connector-type factory + credentials + probe, docs) are committed

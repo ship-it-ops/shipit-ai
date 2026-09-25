@@ -194,12 +194,36 @@ describe('kubernetes connector type', () => {
       { type: 'kubernetes', access: { mode: 'token', server: 'https://h', token: 't' } },
       ctx(),
     );
+    // `kinds` is measured against ONE namespace, not the whole cluster, so the
+    // response names it — otherwise per-kind access reads as cluster-wide.
     expect(r).toEqual({
       ok: true,
       cluster: { version: 'v1.31.2' },
       namespaces: ['shipit'],
+      probedNamespace: 'shipit',
       kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'forbidden' },
     });
+  });
+
+  it('probe reports no probedNamespace when the scope matches nothing to probe', async () => {
+    const type = makeKubernetesConnectorType(() => fakeClients());
+    const r = (await type.probe!(
+      {
+        type: 'kubernetes',
+        access: { mode: 'token', server: 'https://h', token: 't' },
+        namespaces: { include: ['nothing-matches-*'] },
+      },
+      ctx(),
+    )) as {
+      ok: boolean;
+      namespaces: string[];
+      probedNamespace?: string;
+      kinds: Record<string, string>;
+    };
+    expect(r.ok).toBe(true);
+    expect(r.namespaces).toEqual([]);
+    expect(r.probedNamespace).toBeUndefined();
+    expect(Object.values(r.kinds).every((s) => s === 'skipped')).toBe(true);
   });
 
   it('probe pages the namespace pods and replicasets ONCE for all four kinds', async () => {

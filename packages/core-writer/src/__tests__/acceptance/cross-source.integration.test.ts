@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { DEPENDENCY_EDGE_PATTERN } from '@shipit-ai/shared';
 import type { CanonicalEntity, EventEnvelope } from '@shipit-ai/shared';
 import { buildIdempotencyKey } from '@shipit-ai/event-bus';
 import { normalizeRepository, normalizeTeam } from '@shipit-ai/connector-github';
@@ -84,13 +85,10 @@ function merge(
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
 
-// Mirrors packages/mcp-server/src/cypher/generator.ts (generateBlastRadiusCypher,
-// BOTH direction, DEPENDENCY_EDGE_PATTERN) — must stay in sync with it by hand;
-// there is no shared constant between core-writer and mcp-server to import.
-const BLAST = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
-  WHERE n._absent_since IS NULL RETURN DISTINCT n.id AS id`;
-const BLAST_INCLUDING_ABSENT = `MATCH (r:Repository {id: $id})-[:IMPLEMENTED_BY|DEPLOYED_AS*1..2]-(n:Deployment)
-  RETURN DISTINCT n.id AS id`;
+// The REAL generator mcp-server serves blast_radius from — not a hand-kept
+// copy of its Cypher, which could not catch a divergence in the generator
+// (M7). BOTH traverses dependency edges only, which is what this acceptance
+// case is about: repository → workloads.
 
 describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', () => {
   let client: Neo4jClient;
@@ -101,6 +99,26 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
   // marks anything absent.
   let nodeCountAfterRun1 = 0;
   let edgeCountAfterRun1 = 0;
+
+  // Deployment ids reachable from the repository, traversed with the SAME edge
+  // list mcp-server's blast_radius builds its query from (M7). Importing the
+  // shared constant is what makes a new dependency edge type show up here
+  // instead of silently diverging from a hand-kept copy.
+  //
+  // Why the constant and not `generateBlastRadiusCypher` itself: core-writer's
+  // Dockerfile builder COPYs a fixed package set that does not include
+  // mcp-server, and `tsc` compiles this test file during the image build — a
+  // cross-package test-only import breaks `Docker Build (core-writer)`. See
+  // docs/agent/scars/docker-builder-copies-fixed-package-set.md.
+  const blastDeploymentIds = async (includeAbsent: boolean): Promise<string[]> => {
+    const absentFilter = includeAbsent ? '' : ' AND n._absent_since IS NULL';
+    return ids(
+      `MATCH (r:Repository {id: $id})-[:${DEPENDENCY_EDGE_PATTERN}*1..2]-(n:Deployment)
+       WHERE n <> r${absentFilter}
+       RETURN DISTINCT n.id AS id`,
+      { id: REPO_ID },
+    );
+  };
 
   const wipe = () =>
     client.executeWrite(async (tx) => tx.run('MATCH (n) DETACH DELETE n'), DATABASE);
@@ -186,7 +204,7 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
       ).toEqual([TEAM_ID]);
 
       // Success criterion 3: blast radius from the repository reaches every workload
-      expect(await ids(BLAST, { id: REPO_ID })).toEqual(ALL_DEPLOYMENTS);
+      expect(await blastDeploymentIds(false)).toEqual(ALL_DEPLOYMENTS);
 
       // Structural edges nothing above checks: web-ui RUNS_IN its Namespace, that
       // Namespace is PART_OF the Cluster, and web-ui RUNS_IN_ENV an Environment.
@@ -243,10 +261,10 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
       );
 
       // Success criterion 4: hidden by default, visible on request
-      expect(await ids(BLAST, { id: REPO_ID })).toEqual(
+      expect(await blastDeploymentIds(false)).toEqual(
         ALL_DEPLOYMENTS.filter((id) => id !== WEB_UI_ID),
       );
-      expect(await ids(BLAST_INCLUDING_ABSENT, { id: REPO_ID })).toEqual(ALL_DEPLOYMENTS);
+      expect(await blastDeploymentIds(true)).toEqual(ALL_DEPLOYMENTS);
 
       // GitHub's nodes belong to another instance and are never swept by k8s
       expect(

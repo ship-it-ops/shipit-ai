@@ -8,6 +8,7 @@ import {
   type ConnectorInfo,
   type SyncRuntimeStatus,
 } from '@/lib/api';
+import { connectorSubtitle } from '@/lib/connector-subtitle';
 
 // Portrait-oriented connector card. Replaces the DS ConnectorCard (which
 // is a horizontal list-row layout) so the Connector Hub reads as a tile
@@ -38,10 +39,9 @@ interface ConnectorCardProps {
 
 export function ConnectorCard({ connector, runtime, onClick }: ConnectorCardProps) {
   const info = connectorInfo(connector, runtime ?? null);
-  // For GitHub connectors the org is the most useful disambiguator —
-  // multi-org setups have several `github · <org>` cards and the org
-  // text is what users scan for.
-  const subtitle = connector.type === 'github' ? connector.org : undefined;
+  // The org for GitHub, the cluster for Kubernetes — whichever field
+  // disambiguates this instance from its siblings. See connectorSubtitle.
+  const subtitle = connectorSubtitle(connector);
   const time = info.lastSync ? formatRelative(info.lastSync, new Date()) : null;
 
   return (

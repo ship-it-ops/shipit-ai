@@ -9,6 +9,7 @@ import {
   encodeCursor,
   fetchNamespaces,
   withTimeout,
+  abortable,
   type ClientFactory,
   type KubeClients,
   type KubernetesAccessCredentials,
@@ -138,8 +139,11 @@ async function probeKubernetes(
   clientFactory: ClientFactory,
 ): Promise<ProbeResult> {
   try {
+    // The budget wraps the whole probe, which is a sequence of individually
+    // abortable calls — there is no single request to cancel here, so the
+    // signal is unused and each inner call enforces its own deadline.
     return await withTimeout(
-      runProbe(body, ctx, clientFactory),
+      () => runProbe(body, ctx, clientFactory),
       PROBE_BUDGET_MS,
       'connection probe',
     );
@@ -166,8 +170,13 @@ async function runProbe(
   let version: string;
   try {
     clients = clientFactory(buildKubeConfig(creds));
-    version = (await withTimeout(clients.version.getCode(), PROBE_TIMEOUT_MS, 'GET /version'))
-      .gitVersion;
+    version = (
+      await withTimeout(
+        (signal) => clients.version.getCode(abortable(signal)),
+        PROBE_TIMEOUT_MS,
+        'GET /version',
+      )
+    ).gitVersion;
   } catch (err) {
     const e = classifyError(err);
     return { ok: false, code: e.code, message: e.message };
@@ -209,7 +218,9 @@ async function runProbe(
       kindStatus[kind] = 'error';
     }
   }
-  return { ok: true, cluster: { version }, namespaces, kinds: kindStatus };
+  // `kinds` was measured against `target` alone — say so, rather than letting a
+  // single namespace's access read as a cluster-wide verdict.
+  return { ok: true, cluster: { version }, namespaces, probedNamespace: target, kinds: kindStatus };
 }
 
 export function makeKubernetesConnectorType(

@@ -16,7 +16,7 @@ import type {
   WorkloadKind,
   WorkloadObject,
 } from '../types.js';
-import { DEFAULT_TIMEOUT_MS, PAGE_LIMIT, withTimeout } from './common.js';
+import { DEFAULT_TIMEOUT_MS, PAGE_LIMIT, abortable, withTimeout } from './common.js';
 
 interface NamespaceCache {
   pods: V1Pod[];
@@ -117,8 +117,12 @@ export function summarizePods(
   object: WorkloadObject,
   cache: NamespaceCache | null,
 ): PodSummary {
-  const summary: PodSummary = { readyPods: 0, restarts: 0, imageDigests: {} };
+  // Counters stay undefined until we know a rollup can run: an un-measured
+  // workload must not report zeros that read as measured fact.
+  const summary: PodSummary = { imageDigests: {} };
   if (!cache || kind === 'CronJob') return summary;
+  summary.readyPods = 0;
+  summary.restarts = 0;
   const name = object.metadata?.name ?? '';
   let owned: V1Pod[];
   let digestPods: V1Pod[];
@@ -140,9 +144,9 @@ export function summarizePods(
   }
   for (const pod of owned) {
     if ((pod.status?.conditions ?? []).some((c) => c.type === 'Ready' && c.status === 'True'))
-      summary.readyPods++;
+      summary.readyPods! += 1;
     for (const cs of pod.status?.containerStatuses ?? []) {
-      summary.restarts += cs.restartCount ?? 0;
+      summary.restarts! += cs.restartCount ?? 0;
     }
   }
   // Collect every digest seen per container among the digest-eligible pods;
@@ -271,21 +275,22 @@ export class WorkloadFetcher {
   ): Promise<{ items: WorkloadObject[]; continueToken?: string }> {
     const param = { namespace, limit: PAGE_LIMIT, _continue: continueToken, fieldSelector };
     const what = `list ${kind} in ${namespace}`;
-    const call = (): Promise<
-      V1DeploymentList | V1StatefulSetList | V1DaemonSetList | V1CronJobList
-    > => {
+    const call = (
+      signal: AbortSignal,
+    ): Promise<V1DeploymentList | V1StatefulSetList | V1DaemonSetList | V1CronJobList> => {
+      const opts = abortable(signal);
       switch (kind) {
         case 'Deployment':
-          return this.clients.apps.listNamespacedDeployment(param);
+          return this.clients.apps.listNamespacedDeployment(param, opts);
         case 'StatefulSet':
-          return this.clients.apps.listNamespacedStatefulSet(param);
+          return this.clients.apps.listNamespacedStatefulSet(param, opts);
         case 'DaemonSet':
-          return this.clients.apps.listNamespacedDaemonSet(param);
+          return this.clients.apps.listNamespacedDaemonSet(param, opts);
         case 'CronJob':
-          return this.clients.batch.listNamespacedCronJob(param);
+          return this.clients.batch.listNamespacedCronJob(param, opts);
       }
     };
-    const list = await withTimeout(call(), this.timeoutMs, what);
+    const list = await withTimeout(call, this.timeoutMs, what);
     return {
       items: list.items as WorkloadObject[],
       continueToken: list.metadata?._continue || undefined,
@@ -301,16 +306,19 @@ export class WorkloadFetcher {
     if (this.rollupsForbidden) return { pods: [], replicaSets: [] };
     const [pods, replicaSets] = await Promise.all([
       this.listAll<V1Pod>(
-        (c) => this.clients.core.listNamespacedPod({ namespace, limit: PAGE_LIMIT, _continue: c }),
+        (c, signal) =>
+          this.clients.core.listNamespacedPod(
+            { namespace, limit: PAGE_LIMIT, _continue: c },
+            abortable(signal),
+          ),
         `list pods in ${namespace}`,
       ),
       this.listAll<V1ReplicaSet>(
-        (c) =>
-          this.clients.apps.listNamespacedReplicaSet({
-            namespace,
-            limit: PAGE_LIMIT,
-            _continue: c,
-          }),
+        (c, signal) =>
+          this.clients.apps.listNamespacedReplicaSet(
+            { namespace, limit: PAGE_LIMIT, _continue: c },
+            abortable(signal),
+          ),
         `list replicasets in ${namespace}`,
       ),
     ]);
@@ -324,7 +332,10 @@ export class WorkloadFetcher {
   }
 
   private async listAll<T>(
-    page: (continueToken?: string) => Promise<{ items: T[]; metadata?: { _continue?: string } }>,
+    page: (
+      continueToken: string | undefined,
+      signal: AbortSignal,
+    ) => Promise<{ items: T[]; metadata?: { _continue?: string } }>,
     what: string,
   ): Promise<T[]> {
     const out: T[] = [];
@@ -332,7 +343,7 @@ export class WorkloadFetcher {
     do {
       let list: { items: T[]; metadata?: { _continue?: string } };
       try {
-        list = await withTimeout(page(token), this.timeoutMs, what);
+        list = await withTimeout((signal) => page(token, signal), this.timeoutMs, what);
       } catch (err) {
         const classified = classifyError(err);
         if (classified.code === 'FORBIDDEN') {

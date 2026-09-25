@@ -1,6 +1,6 @@
 import { classifyError, type KubeClients } from '../auth.js';
 import type { RawCluster } from '../types.js';
-import { DEFAULT_TIMEOUT_MS, withTimeout } from './common.js';
+import { DEFAULT_TIMEOUT_MS, abortable, withTimeout } from './common.js';
 
 export function providerFromId(providerId: string | undefined): string | undefined {
   if (!providerId) return undefined;
@@ -29,13 +29,21 @@ export async function fetchClusterSummary(
   timeoutMs = DEFAULT_TIMEOUT_MS,
   notes?: string[],
 ): Promise<RawCluster> {
-  const version = await withTimeout(clients.version.getCode(), timeoutMs, 'GET /version');
+  const version = await withTimeout(
+    (signal) => clients.version.getCode(abortable(signal)),
+    timeoutMs,
+    'GET /version',
+  );
   const raw: RawCluster = { __shipit: 'cluster', name: clusterName };
   if (version.gitVersion) raw.version = version.gitVersion;
   try {
     // Bounded probe of the first node only; `_continue` is intentionally not
     // threaded because only `items[0]` is ever read below.
-    const nodes = await withTimeout(clients.core.listNode({ limit: 1 }), timeoutMs, 'list nodes');
+    const nodes = await withTimeout(
+      (signal) => clients.core.listNode({ limit: 1 }, abortable(signal)),
+      timeoutMs,
+      'list nodes',
+    );
     const first = nodes.items[0];
     if (first) {
       const provider = providerFromId(first.spec?.providerID);

@@ -21,7 +21,7 @@ export type {
 export { fetchClusterSummary } from './fetchers/cluster.js';
 export { fetchNamespaces, fetchNamespaceRef } from './fetchers/namespaces.js';
 export { WorkloadFetcher, summarizePods, encodeCursor } from './fetchers/workloads.js';
-export { matchesScope, withTimeout } from './fetchers/common.js';
+export { abortable, matchesScope, withTimeout } from './fetchers/common.js';
 export { normalizeCluster } from './normalizers/cluster.js';
 export { normalizeNamespace } from './normalizers/namespace.js';
 export { normalizeWorkload, deriveServiceName } from './normalizers/workload.js';

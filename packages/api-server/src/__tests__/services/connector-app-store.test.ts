@@ -219,6 +219,71 @@ describe('ConnectorAppStore', () => {
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 
+  // sync() rebuilds blob.connectors wholesale, so a credential file that is
+  // missing at sync time (pod restarted before materialize, disk wiped, a
+  // sync triggered by an unrelated connector edit) used to REMOVE the stored
+  // secret from GSM — losing the only durable copy.
+  it('carries a stored kubeconfig forward when its file is missing at sync time', async () => {
+    const store = fakeGsmStore();
+    const appStore = new ConnectorAppStore({ store, keyDir });
+    const path = join(keyDir, 'kubeconfig-k8s-demo.yaml');
+    writeFileSync(path, 'apiVersion: v1\n');
+    const inst = k8sConnector('k8s-demo', { mode: 'kubeconfig', kubeconfigPath: path });
+    await appStore.sync([inst]);
+
+    rmSync(path);
+    await appStore.sync([inst]);
+
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, { kubeconfig?: string }>;
+    };
+    expect(blob.connectors['k8s-demo'].kubeconfig).toBe('apiVersion: v1\n');
+  });
+
+  it('carries a stored token and CA forward when their files are missing at sync time', async () => {
+    const store = fakeGsmStore();
+    const appStore = new ConnectorAppStore({ store, keyDir });
+    const tokenPath = join(keyDir, 'k8s-token-k8s-tok');
+    const caPath = join(keyDir, 'k8s-ca-k8s-tok.pem');
+    writeFileSync(tokenPath, 'tok\n');
+    writeFileSync(caPath, 'PEM\n');
+    const inst = k8sConnector('k8s-tok', {
+      mode: 'token',
+      server: 'https://h',
+      tokenPath,
+      caDataPath: caPath,
+    });
+    await appStore.sync([inst]);
+
+    rmSync(tokenPath);
+    rmSync(caPath);
+    await appStore.sync([inst]);
+
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, Record<string, unknown>>;
+    };
+    expect(blob.connectors['k8s-tok']).toMatchObject({ k8sToken: 'tok\n', k8sCa: 'PEM\n' });
+  });
+
+  it('carries a stored per-org PEM and webhook secret forward when the files are missing', async () => {
+    const store = fakeGsmStore();
+    writeFileSync(join(keyDir, 'github-app-777.pem'), 'PEM-777', { mode: 0o600 });
+    writeFileSync(join(keyDir, 'github-app-777.webhook-secret'), 'wh-777\n', { mode: 0o600 });
+    const svc = new ConnectorAppStore({ store, keyDir });
+    const inst = perOrgConnector('gh-a', '777', keyDir);
+    await svc.sync([inst]);
+
+    rmSync(join(keyDir, 'github-app-777.pem'));
+    rmSync(join(keyDir, 'github-app-777.webhook-secret'));
+    await svc.sync([inst]);
+
+    const blob = JSON.parse(store.values.get('connector-apps')!) as {
+      connectors: Record<string, { pem?: string; webhookSecret?: string }>;
+    };
+    expect(blob.connectors['gh-a'].pem).toBe('PEM-777');
+    expect(blob.connectors['gh-a'].webhookSecret).toBe('wh-777');
+  });
+
   it('mirrors token + CA files for token mode and leaves in-cluster instances secret-free', async () => {
     const store = fakeGsmStore();
     const appStore = new ConnectorAppStore({ store, keyDir });

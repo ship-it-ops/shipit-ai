@@ -1,7 +1,29 @@
 # Infra brief — read-only ClusterRole for the Kubernetes connector + demo annotations
 
 **For:** `Ship-It-Ops/shipit-ai-infra` (Helm chart `charts/shipit-ai`).
-**From:** app repo, 2026-09-16. **Enables:** the in-cluster Kubernetes connector
+**From:** app repo, 2026-09-16.
+**Status (2026-09-24):** DELIVERED AND VERIFIED on portal-demo (`ship-it-ai-portal` /
+`shipit-demo`). Checked from the app side with kubectl:
+
+- `ClusterRole/shipit-reader` exists with exactly the three rule groups below, and
+  `ClusterRoleBinding/shipit-reader` binds it to `ServiceAccount shipit:api-server`.
+- `kubectl auth can-i list <res> --as=system:serviceaccount:shipit:api-server
+--all-namespaces` returns `yes` for all eight: namespaces, nodes, pods,
+  deployments, replicasets, statefulsets, daemonsets, cronjobs.
+- All five workloads carry `shipit.ai/github-repo: Ship-It-Ops/ShipIt-AI` — the four app
+  Deployments plus the Redis StatefulSet.
+
+STILL UNPROVEN end-to-end: no `k8s-demo` connector has been created on portal-demo, so the
+graph half of §Verification (5 workload nodes + one `shipit-ai` LogicalService linked to the
+repository) has not been observed. RBAC and annotations are proven; the sync is not.
+
+**The user owns that last step** (stated 2026-09-25): they will create the `k8s-demo` connector
+by hand on portal-demo when they choose to. Do NOT create it for them — it writes to the live
+demo graph, and the nodes it writes persist after the connector is deleted (absence-marked, not
+removed). Ask before touching it, and treat the graph half of §Verification as open until they
+say otherwise.
+
+**Enables:** the in-cluster Kubernetes connector
 (`docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`, success criterion 1).
 
 ## What the app does

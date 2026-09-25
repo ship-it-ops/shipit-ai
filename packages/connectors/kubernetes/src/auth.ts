@@ -113,6 +113,11 @@ export type KubeconfigValidation =
 
 const FILE_REFERENCE_MESSAGE =
   'file references (token-file, certificate-authority, client-certificate, client-key) are not allowed; inline the *-data fields instead';
+const PROXY_URL_MESSAGE =
+  'kubeconfig cluster sets proxy-url, which ShipIt cannot honour: the connector ' +
+  'reaches the API server directly. Remove proxy-url and expose an endpoint the ' +
+  'ShipIt pod can reach, or use in-cluster access.';
+
 const AUTH_PLUGIN_MESSAGE =
   'kubeconfig user relies on an exec/auth-provider plugin, which cannot run inside ShipIt; paste a ServiceAccount token instead';
 
@@ -198,6 +203,12 @@ export function validateKubeconfigText(text: string, context?: string): Kubeconf
   for (const { inner: cluster } of clusters) {
     if ('certificate-authority' in cluster) {
       return { ok: false, code: 'KUBECONFIG_INVALID', message: FILE_REFERENCE_MESSAGE };
+    }
+    // The option allowlist below carries server/CA/SNI only, so a proxy-url
+    // would be silently dropped and the connection would fail later as an
+    // opaque API_UNREACHABLE. Refuse it here, where we can say why.
+    if ('proxy-url' in cluster) {
+      return { ok: false, code: 'KUBECONFIG_INVALID', message: PROXY_URL_MESSAGE };
     }
     if (cluster['insecure-skip-tls-verify']) {
       return {

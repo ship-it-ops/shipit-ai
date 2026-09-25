@@ -3,13 +3,14 @@
 // PATCH and DELETE so concurrent edits surface as 409 instead of silently
 // clobbering each other. The probe endpoint validates credentials against the
 // live GitHub API without writing anything.
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path';
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
+import { ensureKeyDir } from '../secrets/key-dir.js';
 import { getConnectorType } from '../services/connector-types/index.js';
 import type { BuildContext } from '../services/connector-types/types.js';
 import {
@@ -21,7 +22,7 @@ import {
   type GitHubAppService,
 } from '../services/github-app-service.js';
 import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
-import type { Config } from '@shipit-ai/shared';
+import type { Config, ConnectorInstanceConfig } from '@shipit-ai/shared';
 
 // Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
 // body (so the wizard's per-org override panel can validate creds
@@ -95,6 +96,44 @@ function writeSecretFile(path: string, content: string): void {
   }
   writeFileSync(resolved, content, { encoding: 'utf-8', mode: 0o600 });
   chmodSync(resolved, 0o600);
+}
+
+// Credential files the upload route wrote for a Kubernetes connector. Paths
+// come from the stored instance, which the create/patch allowlist already
+// pinned to the key dir.
+function credentialPathsOf(instance: ConnectorInstanceConfig): string[] {
+  if (instance.type !== 'kubernetes') return [];
+  const a = instance.access;
+  if (a.mode === 'kubeconfig') return [a.kubeconfigPath];
+  if (a.mode === 'token') return a.caDataPath ? [a.tokenPath, a.caDataPath] : [a.tokenPath];
+  return [];
+}
+
+// Remove the credential files a deleted connector leaves behind — a live
+// ServiceAccount token with nothing referencing it is the worst kind of
+// leftover. A path another surviving connector still points at is kept, and
+// the same containment rule as the write sink applies: only a file sitting
+// directly in the key dir is ever unlinked.
+function removeUnreferencedCredentials(
+  removed: ConnectorInstanceConfig,
+  remaining: ConnectorInstanceConfig[],
+  log: (obj: unknown, msg?: string) => void,
+): void {
+  const stillReferenced = new Set(
+    remaining.flatMap((c) => credentialPathsOf(c)).map((p) => resolvePath(p)),
+  );
+  const dir = getAllowedKeyDir();
+  for (const path of credentialPathsOf(removed)) {
+    const resolved = resolvePath(path);
+    if (stillReferenced.has(resolved)) continue;
+    if (!resolved.startsWith(dir + sep) || dirname(resolved) !== dir) continue;
+    try {
+      rmSync(resolved, { force: true });
+    } catch (err) {
+      // Never fail the delete over disk hygiene — the connector is already gone.
+      log({ err, path: resolved }, 'could not remove credential file for a deleted connector');
+    }
+  }
 }
 
 const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -1107,7 +1146,13 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const ifMatch = parseIfMatch(request.headers['if-match']);
     try {
+      const removed = registry.list().find((c) => c.id === request.params.id);
       await registry.remove(request.params.id, ifMatch);
+      if (removed) {
+        removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
+          request.log.warn(obj, msg),
+        );
+      }
       return reply.status(204).send();
     } catch (err) {
       if (err instanceof ConnectorVersionConflictError) {
@@ -1144,7 +1189,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         });
       }
       const dir = getAllowedKeyDir();
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      ensureKeyDir(dir);
       if (body.mode === 'kubeconfig') {
         if (!body.kubeconfig) {
           return reply.status(400).send({

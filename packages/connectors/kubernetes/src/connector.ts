@@ -24,7 +24,7 @@ import {
   type InClusterProbe,
   type KubeClients,
 } from './auth.js';
-import { DEFAULT_TIMEOUT_MS, withTimeout } from './fetchers/common.js';
+import { DEFAULT_TIMEOUT_MS, abortable, withTimeout } from './fetchers/common.js';
 import { fetchClusterSummary } from './fetchers/cluster.js';
 import { fetchNamespaceRef, fetchNamespaces } from './fetchers/namespaces.js';
 import { WorkloadFetcher } from './fetchers/workloads.js';
@@ -148,7 +148,11 @@ export class KubernetesConnector implements ShipItConnector {
     try {
       const kc = buildKubeConfig(parseCredentials(config.credentials), this.inClusterProbe);
       clients = this.clientFactory(kc);
-      await withTimeout(clients.version.getCode(), this.timeoutMs, 'GET /version');
+      await withTimeout(
+        (signal) => clients.version.getCode(abortable(signal)),
+        this.timeoutMs,
+        'GET /version',
+      );
     } catch (err) {
       return { success: false, error: classifyError(err).message };
     }
@@ -269,6 +273,13 @@ export class KubernetesConnector implements ShipItConnector {
     }
   }
 
+  /**
+   * @internal Not the scheduler path. `ConnectorHarness.runSync` drives
+   * authenticate/discover/fetch/normalize itself, so nothing in production
+   * calls this; it exists because `ShipItConnector` requires it and it keeps
+   * the loop runnable standalone (dry-run, manual probing). Change the harness
+   * when you change sync semantics — not this.
+   */
   async sync(mode: 'full' | 'incremental'): Promise<SyncResult> {
     void mode; // every Kubernetes run is a full list
     const startTime = Date.now();
