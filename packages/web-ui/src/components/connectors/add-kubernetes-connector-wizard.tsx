@@ -31,7 +31,11 @@ import {
   WizardDialog,
   type WizardStep,
 } from '@ship-it-ui/ui';
-import { useProbeConnector, useUploadKubernetesCredentials } from '@/lib/hooks/use-connectors';
+import {
+  useCreateConnector,
+  useProbeConnector,
+  useUploadKubernetesCredentials,
+} from '@/lib/hooks/use-connectors';
 import type { KubernetesAccess, KubernetesWorkloadKind, ProbeResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -132,8 +136,11 @@ export function AddKubernetesConnectorWizard({
   // probe so the default tracks what the cluster actually allows.
   const [kinds, setKinds] = useState<KubernetesWorkloadKind[] | null>(null);
 
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const upload = useUploadKubernetesCredentials();
   const probeConnector = useProbeConnector();
+  const createConnector = useCreateConnector();
 
   // Kinds the cluster actually let us read. Drives the Configure step's
   // default selection so a denied kind does not warn on every sync.
@@ -202,6 +209,36 @@ export function AddKubernetesConnectorWizard({
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Could not store credentials');
       return false;
+    }
+  }
+
+  const splitList = (s: string): string[] =>
+    s
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  async function submit(): Promise<void> {
+    if (!access) return;
+    setCreateError(null);
+    try {
+      await createConnector.mutateAsync({
+        id: k8sConnectorId(clusterName),
+        type: 'kubernetes',
+        // Bare on purpose — the type prefix is composed at render time, and a
+        // pre-composed name renders as "Kubernetes · Kubernetes · prod-eu".
+        name: displayName.trim() || clusterName,
+        cluster: { name: clusterName },
+        access,
+        schedule,
+        scope: {
+          namespaces: { include: splitList(include), exclude: splitList(exclude) },
+          kinds: effectiveKinds,
+        },
+      });
+      onOpenChange(false);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create the connector');
     }
   }
 
@@ -387,6 +424,29 @@ export function AddKubernetesConnectorWizard({
           <Field label="Sync schedule" hint="Crontab expression.">
             {(p) => <Input {...p} value={schedule} onChange={(e) => setSchedule(e.target.value)} />}
           </Field>
+        </div>
+      ),
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      content: (
+        <div className="flex flex-col gap-3">
+          <dl className="flex flex-col gap-1 text-[13px]">
+            <div>Cluster: {clusterName}</div>
+            {/* The MODE only. Credential values never reach this screen. */}
+            <div>Access: {mode}</div>
+            <div>Name: {displayName.trim() || clusterName}</div>
+            <div>
+              Namespaces: include {include || '*'}; exclude {exclude || 'none'}
+            </div>
+            <div>Kinds: {effectiveKinds.join(', ')}</div>
+            <div>Schedule: {schedule}</div>
+          </dl>
+          {createError && <Banner tone="err">{createError}</Banner>}
+          <Button onClick={() => void submit()} disabled={createConnector.isPending}>
+            Create connector
+          </Button>
         </div>
       ),
     },

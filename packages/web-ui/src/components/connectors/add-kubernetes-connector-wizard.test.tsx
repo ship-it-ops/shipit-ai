@@ -286,3 +286,71 @@ describe('AddKubernetesConnectorWizard — Configure step', () => {
     );
   });
 });
+
+describe('AddKubernetesConnectorWizard — Review step', () => {
+  beforeEach(() => {
+    uploadMutate.mockReset();
+    probeMutate.mockReset();
+    createMutate.mockReset();
+  });
+
+  async function reachReviewStep() {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      probedNamespace: 'shipit',
+      kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'ok' },
+    });
+    const user = userEvent.setup();
+    renderWizard();
+    await user.type(screen.getByLabelText(/cluster name/i), 'prod-eu');
+    await user.click(advanceButton());
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+    await screen.findByText(/v1\.31\.2/);
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
+    await screen.findByRole('checkbox', { name: /Deployment/ });
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
+    return user;
+  }
+
+  it('creates the connector with a bare display name and the stored access block', async () => {
+    createMutate.mockResolvedValue({ id: 'k8s-prod-eu' });
+    const user = await reachReviewStep();
+
+    await user.click(await screen.findByRole('button', { name: /create connector/i }));
+
+    expect(createMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'k8s-prod-eu',
+        type: 'kubernetes',
+        // BARE — connector-identity.ts composes "Kubernetes · prod-eu" at render time.
+        name: 'prod-eu',
+        cluster: { name: 'prod-eu' },
+        access: { mode: 'in-cluster' },
+        schedule: '*/5 * * * *',
+        scope: {
+          namespaces: {
+            include: ['*'],
+            exclude: ['kube-system', 'kube-public', 'kube-node-lease'],
+          },
+          kinds: ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob'],
+        },
+      }),
+    );
+  });
+
+  it('shows the access mode but never the credential values', async () => {
+    await reachReviewStep();
+    expect(await screen.findByText(/in-cluster/)).toBeInTheDocument();
+  });
+
+  it('keeps the user on the step and shows why when creation fails', async () => {
+    createMutate.mockRejectedValue(new Error('connector k8s-prod-eu already exists'));
+    const user = await reachReviewStep();
+
+    await user.click(await screen.findByRole('button', { name: /create connector/i }));
+
+    expect(await screen.findByText(/already exists/)).toBeInTheDocument();
+  });
+});
