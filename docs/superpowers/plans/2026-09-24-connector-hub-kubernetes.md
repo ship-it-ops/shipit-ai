@@ -10,6 +10,24 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-24-connector-hub-kubernetes-design.md`
 
+**Status: ALL 7 TASKS COMPLETE (2026-09-25)** — one commit each, `04e317c`..`886bb90` on
+`k8s-connector-followups`. 25 new tests; repo-wide typecheck / test / lint / prettier green.
+Three things differed from what the plan assumed, all corrected in the code and worth knowing
+before reading the task bodies below:
+
+- The narrowing ripple from the union was 7 errors, not 3. The estimate missed `.app` and
+  `.scope`, which the detail drawer reads — so the drawer's Overview rows and its whole Scope
+  tab needed type-gating, and Kubernetes connectors got their own Overview rows (Cluster /
+  Access / Namespaces / Kinds) rather than blanks.
+- Banner tones in this DS are `accent | err | ok | warn`; the plan wrote `danger` and
+  `neutral`, which do not exist. `Field` takes its control as a render prop.
+- `Field required` appends an asterisk to the label, so `getByLabelText(/^kubeconfig$/i)`
+  cannot match — anchored label queries are wrong against this DS.
+
+Not implemented, as the plan's self-review already flagged: the advanced Configure panel
+(`repoLink.githubOrg`, `environment.label`, `ownership.teamLabel`). Every one of those fields
+has a schema default, so a connector created by this wizard is correct without them.
+
 ## Global Constraints
 
 - **Package:** all work is in `packages/web-ui`. Run commands from the repo root.
