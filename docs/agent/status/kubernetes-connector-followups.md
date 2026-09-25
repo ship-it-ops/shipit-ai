@@ -51,7 +51,8 @@ the review items recorded but not implemented before #113 merged.
   specified rules, `kubectl auth can-i` yes for all eight resources as the api-server SA, all
   five workloads annotated. The graph half (create `k8s-demo`, see 5 workload nodes + a
   LogicalService) is still unobserved — that needs a connector created on portal-demo, which
-  is a change to a live demo environment and has not been authorised.
+  is a change to a live demo environment. The user is doing that step manually themselves —
+  not an agent task.
 
 ## Done when
 

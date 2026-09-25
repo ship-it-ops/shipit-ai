@@ -15,7 +15,15 @@
 
 STILL UNPROVEN end-to-end: no `k8s-demo` connector has been created on portal-demo, so the
 graph half of §Verification (5 workload nodes + one `shipit-ai` LogicalService linked to the
-repository) has not been observed. RBAC and annotations are proven; the sync is not. **Enables:** the in-cluster Kubernetes connector
+repository) has not been observed. RBAC and annotations are proven; the sync is not.
+
+**The user owns that last step** (stated 2026-09-25): they will create the `k8s-demo` connector
+by hand on portal-demo when they choose to. Do NOT create it for them — it writes to the live
+demo graph, and the nodes it writes persist after the connector is deleted (absence-marked, not
+removed). Ask before touching it, and treat the graph half of §Verification as open until they
+say otherwise.
+
+**Enables:** the in-cluster Kubernetes connector
 (`docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`, success criterion 1).
 
 ## What the app does
