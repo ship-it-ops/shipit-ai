@@ -59,14 +59,27 @@ These are out of scope, each with the reason:
 One new wizard component plus one small shared helper. No new backend endpoints — every call the
 wizard makes already exists and shipped in #113.
 
-| File                                                        | Change                                                     |
-| ----------------------------------------------------------- | ---------------------------------------------------------- |
-| `components/connectors/add-kubernetes-connector-wizard.tsx` | **New.** Four-step `WizardDialog`.                         |
-| `components/connectors/add-connector-picker.tsx`            | `kubernetes` status `coming-soon` → `available`.           |
-| `app/(app)/connectors/page.tsx`                             | Render the new wizard on `activeWizard === 'kubernetes'`.  |
-| `lib/connector-subtitle.ts`                                 | **New.** Type-aware identity line, one source of truth.    |
-| `components/connectors/connector-card.tsx`                  | Use the helper instead of the `type === 'github'` ternary. |
-| `components/connectors/connector-detail-drawer.tsx`         | Use the helper instead of bare `connector.org`.            |
+**But the web-ui's own API layer is GitHub-shaped and has to be widened first.** Today
+`lib/api.ts` declares `export type Connector = GitHubConnector`, `CreateConnectorInput.type` is
+the literal `'github'`, `ProbeInput` requires `installationId`, and there is no function for the
+credentials-upload route at all. None of the wizard's calls are expressible until that changes,
+so it is the first unit of work, not an afterthought.
+
+The ripple is small and bounded: exactly three places read a GitHub-only field off a `Connector`
+(`connector-card.tsx:44`, and `connector-detail-drawer.tsx:175` and `:202`), and the first two
+are already being rewritten here. `settings/webhooks-tab.tsx` looks like a fourth but takes
+`WebhookConnectorStatus`, a different type, and is unaffected.
+
+| File                                                        | Change                                                                                                                                                                     |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lib/api.ts`                                                | Add `KubernetesConnector`; make `Connector` a discriminated union on `type`; widen `CreateConnectorInput` and `ProbeInput` to unions; add `uploadKubernetesCredentials()`. |
+| `lib/hooks/use-connectors.ts`                               | Add `useUploadKubernetesCredentials()`.                                                                                                                                    |
+| `components/connectors/add-kubernetes-connector-wizard.tsx` | **New.** Four-step `WizardDialog`.                                                                                                                                         |
+| `components/connectors/add-connector-picker.tsx`            | `kubernetes` status `coming-soon` → `available`.                                                                                                                           |
+| `app/(app)/connectors/page.tsx`                             | Render the new wizard on `activeWizard === 'kubernetes'`.                                                                                                                  |
+| `lib/connector-subtitle.ts`                                 | **New.** Type-aware identity line, one source of truth.                                                                                                                    |
+| `components/connectors/connector-card.tsx`                  | Use the helper instead of the `type === 'github'` ternary.                                                                                                                 |
+| `components/connectors/connector-detail-drawer.tsx`         | Use the helper instead of bare `connector.org`; narrow the GitHub-only "Installation" row.                                                                                 |
 
 The wizard follows `add-github-connector-wizard.tsx` exactly in its mechanics: `useState` per
 field (not React Hook Form — see that file's header comment for why), `WizardStep[]` with
