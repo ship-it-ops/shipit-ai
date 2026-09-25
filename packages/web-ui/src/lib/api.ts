@@ -89,7 +89,42 @@ export interface GitHubConnector {
   app?: ConnectorAppOverride;
 }
 
-export type Connector = GitHubConnector;
+export type KubernetesWorkloadKind = 'Deployment' | 'StatefulSet' | 'DaemonSet' | 'CronJob';
+
+export type KubernetesAccess =
+  | { mode: 'in-cluster' }
+  | { mode: 'kubeconfig'; kubeconfigPath: string; context?: string }
+  | { mode: 'token'; server: string; tokenPath: string; caDataPath?: string };
+
+export interface KubernetesScope {
+  namespaces: { include: string[]; exclude: string[] };
+  kinds: KubernetesWorkloadKind[];
+}
+
+export interface KubernetesMapping {
+  environment?: { label?: string };
+  ownership?: { teamLabel?: string };
+  repoLink?: { annotation?: string; githubOrg?: string | null; nameMatch?: boolean };
+}
+
+export interface KubernetesConnector {
+  id: string;
+  type: 'kubernetes';
+  enabled: boolean;
+  name: string;
+  schedule: string;
+  cluster: { name: string };
+  access: KubernetesAccess;
+  scope: KubernetesScope;
+  mapping?: KubernetesMapping;
+  lastRuns: ConnectorRun[];
+}
+
+// Discriminated on `type`. Narrow before reading a source-specific field —
+// `connector.org` exists only on the GitHub arm, `connector.cluster` only on
+// the Kubernetes one. `connectorSubtitle()` is the shared read for "which
+// instance is this?"; prefer it over narrowing at every render site.
+export type Connector = GitHubConnector | KubernetesConnector;
 
 export interface SyncRuntimeStatus {
   connectorId: string;
@@ -299,7 +334,7 @@ export async function fetchConnector(id: string): Promise<ConnectorWithHash> {
   return { connector, hash: parseEtag(res.headers.get('ETag')) };
 }
 
-export interface CreateConnectorInput {
+export interface CreateGitHubConnectorInput {
   id: string;
   type: 'github';
   name: string;
@@ -312,6 +347,20 @@ export interface CreateConnectorInput {
   app?: ConnectorAppOverride;
 }
 
+export interface CreateKubernetesConnectorInput {
+  id: string;
+  type: 'kubernetes';
+  name: string;
+  cluster: { name: string };
+  access: KubernetesAccess;
+  enabled?: boolean;
+  schedule?: string;
+  scope?: KubernetesScope;
+  mapping?: KubernetesMapping;
+}
+
+export type CreateConnectorInput = CreateGitHubConnectorInput | CreateKubernetesConnectorInput;
+
 export async function createConnector(input: CreateConnectorInput): Promise<Connector> {
   const res = await fetchApi(`${API_URL}/api/connectors`, {
     method: 'POST',
@@ -323,6 +372,39 @@ export async function createConnector(input: CreateConnectorInput): Promise<Conn
     throw new Error(body.error?.message ?? `Create failed: ${res.status}`);
   }
   return (await res.json()) as Connector;
+}
+
+export type UploadK8sCredentialsInput =
+  | { connectorId: string; mode: 'kubeconfig'; kubeconfig: string; context?: string }
+  | { connectorId: string; mode: 'token'; token: string; caData?: string };
+
+export type UploadK8sCredentialsResult =
+  | { mode: 'kubeconfig'; kubeconfigPath: string; context: string; contexts: string[] }
+  | { mode: 'token'; tokenPath: string; caDataPath?: string };
+
+/**
+ * Stores pasted Kubernetes credentials as files in the api-server's key dir and
+ * returns the paths a subsequent `createConnector()` references.
+ *
+ * Runs BEFORE the connector exists — the route is keyed by `connectorId`, not
+ * by an existing connector — which is why the wizard derives the id from the
+ * cluster name in its first step.
+ */
+export async function uploadKubernetesCredentials(
+  input: UploadK8sCredentialsInput,
+): Promise<UploadK8sCredentialsResult> {
+  const res = await fetchApi(`${API_URL}/api/connectors/kubernetes/credentials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    // The server names the offending field (proxy-url, exec, a file reference);
+    // surface that rather than a bare status.
+    const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(body.error?.message ?? `Credential upload failed: ${res.status}`);
+  }
+  return (await res.json()) as UploadK8sCredentialsResult;
 }
 
 export interface UpdateConnectorInput {
@@ -403,13 +485,29 @@ export interface ProbeResult {
   // Which App credentials the probe ended up using. `overridden: true` is
   // the wizard's confirmation that the advanced panel actually took effect.
   app?: { id: string | null; overridden: boolean };
+  // Kubernetes arm. `probedNamespace` is the ONE namespace `kinds` was measured
+  // against — an all-`ok` result is not a cluster-wide guarantee, and the
+  // wizard says so.
+  cluster?: { version: string };
+  namespaces?: string[];
+  probedNamespace?: string;
+  kinds?: Record<string, 'ok' | 'forbidden' | 'error' | 'skipped'>;
 }
 
-export interface ProbeInput {
+export interface GitHubProbeInput {
   installationId: string;
   suggestedOrg?: string;
   app?: ConnectorAppOverride;
 }
+
+export interface KubernetesProbeInput {
+  type: 'kubernetes';
+  access: KubernetesAccess;
+  namespaces?: { include?: string[]; exclude?: string[] };
+  kinds?: KubernetesWorkloadKind[];
+}
+
+export type ProbeInput = GitHubProbeInput | KubernetesProbeInput;
 
 export async function probeConnector(input: ProbeInput): Promise<ProbeResult> {
   const res = await fetchApi(`${API_URL}/api/connectors/probe`, {

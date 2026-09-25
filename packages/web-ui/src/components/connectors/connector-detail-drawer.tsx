@@ -28,6 +28,7 @@ import {
   connectorInfo,
   type Connector,
   type ConnectorRun,
+  type GitHubConnector,
   type ConnectorScope,
   type SyncRuntimeStatus,
 } from '@/lib/api';
@@ -95,7 +96,7 @@ export function ConnectorDetailDrawer({ connectorId, onClose }: ConnectorDetailD
             <TabsList>
               <Tab value="overview">Overview</Tab>
               <Tab value="runs">Runs</Tab>
-              <Tab value="scope">Scope</Tab>
+              {data.connector.type === 'github' && <Tab value="scope">Scope</Tab>}
               <Tab value="settings">Settings</Tab>
             </TabsList>
 
@@ -112,9 +113,11 @@ export function ConnectorDetailDrawer({ connectorId, onClose }: ConnectorDetailD
               <RunsTab runs={runsData?.runs ?? []} />
             </TabsContent>
 
-            <TabsContent value="scope">
-              <ScopeTab connector={data.connector} hash={data.hash} />
-            </TabsContent>
+            {data.connector.type === 'github' && (
+              <TabsContent value="scope">
+                <ScopeTab connector={data.connector} hash={data.hash} />
+              </TabsContent>
+            )}
 
             <TabsContent value="settings">
               <SettingsTab
@@ -172,7 +175,8 @@ function HeaderRow({
         </Badge>
       )}
       <span className="text-text-muted text-[12px]">
-        {info.entityCount.toLocaleString()} entities · {connector.org}
+        {info.entityCount.toLocaleString()} entities ·{' '}
+        {connector.type === 'github' ? connector.org : connector.cluster.name}
       </span>
     </div>
   );
@@ -193,14 +197,29 @@ function OverviewTab({
   // Determine display string for the GitHub App backing this connector:
   // "global" when no override exists, or "App <id> (override)" when one
   // does. Useful at a glance in multi-App setups.
-  const appLabel = connector.app
-    ? `${connector.app.id ?? '(global id)'} (override)`
-    : 'global (env vars)';
+  const appLabel =
+    connector.type === 'github'
+      ? connector.app
+        ? `${connector.app.id ?? '(global id)'} (override)`
+        : 'global (env vars)'
+      : null;
   return (
     <div className="flex flex-col gap-4 pt-3">
       <dl className="flex flex-col gap-3 text-[13px]">
-        <Row label="Installation" value={connector.installationId} />
-        <Row label="GitHub App" value={appLabel} />
+        {connector.type === 'github' && (
+          <>
+            <Row label="Installation" value={connector.installationId} />
+            <Row label="GitHub App" value={appLabel} />
+          </>
+        )}
+        {connector.type === 'kubernetes' && (
+          <>
+            <Row label="Cluster" value={connector.cluster.name} />
+            <Row label="Access" value={connector.access.mode} />
+            <Row label="Namespaces" value={connector.scope.namespaces.include.join(', ') || '*'} />
+            <Row label="Kinds" value={connector.scope.kinds.join(', ')} />
+          </>
+        )}
         <Row label="Schedule" value={<code>{connector.schedule}</code>} />
         <Row
           label="Last sync"
@@ -263,7 +282,10 @@ function RunsTab({ runs }: { runs: ConnectorRun[] }) {
   );
 }
 
-function ScopeTab({ connector, hash }: { connector: Connector; hash: string | null }) {
+// GitHub only: this edits repo/team include-exclude globs, which have no
+// Kubernetes counterpart (namespaces and kinds are set in the wizard and shown
+// read-only on Overview). The Scope tab is hidden for other types.
+function ScopeTab({ connector, hash }: { connector: GitHubConnector; hash: string | null }) {
   const patch = usePatchConnector();
   const { toast } = useToast();
   const [scope, setScope] = useState<ConnectorScope>(connector.scope);

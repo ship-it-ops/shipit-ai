@@ -14,6 +14,7 @@ import {
   probeConnector,
   triggerSync,
   updateGitHubApp,
+  uploadKubernetesCredentials,
   type Connector,
   type ConnectorWithHash,
   type CreateConnectorInput,
@@ -106,6 +107,13 @@ export function useDeleteConnector() {
       queryClient.invalidateQueries({ queryKey: ['connectors'] });
     },
   });
+}
+
+// Stores pasted Kubernetes credentials and returns the paths the create call
+// references. Not a cache mutation — it writes files on the api-server, so
+// nothing here is invalidated.
+export function useUploadKubernetesCredentials() {
+  return useMutation({ mutationFn: uploadKubernetesCredentials });
 }
 
 export function useProbeConnector() {

@@ -2,7 +2,7 @@
 type: investigation
 status: active
 created: 2026-09-15
-updated: 2026-09-15
+updated: 2026-09-25
 author: claude-fable-5-1-session-01Au4gDpcAj93LDvrEzXqLsE
 tags: [ci, integration-tests, bullmq, ioredis, flaky, api-server]
 importance: standard
@@ -62,11 +62,35 @@ not reproduced. Every BullMQ/ioredis emitter on this path DOES have an `'error'`
 something internal to bullmq's close sequence, not a missing listener. Flip to `fixed` after
 ~20 green `Integration (Neo4j)` runs without the signature; reopen here if it recurs.
 
+## Second sighting, 2026-09-25 (PR #115) — the fix CHANGED THE SYMPTOM
+
+Same test, new signature. `stands up the live scheduler against real Redis and routes a sync to
+it` **failed outright with `Test timed out in 5000ms`** (run 36089676481, job 107931421330) —
+not the old "all tests pass, job red on an unhandled rejection".
+
+That is the awaiting-job-settle fix working as designed and then losing the race: the test now
+waits for the job's terminal state instead of tearing down underneath it, so when the worker
+does not pick the job up in time the wait hits vitest's 5s default rather than leaking a
+rejection. The old symptom is gone; this is what remains.
+
+Re-running the failed job on the identical commit passed (job 107932436504), and the next push
+passed again. Unrelated to that PR's diff, which touched no Redis/BullMQ path.
+
+**This resets the green-run count.** The ~20-run bar below was written against the
+unhandled-rejection signature; timeouts are a different failure mode and the counter should be
+tracked against THIS one from 2026-09-25 onward.
+
+If it keeps recurring, the fix is a longer explicit timeout on that single test (the settle wait
+is doing real work against a cold CI Redis, and 5s is vitest's default, not a considered budget)
+— not reverting the await.
+
 ## Prevention
 
-- If `Integration (Neo4j)` is red but the summary shows all tests passed and the only
-  error is this unhandled rejection from `sync-runtime.integration.test.ts`, it is this
-  race — re-run the job (`gh run rerun <run-id> --failed`) rather than bisecting the diff.
+- If `Integration (Neo4j)` is red and the culprit is `sync-runtime.integration.test.ts` — in
+  EITHER form: all-tests-pass-plus-unhandled-rejection (pre-2026-09-15), or that one test
+  timing out at 5000ms (post-fix) — it is this race. Re-run the job
+  (`gh run rerun --job <job-id>`) rather than bisecting the diff. Two independent commits have
+  now passed on re-run with no change.
 - Any new BullMQ integration test that enqueues work must await the job's terminal state
   before closing the worker.
 
