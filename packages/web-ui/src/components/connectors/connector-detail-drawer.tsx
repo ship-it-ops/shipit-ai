@@ -32,6 +32,7 @@ import {
   type ConnectorScope,
   type SyncRuntimeStatus,
 } from '@/lib/api';
+import { connectorSubtitle } from '@/lib/connector-subtitle';
 import {
   useConnector,
   useConnectorRuns,
@@ -175,8 +176,8 @@ function HeaderRow({
         </Badge>
       )}
       <span className="text-text-muted text-[12px]">
-        {info.entityCount.toLocaleString()} entities ·{' '}
-        {connector.type === 'github' ? connector.org : connector.cluster.name}
+        {info.entityCount.toLocaleString()} entities
+        {connectorSubtitle(connector) ? ` · ${connectorSubtitle(connector)}` : ''}
       </span>
     </div>
   );
