@@ -1,18 +1,11 @@
+import { DEPENDENCY_EDGE_PATTERN, OWNERSHIP_EDGE_PATTERN } from '@shipit-ai/shared';
+
 export interface CypherQuery {
   query: string;
   params: Record<string, unknown>;
 }
 
 export type BlastRadiusDirection = 'DOWNSTREAM' | 'UPSTREAM' | 'BOTH';
-
-const DEPENDENCY_EDGE_PATTERN =
-  'IMPLEMENTED_BY|DEPLOYED_AS|EMITS_TELEMETRY_AS|CALLS|DEPENDS_ON|BUILT_BY|TRIGGERS';
-
-// Ownership edges are directional: an owner (Team/Person) points at what it
-// owns. Included downstream only so a Team reaches its owned repos/services
-// (GitHub teams own repos via CODEOWNER_OF, not OWNS); excluded upstream so a
-// service's blast radius does not surface its owning team.
-const OWNERSHIP_EDGE_PATTERN = 'OWNS|CODEOWNER_OF';
 
 const DOWNSTREAM_EDGE_PATTERN = `${DEPENDENCY_EDGE_PATTERN}|${OWNERSHIP_EDGE_PATTERN}`;
 

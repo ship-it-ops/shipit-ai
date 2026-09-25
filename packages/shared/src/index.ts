@@ -1,4 +1,6 @@
 // Types
+export { DEPENDENCY_EDGE_PATTERN, OWNERSHIP_EDGE_PATTERN } from './types/graph-edges.js';
+
 export type { CanonicalNode, CanonicalEdge, CanonicalEntity } from './types/canonical.js';
 
 export type {

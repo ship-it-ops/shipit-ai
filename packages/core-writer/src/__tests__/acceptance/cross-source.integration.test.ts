@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { DEPENDENCY_EDGE_PATTERN } from '@shipit-ai/shared';
 import type { CanonicalEntity, EventEnvelope } from '@shipit-ai/shared';
 import { buildIdempotencyKey } from '@shipit-ai/event-bus';
 import { normalizeRepository, normalizeTeam } from '@shipit-ai/connector-github';
@@ -17,7 +18,6 @@ import {
 } from '@shipit-ai/connector-kubernetes';
 import { CoreWriter } from '../../writer.js';
 import { DEFAULT_CONFIG } from '../../config.js';
-import { generateBlastRadiusCypher } from '@shipit-ai/mcp-server/cypher';
 import { Neo4jClient } from '../../neo4j/client.js';
 import { Neo4jNodeWriter } from '../../neo4j/node-writer.js';
 import { Neo4jLinkingKeyIndex } from '../../neo4j/linking-key-index.js';
@@ -100,20 +100,24 @@ describe.skipIf(!URI)('acceptance — GitHub + Kubernetes cross-source graph', (
   let nodeCountAfterRun1 = 0;
   let edgeCountAfterRun1 = 0;
 
-  // Deployment ids reachable from the repository, through the generator the
-  // MCP tool actually runs. `depth: 2` matches repository → service → workload.
+  // Deployment ids reachable from the repository, traversed with the SAME edge
+  // list mcp-server's blast_radius builds its query from (M7). Importing the
+  // shared constant is what makes a new dependency edge type show up here
+  // instead of silently diverging from a hand-kept copy.
+  //
+  // Why the constant and not `generateBlastRadiusCypher` itself: core-writer's
+  // Dockerfile builder COPYs a fixed package set that does not include
+  // mcp-server, and `tsc` compiles this test file during the image build — a
+  // cross-package test-only import breaks `Docker Build (core-writer)`. See
+  // docs/agent/scars/docker-builder-copies-fixed-package-set.md.
   const blastDeploymentIds = async (includeAbsent: boolean): Promise<string[]> => {
-    const { query, params } = generateBlastRadiusCypher(
-      REPO_ID,
-      2,
-      'BOTH',
-      undefined,
-      includeAbsent,
+    const absentFilter = includeAbsent ? '' : ' AND n._absent_since IS NULL';
+    return ids(
+      `MATCH (r:Repository {id: $id})-[:${DEPENDENCY_EDGE_PATTERN}*1..2]-(n:Deployment)
+       WHERE n <> r${absentFilter}
+       RETURN DISTINCT n.id AS id`,
+      { id: REPO_ID },
     );
-    return (await rows(query, params))
-      .filter((r) => (r.get('labels') as string[]).includes('Deployment'))
-      .map((r) => String((r.get('node') as { properties: { id: string } }).properties.id))
-      .sort();
   };
 
   const wipe = () =>

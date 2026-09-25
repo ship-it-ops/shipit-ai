@@ -29,7 +29,6 @@
   "devDependencies": {
     "@shipit-ai/connector-github": "workspace:*",
     "@shipit-ai/connector-kubernetes": "workspace:*",
-    "@shipit-ai/mcp-server": "workspace:*",
     "@types/node": "^26.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"

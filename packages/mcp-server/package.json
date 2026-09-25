@@ -13,10 +13,6 @@
     "./metadata": {
       "import": "./dist/tools/metadata.js",
       "types": "./dist/tools/metadata.d.ts"
-    },
-    "./cypher": {
-      "import": "./dist/cypher/generator.js",
-      "types": "./dist/cypher/generator.d.ts"
     }
   },
   "scripts": {

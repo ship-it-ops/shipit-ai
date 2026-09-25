@@ -76,6 +76,32 @@ the tsconfig `references` — is necessary but not sufficient on its own.
   (`git ls-files`, so `dist/` and `node_modules/` never leak in), then
   `pnpm install --frozen-lockfile && pnpm turbo build --filter=<pkg>`.
 
+## Second instance (2026-09-25, PR #115) — a TEST-ONLY import trips it too
+
+Adding `@shipit-ai/mcp-server` as a **devDependency** of core-writer so its acceptance test
+could call the real `generateBlastRadiusCypher` turned two CI jobs red at once, from one line:
+
+- **Docker Build (core-writer)** — `error TS2307: Cannot find module
+'@shipit-ai/mcp-server/cypher'`. The builder COPYs a fixed package set that does not include
+  mcp-server, and `tsc` compiles `src/__tests__/**` during the image build (every package in
+  this repo has `include: ["src/**/*"]` with no test exclusion — that is the convention, not an
+  oversight).
+- **Integration (Neo4j)** — `ERR_MODULE_NOT_FOUND`. That job runs
+  `pnpm --filter … test:integration` **directly, not through turbo**, so no `^build` runs and no
+  workspace `dist/` exists. Each package's `vitest.config.ts` carries an explicit alias list
+  redirecting `@shipit-ai/*` to TS source; a package missing from that list falls through to node
+  resolution and dies on the absent `dist/`.
+
+So a new cross-package import has **three** places that must agree, not one: the Dockerfile COPY
+list, the vitest alias list, and the lockfile. `pnpm build && pnpm test` locally exercises none
+of the first two.
+
+**The cheap way out:** put the shared thing in `@shipit-ai/shared`. Every service already depends
+on it, every Dockerfile already COPYs it, and every vitest config already aliases it. That is how
+this instance was fixed — the two blast-radius edge patterns moved to
+`packages/shared/src/types/graph-edges.ts` and both sides import them from there, instead of
+core-writer reaching into mcp-server.
+
 ## Related
 
 - [docker-copy-of-host-artifacts-poisons-image-builds](docker-copy-of-host-artifacts-poisons-image-builds.md) — the other half of "what the COPY context contains"

@@ -76,10 +76,14 @@ Done on `k8s-connector-followups` (2026-09-22), all under TDD, full suite green
 - **M5 — credential files no longer outlive their connector.** `DELETE /api/connectors/:id`
   removes the credential files that no surviving connector references, under the same key-dir
   containment rule as the write sink. A failed unlink logs and never fails the delete.
-- **M7 — the acceptance test runs the real generator.** `@shipit-ai/mcp-server` now exposes
-  `./cypher`; `cross-source.integration.test.ts` calls `generateBlastRadiusCypher` instead of a
-  hand-kept copy. NOTE: that suite is `NEO4J_TEST_URI`-gated and was only typechecked locally
-  (no Docker) — CI's Integration job is where it actually executes.
+- **M7 — the acceptance test shares mcp-server's edge list.** The blast-radius edge patterns
+  moved to `packages/shared/src/types/graph-edges.ts`; mcp-server's generator and the
+  cross-source acceptance test both import them, so adding a dependency edge type can no longer
+  diverge silently. The first attempt — a devDependency on `@shipit-ai/mcp-server` plus a
+  `./cypher` subpath export, calling the real generator — turned `Docker Build (core-writer)`
+  and `Integration (Neo4j)` red on PR #115 and was replaced; see
+  [docker-builder-copies-fixed-package-set](../scars/docker-builder-copies-fixed-package-set.md)
+  for the three places a cross-package import has to agree.
 - **M9 — key dir mode.** New `secrets/key-dir.ts#ensureKeyDir` chmods an existing directory to
   0700 (mkdir's `mode` applies only at creation and is umask-masked). Used by the credentials
   route, connector-app-store and boot hydration.
