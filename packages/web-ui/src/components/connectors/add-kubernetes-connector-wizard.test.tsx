@@ -119,3 +119,96 @@ describe('AddKubernetesConnectorWizard — Access step', () => {
     expect(screen.queryAllByText(/super-secret-value/)).toHaveLength(0);
   });
 });
+
+describe('AddKubernetesConnectorWizard — Connect step', () => {
+  beforeEach(() => {
+    uploadMutate.mockReset();
+    probeMutate.mockReset();
+    createMutate.mockReset();
+  });
+
+  async function reachConnectStep() {
+    const user = userEvent.setup();
+    renderWizard();
+    await user.type(screen.getByLabelText(/cluster name/i), 'prod-eu');
+    await user.click(advanceButton());
+    return user;
+  }
+
+  it('reports the cluster version, namespaces in scope and per-kind access', async () => {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit', 'monitoring'],
+      probedNamespace: 'shipit',
+      kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'forbidden' },
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    expect(await screen.findByText(/v1\.31\.2/)).toBeInTheDocument();
+    expect(screen.getByText(/monitoring/)).toBeInTheDocument();
+    expect(screen.getByText(/CronJob/)).toBeInTheDocument();
+  });
+
+  // An all-green probe is NOT a cluster-wide guarantee: `kinds` is measured
+  // against one namespace only, so the step says which.
+  it('names the namespace the per-kind verdict was measured against', async () => {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      probedNamespace: 'shipit',
+      kinds: { Deployment: 'ok' },
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    expect(await screen.findByText(/measured against namespace/i)).toBeInTheDocument();
+  });
+
+  it('warns when a kind is denied instead of failing the step', async () => {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      probedNamespace: 'shipit',
+      kinds: { Deployment: 'ok', CronJob: 'forbidden' },
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    expect(await screen.findByText(/preselects only the kinds/i)).toBeInTheDocument();
+  });
+
+  it('explains an in-cluster probe failure instead of showing the raw code', async () => {
+    probeMutate.mockResolvedValue({
+      ok: false,
+      code: 'IN_CLUSTER_UNAVAILABLE',
+      message: 'no in-cluster ServiceAccount token found',
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    expect(await screen.findByText(/not running inside a cluster/i)).toBeInTheDocument();
+  });
+
+  // KUBECONFIG_INVALID's own message already names the offending field, so it
+  // is shown verbatim rather than mapped to generic copy.
+  it('passes a kubeconfig validation message through untouched', async () => {
+    probeMutate.mockResolvedValue({
+      ok: false,
+      code: 'KUBECONFIG_INVALID',
+      message: 'kubeconfig user relies on an exec/auth-provider plugin',
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    expect(await screen.findByText(/exec\/auth-provider plugin/)).toBeInTheDocument();
+  });
+});

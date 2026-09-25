@@ -30,8 +30,8 @@ import {
   WizardDialog,
   type WizardStep,
 } from '@ship-it-ui/ui';
-import { useUploadKubernetesCredentials } from '@/lib/hooks/use-connectors';
-import type { KubernetesAccess } from '@/lib/api';
+import { useProbeConnector, useUploadKubernetesCredentials } from '@/lib/hooks/use-connectors';
+import type { KubernetesAccess, KubernetesWorkloadKind, ProbeResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 // Mirrors the server-side schema exactly; the cluster name is part of every
@@ -44,6 +44,25 @@ type AccessMode = 'in-cluster' | 'kubeconfig' | 'token';
 /** Connector id derived from the cluster name; see the header comment. */
 export function k8sConnectorId(clusterName: string): string {
   return `k8s-${clusterName}`;
+}
+
+// Probe failures reach the user as sentences, not codes. KUBECONFIG_INVALID and
+// UNSUPPORTED_AUTH_PLUGIN are deliberately absent: their server-side message
+// already names the offending field (exec, auth-provider, proxy-url, a file
+// reference), so it is shown verbatim.
+const PROBE_MESSAGES: Record<string, string> = {
+  IN_CLUSTER_UNAVAILABLE:
+    'This ShipIt instance is not running inside a cluster. Use kubeconfig or token access instead.',
+  CREDENTIALS_UNREADABLE: 'ShipIt cannot read the stored credential file. Re-upload it.',
+  UNAUTHORIZED: 'The cluster rejected these credentials.',
+  API_UNREACHABLE: 'ShipIt cannot reach the API server from its network.',
+  TIMEOUT: 'The cluster did not answer in time.',
+};
+
+function probeMessage(result: ProbeResult): string {
+  return (
+    PROBE_MESSAGES[result.code ?? ''] ?? result.message ?? 'The connection test did not succeed.'
+  );
 }
 
 interface AddKubernetesConnectorWizardProps {
@@ -97,8 +116,22 @@ export function AddKubernetesConnectorWizard({
   const [caData, setCaData] = useState('');
   const [access, setAccess] = useState<KubernetesAccess | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
 
   const upload = useUploadKubernetesCredentials();
+  const probeConnector = useProbeConnector();
+
+  // Kinds the cluster actually let us read. Drives the Configure step's
+  // default selection so a denied kind does not warn on every sync.
+  const okKinds = Object.entries(probe?.kinds ?? {})
+    .filter(([, status]) => status === 'ok')
+    .map(([kind]) => kind as KubernetesWorkloadKind);
+  const hasForbiddenKind = Object.values(probe?.kinds ?? {}).some((s) => s === 'forbidden');
+
+  async function runProbe(): Promise<void> {
+    if (!access) return;
+    setProbe(await probeConnector.mutateAsync({ type: 'kubernetes', access }));
+  }
 
   const clusterNameValid = CLUSTER_NAME.test(clusterName);
   const accessStepValid =
@@ -243,6 +276,48 @@ export function AddKubernetesConnectorWizard({
           >
             Store credentials and continue
           </Button>
+        </div>
+      ),
+    },
+    {
+      id: 'connect',
+      label: 'Connect',
+      canAdvance: () => probe?.ok === true,
+      content: (
+        <div className="flex flex-col gap-3">
+          <Button onClick={() => void runProbe()} disabled={probeConnector.isPending}>
+            Test connection
+          </Button>
+
+          {probe && !probe.ok && <Banner tone="err">{probeMessage(probe)}</Banner>}
+
+          {probe?.ok && (
+            <div className="flex flex-col gap-2 text-[13px]">
+              <div>
+                Cluster version <code>{probe.cluster?.version}</code>
+              </div>
+              <div>Namespaces in scope: {(probe.namespaces ?? []).join(', ') || 'none'}</div>
+              <ul className="flex flex-col gap-1">
+                {Object.entries(probe.kinds ?? {}).map(([kind, status]) => (
+                  <li key={kind}>
+                    {kind}: {status}
+                  </li>
+                ))}
+              </ul>
+              {probe.probedNamespace && (
+                <Banner tone="accent">
+                  Access measured against namespace <strong>{probe.probedNamespace}</strong>. A
+                  namespace-scoped RoleBinding elsewhere can still fail at sync time.
+                </Banner>
+              )}
+              {hasForbiddenKind && (
+                <Banner tone="warn">
+                  Some resource kinds are denied. The next step preselects only the kinds ShipIt can
+                  read, so syncs do not warn about the rest on every run.
+                </Banner>
+              )}
+            </div>
+          )}
         </div>
       ),
     },
