@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-16 | Total notes: 89
+Last updated: 2026-09-24 | Total notes: 90
 
 ## Investigations
 
@@ -31,7 +31,7 @@ Last updated: 2026-09-16 | Total notes: 89
 
 <!-- always-read at session start -->
 
-- [kubernetes-connector-v1](status/kubernetes-connector-v1.md) | status | active | core | 2026-09-16 | K8s connector v1: implemented + reviewed + final fix wave on k8s-connector-v1; PR #113 open, awaiting review/CI
+- [kubernetes-connector-followups](status/kubernetes-connector-followups.md) | status | active | core | 2026-09-24 | K8s follow-ups done + Spec 2 written, both uncommitted on k8s-connector-followups; infra ClusterRole deploying
 
 ## Decisions
 
@@ -77,6 +77,7 @@ Last updated: 2026-09-16 | Total notes: 89
 
 ## Plans
 
+- [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-22 | non-blocking review items left after K8s connector v1 shipped (#113)
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted

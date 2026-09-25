@@ -1,7 +1,10 @@
 # Infra brief — read-only ClusterRole for the Kubernetes connector + demo annotations
 
 **For:** `Ship-It-Ops/shipit-ai-infra` (Helm chart `charts/shipit-ai`).
-**From:** app repo, 2026-09-16. **Enables:** the in-cluster Kubernetes connector
+**From:** app repo, 2026-09-16.
+**Status (2026-09-24):** ACCEPTED — infra reports the work complete and is deploying it.
+Not yet verified from this side: the §Verification probe below has not been run against
+portal-demo. Run it once the rollout lands before calling in-cluster access proven. **Enables:** the in-cluster Kubernetes connector
 (`docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`, success criterion 1).
 
 ## What the app does
