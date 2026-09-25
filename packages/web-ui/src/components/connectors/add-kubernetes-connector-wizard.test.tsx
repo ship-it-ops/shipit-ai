@@ -212,3 +212,77 @@ describe('AddKubernetesConnectorWizard — Connect step', () => {
     expect(await screen.findByText(/exec\/auth-provider plugin/)).toBeInTheDocument();
   });
 });
+
+describe('AddKubernetesConnectorWizard — Configure step', () => {
+  beforeEach(() => {
+    uploadMutate.mockReset();
+    probeMutate.mockReset();
+    createMutate.mockReset();
+  });
+
+  async function reachConfigureStep(kinds: Record<string, string>) {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      probedNamespace: 'shipit',
+      kinds,
+    });
+    const user = userEvent.setup();
+    renderWizard();
+    await user.type(screen.getByLabelText(/cluster name/i), 'prod-eu');
+    await user.click(advanceButton());
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+    await screen.findByText(/v1\.31\.2/);
+    await user.click(screen.getByRole('button', { name: /^next$/i }));
+    return user;
+  }
+
+  // The one behaviour here with no server-side counterpart: a denied kind left
+  // selected would warn on every single sync, forever.
+  it('preselects only the kinds that probed ok, leaving a forbidden kind unchecked', async () => {
+    await reachConfigureStep({
+      Deployment: 'ok',
+      StatefulSet: 'ok',
+      DaemonSet: 'ok',
+      CronJob: 'forbidden',
+    });
+
+    expect(await screen.findByRole('checkbox', { name: /Deployment/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /StatefulSet/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /DaemonSet/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /CronJob/ })).not.toBeChecked();
+  });
+
+  // Falling back to nothing would leave an unsubmittable selection — the
+  // schema requires at least one kind.
+  it('falls back to every kind when the probe reported none as ok', async () => {
+    await reachConfigureStep({
+      Deployment: 'error',
+      StatefulSet: 'error',
+      DaemonSet: 'error',
+      CronJob: 'error',
+    });
+
+    expect(await screen.findByRole('checkbox', { name: /Deployment/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /CronJob/ })).toBeChecked();
+  });
+
+  it('lets the user override the preselection', async () => {
+    const user = await reachConfigureStep({ Deployment: 'ok', CronJob: 'forbidden' });
+
+    const cronJob = await screen.findByRole('checkbox', { name: /CronJob/ });
+    expect(cronJob).not.toBeChecked();
+    await user.click(cronJob);
+    expect(cronJob).toBeChecked();
+  });
+
+  it('defaults the namespace scope to the schema defaults', async () => {
+    await reachConfigureStep({ Deployment: 'ok' });
+
+    expect(await screen.findByLabelText(/include namespaces/i)).toHaveValue('*');
+    expect(screen.getByLabelText(/exclude namespaces/i)).toHaveValue(
+      'kube-system, kube-public, kube-node-lease',
+    );
+  });
+});

@@ -24,6 +24,7 @@ import { useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
+  Checkbox,
   Field,
   Input,
   Textarea,
@@ -40,6 +41,12 @@ const CLUSTER_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 const HTTPS_URL = /^https:\/\/\S+$/;
 
 type AccessMode = 'in-cluster' | 'kubeconfig' | 'token';
+
+// Order matters — it is the order the schema declares and the order the
+// Configure step renders.
+const ALL_KINDS: KubernetesWorkloadKind[] = ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob'];
+const DEFAULT_INCLUDE = '*';
+const DEFAULT_EXCLUDE = 'kube-system, kube-public, kube-node-lease';
 
 /** Connector id derived from the cluster name; see the header comment. */
 export function k8sConnectorId(clusterName: string): string {
@@ -117,6 +124,13 @@ export function AddKubernetesConnectorWizard({
   const [access, setAccess] = useState<KubernetesAccess | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [displayName, setDisplayName] = useState('');
+  const [include, setInclude] = useState(DEFAULT_INCLUDE);
+  const [exclude, setExclude] = useState(DEFAULT_EXCLUDE);
+  const [schedule, setSchedule] = useState('*/5 * * * *');
+  // Null until the user touches it; the effective value is derived from the
+  // probe so the default tracks what the cluster actually allows.
+  const [kinds, setKinds] = useState<KubernetesWorkloadKind[] | null>(null);
 
   const upload = useUploadKubernetesCredentials();
   const probeConnector = useProbeConnector();
@@ -127,6 +141,19 @@ export function AddKubernetesConnectorWizard({
     .filter(([, status]) => status === 'ok')
     .map(([kind]) => kind as KubernetesWorkloadKind);
   const hasForbiddenKind = Object.values(probe?.kinds ?? {}).some((s) => s === 'forbidden');
+
+  // Default to exactly what probed `ok`. Falling back to every kind when the
+  // probe found none keeps the selection submittable — the schema requires at
+  // least one — and the Connect step's warning is still on screen to explain it.
+  const effectiveKinds = kinds ?? (okKinds.length > 0 ? okKinds : ALL_KINDS);
+
+  function toggleKind(kind: KubernetesWorkloadKind): void {
+    setKinds(
+      effectiveKinds.includes(kind)
+        ? effectiveKinds.filter((k) => k !== kind)
+        : [...effectiveKinds, kind],
+    );
+  }
 
   async function runProbe(): Promise<void> {
     if (!access) return;
@@ -318,6 +345,48 @@ export function AddKubernetesConnectorWizard({
               )}
             </div>
           )}
+        </div>
+      ),
+    },
+    {
+      id: 'configure',
+      label: 'Configure',
+      canAdvance: () => effectiveKinds.length > 0,
+      content: (
+        <div className="flex flex-col gap-3">
+          <Field
+            label="Display name"
+            hint="Shown on the connector card. Stored bare — ShipIt adds the &ldquo;Kubernetes &middot;&rdquo; prefix when it renders."
+          >
+            {(p) => (
+              <Input
+                {...p}
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder={clusterName}
+              />
+            )}
+          </Field>
+          <Field label="Include namespaces" hint="Comma-separated globs.">
+            {(p) => <Input {...p} value={include} onChange={(e) => setInclude(e.target.value)} />}
+          </Field>
+          <Field label="Exclude namespaces" hint="Comma-separated globs.">
+            {(p) => <Input {...p} value={exclude} onChange={(e) => setExclude(e.target.value)} />}
+          </Field>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-text text-[13px] font-medium">Workload kinds</legend>
+            {ALL_KINDS.map((kind) => (
+              <Checkbox
+                key={kind}
+                label={kind}
+                checked={effectiveKinds.includes(kind)}
+                onCheckedChange={() => toggleKind(kind)}
+              />
+            ))}
+          </fieldset>
+          <Field label="Sync schedule" hint="Crontab expression.">
+            {(p) => <Input {...p} value={schedule} onChange={(e) => setSchedule(e.target.value)} />}
+          </Field>
         </div>
       ),
     },
