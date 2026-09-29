@@ -1,8 +1,8 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-09-22
-updated: 2026-09-25
+updated: 2026-09-28
 author: claude-session-2026-09-22
 branch: k8s-connector-followups
 agent: claude-session-2026-09-22

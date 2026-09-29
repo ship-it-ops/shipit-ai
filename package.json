@@ -62,10 +62,9 @@
       }
     },
     "overrides": {
-      "vite": "7.3.5",
+      "vite": "8.3.1",
       "picomatch": "^4.0.4",
-      "postcss": "^8.5.26",
-      "esbuild": "^0.28.1"
+      "postcss": "^8.5.26"
     }
   }
 }
