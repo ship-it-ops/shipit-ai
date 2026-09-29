@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-09-15
+updated: 2026-09-28
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -381,6 +381,65 @@ substitutes `${SHIPIT_API_URL}` from `shipit.config.yaml` with no fallback. CI s
 `pnpm audit` clean · `pnpm install --frozen-lockfile` up to date · `turbo typecheck --force`
 14/14 · `test --force` 14/14 · `build --force` 9/9 · `lint --force` 0 errors (18 pre-existing
 warnings) · `format:check` clean.
+
+## Update 2026-09-28 — seventh round (`dependabot-round-7`)
+
+9 open Dependabot PRs, none touched by Dependabot since 2026-08-24. **7 were already fully on
+`main` via #108** (#79, #84, #97, #102, #104, #106, and #107 minus its `@types/react*` pair) —
+Dependabot had simply never closed them. Close those as superseded. `pnpm audit` on `main`
+showed 3 moderates; GitHub listed 0 open security alerts.
+
+### Applied
+
+- **#46 `@vitejs/plugin-react` 5 → 6.1.1 — UNBLOCKED.** It needed vite 8, and `vitest@4.1.11`
+  already accepts `vite ^6 || ^7 || ^8`. The `vite` override moved from `7.3.5` to **`8.3.1`
+  (exact)**. The caret form (`^8.3.1`) hit the same pnpm stickiness as round 4: pnpm rewrote the
+  peer ranges but kept `vite@7.3.5` resolved, even through `pnpm update -r vite`, and printed
+  `unmet peer vite@^8.3.1: found 7.3.5`. The exact pin moved it. web-ui is the only
+  plugin-react consumer (its `vitest.config.ts`). All 198 web-ui tests pass.
+- **`esbuild` override DROPPED (4 → 3).** It existed only because `vite@7.3.5` declared
+  `esbuild ^0.27.0`. vite 8 makes esbuild an optional peer (`^0.27 || ^0.28`), and the only
+  other consumer, tsx, asks for `~0.28.0`. It now resolves `0.28.2` with no override, and
+  audit is clean.
+- **`@types/react ^19.2.18`, `@types/react-dom ^19.2.4`** — the #107 residue. These stay on
+  the 19.2 line (19.3.0 exists) to match the React 19.2 runtime. The React 19.3 minor is out
+  of scope for a Dependabot round.
+- **Security, no overrides:** `pnpm update -r undici ip-address` → undici 7.30.0 (via jsdom,
+  dev only; GHSA-3wwx-pv8p-q78v) and ip-address 10.7.2 (via
+  `@kubernetes/client-node → socks`; GHSA-rpw4-54j3-4h4q, GHSA-2vr4-cq9g-pvrc). The parent
+  ranges already allowed both.
+- **`pnpm dedupe`** collapsed 3 vitest/vite peer variants into one, and dropped the duplicate
+  `tsx@4.22.4`, `@types/node@26.0.1` and `esbuild@0.28.1` entries. It adds nothing new. This is
+  the same class of fix as round 5's mixed-vitest jest-dom breakage.
+
+### Re-deferred — #40 eslint 9 → 10, root cause corrected
+
+The earlier rounds blamed the plugins' eslint-9 peer caps. The crash comes from somewhere
+else. `eslint-config-next` parses `.js/.mjs` with **Next's bundled Babel parser**
+(`next/dist/compiled/babel/eslint-parser`, `dist/parser.js`). Its scope manager has no
+`addGlobals`, which eslint 10 calls in `SourceCode.finalize` → `scopeManager.addGlobals is
+not a function`. TS files go through typescript-eslint 8.59.3, which does support eslint 10.
+Forcing the JS parser to `@typescript-eslint/parser` got past that and hit the second blocker:
+`eslint-plugin-react@7.37.5` → `contextOrFilename.getFilename is not a function` (eslint 10
+removed `context.getFilename`). **Revisit when BOTH** Next's compiled Babel parser AND
+eslint-plugin-react ship eslint-10 support (`eslint-plugin-import@2.32.0` and
+`jsx-a11y@6.10.2` still cap at `^9` too). The quickest re-test is
+`pnpm --filter @shipit-ai/web-ui add -D eslint@^10 && pnpm --filter @shipit-ai/web-ui lint`.
+
+### New noise (not fixed)
+
+vite 8 warns in the api-server, core-writer, event-bus and web-ui test runs: `Your Vite config
+uses features that are unsupported by configLoader: 'native'` (an ESM `vitest.config.ts` in a
+package without `"type": "module"`). It is advisory, about a future vite major. Fix it by
+renaming to `vitest.config.mts` or setting `VITE_CONFIG_NATIVE_IGNORE_WARNING=true`.
+
+### Verification (this round)
+
+`pnpm audit` clean (3 → 0) · `pnpm install --frozen-lockfile` up to date ·
+`turbo typecheck --force` 15/15 · `test --force` 15/15 · `build --force` 9/9 ·
+`lint --force` 0 errors (18 pre-existing warnings) · `format:check` clean. The integration
+suites (Neo4j/Redis) were NOT run locally because there was no Docker daemon, so CI's
+`Integration (Neo4j)` job is their first run under vite 8.
 
 ## Related
 

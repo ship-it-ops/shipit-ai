@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-24 | Total notes: 90
+Last updated: 2026-09-28 | Total notes: 90
 
 ## Investigations
 
@@ -31,7 +31,7 @@ Last updated: 2026-09-24 | Total notes: 90
 
 <!-- always-read at session start -->
 
-- [kubernetes-connector-followups](status/kubernetes-connector-followups.md) | status | active | core | 2026-09-24 | K8s follow-ups done + Spec 2 written, both uncommitted on k8s-connector-followups; infra ClusterRole deploying
+- [dependabot-round-7](status/dependabot-round-7.md) | status | active | standard | 2026-09-28 | aggregate 9 Dependabot PRs; vite 8 + plugin-react 6; branch dependabot-round-7
 
 ## Decisions
 
@@ -47,7 +47,7 @@ Last updated: 2026-09-24 | Total notes: 90
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
-- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-09-15 | pnpm.overrides + direct bumps; 6 rounds; overrides pruned 25→4 (vite, esbuild, picomatch, postcss); eslint-10 + plugin-react-6 still blocked
+- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-09-28 | pnpm.overrides + direct bumps; 7 rounds; vite 8 unblocked plugin-react 6; overrides now vite, picomatch, postcss; eslint-10 blocked by Next babel parser
 - [fastify-v5-migration](decisions/fastify-v5-migration.md) | decision | active | core | 2026-05-26 | bump fastify@^5.8.5 + 3 @fastify/\* plugins; closes 6 alerts
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 - [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
@@ -77,7 +77,7 @@ Last updated: 2026-09-24 | Total notes: 90
 
 ## Plans
 
-- [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-22 | non-blocking review items left after K8s connector v1 shipped (#113)
+- [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
 - [webhook-cut-b-content-freshness](plans/webhook-cut-b-content-freshness.md) | plan | completed | core | 2026-06-19 | spec-6 Cut B: content-version + ATOMIC in-Cypher guard; IMPLEMENTED (Option B + cleanup), tests green, uncommitted
