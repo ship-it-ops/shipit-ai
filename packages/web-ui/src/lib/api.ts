@@ -141,7 +141,11 @@ export interface ConnectorInfo {
   id: string;
   name: string;
   type: string;
-  status: 'healthy' | 'degraded' | 'failed' | 'not_connected';
+  // `syncing` and `pending` used to be folded into `degraded` and told apart
+  // by each surface's own translation table — the card said "Syncing" while
+  // the drawer printed "degraded" for the same connector. Labels/colours for
+  // all six live in connector-status.ts; render through that, not raw.
+  status: 'healthy' | 'syncing' | 'pending' | 'degraded' | 'failed' | 'not_connected';
   lastSync: string | null;
   entityCount: number;
   nextSync: string | null;
@@ -155,17 +159,15 @@ export function connectorInfo(c: Connector, runtime?: SyncRuntimeStatus | null):
   //      flight syncs (`running`) and post-sync degraded/failed states
   //      that haven't been written to lastRuns yet.
   //   3. Latest run outcome — cold but durable across restarts.
-  //   4. Fallback for enabled connectors with no runs yet: show as
-  //      degraded (visually "syncing") rather than not_connected. A
-  //      freshly-created connector with an in-flight or pending sync
-  //      shouldn't appear "disconnected" — that label is reserved for
-  //      explicitly-disabled connectors.
+  //   4. Fallback for enabled connectors with no runs yet: `pending`, not
+  //      not_connected (that label is reserved for explicitly-disabled
+  //      connectors) and not degraded (nothing is wrong, nothing has
+  //      happened yet).
   let status: ConnectorInfo['status'];
   if (!c.enabled) {
     status = 'not_connected';
   } else if (runtime?.state === 'running') {
-    // Maps to the DS `syncing` chip via the card's statusMap.
-    status = 'degraded';
+    status = 'syncing';
   } else if (runtime?.state === 'failed') {
     status = 'failed';
   } else if (runtime?.state === 'degraded') {
@@ -177,11 +179,9 @@ export function connectorInfo(c: Connector, runtime?: SyncRuntimeStatus | null):
   } else if (lastRun?.status === 'success') {
     status = 'healthy';
   } else {
-    // Enabled, no runtime signal, no runs recorded yet — the freshly-
-    // created or freshly-queued state. Show as syncing (degraded) so
-    // the user sees forward motion rather than a "disconnected" label
-    // that suggests they have to do something.
-    status = 'degraded';
+    // Enabled, no runtime signal, no runs recorded yet — created but the
+    // first sync has not started (or its result has not landed).
+    status = 'pending';
   }
   return {
     id: c.id,

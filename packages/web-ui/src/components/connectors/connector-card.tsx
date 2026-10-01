@@ -1,14 +1,10 @@
 'use client';
 
-import { Badge, StatusDot, formatRelative, type StatusState } from '@ship-it-ui/ui';
+import { Badge, StatusDot, formatRelative } from '@ship-it-ui/ui';
 import { DynamicIconGlyph } from '@ship-it-ui/icons';
 import { connectorTypeIcon } from '@/lib/connector-type-icon';
-import {
-  connectorInfo,
-  type Connector,
-  type ConnectorInfo,
-  type SyncRuntimeStatus,
-} from '@/lib/api';
+import { CONNECTOR_STATUS } from '@/lib/connector-status';
+import { connectorInfo, type Connector, type SyncRuntimeStatus } from '@/lib/api';
 import { connectorSubtitle } from '@/lib/connector-subtitle';
 
 // Portrait-oriented connector card. Replaces the DS ConnectorCard (which
@@ -17,20 +13,6 @@ import { connectorSubtitle } from '@/lib/connector-subtitle';
 // entity count + last-sync timestamp at the foot. Aspect ratio is fixed
 // 4:5 (slightly taller than wide) so cells stay visually consistent
 // regardless of the longest name.
-
-const statusDotState: Record<ConnectorInfo['status'], StatusState> = {
-  healthy: 'ok',
-  degraded: 'sync',
-  failed: 'err',
-  not_connected: 'off',
-};
-
-const statusLabel: Record<ConnectorInfo['status'], string> = {
-  healthy: 'Connected',
-  degraded: 'Syncing',
-  failed: 'Error',
-  not_connected: 'Disconnected',
-};
 
 interface ConnectorCardProps {
   connector: Connector;
@@ -60,9 +42,9 @@ export function ConnectorCard({ connector, runtime, onClick }: ConnectorCardProp
       {/* Status dot pinned top-right — small, doesn't compete with logo */}
       <div className="flex w-full items-start justify-end">
         <StatusDot
-          state={statusDotState[info.status]}
-          pulse={info.status === 'degraded'}
-          label={statusLabel[info.status]}
+          state={CONNECTOR_STATUS[info.status].dot}
+          pulse={CONNECTOR_STATUS[info.status].pulse}
+          label={CONNECTOR_STATUS[info.status].label}
         />
       </div>
 
