@@ -2,6 +2,7 @@
 
 import { Badge } from '@ship-it-ui/ui';
 import { DynamicIconGlyph } from '@ship-it-ui/icons';
+import { connectorTypeIcon } from '@/lib/connector-type-icon';
 import type { ConnectorIdentity } from '@/lib/connector-identity';
 
 interface ConnectorPillProps {
@@ -35,8 +36,7 @@ export function ConnectorPill({ identity, compact = false, className }: Connecto
       title={identity.resolved ? identity.displayName : `${identity.displayName} (unresolved)`}
     >
       <DynamicIconGlyph
-        name={identity.type}
-        kind="connector"
+        {...connectorTypeIcon(identity.type)}
         size={11}
         aria-hidden
         className="mr-[6px] shrink-0"

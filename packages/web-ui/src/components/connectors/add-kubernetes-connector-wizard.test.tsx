@@ -14,20 +14,22 @@ vi.mock('next/navigation', () => ({
 const uploadMutate = vi.fn();
 const probeMutate = vi.fn();
 const createMutate = vi.fn();
+const syncMutate = vi.fn();
 
 vi.mock('@/lib/hooks/use-connectors', () => ({
   useUploadKubernetesCredentials: () => ({ mutateAsync: uploadMutate, isPending: false }),
   useProbeConnector: () => ({ mutateAsync: probeMutate, reset: vi.fn(), isPending: false }),
   useCreateConnector: () => ({ mutateAsync: createMutate, reset: vi.fn(), isPending: false }),
+  useTriggerSync: () => ({ mutateAsync: syncMutate, isPending: false }),
   useConnectors: () => ({ data: [], isLoading: false }),
 }));
 
-function renderWizard() {
+function renderWizard(onOpenChange: (open: boolean) => void = () => {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <AddKubernetesConnectorWizard open onOpenChange={() => {}} />
+        <AddKubernetesConnectorWizard open onOpenChange={onOpenChange} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -40,6 +42,7 @@ describe('AddKubernetesConnectorWizard — Access step', () => {
     uploadMutate.mockReset();
     probeMutate.mockReset();
     createMutate.mockReset();
+    syncMutate.mockReset();
   });
 
   it('defaults to in-cluster access and asks for a cluster name', () => {
@@ -49,6 +52,23 @@ describe('AddKubernetesConnectorWizard — Access step', () => {
       'aria-pressed',
       'true',
     );
+  });
+
+  // aria-pressed alone is invisible; the card itself has to show which mode is
+  // active (the focus ring reads as "selected" and then vanishes on blur).
+  it('marks the selected access mode card and moves the mark when another is picked', async () => {
+    const user = userEvent.setup();
+    renderWizard();
+
+    const cardOf = (name: RegExp) =>
+      screen.getByRole('button', { name }).closest('[data-selected]');
+    expect(cardOf(/run in this cluster/i)).toHaveAttribute('data-selected', 'true');
+    expect(cardOf(/paste a kubeconfig/i)).toHaveAttribute('data-selected', 'false');
+
+    await user.click(screen.getByRole('button', { name: /paste a kubeconfig/i }));
+
+    expect(cardOf(/run in this cluster/i)).toHaveAttribute('data-selected', 'false');
+    expect(cardOf(/paste a kubeconfig/i)).toHaveAttribute('data-selected', 'true');
   });
 
   // The credentials route is keyed by connectorId and runs BEFORE the connector
@@ -125,6 +145,7 @@ describe('AddKubernetesConnectorWizard — Connect step', () => {
     uploadMutate.mockReset();
     probeMutate.mockReset();
     createMutate.mockReset();
+    syncMutate.mockReset();
   });
 
   async function reachConnectStep() {
@@ -150,6 +171,26 @@ describe('AddKubernetesConnectorWizard — Connect step', () => {
     expect(await screen.findByText(/v1\.31\.2/)).toBeInTheDocument();
     expect(screen.getByText(/monitoring/)).toBeInTheDocument();
     expect(screen.getByText(/CronJob/)).toBeInTheDocument();
+  });
+
+  // Parity with the GitHub wizard, which says "Connected to <org>" in an ok
+  // banner: a bare list of facts does not tell the user the test passed.
+  it('shows an explicit success banner naming the cluster after a good probe', async () => {
+    probeMutate.mockResolvedValue({
+      ok: true,
+      cluster: { version: 'v1.31.2' },
+      namespaces: ['shipit'],
+      probedNamespace: 'shipit',
+      kinds: { Deployment: 'ok', CronJob: 'forbidden' },
+    });
+    const user = await reachConnectStep();
+
+    await user.click(await screen.findByRole('button', { name: /test connection/i }));
+
+    const banner = await screen.findByText(/connected to cluster/i);
+    expect(banner).toHaveTextContent(/prod-eu/);
+    expect(screen.getByText('Deployment').closest('li')).toHaveTextContent(/readable/i);
+    expect(screen.getByText('CronJob').closest('li')).toHaveTextContent(/denied/i);
   });
 
   // An all-green probe is NOT a cluster-wide guarantee: `kinds` is measured
@@ -218,6 +259,7 @@ describe('AddKubernetesConnectorWizard — Configure step', () => {
     uploadMutate.mockReset();
     probeMutate.mockReset();
     createMutate.mockReset();
+    syncMutate.mockReset();
   });
 
   async function reachConfigureStep(kinds: Record<string, string>) {
@@ -237,6 +279,19 @@ describe('AddKubernetesConnectorWizard — Configure step', () => {
     await user.click(screen.getByRole('button', { name: /^next$/i }));
     return user;
   }
+
+  // A placeholder is not a value: the user reads "shipit-demo" in the box and
+  // assumes it is set. Prefill for real, and keep the fallback if they clear it.
+  it('prefills the display name with the cluster name and lets the user override it', async () => {
+    const user = await reachConfigureStep({ Deployment: 'ok' });
+
+    const name = await screen.findByLabelText(/display name/i);
+    expect(name).toHaveValue('prod-eu');
+
+    await user.clear(name);
+    await user.type(name, 'EU production');
+    expect(name).toHaveValue('EU production');
+  });
 
   // The one behaviour here with no server-side counterpart: a denied kind left
   // selected would warn on every single sync, forever.
@@ -292,9 +347,10 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
     uploadMutate.mockReset();
     probeMutate.mockReset();
     createMutate.mockReset();
+    syncMutate.mockReset();
   });
 
-  async function reachReviewStep() {
+  async function reachReviewStep(onOpenChange?: (open: boolean) => void) {
     probeMutate.mockResolvedValue({
       ok: true,
       cluster: { version: 'v1.31.2' },
@@ -303,7 +359,7 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
       kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'ok' },
     });
     const user = userEvent.setup();
-    renderWizard();
+    renderWizard(onOpenChange);
     await user.type(screen.getByLabelText(/cluster name/i), 'prod-eu');
     await user.click(advanceButton());
     await user.click(await screen.findByRole('button', { name: /test connection/i }));
@@ -338,6 +394,38 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
         },
       }),
     );
+  });
+
+  // The scheduler's start() only registers the cron job; nothing runs until the
+  // next tick (an hour away on "0 * * * *"). The GitHub wizard fires a sync
+  // right after create so the card fills in — the first live run showed this
+  // one sat at "0 entities · never synced" until someone pressed Sync now.
+  it('triggers an initial sync right after creating the connector', async () => {
+    createMutate.mockResolvedValue({ id: 'k8s-prod-eu' });
+    syncMutate.mockResolvedValue({ connectorId: 'k8s-prod-eu', state: 'running' });
+    const user = await reachReviewStep();
+
+    await user.click(await screen.findByRole('button', { name: /create connector/i }));
+
+    expect(syncMutate).toHaveBeenCalledWith('k8s-prod-eu');
+    expect(await screen.findByText(/kubernetes connector created/i)).toBeInTheDocument();
+  });
+
+  // Create and first-sync used to share one try/catch: a sync failure after a
+  // successful create surfaced as a create error, the dialog stayed open, and
+  // pressing Create again collided with the connector that now existed.
+  it('closes and only warns when the first sync fails after a successful create', async () => {
+    createMutate.mockResolvedValue({ id: 'k8s-prod-eu' });
+    syncMutate.mockRejectedValue(new Error('queue unavailable'));
+    const onOpenChange = vi.fn();
+    const user = await reachReviewStep(onOpenChange);
+
+    await user.click(await screen.findByRole('button', { name: /create connector/i }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(await screen.findByText(/will run on schedule/i)).toBeInTheDocument();
+    expect(screen.queryByText(/queue unavailable/)).not.toBeInTheDocument();
+    expect(createMutate).toHaveBeenCalledTimes(1);
   });
 
   it('shows the access mode but never the credential values', async () => {

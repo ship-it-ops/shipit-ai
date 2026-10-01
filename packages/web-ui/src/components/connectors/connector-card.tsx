@@ -1,13 +1,10 @@
 'use client';
 
-import { Badge, StatusDot, formatRelative, type StatusState } from '@ship-it-ui/ui';
+import { Badge, StatusDot, formatRelative } from '@ship-it-ui/ui';
 import { DynamicIconGlyph } from '@ship-it-ui/icons';
-import {
-  connectorInfo,
-  type Connector,
-  type ConnectorInfo,
-  type SyncRuntimeStatus,
-} from '@/lib/api';
+import { connectorTypeIcon } from '@/lib/connector-type-icon';
+import { CONNECTOR_STATUS } from '@/lib/connector-status';
+import { connectorInfo, type Connector, type SyncRuntimeStatus } from '@/lib/api';
 import { connectorSubtitle } from '@/lib/connector-subtitle';
 
 // Portrait-oriented connector card. Replaces the DS ConnectorCard (which
@@ -16,20 +13,6 @@ import { connectorSubtitle } from '@/lib/connector-subtitle';
 // entity count + last-sync timestamp at the foot. Aspect ratio is fixed
 // 4:5 (slightly taller than wide) so cells stay visually consistent
 // regardless of the longest name.
-
-const statusDotState: Record<ConnectorInfo['status'], StatusState> = {
-  healthy: 'ok',
-  degraded: 'sync',
-  failed: 'err',
-  not_connected: 'off',
-};
-
-const statusLabel: Record<ConnectorInfo['status'], string> = {
-  healthy: 'Connected',
-  degraded: 'Syncing',
-  failed: 'Error',
-  not_connected: 'Disconnected',
-};
 
 interface ConnectorCardProps {
   connector: Connector;
@@ -59,9 +42,9 @@ export function ConnectorCard({ connector, runtime, onClick }: ConnectorCardProp
       {/* Status dot pinned top-right — small, doesn't compete with logo */}
       <div className="flex w-full items-start justify-end">
         <StatusDot
-          state={statusDotState[info.status]}
-          pulse={info.status === 'degraded'}
-          label={statusLabel[info.status]}
+          state={CONNECTOR_STATUS[info.status].dot}
+          pulse={CONNECTOR_STATUS[info.status].pulse}
+          label={CONNECTOR_STATUS[info.status].label}
         />
       </div>
 
@@ -71,7 +54,7 @@ export function ConnectorCard({ connector, runtime, onClick }: ConnectorCardProp
           aria-hidden
           className="bg-panel-2 grid h-16 w-16 shrink-0 place-items-center rounded-md"
         >
-          <DynamicIconGlyph name={connector.type} kind="logo" size={36} />
+          <DynamicIconGlyph {...connectorTypeIcon(connector.type)} size={36} />
         </span>
         <div className="flex flex-col items-center gap-[2px]">
           <span className="text-text line-clamp-2 text-[14px] leading-tight font-medium">

@@ -2,12 +2,12 @@
 type: scar
 status: active
 created: 2026-05-30
-updated: 2026-05-30
+updated: 2026-09-30
 author: claude-opus-4-7
 tags: [web-ui, connectors, status, ux]
 importance: core
 incident-date: 2026-05-30
-tripwire: "if you render ConnectorInfo.status as raw text, you will show 'degraded' during a normal in-flight sync"
+tripwire: 'render ConnectorInfo.status only through CONNECTOR_STATUS (lib/connector-status.ts); never as raw text and never via a local label map'
 ---
 
 # `ConnectorInfo.status === 'degraded'` is overloaded — it also means "syncing"
@@ -53,6 +53,16 @@ Longer-term cleanup worth considering: rename the overload — give
 `ConnectorInfo` a real `'syncing'` status variant so the literal value matches
 the intent. Until that lands, treat the `'degraded'`-means-syncing rule as
 load-bearing.
+
+## Update 2026-09-30 — overload removed
+
+The "longer-term cleanup" landed on `k8s-connector-fixes`: `ConnectorInfo.status` now has real
+`syncing` (runtime running) and `pending` (enabled, never run) values, and `degraded` means only a
+partial run or a sticky auth failure. The card and the drawer header both render through
+`CONNECTOR_STATUS` in `packages/web-ui/src/lib/connector-status.ts` (label + dot + badge + pulse).
+It resurfaced because the first live Kubernetes connector sat in the never-run state (no initial
+sync was triggered) and the drawer printed the literal word "degraded" next to a card that said
+"Syncing". The tripwire above is the new rule.
 
 ## Related
 

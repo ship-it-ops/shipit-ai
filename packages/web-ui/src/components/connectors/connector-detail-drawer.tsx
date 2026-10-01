@@ -20,7 +20,6 @@ import {
   TabsContent,
   TabsList,
   useToast,
-  type BadgeProps,
 } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import {
@@ -42,15 +41,7 @@ import {
   useTriggerSync,
 } from '@/lib/hooks/use-connectors';
 import { ScheduleField } from './schedule-field';
-
-const statusVariant: Record<string, BadgeProps['variant']> = {
-  healthy: 'ok',
-  degraded: 'warn',
-  failed: 'err',
-  not_connected: 'neutral',
-  idle: 'neutral',
-  running: 'warn',
-};
+import { CONNECTOR_STATUS } from '@/lib/connector-status';
 
 interface ConnectorDetailDrawerProps {
   connectorId: string;
@@ -162,19 +153,14 @@ function HeaderRow({
   runtime: SyncRuntimeStatus | null;
 }) {
   const info = connectorInfo(connector, runtime);
-  const isRunning = runtime?.state === 'running';
+  // Same table as the card's StatusDot — the drawer used to print the raw
+  // status and the two surfaces disagreed about the same connector.
+  const presentation = CONNECTOR_STATUS[info.status];
   return (
     <div className="flex items-center gap-2">
-      {!isRunning && (
-        <Badge variant={statusVariant[info.status] ?? 'neutral'}>
-          {info.status.replace('_', ' ')}
-        </Badge>
-      )}
-      {isRunning && (
-        <Badge variant="warn">
-          <Spinner size="sm" /> syncing
-        </Badge>
-      )}
+      <Badge variant={presentation.badge}>
+        {info.status === 'syncing' && <Spinner size="sm" />} {presentation.label}
+      </Badge>
       <span className="text-text-muted text-[12px]">
         {info.entityCount.toLocaleString()} entities
         {connectorSubtitle(connector) ? ` · ${connectorSubtitle(connector)}` : ''}

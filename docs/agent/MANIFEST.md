@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-09-28 | Total notes: 90
+Last updated: 2026-09-30 | Total notes: 90
 
 ## Investigations
 
@@ -31,7 +31,7 @@ Last updated: 2026-09-28 | Total notes: 90
 
 <!-- always-read at session start -->
 
-- [dependabot-round-7](status/dependabot-round-7.md) | status | active | standard | 2026-09-28 | aggregate 9 Dependabot PRs; vite 8 + plugin-react 6; branch dependabot-round-7
+- [k8s-connector-fixes](status/k8s-connector-fixes.md) | status | active | standard | 2026-09-30 | wizard fixes found walking K8s flow on portal-demo; branch k8s-connector-fixes
 
 ## Decisions
 
@@ -120,7 +120,7 @@ Last updated: 2026-09-28 | Total notes: 90
 - [github-app-manifest-is-post-not-get](scars/github-app-manifest-is-post-not-get.md) | scar | active | core | 2026-05-22 | GitHub App manifest requires POST form not manifest_url GET
 - [claude-code-mcp-cwd-field-ignored](scars/claude-code-mcp-cwd-field-ignored.md) | scar | active | core | 2026-05-21 | Claude Code silently ignores cwd in .mcp.json files
 - [bullmq-5-forbids-colons-in-queue-names-and-job-ids](scars/bullmq-5-forbids-colons-in-queue-names-and-job-ids.md) | scar | active | core | 2026-05-22 | BullMQ 5 throws on `:` in queue names + job IDs
-- [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-05-30 | `info.status='degraded'` doubles as syncing; never render raw
+- [connectorinfo-status-degraded-is-overloaded-as-syncing](scars/connectorinfo-status-degraded-is-overloaded-as-syncing.md) | scar | active | core | 2026-09-30 | ConnectorInfo.status now has real syncing/pending; render only via CONNECTOR_STATUS, never raw or a local map
 - [pnpm-implicit-types-node-hoisting-breaks-on-vitest-4](scars/pnpm-implicit-types-node-hoisting-breaks-on-vitest-4.md) | scar | active | core | 2026-06-26 | vitest 3→4 breaks @types/node discovery; RESOLVED 2026-06-26 via types:[node] in base tsconfig (see [[vitest-4-migration]])
 - [docker-copy-of-host-artifacts-poisons-image-builds](scars/docker-copy-of-host-artifacts-poisons-image-builds.md) | scar | active | core | 2026-06-11 | host node_modules/tsbuildinfo in COPY break image builds
 - [cypher-limit-skip-reject-js-number-floats](scars/cypher-limit-skip-reject-js-number-floats.md) | scar | active | standard | 2026-06-24 | Cypher LIMIT/SKIP $param fed a JS number throws 22N03 (marshals as FLOAT); wrap with neo4j.int()
