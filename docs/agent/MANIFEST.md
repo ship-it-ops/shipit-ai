@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-01 | Total notes: 89
+Last updated: 2026-10-01 | Total notes: 91
 
 ## Investigations
 
@@ -33,6 +33,7 @@ Last updated: 2026-10-01 | Total notes: 89
 
 ## Decisions
 
+- [agent-platform-v1-foundations](decisions/agent-platform-v1-foundations.md) | decision | active | core | 2026-10-01 | agents: Postgres (infra applies schema), own runner, Vertex any-model, all-in first release
 - [kubernetes-connector-v1-design](decisions/kubernetes-connector-v1-design.md) | decision | active | core | 2026-09-16 | K8s connector v1: both access modes, poll, per-type opt-in absence sweep, tiered repo links, LogicalService emission, connector-type factory
 - [runtime-image-strips-bundled-npm-and-apk-upgrades](decisions/runtime-image-strips-bundled-npm-and-apk-upgrades.md) | decision | active | core | 2026-09-15 | runtime stages `apk upgrade` + rm base-image npm CLI; unblocks infra Trivy gate; retire infra picomatch trivyignore after
 - [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
@@ -75,6 +76,7 @@ Last updated: 2026-10-01 | Total notes: 89
 
 ## Plans
 
+- [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-01 | AI nav + agent builder; foundations + scope decided; infra brief + spec written, spec awaiting owner review
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
