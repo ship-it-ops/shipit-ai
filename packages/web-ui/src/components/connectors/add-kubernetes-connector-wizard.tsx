@@ -29,11 +29,13 @@ import {
   Input,
   Textarea,
   WizardDialog,
+  useToast,
   type WizardStep,
 } from '@ship-it-ui/ui';
 import {
   useCreateConnector,
   useProbeConnector,
+  useTriggerSync,
   useUploadKubernetesCredentials,
 } from '@/lib/hooks/use-connectors';
 import type { KubernetesAccess, KubernetesWorkloadKind, ProbeResult } from '@/lib/api';
@@ -70,6 +72,18 @@ const PROBE_MESSAGES: Record<string, string> = {
   TIMEOUT: 'The cluster did not answer in time.',
 };
 
+// Per-kind probe verdicts as a dot + word rather than the raw API value, so
+// `forbidden` reads as something the user can act on (grant the ClusterRole).
+const KIND_STATUS: Record<
+  NonNullable<ProbeResult['kinds']>[string],
+  { dot: string; label: string }
+> = {
+  ok: { dot: 'bg-ok', label: 'readable' },
+  forbidden: { dot: 'bg-warn', label: 'denied — grant list on this kind' },
+  error: { dot: 'bg-err', label: 'error' },
+  skipped: { dot: 'bg-text-muted', label: 'skipped — no namespace in scope' },
+};
+
 function probeMessage(result: ProbeResult): string {
   return (
     PROBE_MESSAGES[result.code ?? ''] ?? result.message ?? 'The connection test did not succeed.'
@@ -94,21 +108,35 @@ function ModeCard({
   onSelect: () => void;
   children?: ReactNode;
 }) {
+  // Same selected treatment as the GitHub wizard's option cards (accent border,
+  // tinted panel, radio dot) so the active mode reads without relying on the
+  // focus ring — which is what a bare border-strong swap amounted to in the
+  // dark theme once the button blurred.
   return (
     <div
+      data-selected={selected}
       className={cn(
-        'rounded-base border-border bg-panel border p-3',
-        selected && 'border-border-strong',
+        'rounded-base border-border bg-panel border p-3 transition-colors',
+        selected ? 'border-accent bg-accent-dim/40' : 'hover:border-border-strong',
       )}
     >
       <button
         type="button"
         aria-pressed={selected}
         onClick={onSelect}
-        className="focus-visible:ring-accent-dim w-full rounded-sm text-left outline-none focus-visible:ring-[3px]"
+        className="group focus-visible:ring-accent-dim flex w-full items-start gap-2.5 rounded-sm text-left outline-none focus-visible:ring-[3px]"
       >
-        <span className="text-text block text-[14px] font-medium">{title}</span>
-        <span className="text-text-muted mt-0.5 block text-[12px]">{description}</span>
+        <span
+          aria-hidden
+          className={cn(
+            'mt-[3px] inline-block h-3 w-3 shrink-0 rounded-full border',
+            selected ? 'border-accent bg-accent' : 'border-border-strong',
+          )}
+        />
+        <span className="min-w-0 flex-1">
+          <span className="text-text block text-[14px] font-medium">{title}</span>
+          <span className="text-text-muted mt-0.5 block text-[12px]">{description}</span>
+        </span>
       </button>
       {selected && children ? <div className="mt-3 flex flex-col gap-3">{children}</div> : null}
     </div>
@@ -128,7 +156,11 @@ export function AddKubernetesConnectorWizard({
   const [access, setAccess] = useState<KubernetesAccess | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
-  const [displayName, setDisplayName] = useState('');
+  // null = untouched: the field shows (and submits) the cluster name, and keeps
+  // following it if the user goes Back and renames the cluster. Once edited it
+  // is theirs; an emptied field still falls back to the cluster name on submit.
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const effectiveName = (displayName ?? clusterName).trim() || clusterName;
   const [include, setInclude] = useState(DEFAULT_INCLUDE);
   const [exclude, setExclude] = useState(DEFAULT_EXCLUDE);
   const [schedule, setSchedule] = useState('*/5 * * * *');
@@ -141,6 +173,8 @@ export function AddKubernetesConnectorWizard({
   const upload = useUploadKubernetesCredentials();
   const probeConnector = useProbeConnector();
   const createConnector = useCreateConnector();
+  const triggerSync = useTriggerSync();
+  const { toast } = useToast();
 
   // Kinds the cluster actually let us read. Drives the Configure step's
   // default selection so a denied kind does not warn on every sync.
@@ -222,12 +256,12 @@ export function AddKubernetesConnectorWizard({
     if (!access) return;
     setCreateError(null);
     try {
-      await createConnector.mutateAsync({
+      const created = await createConnector.mutateAsync({
         id: k8sConnectorId(clusterName),
         type: 'kubernetes',
         // Bare on purpose — the type prefix is composed at render time, and a
         // pre-composed name renders as "Kubernetes · Kubernetes · prod-eu".
-        name: displayName.trim() || clusterName,
+        name: effectiveName,
         cluster: { name: clusterName },
         access,
         schedule,
@@ -235,6 +269,15 @@ export function AddKubernetesConnectorWizard({
           namespaces: { include: splitList(include), exclude: splitList(exclude) },
           kinds: effectiveKinds,
         },
+      });
+      // The scheduler only registers the cron job on create; nothing runs
+      // until the next tick. Fire the first sync now (as the GitHub wizard
+      // does) so the card shows entities instead of "never synced".
+      await triggerSync.mutateAsync(created.id);
+      toast({
+        variant: 'ok',
+        title: 'Kubernetes connector created',
+        description: `First sync of ${clusterName} started.`,
       });
       onOpenChange(false);
     } catch (err) {
@@ -357,14 +400,35 @@ export function AddKubernetesConnectorWizard({
 
           {probe?.ok && (
             <div className="flex flex-col gap-2 text-[13px]">
-              <div>
-                Cluster version <code>{probe.cluster?.version}</code>
-              </div>
-              <div>Namespaces in scope: {(probe.namespaces ?? []).join(', ') || 'none'}</div>
+              {/* Same shape as the GitHub wizard's success banner: one green
+                  sentence that says the test passed, then the details. */}
+              <Banner tone="ok">
+                Connected to cluster <strong>{clusterName}</strong> running Kubernetes{' '}
+                <code>{probe.cluster?.version ?? 'unknown'}</code>.{' '}
+                {(probe.namespaces ?? []).length} namespace
+                {(probe.namespaces ?? []).length === 1 ? '' : 's'} in scope.
+                {(probe.namespaces ?? []).length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                    {(probe.namespaces ?? []).map((ns) => (
+                      <span key={ns} className="bg-panel-2 rounded px-1.5 py-0.5">
+                        {ns}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </Banner>
               <ul className="flex flex-col gap-1">
                 {Object.entries(probe.kinds ?? {}).map(([kind, status]) => (
-                  <li key={kind}>
-                    {kind}: {status}
+                  <li key={kind} className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'inline-block h-2 w-2 shrink-0 rounded-full',
+                        KIND_STATUS[status]?.dot ?? 'bg-text-muted',
+                      )}
+                    />
+                    <span className="text-text">{kind}</span>
+                    <span className="text-text-muted">{KIND_STATUS[status]?.label ?? status}</span>
                   </li>
                 ))}
               </ul>
@@ -398,7 +462,7 @@ export function AddKubernetesConnectorWizard({
             {(p) => (
               <Input
                 {...p}
-                value={displayName}
+                value={displayName ?? clusterName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder={clusterName}
               />
@@ -436,7 +500,7 @@ export function AddKubernetesConnectorWizard({
             <div>Cluster: {clusterName}</div>
             {/* The MODE only. Credential values never reach this screen. */}
             <div>Access: {mode}</div>
-            <div>Name: {displayName.trim() || clusterName}</div>
+            <div>Name: {effectiveName}</div>
             <div>
               Namespaces: include {include || '*'}; exclude {exclude || 'none'}
             </div>
@@ -444,7 +508,10 @@ export function AddKubernetesConnectorWizard({
             <div>Schedule: {schedule}</div>
           </dl>
           {createError && <Banner tone="err">{createError}</Banner>}
-          <Button onClick={() => void submit()} disabled={createConnector.isPending}>
+          <Button
+            onClick={() => void submit()}
+            disabled={createConnector.isPending || triggerSync.isPending}
+          >
             Create connector
           </Button>
         </div>
