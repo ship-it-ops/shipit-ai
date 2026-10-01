@@ -538,6 +538,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
   };
 
   const handleCreate = async () => {
+    let created: Awaited<ReturnType<typeof create.mutateAsync>>;
     try {
       // 1. If the user picked shared mode but the global App isn't
       //    configured yet, persist their App credentials as the global
@@ -554,7 +555,7 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
       // 2. Create the connector. In per-org mode, attach the override;
       //    in shared mode, leave `app` undefined so the resolver falls
       //    back to the (now-configured) global.
-      const created = await create.mutateAsync({
+      created = await create.mutateAsync({
         id: connectorId,
         type: 'github',
         name,
@@ -571,26 +572,39 @@ export function AddGitHubConnectorWizard({ open, onOpenChange }: AddGitHubConnec
               }
             : undefined,
       });
-
-      // 3. Trigger initial sync.
-      await triggerSync.mutateAsync(created.id);
-
-      // The per-org manifest flow is done — drop the cross-tab resume
-      // record so a later wizard open doesn't try to restore it.
-      clearPendingGitHubApp();
-      toast({
-        variant: 'ok',
-        title: 'GitHub connector created',
-        // `created` is the Connector union now; this wizard only ever makes a
-        // GitHub one, and `org` is the value we just submitted.
-        description: `Initial sync started for ${org}.`,
-      });
-      handleOpenChange(false);
     } catch (err) {
       toast({
         variant: 'err',
         title: 'Failed to create connector',
         description: (err as Error).message,
+      });
+      return;
+    }
+
+    // Create succeeded, so the dialog is done: close it before anything that
+    // can still fail. A retry from here would re-POST the same connector id
+    // and collide with the one that now exists.
+    //
+    // The per-org manifest flow is done — drop the cross-tab resume
+    // record so a later wizard open doesn't try to restore it.
+    clearPendingGitHubApp();
+    handleOpenChange(false);
+
+    // 3. Trigger initial sync. A failure here is not a failed create — the
+    //    cron will pick it up — so it only warns.
+    try {
+      await triggerSync.mutateAsync(created.id);
+      toast({
+        variant: 'ok',
+        title: 'GitHub connector created',
+        // `org` is the value we just submitted.
+        description: `Initial sync started for ${org}.`,
+      });
+    } catch {
+      toast({
+        variant: 'warn',
+        title: 'GitHub connector created',
+        description: `Couldn't start the first sync for ${org}; it will run on schedule.`,
       });
     }
   };

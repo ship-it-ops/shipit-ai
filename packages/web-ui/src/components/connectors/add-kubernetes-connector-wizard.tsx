@@ -255,8 +255,9 @@ export function AddKubernetesConnectorWizard({
   async function submit(): Promise<void> {
     if (!access) return;
     setCreateError(null);
+    let created: Awaited<ReturnType<typeof createConnector.mutateAsync>>;
     try {
-      const created = await createConnector.mutateAsync({
+      created = await createConnector.mutateAsync({
         id: k8sConnectorId(clusterName),
         type: 'kubernetes',
         // Bare on purpose — the type prefix is composed at render time, and a
@@ -270,18 +271,32 @@ export function AddKubernetesConnectorWizard({
           kinds: effectiveKinds,
         },
       });
-      // The scheduler only registers the cron job on create; nothing runs
-      // until the next tick. Fire the first sync now (as the GitHub wizard
-      // does) so the card shows entities instead of "never synced".
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Could not create the connector');
+      return;
+    }
+    // Create succeeded, so the dialog is done: close it before anything that
+    // can still fail. A retry from here would re-POST the same deterministic
+    // id and collide with the connector that now exists.
+    onOpenChange(false);
+
+    // The scheduler only registers the cron job on create; nothing runs until
+    // the next tick. Fire the first sync now (as the GitHub wizard does) so the
+    // card shows entities instead of "waiting for first sync". A failure here
+    // is not a failed create — the cron will pick it up — so it only warns.
+    try {
       await triggerSync.mutateAsync(created.id);
       toast({
         variant: 'ok',
         title: 'Kubernetes connector created',
         description: `First sync of ${clusterName} started.`,
       });
-      onOpenChange(false);
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Could not create the connector');
+    } catch {
+      toast({
+        variant: 'warn',
+        title: 'Kubernetes connector created',
+        description: `Couldn't start the first sync of ${clusterName}; it will run on schedule.`,
+      });
     }
   }
 

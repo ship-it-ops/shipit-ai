@@ -24,12 +24,12 @@ vi.mock('@/lib/hooks/use-connectors', () => ({
   useConnectors: () => ({ data: [], isLoading: false }),
 }));
 
-function renderWizard() {
+function renderWizard(onOpenChange: (open: boolean) => void = () => {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <AddKubernetesConnectorWizard open onOpenChange={() => {}} />
+        <AddKubernetesConnectorWizard open onOpenChange={onOpenChange} />
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -350,7 +350,7 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
     syncMutate.mockReset();
   });
 
-  async function reachReviewStep() {
+  async function reachReviewStep(onOpenChange?: (open: boolean) => void) {
     probeMutate.mockResolvedValue({
       ok: true,
       cluster: { version: 'v1.31.2' },
@@ -359,7 +359,7 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
       kinds: { Deployment: 'ok', StatefulSet: 'ok', DaemonSet: 'ok', CronJob: 'ok' },
     });
     const user = userEvent.setup();
-    renderWizard();
+    renderWizard(onOpenChange);
     await user.type(screen.getByLabelText(/cluster name/i), 'prod-eu');
     await user.click(advanceButton());
     await user.click(await screen.findByRole('button', { name: /test connection/i }));
@@ -409,6 +409,23 @@ describe('AddKubernetesConnectorWizard — Review step', () => {
 
     expect(syncMutate).toHaveBeenCalledWith('k8s-prod-eu');
     expect(await screen.findByText(/kubernetes connector created/i)).toBeInTheDocument();
+  });
+
+  // Create and first-sync used to share one try/catch: a sync failure after a
+  // successful create surfaced as a create error, the dialog stayed open, and
+  // pressing Create again collided with the connector that now existed.
+  it('closes and only warns when the first sync fails after a successful create', async () => {
+    createMutate.mockResolvedValue({ id: 'k8s-prod-eu' });
+    syncMutate.mockRejectedValue(new Error('queue unavailable'));
+    const onOpenChange = vi.fn();
+    const user = await reachReviewStep(onOpenChange);
+
+    await user.click(await screen.findByRole('button', { name: /create connector/i }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(await screen.findByText(/will run on schedule/i)).toBeInTheDocument();
+    expect(screen.queryByText(/queue unavailable/)).not.toBeInTheDocument();
+    expect(createMutate).toHaveBeenCalledTimes(1);
   });
 
   it('shows the access mode but never the credential values', async () => {
