@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-09-28
+updated: 2026-10-01
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -440,6 +440,35 @@ renaming to `vitest.config.mts` or setting `VITE_CONFIG_NATIVE_IGNORE_WARNING=tr
 `lint --force` 0 errors (18 pre-existing warnings) · `format:check` clean. The integration
 suites (Neo4j/Redis) were NOT run locally because there was no Docker daemon, so CI's
 `Integration (Neo4j)` job is their first run under vite 8.
+
+## Update 2026-10-01 — eighth round (`security-round-8`), unblocking a deploy
+
+The infra `build-images` run for `cd9d3c4` (#117) failed its Trivy gate on `build:web-ui`
+(1 CRITICAL) and `build:api-server` (3 HIGH) — advisories published after round 7's clean
+audit the day before. Local `pnpm audit` agreed: 16 findings (1 critical / 7 high / 7
+moderate / 1 low). Layer 1 + `pnpm update -r` only; no override changes (still 3).
+
+### Applied
+
+- **next ^16.3.8** (web-ui; was ^16.3.5) + `eslint-config-next ^16.3.8` in lockstep — closes
+  GHSA-vcvr-r3jv-pc5j (CRITICAL, RCE in `next/og` ImageResponse; fixed 16.3.6).
+- **fastify ^5.12.5** (api-server) — GHSA-4mh8-r7rc-xpvc (moderate).
+- `pnpm update -r @grpc/grpc-js brace-expansion fast-uri` (parents' ranges already allowed
+  the patched versions): `@grpc/grpc-js` 1.14.5 (via `@google-cloud/secret-manager →
+google-gax`; GHSA-m9gg-hp2v-232j auth bypass, HIGH), `brace-expansion` 1.1.21 / 2.1.7 /
+  5.0.12 (three DoS advisories across the three lines), `fast-uri` 3.1.8 / 4.2.1.
+
+### Lesson
+
+The infra Trivy gate runs against a fresher DB than the last local audit — a `main` that was
+clean yesterday can fail to build today. Run `pnpm audit` immediately before dispatching
+`build-images`, not just at PR time.
+
+### Verification
+
+`pnpm audit` clean (16 → 0) · `pnpm install --frozen-lockfile` up to date · `turbo typecheck
+--force` 15/15 · `test --force` 15/15 · `build --force` 9/9 · `lint --force` 0 errors (18
+pre-existing warnings) · `format:check` clean.
 
 ## Related
 
