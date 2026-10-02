@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-09-30
-updated: 2026-10-01
+updated: 2026-10-02
 author: claude-session-2026-09-30
 tags: [ai, agents, workflows, mcp, permissions, postgres]
 importance: core
@@ -108,8 +108,27 @@ Approach and Phases sections above where they differ (seven milestones, 16 to 20
 a separate GitHub "actions" App instead of broader connector-App permissions, AI SDK
 Vertex provider as the model layer, `pg` with plain SQL instead of an ORM).
 
-Next: owner reviews the spec (its "To confirm in review" section lists seven choices
-made on their behalf), then an implementation plan for Milestones 0 and 1.
+The owner said "go ahead" on 2026-10-01; the spec, brief and notes were committed on
+branch `ai-agents-design` (`85aa05c`, not pushed) and the brief was placed in the infra
+repo as `docs/agent/status/incoming-brief-agent-platform-postgres-vertex-2026-10-01.md`.
+
+**Implementation plans written, awaiting owner review** (on 2026-10-02 the owner chose
+native, in-session execution and had the plans committed and pushed on `ai-agents-design`):
+
+- `docs/superpowers/plans/2026-10-01-ai-nav-section.md` — Milestone 0 (3 tasks).
+- `docs/superpowers/plans/2026-10-01-agents-foundation.md` — first half of Milestone 1
+  (9 tasks): `@shipit-ai/agents` package, `db/migrations/0001_agents.sql`, `pnpm db:migrate`,
+  the `ai` config section, `/api/ai/status`, `/api/ai/models`, the `/api/agents` definitions
+  API, and a Vertex probe. Its code was proven in an isolated clone (workspace typecheck,
+  full test suite and format check green; SQL exercised on an embedded Postgres). Not yet
+  run: the `pg` harness against a real Postgres, the image build, the Vertex probe.
+
+Milestone 1's second half (runner, model layer, tools, runs, UI) is deliberately not
+planned yet: its model-client code depends on what the Vertex probe finds.
+
+Two spec corrections were made while planning: `agents` gained a `draft_definition`
+column, and `DATABASE_URL` is a plain env placeholder rather than a secrets-registry entry
+(a registry entry would be read from GSM at boot, which is the 2026-09-16 crash).
 
 ## Related
 

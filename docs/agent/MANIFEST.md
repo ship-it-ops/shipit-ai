@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-01 | Total notes: 91
+Last updated: 2026-10-02 | Total notes: 92
 
 ## Investigations
 
@@ -30,6 +30,8 @@ Last updated: 2026-10-01 | Total notes: 91
 ## Status (in-flight)
 
 <!-- always-read at session start -->
+
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-02 | HANDOFF: agents spec + 2 plans on branch ai-agents-design; plans await owner review; native execution chosen
 
 ## Decisions
 
@@ -76,7 +78,7 @@ Last updated: 2026-10-01 | Total notes: 91
 
 ## Plans
 
-- [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-01 | AI nav + agent builder; foundations + scope decided; infra brief + spec written, spec awaiting owner review
+- [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-01 | AI nav + agent builder; spec committed (85aa05c); plans for M0 + M1 foundation written, awaiting review
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
