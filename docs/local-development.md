@@ -165,13 +165,14 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 
 | Script                | What it starts                                                             |
 | --------------------- | -------------------------------------------------------------------------- |
-| `pnpm start:infra`    | Docker: Neo4j + Redis only                                                 |
+| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres, then applies database migrations         |
 | `pnpm start:backend`  | Infra + `api-server` + `core-writer` (auto-seeds demo data if graph empty) |
 | `pnpm start:frontend` | Web UI dev server only                                                     |
 | `pnpm start:mcp`      | MCP server only (stdio)                                                    |
 | `pnpm start:all`      | Everything in parallel                                                     |
 | `pnpm stop`           | Bring all docker-compose services down                                     |
-| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j data)                                   |
+| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)               |
+| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)             |
 
 ### Manual paths
 
@@ -179,7 +180,8 @@ For surgical control:
 
 ```bash
 # Terminal 1 — infra
-docker compose -f docker/docker-compose.yml up -d neo4j redis
+docker compose -f docker/docker-compose.yml up -d neo4j redis postgres
+DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:migrate
 
 # Terminal 2 — api-server (watch mode)
 pnpm --filter @shipit-ai/api-server dev
@@ -193,14 +195,50 @@ pnpm --filter @shipit-ai/web-ui dev
 
 ### Ports
 
-| Service     | URL                                         | Notes                                     |
-| ----------- | ------------------------------------------- | ----------------------------------------- |
-| Web UI      | <http://localhost:3000>                     | Next.js                                   |
-| API Server  | <http://localhost:3001>                     | Fastify; OpenAPI at `/docs`               |
-| Neo4j HTTP  | <http://localhost:7474>                     | Neo4j Browser; login `neo4j`/`shipit-dev` |
-| Neo4j Bolt  | `bolt://localhost:7687`                     | driver protocol                           |
-| Redis       | `redis://localhost:6379`                    | BullMQ + event bus                        |
-| Smee target | `http://localhost:3001/api/webhooks/github` | When you set up webhooks (§10)            |
+| Service     | URL                                         | Notes                                          |
+| ----------- | ------------------------------------------- | ---------------------------------------------- |
+| Web UI      | <http://localhost:3000>                     | Next.js                                        |
+| API Server  | <http://localhost:3001>                     | Fastify; OpenAPI at `/docs`                    |
+| Neo4j HTTP  | <http://localhost:7474>                     | Neo4j Browser; login `neo4j`/`shipit-dev`      |
+| Neo4j Bolt  | `bolt://localhost:7687`                     | driver protocol                                |
+| Redis       | `redis://localhost:6379`                    | BullMQ + event bus                             |
+| Postgres    | `postgres://localhost:5432/shipit`          | Agent definitions; login `shipit`/`shipit-dev` |
+| Smee target | `http://localhost:3001/api/webhooks/github` | When you set up webhooks (§10)                 |
+
+### Postgres and agent features
+
+Agent definitions (AI → Agents) live in Postgres. It is optional: without it the
+rest of the product runs as before and every `/api/agents` call answers
+`503 AI_UNAVAILABLE`.
+
+To turn it on locally, point the api-server at the compose database by adding
+this to `shipit.config.local.yaml` (new checkouts get it from the example file):
+
+```yaml
+ai:
+  database:
+    url: postgres://shipit:shipit-dev@localhost:5432/shipit
+```
+
+`GET http://localhost:3001/api/ai/status` then reports each prerequisite. The
+`runner` check stays red until the agent runner exists; definitions work
+without it.
+
+The schema is plain SQL in `db/migrations/`, named `NNNN_description.sql` and
+forward-only: never edit a file that has been applied, add a new one. The app
+does not migrate at boot. `pnpm start:infra` applies pending files locally; on
+GKE the infra repo's deploy step applies the same files. When you add a
+migration, bump `EXPECTED_SCHEMA_VERSION` in
+`packages/agents/src/schema-version.ts` in the same change.
+
+Run the Postgres-backed tests with the compose database up:
+
+```bash
+DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
+  pnpm --filter @shipit-ai/agents run test:integration
+```
+
+Each suite creates and drops its own schema, so it does not touch your data.
 
 ---
 

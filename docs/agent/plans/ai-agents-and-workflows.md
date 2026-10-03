@@ -134,6 +134,12 @@ column, and `DATABASE_URL` is a plain env placeholder rather than a secrets-regi
 routes moved under `/ai`, redirects in `packages/web-ui/legacy-redirects.mjs`, three
 placeholder pages (Agents, Workflows, Tools) until their milestones land.
 
+**Milestone 1, first half (foundation) implemented** per
+`docs/superpowers/plans/2026-10-01-agents-foundation.md`: `@shipit-ai/agents` package,
+`db/migrations/0001_agents.sql`, `pnpm db:migrate`, the `ai` config section,
+`/api/ai/status`, `/api/ai/models` and the `/api/agents` definitions API. No runner, model
+layer or UI yet.
+
 ## Related
 
 - [api-server-config-persistence-strategy](../decisions/api-server-config-persistence-strategy.md) — Postgres as planned Phase 2; scheduler must leave api-server before replicas > 1

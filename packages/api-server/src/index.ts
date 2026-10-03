@@ -28,6 +28,8 @@ import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { FeedbackService } from './services/feedback-service.js';
+import { AgentStore, createDb, createPool, type Db } from '@shipit-ai/agents';
+import { AiStatusService } from './services/ai/ai-status-service.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
@@ -425,6 +427,28 @@ async function main() {
     redis: runStoreRedis,
   });
 
+  // User-defined AI agents. Postgres is optional: with ai.enabled false or no
+  // database URL, no pool is opened, the store stays unwired and every agent
+  // route answers 503 AI_UNAVAILABLE while the rest of the API runs as before.
+  // The pool connects lazily, so an unreachable database does not fail boot
+  // either; AiStatusService reports it per request.
+  const agentPool =
+    config.ai.enabled && config.ai.database.url
+      ? createPool({ connectionString: config.ai.database.url })
+      : null;
+  const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
+  const aiStatus = new AiStatusService({
+    config: config.ai,
+    db: agentDb,
+    redis: runStoreRedis,
+    log: (message) => console.warn(message),
+  });
+  console.log(
+    agentPool
+      ? 'Agent features: database configured.'
+      : 'Agent features: off (ai.enabled is false or ai.database.url is empty).',
+  );
+
   const server = await createServer({
     logger: true,
     neo4jService,
@@ -454,6 +478,8 @@ async function main() {
     // of a Redis URL stays a soft warning rather than a hard boot failure.
     redis: runStoreRedis ?? undefined,
     resolved,
+    agentStore: agentDb ? new AgentStore(agentDb) : undefined,
+    aiStatus,
   });
 
   // Start any pre-configured connectors after the server is constructed so
@@ -504,6 +530,7 @@ async function main() {
     // close() only tears down the worker/queue it created), so close it here.
     if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
+    if (agentPool) await agentPool.end();
     await neo4jService.close();
     process.exit(0);
   };

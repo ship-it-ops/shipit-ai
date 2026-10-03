@@ -49,6 +49,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot: applies db/migrations and exits. Runs the CLI that ships inside
+  # the api-server image (@shipit-ai/agents). On GKE the infra repo's deploy
+  # step applies the same files instead.
+  migrate:
+    build:
+      context: ..
+      dockerfile: packages/api-server/Dockerfile
+    command: ['node', 'node_modules/@shipit-ai/agents/dist/migrate-cli.js']
+    volumes:
+      - ../db/migrations:/app/db/migrations:ro
+    environment:
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Each backend service reads shipit.config.yaml mounted into /app. Only the
   # env vars referenced from the YAML's ${VAR} placeholders are passed in —
   # everything else lives in the committed config file. NEO4J_URI / REDIS_URL
@@ -68,11 +84,14 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       REDIS_URL: redis://redis:6379
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
     depends_on:
       neo4j:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   core-writer:
     build:
