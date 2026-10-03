@@ -28,3 +28,17 @@ export type {
   ParseDefinitionResult,
   ToolEffect,
 } from './definition.js';
+export {
+  AgentBuiltinProtectedError,
+  AgentNotFoundError,
+  AgentSlugTakenError,
+  AgentStore,
+  AgentVersionConflictError,
+} from './agent-store.js';
+export type {
+  AgentRecord,
+  AgentVersionRecord,
+  CreateAgentInput,
+  ListAgentsOptions,
+  UpdateAgentPatch,
+} from './agent-store.js';
