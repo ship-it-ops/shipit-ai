@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     projects: [
       'packages/shared',
+      'packages/agents',
       'packages/event-bus',
       'packages/core-writer',
       'packages/connector-sdk',

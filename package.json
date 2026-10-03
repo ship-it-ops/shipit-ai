@@ -21,6 +21,7 @@
     "start:all": "bash scripts/preflight.sh && bash scripts/infra.sh && bash scripts/maybe-seed.sh && turbo dev",
     "seed": "tsx scripts/seed-demo.ts",
     "seed:reset": "tsx scripts/seed-reset.ts",
+    "db:migrate": "tsx packages/agents/src/migrate-cli.ts",
     "stop": "docker compose -f docker/docker-compose.yml down",
     "stop:clean": "docker compose -f docker/docker-compose.yml down -v",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,css,yml,yaml}\"",
