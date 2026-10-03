@@ -44,6 +44,8 @@ import type { SetupService } from './services/setup-service.js';
 import type { SettingsService } from './services/settings-service.js';
 import feedbackRoutes from './routes/feedback.js';
 import aiRoutes from './routes/ai.js';
+import agentsRoutes from './routes/agents.js';
+import type { AgentStore } from '@shipit-ai/agents';
 import type { AiStatusService } from './services/ai/ai-status-service.js';
 import type { FeedbackService } from './services/feedback-service.js';
 import { envSecretsView, type ResolvedSecrets } from './secrets/index.js';
@@ -110,8 +112,10 @@ export interface CreateServerOptions {
   // will consume it to pass typed secret values directly to services that need
   // them (FeedbackService, Neo4jService, etc.) instead of reading from process.env.
   resolved?: ResolvedSecrets;
-  // Live prerequisite checks for agent features. Optional: routes/ai.ts reports
-  // "not set up" when it is absent (tests, or no database configured).
+  // Postgres-backed agent definitions. Optional: the /api/agents routes answer
+  // 503 AI_UNAVAILABLE when it is not wired (no database configured, or tests).
+  agentStore?: AgentStore;
+  // Live prerequisite checks for agent features. Optional for the same reason.
   aiStatus?: AiStatusService;
 }
 
@@ -406,6 +410,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   }
   // Agent features. Conditional decoration for the same multi-server-test
   // reason as above; routes/agents.ts and routes/ai.ts handle their absence.
+  if (opts.agentStore) {
+    server.decorate('agentStore', opts.agentStore);
+  }
   if (opts.aiStatus) {
     server.decorate('aiStatus', opts.aiStatus);
   }
@@ -455,6 +462,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // User-defined AI agents: instance status + model catalog, and agent
   // definitions. Both answer 503 AI_UNAVAILABLE until a database is wired.
   await server.register(aiRoutes, { prefix: '/api/ai' });
+  await server.register(agentsRoutes, { prefix: '/api/agents' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak

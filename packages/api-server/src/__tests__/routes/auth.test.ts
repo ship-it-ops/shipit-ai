@@ -389,7 +389,13 @@ describe('/api/auth — auth enabled', () => {
     });
     const body = me.json();
     expect(body.user.role).toBe('member');
-    expect(body.user.capabilities).toEqual(['graph:read', 'catalog:read', 'graph:write']);
+    expect(body.user.capabilities).toEqual([
+      'graph:read',
+      'catalog:read',
+      'graph:write',
+      'agents:read',
+      'agents:run',
+    ]);
   });
 
   it('callback redirects to /login?error=INVALID_STATE on an unknown state value', async () => {
