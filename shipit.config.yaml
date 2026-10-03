@@ -191,6 +191,13 @@ ai:
       modelId: claude-haiku-4-5@20251001
       contextWindow: 200000
       tools: true
+    # Probed live 2026-10-03 (docs/agent/investigations/vertex-model-layer-probe.md).
+    - key: gemini
+      label: Gemini 3.8 Flash
+      family: gemini
+      modelId: gemini-3.8-flash
+      contextWindow: 1048576
+      tools: true
   # Instance ceilings. An agent may set lower limits, never higher.
   limits:
     maxSteps: 25

@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-10-01
-updated: 2026-10-01
+updated: 2026-10-03
 author: claude-session-2026-09-30
 tags: [ai, agents, postgres, vertex, runtime, scope, cross-repo]
 importance: core
@@ -50,8 +50,14 @@ decisions with the owner. They answered all four on 2026-10-01.
 
 - The model-access layer must be provider-neutral over Vertex. Verified on 2026-10-01:
   `@ai-sdk/google-vertex` (Apache-2.0, Node >= 22, ESM-only AI SDK 7) covers Gemini, Claude
-  (`/anthropic`), and open models (`/maas`) with ADC auth. It is the leading candidate; the
-  spec locks it. We run our own loop and execute tools in our gateway, not the SDK's loop.
+  (`/anthropic`), and open models (`/maas`) with ADC auth. We run our own loop and execute
+  tools in our gateway, not the SDK's loop. **Probed live on 2026-10-03**
+  ([vertex-model-layer-probe](../investigations/vertex-model-layer-probe.md)): Gemini 3
+  passes (tool calls, JSON round trip with `thoughtSignature`, per-call usage), so Gemini
+  stays on the AI SDK. Claude was not reachable (zero per-model quota on `global`); its
+  check is still owed, with `@anthropic-ai/vertex-sdk` behind the same `ModelClient` as the
+  fallback. The runner must store `providerOptions` verbatim: the SDK silently replays
+  without a dropped signature instead of failing.
 - Claude on Vertex lacks server-side tools, the Files API, batches and the MCP connector.
   None are needed with an own loop.
 - Partner and open models need a one-time per-project enable in Model Garden (manual step).

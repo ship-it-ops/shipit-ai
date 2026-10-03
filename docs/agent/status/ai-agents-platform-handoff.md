@@ -2,7 +2,7 @@
 type: status
 status: active
 created: 2026-10-01
-updated: 2026-10-02
+updated: 2026-10-03
 author: claude-session-2026-09-30 (handoff written at context limit)
 branch: ai-agents-design
 agent: claude-session-2026-10-02 (executing the plans)
@@ -10,7 +10,7 @@ tags: [ai, agents, workflows, handoff, postgres, vertex]
 importance: core
 ---
 
-# Handoff: AI agents and workflows — M0 nav and M1 foundation built on the branch; Vertex probe blocked on GCP login
+# Handoff: AI agents and workflows — M0 nav and M1 foundation built; Gemini probed OK, Claude blocked on Vertex quota
 
 Read this first, then the spec. It replaces the conversations that produced it.
 
@@ -21,21 +21,22 @@ agents, tool permissions, triggers and LangGraph-style workflows. The design, tw
 implementation plans, and the code for both plans (except the foundation plan's Task 9
 spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 
-| Stage                                      | State                                                                               |
-| ------------------------------------------ | ----------------------------------------------------------------------------------- |
-| Deep dive, owner decisions, design spec    | Done.                                                                               |
-| Infra brief                                | Written, committed here, and placed in the infra repo. Not yet worked.              |
-| Plan: AI nav (Milestone 0)                 | Approved 2026-10-02. **Implemented**, final review: ready to merge.                 |
-| Plan: agents foundation (M1, part 1)       | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`.    |
-| Foundation Task 9 (Vertex probe)           | **Blocked on the owner**: gcloud user login and ADC both expired (`invalid_grant`). |
-| Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Waits for the Task 9 findings.                         |
+| Stage                                      | State                                                                            |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| Deep dive, owner decisions, design spec    | Done.                                                                            |
+| Infra brief                                | Worked in infra PR #91 (open 2026-10-03). Vertex APIs already live.              |
+| Plan: AI nav (Milestone 0)                 | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
+| Plan: agents foundation (M1, part 1)       | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
+| Foundation Task 9 (Vertex probe)           | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
+| Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Waits for the Task 9 findings.                      |
 
 ## Waiting on the owner
 
-1. **GCP login for the Vertex probe.** Run `gcloud auth login` and
-   `gcloud auth application-default login`, and make sure the Vertex AI API is enabled on
-   `ship-it-ai-portal` and at least one Claude model is enabled in Model Garden (console
-   step, accepts Anthropic's terms). Then foundation Task 9 can run.
+1. **Claude quota on Vertex.** Infra enabled the APIs and the models resolve, but
+   `claude-sonnet-5-5`, `claude-opus-5-5` and `claude-haiku-4-5@20251001` all answer 429
+   "Quota exceeded for …global_online_prediction_requests_per_base_model … Please submit a
+   quota increase request." A quota increase per Claude family on `global` is needed; then
+   re-run the probe for Claude (see the investigation note).
 2. **Local dev user capabilities.** `shipit.config.local.example.yaml` (and the owner's
    local copy) set `frontend.devUser.capabilities: [admin]`. `admin` is not a capability
    name; only `*` is a wildcard. With auth off, the local dev user therefore gets 403 on
@@ -127,13 +128,16 @@ Still genuinely open: **open source versus Enterprise** (nothing is gated by tie
   findings fixed test-first in `545d6b8` (10 s statement timeout on the pool, migrator
   opts out; If-Match/paging values bounded so they cannot surface as a fake 503). Nine
   Minors deferred, listed in the foundation ledger.
-- **Not run:** the Vertex probe (Task 9).
+- Vertex probe (Task 9), 2026-10-03, owner's refreshed ADC: Gemini 3 (`gemini-3.8-flash`,
+  `gemini-3.1-pro-preview`) passes every check; Claude not reachable (quota). Findings:
+  `docs/agent/investigations/vertex-model-layer-probe.md`. `gemini` added to `ai.models`.
 
 ## Next steps, in order
 
-1. Owner restores GCP login (above); run foundation Task 9 per the plan. The probe
-   directory can be recreated from the plan's Step 1–2 in a minute.
-2. Write the next plan from the probe's findings: runner, model client, graph read tools,
+1. When Claude quota exists, re-run the probe for Claude (plan Task 9 Steps 1–3; the
+   directory takes a minute to recreate) and finish the investigation note.
+2. Write the next plan from the probe's findings (Gemini is enough to start; the runner
+   must store `providerOptions` verbatim, see the note): runner, model client, graph read tools,
    runs API, agent editor, run view, Ask, built-in agent (Milestone 1, second half). If the
    JSON round trip of signed reasoning fails for a family, that family's model layer falls
    back to the direct SDK behind the same `ModelClient` interface.
