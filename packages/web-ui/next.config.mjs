@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
+import { LEGACY_REDIRECTS } from './legacy-redirects.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '../..');
@@ -148,6 +149,9 @@ const nextConfig = {
     '@ship-it-ui/shipit',
   ],
   env: envBlock,
+  async redirects() {
+    return [...LEGACY_REDIRECTS];
+  },
 };
 
 export default nextConfig;

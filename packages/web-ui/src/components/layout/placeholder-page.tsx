@@ -8,9 +8,17 @@ export interface PlaceholderPageProps {
   description: string;
   glyph: GlyphName;
   features?: ReadonlyArray<string>;
+  /** Replaces the default footer sentence. Use when the roadmap pointer is wrong for this page. */
+  note?: string;
 }
 
-export function PlaceholderPage({ title, description, glyph, features }: PlaceholderPageProps) {
+export function PlaceholderPage({
+  title,
+  description,
+  glyph,
+  features,
+  note,
+}: PlaceholderPageProps) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-3">
@@ -46,8 +54,12 @@ export function PlaceholderPage({ title, description, glyph, features }: Placeho
       <div className="border-border bg-panel-2 text-text-muted rounded-base flex items-center gap-2 border border-dashed px-4 py-3 text-[12px]">
         <IconGlyph name="warn" size={12} />
         <span>
-          This screen is a placeholder. The underlying capability is on the roadmap (see the design
-          doc &sect;10).
+          {note ?? (
+            <>
+              This screen is a placeholder. The underlying capability is on the roadmap (see the
+              design doc &sect;10).
+            </>
+          )}
         </span>
       </div>
     </div>
