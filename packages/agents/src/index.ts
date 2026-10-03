@@ -10,3 +10,21 @@ export {
 } from './migrate.js';
 export type { MigrationPlan, RunMigrationsOptions, RunMigrationsResult } from './migrate.js';
 export { EXPECTED_SCHEMA_VERSION } from './schema-version.js';
+export {
+  GRANT_POLICIES,
+  TOOL_EFFECTS,
+  agentDefinitionSchema,
+  agentLimitsSchema,
+  checkDefinitionAgainstPolicy,
+  grantedServiceEffects,
+  parseAgentDefinition,
+} from './definition.js';
+export type {
+  AgentDefinition,
+  AgentLimits,
+  DefinitionIssue,
+  DefinitionPolicy,
+  GrantPolicy,
+  ParseDefinitionResult,
+  ToolEffect,
+} from './definition.js';
