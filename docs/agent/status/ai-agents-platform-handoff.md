@@ -30,7 +30,7 @@ implementation plans. **No product code has been changed in this repo.**
 | Plan: AI nav (Milestone 0)                 | Written and committed. **Awaiting owner review.**                                      |
 | Plan: agents foundation (M1, part 1)       | Written and committed, code proven in a clone. **Awaiting owner review.**              |
 | Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Blocked on the Vertex probe (foundation Task 9).          |
-| Implementation                             | Not started.                                                                           |
+| Implementation                             | Nav plan (M0) done on the branch; foundation plan next.                                |
 
 ## Waiting on the owner (ask this first)
 
@@ -46,8 +46,8 @@ Still open:
 1. **Do the two plans capture what you want?** The owner had not read them yet on
    2026-10-02.
 
-Do not start implementing until the owner has reviewed the plans and said so (superpowers
-writing-plans handoff gate).
+The owner approved both plans on 2026-10-02 ("good to go"), approved committing at each
+plan commit step and pushing after each commit on `ai-agents-design`.
 
 ## Standing rules that bit or nearly bit this session
 
@@ -147,7 +147,7 @@ it task by task (or using it to cross-check what you type) is reasonable; say so
 ## Next steps, in order
 
 1. Get the owner's review of the two plans (the one question still open above).
-2. Execute the nav plan (independent; can merge on its own).
+2. ~~Execute the nav plan~~ — done 2026-10-02, three commits on `ai-agents-design`, pushed.
 3. Execute foundation Tasks 1 to 8. Task 9 (Vertex probe) can run in parallel whenever
    the GCP prerequisites are in place.
 4. When Task 9 has reported, write the next plan: runner, model client, graph read tools,

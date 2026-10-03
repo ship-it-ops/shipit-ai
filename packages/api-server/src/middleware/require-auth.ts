@@ -44,7 +44,7 @@ declare module 'fastify' {
 // powers external uptime checks; the specific /api/auth/* endpoints
 // listed below need pre-login access so the login flow itself can run
 // (providers list, login start, IdP callback, logout); /api/mcp/info is
-// read by the /configure/mcp page so admins can verify their MCP setup
+// read by the /ai/mcp page so admins can verify their MCP setup
 // before they have any token.
 //
 // Note: /api/auth/me is intentionally NOT public. When auth is enabled

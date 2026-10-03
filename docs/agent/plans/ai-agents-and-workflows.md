@@ -130,6 +130,10 @@ Two spec corrections were made while planning: `agents` gained a `draft_definiti
 column, and `DATABASE_URL` is a plain env placeholder rather than a secrets-registry entry
 (a registry entry would be read from GSM at boot, which is the 2026-09-16 crash).
 
+**Milestone 0 (AI nav) implemented** per `docs/superpowers/plans/2026-10-01-ai-nav-section.md`:
+routes moved under `/ai`, redirects in `packages/web-ui/legacy-redirects.mjs`, three
+placeholder pages (Agents, Workflows, Tools) until their milestones land.
+
 ## Related
 
 - [api-server-config-persistence-strategy](../decisions/api-server-config-persistence-strategy.md) — Postgres as planned Phase 2; scheduler must leave api-server before replicas > 1

@@ -425,7 +425,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   await server.register(incidentEventsRoutes, { prefix: '/api/incident-events' });
 
   // MCP server metadata (auth status, tool catalog). Surface for the in-app
-  // /configure/mcp page; also useful for future CLI/plugin discovery.
+  // /ai/mcp page; also useful for future CLI/plugin discovery.
   await server.register(mcpRoutes, { prefix: '/api/mcp' });
 
   // Config export — admin-only download of the merged raw config (pre-env-

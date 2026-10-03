@@ -230,7 +230,7 @@ Route prefixes (registered in `packages/api-server/src/server.ts`):
 - `/api/teams` — Team detail, members, owned entities _(requires Neo4j)_
 - `/api/reconciliation` — Reconciliation candidates and review _(requires Neo4j)_
 - `/api/incident-events` — Incident-mode dashboard view log (no Neo4j dependency)
-- `/api/mcp` — MCP server metadata for the in-app `/configure/mcp` page
+- `/api/mcp` — MCP server metadata for the in-app `/ai/mcp` page
 
 The api-server also bootstraps the connector registry (`ConnectorRegistry`), schema service (`SchemaService`), optional GitHub App services (`GitHubAppService`, `GitHubAppManifestService`), and the optional `Neo4jService`. Routes that need Neo4j are skipped when no Neo4j service is injected, which keeps the server usable in offline / pre-bootstrap modes.
 
@@ -245,4 +245,4 @@ Next.js 16 (App Router) on React 19. The visual layer is the in-house **`@ship-i
 - **Tailwind CSS 4** for utility styling, layered over `@ship-it-ui/tokens`
 - **Next.js middleware** (`src/middleware.ts`) for layout-level 401 redirects when auth is enabled
 
-The web-ui depends on `@shipit-ai/shared` (for canonical types) and `@shipit-ai/mcp-server` (for MCP tool metadata surfaced on the `/configure/mcp` page). All other backend communication goes through HTTP to the api-server, with `credentials: 'include'` so the session cookie travels with every request.
+The web-ui depends on `@shipit-ai/shared` (for canonical types) and `@shipit-ai/mcp-server` (for MCP tool metadata surfaced on the `/ai/mcp` page). All other backend communication goes through HTTP to the api-server, with `credentials: 'include'` so the session cookie travels with every request.

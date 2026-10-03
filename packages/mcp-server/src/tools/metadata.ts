@@ -1,6 +1,6 @@
 // Canonical, UI-renderable metadata for every tool the MCP server registers.
 // Each tool's `register*` function imports its description from here so the
-// strings shown to AI agents and the strings shown on /configure/mcp can't drift.
+// strings shown to AI agents and the strings shown on /ai/mcp can't drift.
 // This module is dependency-free so the web UI can import it without pulling
 // in the MCP SDK or neo4j-driver.
 
