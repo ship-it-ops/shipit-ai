@@ -32,7 +32,7 @@ export function QuickActions() {
           variant="outline"
           size="sm"
           icon={<IconGlyph name="ask" />}
-          onClick={() => router.push('/ask')}
+          onClick={() => router.push('/ai/ask')}
         >
           Ask
         </Button>
