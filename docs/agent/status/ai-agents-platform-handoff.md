@@ -36,7 +36,9 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
    `claude-sonnet-5-5`, `claude-opus-5-5` and `claude-haiku-4-5@20251001` all answer 429
    "Quota exceeded for …global_online_prediction_requests_per_base_model … Please submit a
    quota increase request." A quota increase per Claude family on `global` is needed; then
-   re-run the probe for Claude (see the investigation note).
+   re-run the probe for Claude (see the investigation note). **The owner must wait 48 hours
+   before requesting Claude again (said 2026-10-03), so not before 2026-10-05.** Meanwhile
+   `ai.defaultModel` is `gemini`; switch it back once Claude passes the probe.
 2. **Local dev user capabilities.** `shipit.config.local.example.yaml` (and the owner's
    local copy) set `frontend.devUser.capabilities: [admin]`. `admin` is not a capability
    name; only `*` is a wildcard. With auth off, the local dev user therefore gets 403 on

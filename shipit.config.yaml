@@ -171,7 +171,10 @@ ai:
     location: ${GOOGLE_CLOUD_LOCATION:-global}
   # The model picker's catalog. `modelId` is the id Vertex expects for the
   # family. Claude models must first be enabled in the project's Model Garden.
-  defaultModel: claude-opus
+  # Default is Gemini until the project has Claude quota on `global` (every
+  # Claude family answered 429 on 2026-10-03; see
+  # docs/agent/investigations/vertex-model-layer-probe.md).
+  defaultModel: gemini
   models:
     - key: claude-opus
       label: Claude Opus 5.5
