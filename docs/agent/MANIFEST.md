@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-02 | Total notes: 92
+Last updated: 2026-10-02 | Total notes: 94
 
 ## Investigations
 
@@ -35,6 +35,7 @@ Last updated: 2026-10-02 | Total notes: 92
 
 ## Decisions
 
+- [knowledge-layer-v1-foundations](decisions/knowledge-layer-v1-foundations.md) | decision | active | core | 2026-10-02 | knowledge layer: Postgres+pgvector index, curated visibility, reviewed suggestions, four sources
 - [agent-platform-v1-foundations](decisions/agent-platform-v1-foundations.md) | decision | active | core | 2026-10-01 | agents: Postgres (infra applies schema), own runner, Vertex any-model, all-in first release
 - [kubernetes-connector-v1-design](decisions/kubernetes-connector-v1-design.md) | decision | active | core | 2026-09-16 | K8s connector v1: both access modes, poll, per-type opt-in absence sweep, tiered repo links, LogicalService emission, connector-type factory
 - [runtime-image-strips-bundled-npm-and-apk-upgrades](decisions/runtime-image-strips-bundled-npm-and-apk-upgrades.md) | decision | active | core | 2026-09-15 | runtime stages `apk upgrade` + rm base-image npm CLI; unblocks infra Trivy gate; retire infra picomatch trivyignore after
@@ -78,6 +79,7 @@ Last updated: 2026-10-02 | Total notes: 92
 
 ## Plans
 
+- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-02 | Slack/Confluence/Jira/GitHub-text knowledge connectors; spec in docs/superpowers/specs/2026-10-02; deferred list inside
 - [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-01 | AI nav + agent builder; spec committed (85aa05c); plans for M0 + M1 foundation written, awaiting review
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
