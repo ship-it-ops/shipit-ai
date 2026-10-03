@@ -43,6 +43,8 @@ import { assertAuthConfigBootable, AuthConfigError } from './auth-bootability.js
 import type { SetupService } from './services/setup-service.js';
 import type { SettingsService } from './services/settings-service.js';
 import feedbackRoutes from './routes/feedback.js';
+import aiRoutes from './routes/ai.js';
+import type { AiStatusService } from './services/ai/ai-status-service.js';
 import type { FeedbackService } from './services/feedback-service.js';
 import { envSecretsView, type ResolvedSecrets } from './secrets/index.js';
 
@@ -108,6 +110,9 @@ export interface CreateServerOptions {
   // will consume it to pass typed secret values directly to services that need
   // them (FeedbackService, Neo4jService, etc.) instead of reading from process.env.
   resolved?: ResolvedSecrets;
+  // Live prerequisite checks for agent features. Optional: routes/ai.ts reports
+  // "not set up" when it is absent (tests, or no database configured).
+  aiStatus?: AiStatusService;
 }
 
 declare module 'fastify' {
@@ -399,6 +404,11 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.webhookRefetch) {
     server.decorate('webhookRefetch', opts.webhookRefetch);
   }
+  // Agent features. Conditional decoration for the same multi-server-test
+  // reason as above; routes/agents.ts and routes/ai.ts handle their absence.
+  if (opts.aiStatus) {
+    server.decorate('aiStatus', opts.aiStatus);
+  }
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
@@ -441,6 +451,10 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // service PAT. Any signed-in user; the route 503s when feedback isn't wired
   // or configured.
   await server.register(feedbackRoutes, { prefix: '/api/feedback' });
+
+  // User-defined AI agents: instance status + model catalog, and agent
+  // definitions. Both answer 503 AI_UNAVAILABLE until a database is wired.
+  await server.register(aiRoutes, { prefix: '/api/ai' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak
