@@ -662,6 +662,69 @@ const feedbackConfigSchema = z.object({
   tokenSecret: z.string().default('github-feedback-token'),
 });
 
+// Top-level `ai:` block: user-defined agents (design:
+// docs/superpowers/specs/2026-10-01-ai-agents-and-workflows-design.md).
+// Everything defaults, so a config without the block still validates, and an
+// empty database URL simply leaves agent features switched off.
+const aiModelSchema = z.object({
+  // Stable key an agent definition refers to. Never sent to Vertex.
+  key: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'model keys are lower-case letters, digits and dashes'),
+  label: z.string().min(1),
+  // Which Vertex entry point serves the model: Claude (`anthropic`), Gemini
+  // (`gemini`), or an open model on the OpenAI-compatible endpoint (`maas`).
+  family: z.enum(['anthropic', 'gemini', 'maas']),
+  // The id Vertex expects for that family, e.g. `claude-opus-5-5`.
+  modelId: z.string().min(1),
+  contextWindow: z.number().int().positive(),
+  // False for a model that cannot call tools. Such a model can only back an
+  // agent that holds no grants.
+  tools: z.boolean().default(true),
+});
+
+const AI_LIMIT_DEFAULTS = {
+  maxSteps: 25,
+  maxTokens: 400_000,
+  timeoutSeconds: 900,
+  dailyTokens: 4_000_000,
+};
+
+const aiConfigSchema = z.object({
+  // Master switch. False hides agent features without touching stored data.
+  enabled: z.boolean().default(true),
+  database: z
+    .object({
+      // Postgres connection string. Supplied as ${DATABASE_URL:-} in the
+      // committed YAML and deliberately NOT a secrets-registry entry: boot
+      // hydration reads every registry entry from GSM when its env var is
+      // unset, and the api-server holds no grant on this container.
+      url: z.string().default(''),
+    })
+    .default({ url: '' }),
+  vertex: z
+    .object({
+      project: z.string().default(''),
+      location: z.string().default('global'),
+    })
+    .default({ project: '', location: 'global' }),
+  // The catalog the agent editor's model picker shows.
+  models: z.array(aiModelSchema).default([]),
+  // Key of the model a new agent starts with. Empty means "no default".
+  defaultModel: z.string().default(''),
+  // Instance ceilings. An agent's own limits may be lower, never higher.
+  limits: z
+    .object({
+      maxSteps: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxSteps),
+      maxTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxTokens),
+      timeoutSeconds: z.number().int().positive().default(AI_LIMIT_DEFAULTS.timeoutSeconds),
+      dailyTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.dailyTokens),
+    })
+    .default(AI_LIMIT_DEFAULTS),
+});
+export type AiConfig = z.infer<typeof aiConfigSchema>;
+export type AiModelConfig = z.infer<typeof aiModelSchema>;
+
 const baseConfigSchema = z.object({
   // Secrets registry — maps logical secret keys to their GSM container and
   // consumption mode. Defaults include all 13 canonical entries so a config
@@ -873,6 +936,16 @@ const baseConfigSchema = z.object({
     defaultLabels: ['user-report'],
     tokenSecret: 'github-feedback-token',
   }),
+  // User-defined AI agents. Defaulted so existing configs without an `ai`
+  // block still validate; with no database URL the feature stays off.
+  ai: aiConfigSchema.default({
+    enabled: true,
+    database: { url: '' },
+    vertex: { project: '', location: 'global' },
+    models: [],
+    defaultModel: '',
+    limits: AI_LIMIT_DEFAULTS,
+  }),
 });
 
 // Cross-reference validation: ensure every logical secret has a registry entry
@@ -913,6 +986,26 @@ export const configSchema = baseConfigSchema.superRefine((cfg, ctx) => {
     if (ref && !cfg.secrets[ref]) {
       ctx.addIssue({ code: 'custom', path, message: `references unknown secret "${ref}"` });
     }
+  }
+
+  // ai.models: keys are what agent definitions store, so they must be unique,
+  // and the default must point at one of them.
+  const modelKeys = cfg.ai.models.map((m) => m.key);
+  modelKeys.forEach((key, i) => {
+    if (modelKeys.indexOf(key) !== i) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ai', 'models', i, 'key'],
+        message: `duplicate model key "${key}"`,
+      });
+    }
+  });
+  if (cfg.ai.defaultModel && !modelKeys.includes(cfg.ai.defaultModel)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['ai', 'defaultModel'],
+      message: `"${cfg.ai.defaultModel}" is not a key in ai.models`,
+    });
   }
 });
 

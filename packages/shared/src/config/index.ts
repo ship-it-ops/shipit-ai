@@ -20,6 +20,8 @@ export type {
   AppLike,
   AccessControlConfig,
   AuthConfig,
+  AiConfig,
+  AiModelConfig,
   SecretEntry,
   SecretsRegistry,
   KubernetesConnectorConfig,

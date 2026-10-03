@@ -112,6 +112,31 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       defaultLabels: ['user-report'],
       tokenSecret: 'github-feedback-token',
     },
+    ai: {
+      enabled: true,
+      database: { url: '' },
+      vertex: { project: 'test-project', location: 'global' },
+      defaultModel: 'claude-opus',
+      models: [
+        {
+          key: 'claude-opus',
+          label: 'Claude Opus',
+          family: 'anthropic',
+          modelId: 'claude-opus-5-5',
+          contextWindow: 1_000_000,
+          tools: true,
+        },
+        {
+          key: 'gemini',
+          label: 'Gemini',
+          family: 'gemini',
+          modelId: 'gemini-test',
+          contextWindow: 1_000_000,
+          tools: true,
+        },
+      ],
+      limits: { maxSteps: 25, maxTokens: 400_000, timeoutSeconds: 900, dailyTokens: 4_000_000 },
+    },
     secrets: {},
     ...overrides,
   };

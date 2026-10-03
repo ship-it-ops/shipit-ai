@@ -154,6 +154,50 @@ feedback:
     - user-report
   tokenSecret: github-feedback-token
 
+# User-defined AI agents (AI → Agents). Off until a database is configured:
+# with an empty database URL every agent route answers 503 AI_UNAVAILABLE and
+# the rest of the product is unaffected.
+ai:
+  enabled: true
+  database:
+    # Postgres connection string for the app role. Delivered as a plain env var
+    # (ESO in GKE). Intentionally not in the secrets: registry above, because
+    # boot hydration would then try to read it from GSM.
+    url: ${DATABASE_URL:-}
+  vertex:
+    # Model calls go to Vertex AI in this project, authenticated by Workload
+    # Identity / Application Default Credentials. No API key.
+    project: ${GOOGLE_CLOUD_PROJECT:-}
+    location: ${GOOGLE_CLOUD_LOCATION:-global}
+  # The model picker's catalog. `modelId` is the id Vertex expects for the
+  # family. Claude models must first be enabled in the project's Model Garden.
+  defaultModel: claude-opus
+  models:
+    - key: claude-opus
+      label: Claude Opus 5.5
+      family: anthropic
+      modelId: claude-opus-5-5
+      contextWindow: 1000000
+      tools: true
+    - key: claude-sonnet
+      label: Claude Sonnet 5.5
+      family: anthropic
+      modelId: claude-sonnet-5-5
+      contextWindow: 1000000
+      tools: true
+    - key: claude-haiku
+      label: Claude Haiku 4.5
+      family: anthropic
+      modelId: claude-haiku-4-5@20251001
+      contextWindow: 200000
+      tools: true
+  # Instance ceilings. An agent may set lower limits, never higher.
+  limits:
+    maxSteps: 25
+    maxTokens: 400000
+    timeoutSeconds: 900
+    dailyTokens: 4000000
+
 frontend:
   api:
     # Public URL the web-UI's browser code uses to reach the api-server.
