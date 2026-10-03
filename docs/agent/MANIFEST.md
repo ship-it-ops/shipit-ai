@@ -31,7 +31,7 @@ Last updated: 2026-10-02 | Total notes: 92
 
 <!-- always-read at session start -->
 
-- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-02 | HANDOFF: agents spec + 2 plans on branch ai-agents-design; plans await owner review; native execution chosen
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-02 | AI nav (M0) + agents foundation (M1a) built on ai-agents-design; Vertex probe blocked on GCP login
 
 ## Decisions
 

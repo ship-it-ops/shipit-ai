@@ -5,49 +5,46 @@ created: 2026-10-01
 updated: 2026-10-02
 author: claude-session-2026-09-30 (handoff written at context limit)
 branch: ai-agents-design
-agent: unassigned — next session picks this up
+agent: claude-session-2026-10-02 (executing the plans)
 tags: [ai, agents, workflows, handoff, postgres, vertex]
 importance: core
 ---
 
-# Handoff: AI agents and workflows — design done, two plans written, nothing implemented yet
+# Handoff: AI agents and workflows — M0 nav and M1 foundation built on the branch; Vertex probe blocked on GCP login
 
-Read this first, then the spec. It replaces the conversation that produced it.
+Read this first, then the spec. It replaces the conversations that produced it.
 
 ## Where things stand
 
 The owner asked for an **AI** section in the left nav plus a builder for user-defined
-agents, tool permissions, triggers and LangGraph-style workflows. Over one long session
-that became a deep dive, four owner decisions, a design spec, an infra hand-off, and two
-implementation plans. **No product code has been changed in this repo.**
+agents, tool permissions, triggers and LangGraph-style workflows. The design, two
+implementation plans, and the code for both plans (except the foundation plan's Task 9
+spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 
-| Stage                                      | State                                                                                  |
-| ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Deep dive and options                      | Done. Owner reviewed.                                                                  |
-| Owner decisions                            | Done (see below).                                                                      |
-| Design spec                                | Written and committed. Owner said "GO ahead" after it; see "Not explicitly confirmed". |
-| Infra brief                                | Written, committed here, and placed in the infra repo. Not yet worked.                 |
-| Plan: AI nav (Milestone 0)                 | Written and committed. **Awaiting owner review.**                                      |
-| Plan: agents foundation (M1, part 1)       | Written and committed, code proven in a clone. **Awaiting owner review.**              |
-| Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Blocked on the Vertex probe (foundation Task 9).          |
-| Implementation                             | Nav plan (M0) done on the branch; foundation plan next.                                |
+| Stage                                      | State                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Deep dive, owner decisions, design spec    | Done.                                                                               |
+| Infra brief                                | Written, committed here, and placed in the infra repo. Not yet worked.              |
+| Plan: AI nav (Milestone 0)                 | Approved 2026-10-02. **Implemented**, final review: ready to merge.                 |
+| Plan: agents foundation (M1, part 1)       | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`.    |
+| Foundation Task 9 (Vertex probe)           | **Blocked on the owner**: gcloud user login and ADC both expired (`invalid_grant`). |
+| Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Waits for the Task 9 findings.                         |
 
-## Waiting on the owner (ask this first)
+## Waiting on the owner
 
-Asked on 2026-10-02. Two of the three questions are settled:
+1. **GCP login for the Vertex probe.** Run `gcloud auth login` and
+   `gcloud auth application-default login`, and make sure the Vertex AI API is enabled on
+   `ship-it-ai-portal` and at least one Claude model is enabled in Model Garden (console
+   step, accepts Anthropic's terms). Then foundation Task 9 can run.
+2. **Local dev user capabilities.** `shipit.config.local.example.yaml` (and the owner's
+   local copy) set `frontend.devUser.capabilities: [admin]`. `admin` is not a capability
+   name; only `*` is a wildcard. With auth off, the local dev user therefore gets 403 on
+   every capability-gated route (the new `/api/agents*` and `/api/ai/models`, and the
+   existing `graph:write` manual-edit routes). Change the example to `'*'`? Not changed yet.
 
-- **Execution method: native.** Implement in-session with `superpowers:executing-plans`,
-  one reviewer at the end. Applies to both plans.
-- **Commit and push the docs: approved and done** (see Git state). That approval covered
-  the docs commit only; every later commit and push needs its own.
-
-Still open:
-
-1. **Do the two plans capture what you want?** The owner had not read them yet on
-   2026-10-02.
-
-The owner approved both plans on 2026-10-02 ("good to go"), approved committing at each
-plan commit step and pushing after each commit on `ai-agents-design`.
+Owner approvals on 2026-10-02: both plans ("good to go"); native execution; commit at each
+plan commit step and push after each commit on `ai-agents-design`. Pushing elsewhere,
+opening a PR or merging still needs its own approval.
 
 ## Standing rules that bit or nearly bit this session
 
@@ -61,13 +58,14 @@ plan commit step and pushing after each commit on `ai-agents-design`.
 
 ## Git state
 
-- Branch `ai-agents-design`, created from `main` at `fe5009c`. **Pushed** to `origin` on
-  2026-10-02. No pull request yet.
-- Two commits: `85aa05ce38599f75c20248fa0c97a91aca25cd58` (spec, infra brief, decision
-  note, plan note, manifest) and a second one on top carrying the two plans, two spec
-  corrections, the plan note, the manifest, this file and a secretlint allow-list (see
-  "Facts that cost time"). Read its SHA with `git log -2 --format=%H ai-agents-design`.
-- Git-ignored, local only: `ClaudePlans/agents-foundation-verified.patch` (see below).
+- Branch `ai-agents-design`, created from `main` at `fe5009c`, pushed to `origin`. No PR.
+- Read the commit list with `git log --oneline fe5009c..origin/ai-agents-design`. In order:
+  design docs; plans + secretlint allow-list; three nav commits (M0); eight foundation
+  commits (Tasks 1–8). This status note may be one commit behind; trust `git log`.
+- Git-ignored, local only: `ClaudePlans/agents-foundation-verified.patch` (the clone's
+  diff for foundation Tasks 1–8). Every file written for Tasks 1–8 was byte-compared
+  against it; all matched. It can be deleted.
+- Execution ledgers (git-ignored): `.superpowers/sdd/2026-10-01-agents-foundation/progress.md`.
 
 ## Documents, in reading order
 
@@ -111,51 +109,37 @@ otherwise, but they were never individually confirmed. The two most consequentia
 
 Still genuinely open: **open source versus Enterprise** (nothing is gated by tier).
 
-## The foundation plan's verification status
+## Verification done on this machine (2026-10-02)
 
-Its code was built in an isolated clone, not in this working tree.
-
-- **Passed in the clone:** workspace `pnpm turbo typecheck`; full `pnpm turbo test` with no
-  regressions (api-server 674 passed, 56 of them new; agents 45 passed with 23 integration
-  tests skipped); `pnpm format:check`; `pnpm db:migrate` error paths; the real
-  `shipit.config.yaml` loading with the new `ai` section.
-- **Database code:** 22 of 23 integration tests passed against an embedded Postgres
-  (pglite) through a scratch-only adapter. The 23rd (two migrators at once) needs separate
-  connections.
-- **Never run:** the `pg`-driver harness (`packages/agents/src/__tests__/test-db.ts`)
-  against a real Postgres; the api-server Docker image build; `docker compose up` with the
-  new services; the Vertex probe. Docker was not running on the machine.
-- **The nav plan's code was not run at all.** Its icon names and file paths were checked
-  against the installed packages and the tree.
-
-`ClaudePlans/agents-foundation-verified.patch` is the clone's full diff for foundation
-Tasks 1 to 8 (44 files, +3752 / −19), taken against `85aa05c`. `git apply --check` passed
-on this tree on 2026-10-01. It is the same code the plan shows. It is a convenience, not a
-substitute for the plan's steps: applying it wholesale skips the per-task test runs and
-the hands-on checks in Tasks 2, 4 and 8. If the owner chooses native execution, applying
-it task by task (or using it to cross-check what you type) is reasonable; say so first.
-
-## Prerequisites the next steps need
-
-- **Docker running** — foundation Tasks 2, 4 and 8.
-- **`gcloud auth application-default login`**, the Vertex AI API enabled on
-  `ship-it-ai-portal`, and at least one Claude model enabled in Model Garden (a console
-  step that includes accepting Anthropic's terms) — foundation Task 9. Only the owner can
-  do the Model Garden step.
-- Nothing for the nav plan.
+- Workspace typecheck, all tests, lint (no new warnings), format check, after every task.
+  api-server 674 passed / 51 skipped; agents 45 unit + 23 integration.
+- `agents` integration suites **23/23 against a real Postgres 17** in Docker, including the
+  two-concurrent-migrators test the clone could not run.
+- Hands-on (Task 8): create 201 `etag: "1"`, update 200 `etag: "2"`, stale `If-Match`
+  409 `VERSION_CONFLICT` `serverRevision: 2`, publish `publishedVersion: 1`, list total 1;
+  Postgres stopped → `/api/agents` 503 naming `database`, `/api/health` 200, process
+  survives, recovers without restart; no database → "Agent features: off", health 200,
+  agents 503.
+- api-server Docker image builds and ships `migrate-cli.js`; the compose `migrate` service
+  (`docker compose run --rm migrate`) applies from `/app/db/migrations`.
+- Nav: `next dev` curl check of all redirects, query string kept.
+- Final reviews: nav ready to merge (no fixes); foundation "with fixes", both Important
+  findings fixed test-first in `545d6b8` (10 s statement timeout on the pool, migrator
+  opts out; If-Match/paging values bounded so they cannot surface as a fake 503). Nine
+  Minors deferred, listed in the foundation ledger.
+- **Not run:** the Vertex probe (Task 9).
 
 ## Next steps, in order
 
-1. Get the owner's review of the two plans (the one question still open above).
-2. ~~Execute the nav plan~~ — done 2026-10-02, three commits on `ai-agents-design`, pushed.
-3. Execute foundation Tasks 1 to 8. Task 9 (Vertex probe) can run in parallel whenever
-   the GCP prerequisites are in place.
-4. When Task 9 has reported, write the next plan: runner, model client, graph read tools,
-   runs API, agent editor, run view, Ask, built-in agent (Milestone 1, second half). If
-   the probe shows the JSON round trip of signed reasoning fails, the model layer for that
-   family falls back to the direct SDKs behind the same `ModelClient` interface; nothing
-   else in the design changes.
-5. Write infra brief 2 (the `agent-runner` Deployment) once that image exists.
+1. Owner restores GCP login (above); run foundation Task 9 per the plan. The probe
+   directory can be recreated from the plan's Step 1–2 in a minute.
+2. Write the next plan from the probe's findings: runner, model client, graph read tools,
+   runs API, agent editor, run view, Ask, built-in agent (Milestone 1, second half). If the
+   JSON round trip of signed reasoning fails for a family, that family's model layer falls
+   back to the direct SDK behind the same `ModelClient` interface.
+3. Open a PR for `ai-agents-design` when the owner wants one (M0 and the M1 foundation are
+   safe to ship before infra: with no `DATABASE_URL` agent routes answer 503).
+4. Write infra brief 2 (the `agent-runner` Deployment) once that image exists.
 
 ## Cross-repo state
 
