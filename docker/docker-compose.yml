@@ -31,6 +31,24 @@ services:
       timeout: 5s
       retries: 5
 
+  # Postgres holds agent definitions and (later) run history. Optional for the
+  # rest of the product: without it the AI pages show setup guidance.
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: shipit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shipit-dev}
+      POSTGRES_DB: shipit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shipit -d shipit']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # Each backend service reads shipit.config.yaml mounted into /app. Only the
   # env vars referenced from the YAML's ${VAR} placeholders are passed in —
   # everything else lives in the committed config file. NEO4J_URI / REDIS_URL
@@ -108,3 +126,4 @@ volumes:
   neo4j_data:
   neo4j_logs:
   redis_data:
+  postgres_data:
