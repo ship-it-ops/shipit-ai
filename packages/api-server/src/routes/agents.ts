@@ -55,6 +55,11 @@ function invalid(reply: FastifyReply, issues: Issue[]): FastifyReply {
   });
 }
 
+// Largest value of a Postgres `integer`. Revisions are stored as one, and a
+// number past it reaching the driver is an error the routes would otherwise
+// report as the database being down.
+const PG_INT_MAX = 2_147_483_647;
+
 /**
  * Reads If-Match as a revision. `undefined` (no header) forces the write;
  * `null` means the header was present but unusable.
@@ -64,13 +69,14 @@ function parseIfMatch(header: unknown): number | undefined | null {
   if (typeof header !== 'string') return null;
   const raw = header.replace(/^"|"$/g, '');
   if (!/^[1-9]\d*$/.test(raw)) return null;
-  return Number(raw);
+  const revision = Number(raw);
+  return revision <= PG_INT_MAX ? revision : null;
 }
 
 function intParam(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
-  return Number.isInteger(n) ? n : undefined;
+  return Number.isInteger(n) ? Math.min(n, PG_INT_MAX) : undefined;
 }
 
 // Which capability the saving user must hold for a grant to be allowed. Only

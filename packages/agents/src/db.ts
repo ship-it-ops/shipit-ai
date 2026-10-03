@@ -25,7 +25,18 @@ export interface CreatePoolOptions {
   /** Sets `search_path` for every connection. Used by tests to isolate a schema. */
   searchPath?: string;
   onError?: (err: Error) => void;
+  /**
+   * Server-side `statement_timeout` for every connection, in ms. Defaults to
+   * 10 s so a stalled database fails a request instead of hanging it. 0 turns
+   * it off: the migrator waits on an advisory lock and runs long DDL.
+   */
+  statementTimeoutMs?: number;
 }
+
+const DEFAULT_STATEMENT_TIMEOUT_MS = 10_000;
+// Extra time for the client-side backstop, which fires only when the server
+// stops answering altogether and its own statement_timeout cannot.
+const QUERY_TIMEOUT_GRACE_MS = 5_000;
 
 export function createPool(opts: CreatePoolOptions): Pool {
   const config: PoolConfig = {
@@ -35,6 +46,11 @@ export function createPool(opts: CreatePoolOptions): Pool {
     connectionTimeoutMillis: 5_000,
   };
   if (opts.searchPath) config.options = `-c search_path=${opts.searchPath}`;
+  const statementTimeout = opts.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
+  if (statementTimeout > 0) {
+    config.statement_timeout = statementTimeout;
+    config.query_timeout = statementTimeout + QUERY_TIMEOUT_GRACE_MS;
+  }
   const pool = new Pool(config);
   // An idle client that errors (server restart, network drop) emits 'error' on
   // the pool. With no listener Node treats it as an uncaught exception and the

@@ -350,6 +350,19 @@ describe('agents routes — definitions (auth disabled, admin principal)', () =>
     });
   });
 
+  it('clamps paging values Postgres cannot hold instead of passing them through', async () => {
+    // An out-of-range OFFSET is a driver error, which the route would report as
+    // the database being down. Clamped, it is just a page past the end.
+    await server.inject({
+      method: 'GET',
+      url: '/api/agents?limit=99999999999&offset=100000000000000000000',
+    });
+    expect(fake.calls.at(-1)).toEqual({
+      method: 'list',
+      args: [{ includeArchived: false, limit: 2_147_483_647, offset: 2_147_483_647 }],
+    });
+  });
+
   it('updates with If-Match, returning the new ETag', async () => {
     const created = (await create()).json() as AgentRecord;
     const res = await server.inject({
@@ -393,7 +406,7 @@ describe('agents routes — definitions (auth disabled, admin principal)', () =>
     expect(res.json()).toMatchObject({ error: { code: 'VERSION_CONFLICT' }, serverRevision: 2 });
   });
 
-  it.each(['"abc"', '"0"', '"-1"', '"1.5"', 'W/"1"'])(
+  it.each(['"abc"', '"0"', '"-1"', '"1.5"', 'W/"1"', '"2147483648"', '"99999999999999999999"'])(
     'rejects the If-Match value %s',
     async (header) => {
       const created = (await create()).json() as AgentRecord;

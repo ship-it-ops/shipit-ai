@@ -13,7 +13,9 @@ async function main(): Promise<void> {
     return;
   }
   const dir = resolve(process.env.MIGRATIONS_DIR ?? 'db/migrations');
-  const pool = createPool({ connectionString, max: 1 });
+  // No statement timeout: a second migrator waits on the advisory lock for as
+  // long as the first one runs, and DDL on a large table can take minutes.
+  const pool = createPool({ connectionString, max: 1, statementTimeoutMs: 0 });
   try {
     const result = await runMigrations({
       db: createDb(pool),

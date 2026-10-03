@@ -32,4 +32,23 @@ describe('createPool', () => {
     expect(pool.options.options).toBe('-c search_path=itest_abc');
     await pool.end();
   });
+
+  it('bounds every statement by default, so a stalled server cannot hang a request', async () => {
+    const pool = createPool({ connectionString: URL });
+    expect(pool.options.statement_timeout).toBe(10_000);
+    // The client-side backstop fires only if the server stops answering at all.
+    expect(pool.options.query_timeout).toBe(15_000);
+    await pool.end();
+  });
+
+  it('takes a custom statement timeout, and 0 turns both timeouts off', async () => {
+    const custom = createPool({ connectionString: URL, statementTimeoutMs: 2_000 });
+    expect(custom.options.statement_timeout).toBe(2_000);
+    expect(custom.options.query_timeout).toBe(7_000);
+    await custom.end();
+    const off = createPool({ connectionString: URL, statementTimeoutMs: 0 });
+    expect(off.options.statement_timeout).toBeUndefined();
+    expect(off.options.query_timeout).toBeUndefined();
+    await off.end();
+  });
 });
