@@ -4,3 +4,5 @@ export { missingKnowledgeMigrations } from './status.js';
 export { contentHashOf, sha256Hex } from './hash.js';
 export { redactSegments, redactText } from './redaction.js';
 export type { Redacted } from './redaction.js';
+export { chunkDocument, estimateTokens, splitLongText } from './chunking.js';
+export type { ChunkDraft, ChunkableDocument, ChunkingOptions } from './chunking.js';
