@@ -42,3 +42,27 @@ export type {
   ListAgentsOptions,
   UpdateAgentPatch,
 } from './agent-store.js';
+export {
+  RUN_STATUSES,
+  RunLeaseLostError,
+  RunNotFoundError,
+  RunNotWaitingError,
+  RunStore,
+  TERMINAL_RUN_STATUSES,
+} from './run-store.js';
+export type {
+  CreateRunInput,
+  ListRunsOptions,
+  RunError,
+  RunErrorCode,
+  RunMessageRecord,
+  RunMode,
+  RunRecord,
+  RunStatus,
+  RunTriggerKind,
+  RunWritePolicy,
+  StartToolCallInput,
+  StoredMessage,
+  ToolCallRecord,
+  ToolCallStatus,
+} from './run-store.js';
