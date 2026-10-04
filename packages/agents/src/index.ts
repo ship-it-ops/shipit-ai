@@ -66,3 +66,9 @@ export type {
   ToolCallRecord,
   ToolCallStatus,
 } from './run-store.js';
+export { modelToolName, resolvePolicy, resolveTools } from './tools.js';
+export type { ResolvedTool, ToolDescriptor } from './tools.js';
+export { AGENT_RUNS_QUEUE, RUN_EVENTS_CHANNEL, RUNNER_HEARTBEAT_KEY } from './queues.js';
+export type { RunEvent, RunJob } from './queues.js';
+export { RunQueue, parseRedisUrl } from './run-queue.js';
+export type { RunQueueOptions } from './run-queue.js';

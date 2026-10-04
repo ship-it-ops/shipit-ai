@@ -55,6 +55,9 @@ importers:
 
   packages/agents:
     dependencies:
+      bullmq:
+        specifier: ^5.79.1
+        version: 5.79.1
       pg:
         specifier: ^8.23.1
         version: 8.23.1
