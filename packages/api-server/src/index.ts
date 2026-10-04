@@ -40,6 +40,7 @@ import {
 import { KnowledgeStore } from '@shipit-ai/knowledge';
 import { AiStatusService } from './services/ai/ai-status-service.js';
 import { RunEventHub } from './services/ai/run-event-hub.js';
+import { ensureBuiltinAgents } from './services/ai/builtin-agents.js';
 import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
 import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
 import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
@@ -452,6 +453,7 @@ async function main() {
       ? createPool({ connectionString: config.ai.database.url })
       : null;
   const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
+  const agentStore = agentDb ? new AgentStore(agentDb) : undefined;
   // Runs are queued for the agent runner on Redis; with no Redis there is no
   // queue, and the run routes answer 503 instead of creating runs nobody works.
   // The pool may be open for the knowledge layer alone, so check ai.enabled too.
@@ -565,13 +567,32 @@ async function main() {
     // of a Redis URL stays a soft warning rather than a hard boot failure.
     redis: runStoreRedis ?? undefined,
     resolved,
-    agentStore: agentDb ? new AgentStore(agentDb) : undefined,
+    agentStore,
     runStore: agentDb ? new RunStore(agentDb) : undefined,
     runQueue,
     runEvents,
     aiStatus,
     knowledgeStatus,
   });
+
+  // The built-in Graph assistant backs Ask. Seeded once the database answers
+  // and a model is configured; until then it retries every minute, quietly.
+  if (agentStore && config.ai.enabled) {
+    const seed = async (): Promise<boolean> => {
+      try {
+        return await ensureBuiltinAgents(agentStore, config.ai, (m) => console.log(m));
+      } catch (err) {
+        console.warn(`Built-in agents not seeded yet: ${(err as Error).message}`);
+        return false;
+      }
+    };
+    if (!(await seed())) {
+      const retry = setInterval(() => {
+        void seed().then((done) => done && clearInterval(retry));
+      }, 60_000);
+      retry.unref();
+    }
+  }
 
   // Start any pre-configured connectors after the server is constructed so
   // the runner attaches once the rest of the wiring (event bus, etc.) is in
