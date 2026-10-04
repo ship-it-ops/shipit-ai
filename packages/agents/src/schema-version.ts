@@ -3,4 +3,4 @@
 // schema_migrations at boot and switch agent features off, without crashing,
 // when the database is behind. Bump it in the same change that adds a file to
 // db/migrations/.
-export const EXPECTED_SCHEMA_VERSION = '0003';
+export const EXPECTED_SCHEMA_VERSION = '0004';

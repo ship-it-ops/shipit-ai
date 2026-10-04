@@ -396,7 +396,11 @@ export class RunStore {
       `UPDATE runs
           SET status = 'running', lease_owner = $2,
               lease_expires_at = now() + make_interval(secs => $3),
-              started_at = COALESCE(started_at, now()), updated_at = now()
+              started_at = COALESCE(started_at, now()),
+              -- Taking over a dead worker's run is not progress: leaving
+              -- updated_at alone lets failStalled stop a run that keeps
+              -- killing its workers.
+              updated_at = CASE WHEN status = 'queued' THEN now() ELSE updated_at END
         WHERE id = $1 AND NOT cancel_requested
           AND (status = 'queued' OR (status = 'running' AND lease_expires_at < now()))
         RETURNING *`,
@@ -422,12 +426,49 @@ export class RunStore {
       : { held: false, cancelRequested: false };
   }
 
-  /** Running runs whose worker stopped renewing. The runner re-queues them. */
+  /**
+   * Running runs whose worker stopped renewing. The runner re-queues them.
+   * Runs with a cancel request are left out: claim() refuses them, so
+   * cancelAbandoned() finishes them instead.
+   */
   async expiredLeases(): Promise<string[]> {
     const { rows } = await this.db.query<{ id: string }>(
-      `SELECT id FROM runs WHERE status = 'running' AND lease_expires_at < now() ORDER BY id`,
+      `SELECT id FROM runs
+        WHERE status = 'running' AND lease_expires_at < now() AND NOT cancel_requested
+        ORDER BY id`,
     );
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Finishes, as cancelled, running runs that were asked to stop and whose
+   * worker died before it could. Nothing else can: no worker may claim them.
+   */
+  async cancelAbandoned(): Promise<string[]> {
+    const { rows } = await this.db.query<{ id: string }>(
+      `UPDATE runs
+          SET status = 'cancelled', finished_at = now(), updated_at = now(),
+              lease_owner = NULL, lease_expires_at = NULL
+        WHERE status = 'running' AND cancel_requested AND lease_expires_at < now()
+        RETURNING id`,
+    );
+    return rows.map((r) => r.id).sort();
+  }
+
+  /**
+   * Queued runs no worker has picked up for `olderThanSeconds`: their job was
+   * lost (Redis restarted, or a worker failed before claiming). The caller
+   * queues them again. Each is returned once per window, also across runner
+   * replicas, because returning it restarts its wait.
+   */
+  async requeueStaleQueued(olderThanSeconds: number): Promise<string[]> {
+    const { rows } = await this.db.query<{ id: string }>(
+      `UPDATE runs SET updated_at = now()
+        WHERE status = 'queued' AND updated_at < now() - make_interval(secs => $1)
+        RETURNING id`,
+      [olderThanSeconds],
+    );
+    return rows.map((r) => r.id).sort();
   }
 
   /**
@@ -469,17 +510,31 @@ export class RunStore {
   }
 
   /** Counts one model step and adds its token usage. */
+  /**
+   * Counts one model step: on the run, and on the agent's usage for today
+   * (UTC), which is what the daily cap reads.
+   */
   async recordStep(id: string, usage: { input: number; output: number }): Promise<RunRecord> {
-    const { rows } = await this.db.query<RunRow>(
-      `UPDATE runs
-          SET steps = steps + 1, input_tokens = input_tokens + $2,
-              output_tokens = output_tokens + $3, updated_at = now()
-        WHERE id = $1
-        RETURNING *`,
-      [id, usage.input, usage.output],
-    );
-    if (!rows[0]) throw new RunNotFoundError(id);
-    return toRun(rows[0]);
+    return this.db.tx(async (client) => {
+      const { rows } = await client.query<RunRow>(
+        `UPDATE runs
+            SET steps = steps + 1, input_tokens = input_tokens + $2,
+                output_tokens = output_tokens + $3, updated_at = now()
+          WHERE id = $1
+          RETURNING *`,
+        [id, usage.input, usage.output],
+      );
+      if (!rows[0]) throw new RunNotFoundError(id);
+      await client.query(
+        `INSERT INTO agent_usage_daily (agent_id, day, input_tokens, output_tokens)
+         VALUES ($1, (now() AT TIME ZONE 'UTC')::date, $2, $3)
+         ON CONFLICT (agent_id, day) DO UPDATE
+           SET input_tokens = agent_usage_daily.input_tokens + EXCLUDED.input_tokens,
+               output_tokens = agent_usage_daily.output_tokens + EXCLUDED.output_tokens`,
+        [rows[0].agent_id, usage.input, usage.output],
+      );
+      return toRun(rows[0]);
+    });
   }
 
   async addWarning(id: string, warning: string): Promise<RunRecord> {
@@ -667,12 +722,15 @@ export class RunStore {
     return rows.map(toToolCall);
   }
 
-  /** Input plus output tokens of every run of the agent created at or after `since`. */
-  async tokensSince(agentId: string, since: Date): Promise<number> {
+  /**
+   * Input plus output tokens the agent spent on the UTC day `day` falls on,
+   * whenever the runs that spent them began.
+   */
+  async tokensOnDay(agentId: string, day: Date): Promise<number> {
     const { rows } = await this.db.query<{ total: string }>(
       `SELECT COALESCE(SUM(input_tokens + output_tokens), 0)::text AS total
-         FROM runs WHERE agent_id = $1 AND created_at >= $2`,
-      [agentId, since.toISOString()],
+         FROM agent_usage_daily WHERE agent_id = $1 AND day = $2::date`,
+      [agentId, day.toISOString().slice(0, 10)],
     );
     return Number(rows[0]!.total);
   }

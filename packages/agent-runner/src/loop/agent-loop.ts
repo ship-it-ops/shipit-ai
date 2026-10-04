@@ -8,6 +8,7 @@
 //   - an assistant message without tool calls: end the run, or the chat turn.
 // Because the decision is made from Postgres every time, resuming after a
 // crash is the same code path as running normally.
+import { randomUUID } from 'node:crypto';
 import {
   RunLeaseLostError,
   resolveTools,
@@ -95,7 +96,11 @@ export class AgentLoop implements AgentRuntime {
   }
 
   async process(runId: string): Promise<ProcessOutcome> {
-    const run = await this.opts.runs.claim(runId, this.opts.owner, this.leaseSeconds);
+    // A fresh name per claim, not per process: the runner works several runs
+    // at once, and a slot that lost a run must not pass for the slot that
+    // took it over.
+    const holder = `${this.opts.owner}:${randomUUID().slice(0, 8)}`;
+    const run = await this.opts.runs.claim(runId, holder, this.leaseSeconds);
     if (!run) return 'not_claimed';
     this.publish({ runId, status: 'running' });
 
@@ -103,7 +108,7 @@ export class AgentLoop implements AgentRuntime {
     // takeover aborts whatever the run is waiting on.
     const control = new AbortController();
     const heartbeat = setInterval(() => {
-      this.opts.runs.renewLease(runId, this.opts.owner, this.leaseSeconds).then(
+      this.opts.runs.renewLease(runId, holder, this.leaseSeconds).then(
         (lease) => {
           if (!lease.held) control.abort('lease_lost' satisfies AbortReason);
           else if (lease.cancelRequested) control.abort('cancelled' satisfies AbortReason);
@@ -113,7 +118,7 @@ export class AgentLoop implements AgentRuntime {
     }, this.renewEveryMs);
 
     try {
-      return await this.drive(run, control.signal);
+      return await this.drive(holder, run, control.signal);
     } catch (err) {
       if (err instanceof RunLeaseLostError) return 'lease_lost';
       throw err;
@@ -122,13 +127,18 @@ export class AgentLoop implements AgentRuntime {
     }
   }
 
-  private async drive(claimed: RunRecord, signal: AbortSignal): Promise<ProcessOutcome> {
+  private async drive(
+    holder: string,
+    claimed: RunRecord,
+    signal: AbortSignal,
+  ): Promise<ProcessOutcome> {
     const { runs } = this.opts;
     let run = claimed;
     const definition = run.definition;
     const model = this.opts.models.find((m) => m.key === definition.model);
     if (!model) {
       return this.fail(
+        holder,
         run,
         'MODEL_ERROR',
         `Model ${definition.model} is not offered on this instance.`,
@@ -158,25 +168,29 @@ export class AgentLoop implements AgentRuntime {
           const results = await this.settleCalls(run, last.seq, calls, offered);
           const stopped = this.stopFor(signal);
           if (stopped === 'lease_lost') return 'lease_lost';
-          await this.append(run, [toolResultMessage(results)]);
+          await this.append(holder, run, [toolResultMessage(results)]);
           continue;
         }
         if (run.mode === 'chat') {
-          await runs.waitForInput(run.id, this.opts.owner);
+          await runs.waitForInput(run.id, holder);
           this.publish({ runId: run.id, status: 'waiting_input' });
           return 'waiting';
         }
-        return this.end(run, { status: 'succeeded', output: { text: textOf(last.content) } });
+        return this.end(holder, run, {
+          status: 'succeeded',
+          output: { text: textOf(last.content) },
+        });
       }
 
-      const blocked = await this.checkBeforeStep(run, used, limits, clockStart, signal);
+      const blocked = await this.checkBeforeStep(holder, run, used, limits, clockStart, signal);
       if (blocked) return blocked.outcome;
       if (isLastStep(used(run), limits) && !isStepLimitNote(last?.content)) {
-        await this.append(run, [stepLimitNote()]);
+        await this.append(holder, run, [stepLimitNote()]);
         continue;
       }
 
       const step = await this.callModel(
+        holder,
         run,
         used(run),
         model,
@@ -190,19 +204,25 @@ export class AgentLoop implements AgentRuntime {
       if ('kind' in step) return step.outcome;
       if (step.finish === 'refusal') {
         await runs.recordStep(run.id, step.usage);
-        return this.fail(run, 'MODEL_REFUSED', step.text || 'The model declined to answer.');
+        return this.fail(
+          holder,
+          run,
+          'MODEL_REFUSED',
+          step.text || 'The model declined to answer.',
+        );
       }
       if (step.messages.length === 0 || (step.finish === 'error' && step.toolCalls.length === 0)) {
         await runs.recordStep(run.id, step.usage);
-        return this.fail(run, 'MODEL_ERROR', 'The model stopped without an answer.');
+        return this.fail(holder, run, 'MODEL_ERROR', 'The model stopped without an answer.');
       }
       const lastStep = isLastStep(used(run), limits);
-      await this.append(run, step.messages);
+      await this.append(holder, run, step.messages);
       run = await runs.recordStep(run.id, step.usage);
       if (lastStep && step.toolCalls.length > 0) {
         // Asked to answer, the model called a tool anyway. Nothing runs past
         // the limit: the call stays in the transcript, unrun.
         return this.fail(
+          holder,
           run,
           'STEP_LIMIT',
           `The run reached its limit of ${limits.maxSteps} model steps.`,
@@ -244,6 +264,7 @@ export class AgentLoop implements AgentRuntime {
 
   /** Cancel, limits and the daily cap, checked before every model step. */
   private async checkBeforeStep(
+    holder: string,
     run: RunRecord,
     used: (run: RunRecord) => Usage,
     limits: AgentLimits,
@@ -254,11 +275,11 @@ export class AgentLoop implements AgentRuntime {
     if (stopped === 'lease_lost') return { kind: 'end', outcome: 'lease_lost' };
     const current = (await this.opts.runs.get(run.id)) ?? run;
     if (stopped === 'cancelled' || current.cancelRequested) {
-      return { kind: 'end', outcome: await this.end(run, { status: 'cancelled' }) };
+      return { kind: 'end', outcome: await this.end(holder, run, { status: 'cancelled' }) };
     }
     const failWith = async (code: RunErrorCode, message: string): Promise<Stop> => ({
       kind: 'end',
-      outcome: await this.fail(run, code, message),
+      outcome: await this.fail(holder, run, code, message),
     });
     const spent = used(current);
     if (spent.steps >= limits.maxSteps) {
@@ -273,7 +294,7 @@ export class AgentLoop implements AgentRuntime {
     if (this.now().getTime() - clockStart.getTime() >= limits.timeoutSeconds * 1000) {
       return failWith('TIMEOUT', `The run passed its timeout of ${limits.timeoutSeconds} seconds.`);
     }
-    const today = await this.opts.runs.tokensSince(run.agentId, startOfUtcDay(this.now()));
+    const today = await this.opts.runs.tokensOnDay(run.agentId, this.now());
     if (today >= limits.dailyTokens) {
       return failWith(
         'DAILY_LIMIT',
@@ -284,6 +305,7 @@ export class AgentLoop implements AgentRuntime {
   }
 
   private async callModel(
+    holder: string,
     run: RunRecord,
     spent: Usage,
     model: AiModelConfig,
@@ -309,7 +331,7 @@ export class AgentLoop implements AgentRuntime {
       return await this.opts.model.step({
         model,
         instructions,
-        messages: messages.map((m) => m.content),
+        messages: forModel(messages.map((m) => m.content)),
         tools: [...offered.values()].map(({ resolved }) => ({
           name: resolved.modelName,
           description: resolved.description,
@@ -321,16 +343,17 @@ export class AgentLoop implements AgentRuntime {
     } catch (err) {
       if (!(err instanceof ModelCallError)) throw err;
       if (err.code !== 'ABORTED') {
-        return { kind: 'end', outcome: await this.fail(run, err.code, err.message) };
+        return { kind: 'end', outcome: await this.fail(holder, run, err.code, err.message) };
       }
       const stopped = this.stopFor(signal);
       if (stopped === 'lease_lost') return { kind: 'end', outcome: 'lease_lost' };
       if (stopped === 'cancelled') {
-        return { kind: 'end', outcome: await this.end(run, { status: 'cancelled' }) };
+        return { kind: 'end', outcome: await this.end(holder, run, { status: 'cancelled' }) };
       }
       return {
         kind: 'end',
         outcome: await this.fail(
+          holder,
           run,
           'TIMEOUT',
           `The run passed its timeout of ${limits.timeoutSeconds} seconds.`,
@@ -477,26 +500,32 @@ export class AgentLoop implements AgentRuntime {
     };
   }
 
-  private async append(run: RunRecord, messages: StoredMessage[]): Promise<void> {
-    const appended = await this.opts.runs.appendMessages(run.id, messages, this.opts.owner);
+  private async append(holder: string, run: RunRecord, messages: StoredMessage[]): Promise<void> {
+    const appended = await this.opts.runs.appendMessages(run.id, messages, holder);
     const last = appended.at(-1);
     if (last) this.publish({ runId: run.id, seq: last.seq });
   }
 
   private async end(
+    holder: string,
     run: RunRecord,
     outcome: { status: 'succeeded'; output: unknown } | { status: 'cancelled' },
   ): Promise<ProcessOutcome> {
-    const done = await this.opts.runs.finish(run.id, outcome, this.opts.owner);
+    const done = await this.opts.runs.finish(run.id, outcome, holder);
     if (done) this.publish({ runId: run.id, status: done.status });
     return 'finished';
   }
 
-  private async fail(run: RunRecord, code: RunErrorCode, message: string): Promise<ProcessOutcome> {
+  private async fail(
+    holder: string,
+    run: RunRecord,
+    code: RunErrorCode,
+    message: string,
+  ): Promise<ProcessOutcome> {
     const done = await this.opts.runs.finish(
       run.id,
       { status: 'failed', error: { code, message } },
-      this.opts.owner,
+      holder,
     );
     if (done) this.publish({ runId: run.id, status: done.status });
     return 'finished';
@@ -532,8 +561,18 @@ function lowest(own: AgentLimits, ceilings: AgentLimits): AgentLimits {
   };
 }
 
-function startOfUtcDay(now: Date): Date {
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * The transcript as the model is shown it. Stored messages are passed as they
+ * are, with one omission: a last-step note belongs to the question that ran
+ * out of steps. Replayed on a later question, "you cannot call tools any
+ * more" would talk the model out of its tools for the rest of a chat.
+ */
+function forModel(messages: StoredMessage[]): StoredMessage[] {
+  let lastQuestion = -1;
+  messages.forEach((m, i) => {
+    if (m.role === 'user' && !isStepLimitNote(m)) lastQuestion = i;
+  });
+  return messages.filter((m, i) => !(isStepLimitNote(m) && i < lastQuestion));
 }
 
 /** The tool calls in a stored assistant message, in order. */

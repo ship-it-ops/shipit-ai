@@ -1,6 +1,6 @@
 // Periodic work outside any one run: the heartbeat GET /ai/status reads, and a
-// sweep that recovers runs whose worker died, stops runs that make no
-// progress, and closes idle chats.
+// sweep that recovers runs whose worker died or whose job was lost, stops runs
+// that make no progress, and closes idle chats.
 import type { Redis } from 'ioredis';
 import { RUNNER_HEARTBEAT_KEY, type RunEvent, type RunStore } from '@shipit-ai/agents';
 
@@ -14,6 +14,9 @@ export interface HousekeepingOptions {
   sweepEveryMs?: number;
   log?: (message: string) => void;
 }
+
+// A queued run no worker has taken for this long has lost its job.
+const QUEUED_STALE_SECONDS = 60;
 
 export class Housekeeping {
   private timers: NodeJS.Timeout[] = [];
@@ -46,7 +49,14 @@ export class Housekeeping {
   async sweep(): Promise<void> {
     const { runs } = this.opts;
     try {
+      // A cancelled run whose worker died can never be claimed again: finish it.
+      for (const id of await runs.cancelAbandoned()) {
+        this.opts.publish({ runId: id, status: 'cancelled' });
+      }
       for (const id of await runs.expiredLeases()) await this.opts.queue.enqueue(id);
+      for (const id of await runs.requeueStaleQueued(QUEUED_STALE_SECONDS)) {
+        await this.opts.queue.enqueue(id);
+      }
       for (const id of await runs.failStalled()) this.opts.publish({ runId: id, status: 'failed' });
       for (const id of await runs.closeIdleChats(this.opts.chatIdleMinutes)) {
         this.opts.publish({ runId: id, status: 'succeeded' });

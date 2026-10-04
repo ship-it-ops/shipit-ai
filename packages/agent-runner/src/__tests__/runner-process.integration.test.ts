@@ -75,6 +75,7 @@ describe.skipIf(!DATABASE_TEST_URL || !REDIS_URL)('runner process — Redis and 
   beforeEach(async () => {
     heard.length = 0;
     await database.db.query('DELETE FROM runs');
+    await database.db.query('DELETE FROM agent_usage_daily');
   });
 
   const createRun = (mode: 'task' | 'chat' = 'task') =>
@@ -199,6 +200,52 @@ describe.skipIf(!DATABASE_TEST_URL || !REDIS_URL)('runner process — Redis and 
           (s) => s === 'succeeded',
         ),
       ).toBe('succeeded');
+    } finally {
+      await parts.close();
+    }
+  });
+
+  // The job for a queued run can be lost (Redis restarted before a worker
+  // took it). Nothing else would ever start that run.
+  it('queues again a run that has waited a minute with no worker', async () => {
+    const parts = stack(['found']);
+    try {
+      const run = await createRun(); // created, but never enqueued
+      await parts.housekeeping.sweep();
+      expect(await status(run.id)).toBe('queued'); // too recent to be lost
+      await database.db.query(
+        `UPDATE runs SET updated_at = now() - interval '61 seconds' WHERE id = $1`,
+        [run.id],
+      );
+      await parts.housekeeping.sweep();
+      expect(
+        await waitFor(
+          () => status(run.id),
+          (s) => s === 'succeeded',
+        ),
+      ).toBe('succeeded');
+    } finally {
+      await parts.close();
+    }
+  });
+
+  it('finishes a cancelled run whose worker died, and announces it', async () => {
+    const parts = stack();
+    try {
+      const run = await createRun();
+      await runs.claim(run.id, 'worker-dead', 60);
+      await runs.requestCancel(run.id);
+      await database.db.query(
+        `UPDATE runs SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
+        [run.id],
+      );
+      await parts.housekeeping.sweep();
+      expect(await status(run.id)).toBe('cancelled');
+      await waitFor(
+        async () => heard,
+        (events) => events.some((e) => e.runId === run.id),
+      );
+      expect(heard).toContainEqual({ runId: run.id, status: 'cancelled' });
     } finally {
       await parts.close();
     }

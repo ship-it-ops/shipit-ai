@@ -51,6 +51,7 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
 
   beforeEach(async () => {
     await database.db.query('DELETE FROM runs');
+    await database.db.query('DELETE FROM agent_usage_daily');
   });
 
   const make = (extra: Partial<CreateRunInput> = {}) =>
@@ -319,14 +320,26 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
     expect(denied.finishedAt).not.toBeNull();
   });
 
-  it('sums an agent’s tokens since a moment, across runs', async () => {
-    const before = new Date(Date.now() - 1000);
+  it('sums what an agent spent on a day, across runs', async () => {
     const a = await make();
     const b = await make();
     await runs.recordStep(a.id, { input: 1000, output: 200 });
     await runs.recordStep(b.id, { input: 300, output: 0 });
-    expect(await runs.tokensSince(agentId, before)).toBe(1500);
-    expect(await runs.tokensSince(agentId, new Date(Date.now() + 60_000))).toBe(0);
+    expect(await runs.tokensOnDay(agentId, new Date())).toBe(1500);
+    expect(await runs.tokensOnDay(agentId, new Date(Date.now() + 2 * 86_400_000))).toBe(0);
+  });
+
+  // The daily cap is the only bound on a chat that stays active for days:
+  // its per-turn limits reset with every question.
+  it('counts tokens on the day they were spent, not the day the run began', async () => {
+    const chat = await make({ mode: 'chat' });
+    await database.db.query(
+      `UPDATE runs SET created_at = now() - interval '2 days' WHERE id = $1`,
+      [chat.id],
+    );
+    await runs.recordStep(chat.id, { input: 4000, output: 500 });
+    expect(await runs.tokensOnDay(agentId, new Date())).toBe(4500);
+    expect(await runs.tokensOnDay(agentId, new Date(Date.now() - 2 * 86_400_000))).toBe(0);
   });
 
   it('lists runs newest first, filtered by agent and status', async () => {
@@ -356,6 +369,64 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
       error: { code: 'INTERNAL' },
     });
     expect((await runs.get(fresh.id))!.status).toBe('running');
+  });
+
+  // A run that kills its worker every time is taken over again and again. Each
+  // takeover must not look like progress, or the stall check never fires.
+  it('does not reset the stall clock when a run is taken over', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    await database.db.query(
+      `UPDATE runs SET updated_at = now() - interval '601 seconds',
+                       lease_expires_at = now() - interval '1 second'
+        WHERE id = $1`,
+      [run.id],
+    );
+    expect(await runs.claim(run.id, 'worker-b', 60)).not.toBeNull();
+    expect(await runs.failStalled()).toEqual([run.id]);
+  });
+
+  it('still starts the clock when a queued run is first claimed', async () => {
+    const run = await make();
+    await database.db.query(
+      `UPDATE runs SET updated_at = now() - interval '601 seconds' WHERE id = $1`,
+      [run.id],
+    );
+    await runs.claim(run.id, 'worker-a', 60);
+    expect(await runs.failStalled()).toEqual([]);
+  });
+
+  // claim() refuses a run with a cancel request, so a cancelled run whose
+  // worker died can never be taken over: the sweep has to finish it.
+  it('finishes a cancelled run whose worker died, and stops re-queuing it', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    await runs.requestCancel(run.id);
+    expect(await runs.cancelAbandoned()).toEqual([]); // its worker may still be alive
+    await database.db.query(
+      `UPDATE runs SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
+      [run.id],
+    );
+    expect(await runs.expiredLeases()).toEqual([]);
+    expect(await runs.cancelAbandoned()).toEqual([run.id]);
+    expect(await runs.get(run.id)).toMatchObject({ status: 'cancelled' });
+    expect((await runs.get(run.id))!.finishedAt).not.toBeNull();
+  });
+
+  // A job can be lost (Redis restarted, or the worker threw before claiming).
+  // The run would stay queued forever, and a chat in that state takes no
+  // further message.
+  it('hands back a queued run nobody picked up, once per window', async () => {
+    const lost = await make();
+    const fresh = await make();
+    await database.db.query(
+      `UPDATE runs SET updated_at = now() - interval '5 minutes' WHERE id = $1`,
+      [lost.id],
+    );
+    expect(await runs.requeueStaleQueued(60)).toEqual([lost.id]);
+    expect(await runs.requeueStaleQueued(60)).toEqual([]);
+    expect((await runs.get(lost.id))!.status).toBe('queued');
+    expect((await runs.get(fresh.id))!.status).toBe('queued');
   });
 
   it('closes chat runs idle past the limit', async () => {

@@ -10,17 +10,35 @@ import { AGENT_RUNS_QUEUE, type RunJob } from './queues.js';
 const COMPLETED_JOB_RETENTION = { age: 24 * 3600, count: 1000 };
 const FAILED_JOB_RETENTION = { age: 7 * 24 * 3600, count: 5000 };
 
+// With Redis down, BullMQ holds a command until the connection returns. A
+// caller answering an HTTP request cannot wait that long.
+const ENQUEUE_TIMEOUT_MS = 3_000;
+const CLOSE_TIMEOUT_MS = 2_000;
+
 export interface RunQueueOptions {
   redisUrl: string;
   queueName?: string;
+  /** How long `enqueue` waits for Redis before it rejects. Defaults to 3 s. */
+  enqueueTimeoutMs?: number;
   log?: (message: string) => void;
+}
+
+/** Rejects with `message` unless `work` settles within `ms`. */
+function within<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
 export class RunQueue {
   private readonly queue: Queue<RunJob>;
+  private readonly enqueueTimeoutMs: number;
 
   constructor(opts: RunQueueOptions) {
     const log = opts.log ?? console.warn;
+    this.enqueueTimeoutMs = opts.enqueueTimeoutMs ?? ENQUEUE_TIMEOUT_MS;
     this.queue = new Queue<RunJob>(opts.queueName ?? AGENT_RUNS_QUEUE, {
       connection: parseRedisUrl(opts.redisUrl),
       defaultJobOptions: {
@@ -34,12 +52,26 @@ export class RunQueue {
     this.queue.on('error', (err: Error) => log(`agent-runs queue error: ${err.message}`));
   }
 
+  /**
+   * Rejects when Redis does not take the job in time. The job may still be
+   * added once Redis returns; that is harmless, because a run its caller has
+   * since failed is no longer queued and no worker will claim it.
+   */
   async enqueue(runId: string): Promise<void> {
-    await this.queue.add('run', { runId });
+    const adding = this.queue.add('run', { runId });
+    adding.catch(() => {}); // settles later; the timeout below already answered
+    await within(
+      adding,
+      this.enqueueTimeoutMs,
+      `The run queue did not answer within ${this.enqueueTimeoutMs} ms.`,
+    );
   }
 
   async close(): Promise<void> {
-    await this.queue.close();
+    // A graceful close waits for Redis too; shutdown must not.
+    await within(this.queue.close(), CLOSE_TIMEOUT_MS, 'close timed out').catch(() =>
+      this.queue.disconnect(),
+    );
   }
 }
 

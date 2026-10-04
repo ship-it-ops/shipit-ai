@@ -161,6 +161,19 @@ describe.skipIf(!DATABASE_TEST_URL)('GET /api/runs/:id/stream', () => {
     expect(events[3]!.data).toMatchObject({ status: 'succeeded', output: { text: 'team-a' } });
   });
 
+  it('answers a browser on another origin with CORS headers, so it may read the stream', async () => {
+    // Local dev serves the UI on :3000 and the API on :3001. The stream writes
+    // its own response head, which must still carry what @fastify/cors set.
+    const run = await startedRun();
+    await runs.finish(run.id, { status: 'succeeded', output: null });
+    const res = await fetch(`${base}/api/runs/${run.id}/stream`, {
+      headers: { origin: 'http://localhost:3000' },
+    });
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:3000');
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    await res.text();
+  });
+
   it('resumes after the last event the client saw, without repeating it', async () => {
     const run = await startedRun();
     await runs.appendMessages(run.id, [{ role: 'assistant', content: 'one' }]);
@@ -193,6 +206,69 @@ describe.skipIf(!DATABASE_TEST_URL)('GET /api/runs/:id/stream', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(redis.listenerCount('message')).toBe(1); // the hub's own listener only
     expect((server.runEvents as RunEventHub).listeners(run.id)).toBe(0);
+  });
+
+  // The API cancels a parked run itself and publishes nothing, and an event can
+  // be lost while the subscriber reconnects. The stream must not depend on one.
+  it('notices a change nobody announced, on its next keep-alive tick', async () => {
+    const own = await createServer({
+      config: makeTestConfig(),
+      agentStore: agents,
+      runStore: runs,
+      runQueue: { enqueue: async () => {} },
+      runEvents: new RunEventHub(new EventEmitter()),
+      runStreamKeepaliveMs: 50,
+      aiStatus: { status: async () => AVAILABLE } as unknown as AiStatusService,
+    });
+    await own.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = own.server.address() as { port: number };
+    try {
+      const run = await startedRun();
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs/${run.id}/stream`);
+      const reading = readEvents(res, (events) => events.some((e) => e.event === 'end'), 3_000);
+      await new Promise((r) => setTimeout(r, 100));
+      await runs.appendMessages(run.id, [{ role: 'assistant', content: 'late' }]);
+      await runs.requestCancel(run.id); // queued: cancelled at once, no event
+
+      const events = await reading;
+      expect(events.map((e) => [e.event, e.id ?? null])).toEqual([
+        ['run', null],
+        ['message', '0'],
+        ['message', '1'],
+        ['run', null],
+        ['end', null],
+      ]);
+      expect(events[3]!.data).toMatchObject({ status: 'cancelled' });
+    } finally {
+      await own.close();
+    }
+  });
+
+  it('does not repeat the run record on a tick when nothing changed', async () => {
+    const own = await createServer({
+      config: makeTestConfig(),
+      agentStore: agents,
+      runStore: runs,
+      runQueue: { enqueue: async () => {} },
+      runEvents: new RunEventHub(new EventEmitter()),
+      runStreamKeepaliveMs: 30,
+      aiStatus: { status: async () => AVAILABLE } as unknown as AiStatusService,
+    });
+    await own.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = own.server.address() as { port: number };
+    try {
+      const run = await startedRun();
+      const controller = new AbortController();
+      const res = await fetch(`http://127.0.0.1:${port}/api/runs/${run.id}/stream`, {
+        signal: controller.signal,
+      });
+      const started = Date.now();
+      const events = await readEvents(res, () => Date.now() - started > 250).catch(() => []);
+      controller.abort();
+      expect(events.filter((e) => e.event === 'run')).toHaveLength(1);
+    } finally {
+      await own.close();
+    }
   });
 
   it('ends open streams when the server shuts down, so the process can exit', async () => {

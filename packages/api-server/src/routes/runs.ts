@@ -7,6 +7,7 @@
 // calls) is for the person who started it, the agent's author, and holders of
 // runs:read_transcript (admins hold `*`). Only the starter or an admin may add
 // a message to a run or cancel it.
+import type { OutgoingHttpHeaders } from 'node:http';
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { hasCapability, type AiConfig } from '@shipit-ai/shared';
 import {
@@ -40,7 +41,9 @@ declare module 'fastify' {
 
 const MAX_TEXT = 20_000;
 // A comment line this often keeps proxies and load balancers from closing an
-// idle stream.
+// idle stream. Each tick also re-reads the run: not every change is announced
+// (the API cancels a parked run itself), and an announcement can be lost while
+// the subscriber reconnects.
 const KEEPALIVE_MS = 15_000;
 const MAX_INPUT_JSON = 64_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,7 +80,8 @@ function openingMessage(input: string | Record<string, unknown>): StoredMessage 
   };
 }
 
-const runsRoutes: FastifyPluginAsync = async (server) => {
+const runsRoutes: FastifyPluginAsync<{ keepaliveMs?: number }> = async (server, opts) => {
+  const keepaliveMs = opts.keepaliveMs ?? KEEPALIVE_MS;
   // Open run streams never finish on their own, and Fastify's close() waits for
   // every in-flight response: without this a SIGTERM with a viewer connected
   // hangs until the pod is killed. Ending them first lets the server close;
@@ -370,6 +374,10 @@ const runsRoutes: FastifyPluginAsync = async (server) => {
       reply.hijack();
       const out = reply.raw;
       out.writeHead(200, {
+        // hijack() bypasses Fastify's own header writing, so carry over what
+        // the hooks set (CORS above all: local dev serves the UI from another
+        // origin, and a browser drops a stream without these).
+        ...(reply.getHeaders() as OutgoingHttpHeaders),
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
@@ -383,6 +391,7 @@ const runsRoutes: FastifyPluginAsync = async (server) => {
 
       let closed = false;
       let first = true;
+      let sentStatus: RunRecord['status'] | null = null;
       // Catch-ups run one at a time, in order, so messages never interleave.
       let chain = Promise.resolve();
       const catchUp = (statusChanged: boolean) => {
@@ -391,18 +400,22 @@ const runsRoutes: FastifyPluginAsync = async (server) => {
             if (closed) return;
             const current = await ctx.runs.get(run.id);
             if (!current || closed) return;
+            const terminal = TERMINAL_RUN_STATUSES.has(current.status);
+            const changed = statusChanged || current.status !== sentStatus;
             let sentRun = false;
-            if (first || statusChanged) {
+            // A finished run's record goes out after its last messages, below.
+            if (first || (changed && !terminal)) {
               send('run', current);
               sentRun = true;
-              first = false;
             }
+            first = false;
+            sentStatus = current.status;
             for (const message of await ctx.runs.listMessages(run.id, { afterSeq: lastSeq })) {
               if (closed) return;
               send('message', message, message.seq);
               lastSeq = message.seq;
             }
-            if (TERMINAL_RUN_STATUSES.has(current.status)) {
+            if (terminal) {
               if (!sentRun) send('run', current);
               send('end', { status: current.status });
               stop();
@@ -415,7 +428,10 @@ const runsRoutes: FastifyPluginAsync = async (server) => {
       };
       // Subscribe before the first catch-up, so nothing written in between is missed.
       const unsubscribe = hub.subscribe(run.id, (event) => catchUp(event.status !== undefined));
-      const keepalive = setInterval(() => out.write(': ping\n\n'), KEEPALIVE_MS);
+      const keepalive = setInterval(() => {
+        out.write(': ping\n\n');
+        catchUp(false);
+      }, keepaliveMs);
       const stop = () => {
         if (closed) return;
         closed = true;

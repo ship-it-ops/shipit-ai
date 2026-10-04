@@ -270,7 +270,9 @@ and runs the graph tools against your local Neo4j. It needs:
   `shipit.config.local.yaml`; use `'*'`. (`admin` is not a capability name,
   so it grants nothing.)
 
-`pnpm start:backend` starts the runner with the rest of the backend. On its
+`pnpm start:backend` starts the runner with the rest of the backend. In the
+Docker stack it is behind a profile, because it needs your gcloud credentials:
+`docker compose -f docker/docker-compose.yml --profile agents up -d`. On its
 first boot with a database, the api-server creates the built-in **Graph
 assistant**. Try it from a terminal:
 

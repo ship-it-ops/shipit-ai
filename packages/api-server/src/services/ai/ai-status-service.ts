@@ -34,6 +34,8 @@ export interface AiStatusServiceOptions {
   redis: { get(key: string): Promise<string | null> } | null;
   /** How long a computed status is reused. Defaults to 5s; tests pass 0. */
   cacheMs?: number;
+  /** How long the runner check waits for Redis. Defaults to 2 s. */
+  runnerCheckTimeoutMs?: number;
   now?: () => number;
   log?: (message: string) => void;
 }
@@ -130,7 +132,16 @@ export class AiStatusService {
     const { redis } = this.opts;
     if (!redis) return fail('runner', 'Redis is not configured, so no runner can be seen.');
     try {
-      const beat = await redis.get(RUNNER_HEARTBEAT_KEY);
+      // A Redis that is down holds the command until it reconnects; every
+      // agents route waits on this status, so the read is bounded.
+      const waitMs = this.opts.runnerCheckTimeoutMs ?? 2_000;
+      let timer: NodeJS.Timeout | undefined;
+      const beat = await Promise.race([
+        redis.get(RUNNER_HEARTBEAT_KEY),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`no answer in ${waitMs} ms`)), waitMs);
+        }),
+      ]).finally(() => clearTimeout(timer));
       return beat
         ? pass('runner', 'The agent runner is alive.')
         : fail('runner', 'No heartbeat from the agent runner in the last minute.');

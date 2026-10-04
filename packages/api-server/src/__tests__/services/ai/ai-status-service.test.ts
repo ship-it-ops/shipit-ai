@@ -187,6 +187,27 @@ describe('AiStatusService', () => {
     expect(status.definitionsAvailable).toBe(true);
   });
 
+  // A Redis that is down queues commands instead of failing them, so a read
+  // never settles. Without a bound, every agents route would hang with it.
+  it('gives up on a runner check that does not answer', async () => {
+    const service = new AiStatusService({
+      config: ai(),
+      db: migrated,
+      redis: { get: () => new Promise<string | null>(() => {}) },
+      cacheMs: 0,
+      runnerCheckTimeoutMs: 20,
+    });
+    const started = Date.now();
+    const status = await service.status();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(status.available).toBe(false);
+    expect(status.definitionsAvailable).toBe(true);
+    expect(check(status, 'runner')).toMatchObject({
+      ok: false,
+      detail: 'The agent runner could not be checked.',
+    });
+  });
+
   it('reuses a computed status inside the cache window, then recomputes', async () => {
     let calls = 0;
     let clock = 1_000;

@@ -51,6 +51,7 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
 
   beforeEach(async () => {
     await database.db.query('DELETE FROM runs');
+    await database.db.query('DELETE FROM agent_usage_daily');
   });
 
   const createRun = (
@@ -518,6 +519,39 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
       expect(await reload(run.id)).toMatchObject({ status: 'waiting_input', steps: 4 });
       expect(owners.calls).toEqual([{ q: 'a' }, { q: 'b' }]);
     });
+
+    // The last-step note says "you cannot call tools any more". It belongs to
+    // the question that ran out of steps; replayed on the next question it
+    // would talk the model out of using its tools for the rest of the chat.
+    it('does not replay an earlier question’s last-step note on the next question', async () => {
+      const run = await createRun({
+        mode: 'chat',
+        definition: definition({
+          limits: { maxSteps: 2, maxTokens: 100_000, timeoutSeconds: 300, dailyTokens: 1_000_000 },
+        }),
+      });
+      const model = new ScriptedModel([
+        callTools([{ callId: 'c1', name: 'graph__find_owners', input: { q: 'a' } }]),
+        answer('team-a, as far as I found.'),
+        answer('Yes.'),
+      ]);
+      const { instance } = loop(model, [fakeTool('graph.find_owners', 'read')]);
+      expect(await instance.process(run.id)).toBe('waiting');
+      await runs.addUserMessage(run.id, userMessage('Is team-a still around?'));
+      expect(await instance.process(run.id)).toBe('waiting');
+
+      const isNote = (m: unknown) => JSON.stringify(m).includes('step-limit-note');
+      // The first question's last step saw the note …
+      expect(model.requests[1]!.messages.some(isNote)).toBe(true);
+      // … the second question does not, though the transcript keeps it.
+      expect(model.requests[2]!.messages.some(isNote)).toBe(false);
+      expect(model.requests[2]!.messages.at(-1)).toMatchObject({
+        role: 'user',
+        content: 'Is team-a still around?',
+      });
+      const stored = (await runs.listMessages(run.id)).map((m) => m.content);
+      expect(stored.filter(isNote)).toHaveLength(1);
+    });
   });
 
   describe('crash recovery', () => {
@@ -608,6 +642,46 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
     ]);
     expect(await loop(model, []).instance.process(run.id)).toBe('lease_lost');
     expect((await reload(run.id)).status).toBe('running');
+  });
+
+  // One runner process works several runs at once. If its renewals fail for a
+  // while (Postgres restarts) and the sweep re-queues the run, a second slot of
+  // the same process claims it. The first slot must then be locked out, which
+  // it is not if both slots hold the run under the same owner name.
+  it('holds each claim under its own owner, so a slot that lost a run cannot write to it', async () => {
+    const run = await createRun();
+    const gates: Array<() => void> = [];
+    const gated = (text: string) => async (request: Parameters<ReturnType<typeof answer>>[0]) => {
+      await new Promise<void>((release) => gates.push(release));
+      return answer(text)(request);
+    };
+    const model = new ScriptedModel([
+      gated('from the slot that lost the run'),
+      gated('from the slot that holds the run'),
+    ]);
+    // No renewals during the test: the first slot's lease stays expired.
+    const { instance } = loop(model, [], { renewEveryMs: 60_000 });
+    const until = async (ready: () => boolean) => {
+      while (!ready()) await new Promise((r) => setTimeout(r, 5));
+    };
+
+    const first = instance.process(run.id);
+    await until(() => gates.length === 1);
+    await database.db.query(
+      `UPDATE runs SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
+      [run.id],
+    );
+    const second = instance.process(run.id);
+    await until(() => gates.length === 2);
+
+    gates[0]!();
+    expect(await first).toBe('lease_lost');
+    gates[1]!();
+    expect(await second).toBe('finished');
+    const answers = (await runs.listMessages(run.id)).filter((m) => m.role === 'assistant');
+    expect(answers.map((m) => m.content.content)).toEqual([
+      [{ type: 'text', text: 'from the slot that holds the run' }],
+    ]);
   });
 
   it('announces every append and the final status', async () => {

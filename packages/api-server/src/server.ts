@@ -129,6 +129,8 @@ export interface CreateServerOptions {
   // Fan-out of the runner's run events to open streams. Optional: without it
   // GET /api/runs/:id/stream answers 503.
   runEvents?: RunEventHub;
+  // How often an open run stream pings and re-reads its run. Tests shorten it.
+  runStreamKeepaliveMs?: number;
 }
 
 declare module 'fastify' {
@@ -489,7 +491,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   await server.register(knowledgeRoutes, { prefix: '/api/knowledge' });
   await server.register(agentsRoutes, { prefix: '/api/agents' });
   // Runs: start one (POST /api/agents/:id/runs), list and read them, chat, cancel.
-  await server.register(runsRoutes, { prefix: '/api' });
+  await server.register(runsRoutes, { prefix: '/api', keepaliveMs: opts.runStreamKeepaliveMs });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak
