@@ -16,6 +16,10 @@ export interface McpToolParamSpec {
 export interface McpToolMetadata {
   name: string;
   description: string;
+  /** The service agents see this tool under. Every MCP tool is a graph tool. */
+  service: 'graph';
+  /** What the tool does to the service; the agent gateway grants by effect. */
+  effect: 'read' | 'write' | 'delete';
   /** Anchor on docs/mcp-tools.md (the tool name itself, slugified). */
   docAnchor: string;
   params: readonly McpToolParamSpec[];
@@ -44,6 +48,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Analyze downstream/upstream impact of a node in the knowledge graph. Returns affected nodes, paths, and summary statistics.',
     docAnchor: 'blast_radius',
+    service: 'graph',
+    effect: 'read',
     params: [
       {
         name: 'node',
@@ -89,6 +95,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Get detailed information about a single entity in the knowledge graph, including properties, claims, and neighbors.',
     docAnchor: 'entity_detail',
+    service: 'graph',
+    effect: 'read',
     params: [
       { name: 'entity', type: 'string', required: true, description: 'Entity canonical ID.' },
       {
@@ -114,6 +122,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Return the current graph schema: all node types with property definitions and resolution strategies, all relationship types with direction and cardinality.',
     docAnchor: 'schema_info',
+    service: 'graph',
+    effect: 'read',
     params: [],
   },
   {
@@ -121,6 +131,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Find owners, code owners, and on-call personnel for an entity. Traverses OWNS, CODEOWNER_OF, MEMBER_OF, and ON_CALL_FOR relationships.',
     docAnchor: 'find_owners',
+    service: 'graph',
+    effect: 'read',
     params: [
       { name: 'entity', type: 'string', required: true, description: 'Entity canonical ID.' },
       {
@@ -138,6 +150,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     name: 'dependency_chain',
     description: 'Find the shortest dependency path between two entities in the knowledge graph.',
     docAnchor: 'dependency_chain',
+    service: 'graph',
+    effect: 'read',
     params: [
       { name: 'from', type: 'string', required: true, description: 'Source node canonical ID.' },
       { name: 'to', type: 'string', required: true, description: 'Target node canonical ID.' },
@@ -157,12 +171,16 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Return aggregate statistics about the knowledge graph: node counts by label, edge counts by type, environments, totals, and freshness summary.',
     docAnchor: 'graph_stats',
+    service: 'graph',
+    effect: 'read',
     params: [INCLUDE_ABSENT_PARAM],
   },
   {
     name: 'search_entities',
     description: 'Search and filter entities in the knowledge graph by label and property values.',
     docAnchor: 'search_entities',
+    service: 'graph',
+    effect: 'read',
     params: [
       {
         name: 'label',
@@ -199,6 +217,8 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     description:
       'Execute a raw Cypher query against the knowledge graph. Read-only queries only. Subject to guardrails: parameterized queries, timeout, row limit, hop limit.',
     docAnchor: 'graph_query',
+    service: 'graph',
+    effect: 'read',
     params: [
       {
         name: 'query',

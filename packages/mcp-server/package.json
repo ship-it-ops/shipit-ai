@@ -13,6 +13,10 @@
     "./metadata": {
       "import": "./dist/tools/metadata.js",
       "types": "./dist/tools/metadata.d.ts"
+    },
+    "./tools": {
+      "import": "./dist/tools/registry.js",
+      "types": "./dist/tools/registry.d.ts"
     }
   },
   "scripts": {
