@@ -19,3 +19,7 @@ export {
   withRetry,
 } from './embedder.js';
 export type { Embedder, RetryOptions } from './embedder.js';
+export { indexDocument } from './index-pipeline.js';
+export type { IndexOutcome, IndexPipelineDeps, IndexStore } from './index-pipeline.js';
+export { IndexLoop } from './index-loop.js';
+export type { HeartbeatSink, IndexLoopOptions, LoopStats } from './index-loop.js';
