@@ -22,3 +22,4 @@ export { normalizeRepository } from './normalizers/repository.js';
 export { normalizeTeam } from './normalizers/team.js';
 export { normalizePipeline } from './normalizers/pipeline.js';
 export { normalizeCodeowner } from './normalizers/codeowner.js';
+export * from './knowledge/index.js';
