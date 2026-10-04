@@ -24,6 +24,13 @@ function scripted(answers: unknown[]) {
   return { gql, calls };
 }
 
+// What octokit.graphql throws when the installation may not read the connection.
+const forbiddenListing = () =>
+  Object.assign(new Error('Resource not accessible by integration'), {
+    errors: [{ type: 'FORBIDDEN', path: ['repository', 'items'] }],
+    data: { repository: { items: null } },
+  });
+
 const page = (nodes: unknown[], endCursor: string | null) => ({
   repository: { items: { pageInfo: { hasNextPage: endCursor !== null, endCursor }, nodes } },
 });
@@ -80,6 +87,13 @@ describe('listUpdated', () => {
     expect(out.map((r) => r.number)).toEqual([2]);
   });
 
+  it('turns a FORBIDDEN answer into GraphqlForbiddenError', async () => {
+    const { gql } = scripted([forbiddenListing()]);
+    await expect(
+      listUpdated(gql, repo, 'issues', { stopBefore: null, horizon: null }),
+    ).rejects.toBeInstanceOf(GraphqlForbiddenError);
+  });
+
   it('asks the connection it was told to', async () => {
     const { gql, calls } = scripted([page([], null)]);
     await listUpdated(gql, repo, 'issues', { stopBefore: null, horizon: null });
@@ -97,6 +111,14 @@ describe('listIssueNumbers', () => {
     const pages: number[][] = [];
     for await (const p of listIssueNumbers(gql, repo)) pages.push(p);
     expect(pages).toEqual([[1, 2], [5]]);
+  });
+
+  it('turns a FORBIDDEN answer into GraphqlForbiddenError', async () => {
+    const { gql } = scripted([forbiddenListing()]);
+    const drain = async (): Promise<void> => {
+      for await (const page of listIssueNumbers(gql, repo)) void page;
+    };
+    await expect(drain()).rejects.toBeInstanceOf(GraphqlForbiddenError);
   });
 });
 

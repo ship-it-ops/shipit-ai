@@ -26,9 +26,35 @@ export class GraphqlForbiddenError extends Error {
   }
 }
 
+/** What octokit.graphql throws on an error answer: the errors, and whatever data came with them. */
+interface GraphqlFailure {
+  errors?: Array<{ type?: string }>;
+  data?: { repository?: Record<string, unknown> | null } | null;
+}
+
+const errorTypes = (err: unknown): Array<string | undefined> =>
+  (((err ?? {}) as GraphqlFailure).errors ?? []).map((e) => e.type);
+
+/**
+ * FORBIDDEN means the installation lacks the permission, whichever query met
+ * it. The listings are the first issues calls a run makes, so they convert it
+ * too: the connector then reports a missing permission instead of failing.
+ */
+function rethrowForbidden(err: unknown): never {
+  if (errorTypes(err).includes('FORBIDDEN')) {
+    throw new GraphqlForbiddenError(err instanceof Error ? err.message : String(err));
+  }
+  throw err;
+}
+
 interface Connection<T> {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
   nodes: T[];
+}
+
+/** The answer to a listing query, whose connection is aliased `items`. */
+interface Listing<T> {
+  repository: { items: Connection<T> };
 }
 
 const ACTOR = `author { login ... on User { databaseId } ... on Bot { databaseId } }`;
@@ -78,10 +104,11 @@ export async function listUpdated(
   const found: UpdatedRef[] = [];
   let after: string | null = null;
   for (;;) {
-    const data: { repository: { items: Connection<UpdatedRef> } } = await gql(query, {
+    // Annotated: `after` feeds the call and is assigned from its result.
+    const data: Listing<UpdatedRef> = await gql<Listing<UpdatedRef>>(query, {
       ...repoVars(repo),
       after,
-    });
+    }).catch(rethrowForbidden);
     const { nodes, pageInfo } = data.repository.items;
     for (const node of nodes) {
       const at = Date.parse(node.updatedAt);
@@ -106,20 +133,15 @@ export async function* listIssueNumbers(gql: Gql, repo: RepoRef): AsyncIterable<
   }`;
   let after: string | null = null;
   for (;;) {
-    const data: { repository: { items: Connection<{ number: number }> } } = await gql(query, {
+    const data: Listing<{ number: number }> = await gql<Listing<{ number: number }>>(query, {
       ...repoVars(repo),
       after,
-    });
+    }).catch(rethrowForbidden);
     const { nodes, pageInfo } = data.repository.items;
     yield nodes.map((n) => n.number);
     if (!pageInfo.hasNextPage) return;
     after = pageInfo.endCursor;
   }
-}
-
-interface GraphqlFailure {
-  errors?: Array<{ type?: string }>;
-  data?: { repository?: Record<string, unknown> | null } | null;
 }
 
 /**
@@ -146,12 +168,9 @@ async function fetchByNumber<T extends { number: number }>(
     const data: { repository: Record<string, unknown> } = await gql(query, repoVars(repo));
     repository = data.repository;
   } catch (err) {
-    const failure = err as GraphqlFailure;
-    const types = (failure.errors ?? []).map((e) => e.type);
-    if (types.includes('FORBIDDEN')) {
-      throw new GraphqlForbiddenError(err instanceof Error ? err.message : String(err));
-    }
-    const partial = failure.data?.repository;
+    const types = errorTypes(err);
+    if (types.includes('FORBIDDEN')) rethrowForbidden(err);
+    const partial = ((err ?? {}) as GraphqlFailure).data?.repository;
     if (!partial || types.length === 0 || types.some((t) => t !== 'NOT_FOUND')) throw err;
     repository = partial;
   }
