@@ -141,6 +141,32 @@ services:
         condition: service_completed_successfully
     profiles: ['knowledge']
 
+  # Works the agent runs the api-server queues: model calls on Vertex AI and
+  # the tools each agent is granted. Locally it authenticates to Vertex with
+  # your application-default credentials (`gcloud auth application-default
+  # login`); on GKE, Workload Identity does that and no file is mounted.
+  agent-runner:
+    build:
+      context: ..
+      dockerfile: packages/agent-runner/Dockerfile
+    volumes:
+      - ../shipit.config.yaml:/app/shipit.config.yaml:ro
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcloud/adc.json:ro
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/adc.json
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   mcp-server:
     build:
       context: ..

@@ -135,7 +135,15 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
           tools: true,
         },
       ],
-      limits: { maxSteps: 25, maxTokens: 400_000, timeoutSeconds: 900, dailyTokens: 4_000_000 },
+      runner: { concurrency: 4 },
+      limits: {
+        maxSteps: 25,
+        maxTokens: 400_000,
+        timeoutSeconds: 900,
+        dailyTokens: 4_000_000,
+        toolResultChars: 50_000,
+        chatIdleMinutes: 60,
+      },
     },
     knowledge: {
       enabled: true,

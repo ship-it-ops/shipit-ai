@@ -170,6 +170,9 @@ jobs:
       - name: knowledge integration (Postgres + pgvector)
         run: pnpm --filter @shipit-ai/knowledge run test:integration
 
+      - name: agent-runner integration (Postgres, Redis)
+        run: pnpm --filter @shipit-ai/agent-runner run test:integration
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -203,6 +206,8 @@ jobs:
             dockerfile: packages/mcp-server/Dockerfile
           - service: knowledge-worker
             dockerfile: packages/knowledge-worker/Dockerfile
+          - service: agent-runner
+            dockerfile: packages/agent-runner/Dockerfile
     steps:
       - uses: actions/checkout@v7
 

@@ -50,7 +50,15 @@ describe('ai config section', () => {
       vertex: { project: '', location: 'global' },
       models: [],
       defaultModel: '',
-      limits: { maxSteps: 25, maxTokens: 400_000, timeoutSeconds: 900, dailyTokens: 4_000_000 },
+      runner: { concurrency: 4 },
+      limits: {
+        maxSteps: 25,
+        maxTokens: 400_000,
+        timeoutSeconds: 900,
+        dailyTokens: 4_000_000,
+        toolResultChars: 50_000,
+        chatIdleMinutes: 60,
+      },
     });
   });
 
@@ -64,8 +72,15 @@ describe('ai config section', () => {
       maxTokens: 400_000,
       timeoutSeconds: 900,
       dailyTokens: 4_000_000,
+      toolResultChars: 50_000,
+      chatIdleMinutes: 60,
     });
     expect(result.data.ai.vertex.location).toBe('global');
+  });
+
+  it('rejects a runner with no concurrency, and a zero result size', () => {
+    expect(parse({ runner: { concurrency: 0 } }).success).toBe(false);
+    expect(parse({ limits: { toolResultChars: 0 } }).success).toBe(false);
   });
 
   it('defaults a model to tool-capable', () => {

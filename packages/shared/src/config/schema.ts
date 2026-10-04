@@ -693,6 +693,8 @@ const AI_LIMIT_DEFAULTS = {
   maxTokens: 400_000,
   timeoutSeconds: 900,
   dailyTokens: 4_000_000,
+  toolResultChars: 50_000,
+  chatIdleMinutes: 60,
 };
 
 const aiConfigSchema = z.object({
@@ -717,6 +719,13 @@ const aiConfigSchema = z.object({
   models: z.array(aiModelSchema).default([]),
   // Key of the model a new agent starts with. Empty means "no default".
   defaultModel: z.string().default(''),
+  // The agent-runner process.
+  runner: z
+    .object({
+      // Runs one runner works on at once.
+      concurrency: z.number().int().positive().default(4),
+    })
+    .default({ concurrency: 4 }),
   // Instance ceilings. An agent's own limits may be lower, never higher.
   limits: z
     .object({
@@ -724,6 +733,11 @@ const aiConfigSchema = z.object({
       maxTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxTokens),
       timeoutSeconds: z.number().int().positive().default(AI_LIMIT_DEFAULTS.timeoutSeconds),
       dailyTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.dailyTokens),
+      // A tool result longer than this (as JSON) is stored in full but cut,
+      // with a note, in the model's context.
+      toolResultChars: z.number().int().positive().default(AI_LIMIT_DEFAULTS.toolResultChars),
+      // A chat (Ask, test panel) with no new message for this long is closed.
+      chatIdleMinutes: z.number().int().positive().default(AI_LIMIT_DEFAULTS.chatIdleMinutes),
     })
     .default(AI_LIMIT_DEFAULTS),
 });
@@ -1033,6 +1047,7 @@ const baseConfigSchema = z.object({
     vertex: { project: '', location: 'global' },
     models: [],
     defaultModel: '',
+    runner: { concurrency: 4 },
     limits: AI_LIMIT_DEFAULTS,
   }),
   knowledge: knowledgeConfigSchema.default({
