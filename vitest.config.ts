@@ -9,6 +9,7 @@ export default defineConfig({
     projects: [
       'packages/shared',
       'packages/agents',
+      'packages/agent-runner',
       'packages/knowledge',
       'packages/knowledge-worker',
       'packages/event-bus',

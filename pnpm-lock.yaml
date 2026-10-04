@@ -53,6 +53,46 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.2.0)(jsdom@29.1.1)(vite@8.3.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
 
+  packages/agent-runner:
+    dependencies:
+      '@ai-sdk/google-vertex':
+        specifier: ^5.0.101
+        version: 5.0.101(zod@4.4.3)
+      '@shipit-ai/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@shipit-ai/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
+      '@shipit-ai/shared':
+        specifier: workspace:*
+        version: link:../shared
+      ai:
+        specifier: ^7.0.127
+        version: 7.0.127(zod@4.4.3)
+      bullmq:
+        specifier: ^5.79.1
+        version: 5.79.1
+      ioredis:
+        specifier: ^5.11.1
+        version: 5.11.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.2.0
+      tsx:
+        specifier: ^4.22.4
+        version: 4.23.12
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.2.0)(jsdom@29.1.1)(vite@8.3.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
+
   packages/agents:
     dependencies:
       bullmq:
