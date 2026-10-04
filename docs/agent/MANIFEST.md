@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-04 | Total notes: 100
+Last updated: 2026-10-04 | Total notes: 101
 
 ## Investigations
 
@@ -116,6 +116,7 @@ Last updated: 2026-10-04 | Total notes: 100
 
 ## Scars
 
+- [compose-from-another-worktree-recreates-dev-containers](scars/compose-from-another-worktree-recreates-dev-containers.md) | scar | active | core | 2026-10-04 | `docker compose up` from another worktree recreates dev Postgres/Neo4j (relative mounts differ); start infra only from the main checkout
 - [docker-builder-copies-fixed-package-set](scars/docker-builder-copies-fixed-package-set.md) | scar | active | core | 2026-09-16 | image build red in CI, turbo build green locally = Dockerfile builder COPY list missing a workspace (dev)dependency; tsc compiles tests too
 - [integration-tests-sharing-a-db-must-run-serially](scars/integration-tests-sharing-a-db-must-run-serially.md) | scar | active | core | 2026-06-19 | integration tests green alone but red together = vitest parallel files clobbering a shared real DB; --no-file-parallelism or isolate
 - [pnpm-install-under-live-next-dev-serves-stale-bundle](scars/pnpm-install-under-live-next-dev-serves-stale-bundle.md) | scar | active | core | 2026-06-19 | empty/blank local web-ui right after pnpm install = stale next dev serving old node_modules; restart before suspecting data loss
