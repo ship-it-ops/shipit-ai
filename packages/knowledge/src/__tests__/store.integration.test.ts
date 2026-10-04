@@ -1,0 +1,356 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import type {
+  ChangeBatch,
+  KnowledgeDocumentInput,
+  SourceContainer,
+} from '@shipit-ai/connector-sdk';
+import { DATABASE_TEST_URL, createMigratedTestDatabase, type TestDatabase } from './test-db.js';
+import { KnowledgeStore } from '../store.js';
+import { PostgresKnowledgeSink } from '../sink.js';
+import { toPgVector } from '../vector.js';
+
+// A shape secretlint's recommended preset flags by default (see redaction.test.ts).
+const GH_TOKEN = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+const C1: SourceContainer = {
+  externalId: 'C1',
+  kind: 'channel',
+  name: 'general',
+  visibility: 'open',
+  archived: false,
+};
+const C2: SourceContainer = {
+  externalId: 'C2',
+  kind: 'channel',
+  name: 'ops',
+  visibility: 'restricted',
+  archived: false,
+};
+
+function doc(id: string, text: string, at = '2026-01-01T00:00:00Z'): KnowledgeDocumentInput {
+  return {
+    externalId: id,
+    kind: 'slack_thread',
+    title: id,
+    url: `https://example.test/${id}`,
+    segments: [{ key: 'm1', text, at, authorExternalId: 'U1' }],
+    sourceVersion: at,
+    sourceCreatedAt: at,
+    sourceUpdatedAt: at,
+    authorExternalId: 'U1',
+    participantExternalIds: ['U1', 'U9'],
+    attributes: { n: 1 },
+    restricted: false,
+  };
+}
+
+const batch = (
+  documents: KnowledgeDocumentInput[],
+  deletedExternalIds: string[] = [],
+  checkpoint = 'cp1',
+): ChangeBatch => ({ documents, deletedExternalIds, checkpoint });
+
+// A deterministic 768-dim vector per text so the tests can predict distances.
+function vectorFor(text: string): number[] {
+  const v = new Array<number>(768).fill(0);
+  for (let i = 0; i < text.length; i++) v[(text.charCodeAt(i) * 31 + i) % 768] += 1;
+  const norm = Math.hypot(...v) || 1;
+  return v.map((x) => x / norm);
+}
+
+function chunk(seq: number, text: string) {
+  return {
+    seq,
+    segmentKeys: ['m1'],
+    url: undefined,
+    occurredAt: undefined,
+    prefix: 'p',
+    text,
+    textHash: `hash:${text}`,
+    tokenEstimate: 1,
+    embedding: toPgVector(vectorFor(text)),
+    embeddingModel: 'fake-model',
+  };
+}
+
+describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', () => {
+  let database: TestDatabase;
+  let store: KnowledgeStore;
+  let sink: PostgresKnowledgeSink;
+  const wakes: number[] = [];
+
+  beforeAll(async () => {
+    database = await createMigratedTestDatabase();
+    store = new KnowledgeStore(database.db);
+  });
+  afterAll(async () => {
+    await database?.drop();
+  });
+  beforeEach(async () => {
+    await database.db.query(
+      'TRUNCATE knowledge_chunks, knowledge_documents, knowledge_principals, knowledge_containers, knowledge_state',
+    );
+    wakes.length = 0;
+    sink = new PostgresKnowledgeSink({
+      connectorId: 'slack-1',
+      store,
+      wake: async () => void wakes.push(1),
+    });
+    await sink.upsertContainers([C1, C2]);
+    await sink.upsertPrincipals([
+      {
+        externalId: 'U1',
+        kind: 'user',
+        displayName: 'Ada',
+        email: 'ada@example.com',
+        active: true,
+      },
+    ]);
+    await store.setSelected('slack-1', 'C1', true, 'admin@example.com');
+  });
+
+  const selectedC1 = async () =>
+    (await sink.selectedContainers()).find((c) => c.externalId === 'C1')!;
+
+  describe('containers', () => {
+    it('lists only selected, present containers with their checkpoint', async () => {
+      const selected = await sink.selectedContainers();
+      expect(selected.map((c) => c.externalId)).toEqual(['C1']);
+      expect(selected[0]!.checkpoint).toBeNull();
+    });
+
+    it('marks containers missing from a complete list as gone, and back when they return', async () => {
+      await sink.upsertContainers([C2]);
+      expect(await sink.selectedContainers()).toEqual([]);
+      await sink.upsertContainers([C1, C2]);
+      expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
+      // Selection survived the round trip.
+      const rows = await store.listContainers('slack-1');
+      expect(rows.find((r) => r.externalId === 'C1')!.selected).toBe(true);
+    });
+
+    it('is scoped by connector id', async () => {
+      const other = new PostgresKnowledgeSink({ connectorId: 'slack-2', store });
+      await other.upsertContainers([C1]);
+      expect((await other.selectedContainers()).length).toBe(0);
+      expect((await store.listContainers('slack-2')).length).toBe(1);
+    });
+  });
+
+  describe('storeBatch', () => {
+    it('stores documents as pending, maps principals, saves the checkpoint and wakes the worker', async () => {
+      const result = await sink.storeBatch(
+        await selectedC1(),
+        batch([doc('d1', 'hello'), doc('d2', 'world')]),
+      );
+      expect(result).toEqual({ changed: 2, deleted: 0 });
+      expect((await selectedC1()).checkpoint).toBe('cp1');
+      expect(wakes).toHaveLength(1);
+
+      const claimed = await store.claimPending(10);
+      expect(claimed.map((d) => d.externalId).sort()).toEqual(['d1', 'd2']);
+      const d1 = claimed.find((d) => d.externalId === 'd1')!;
+      expect(d1.indexStatus).toBe('indexing');
+      expect(d1.authorPrincipalId).not.toBeNull();
+      // U9 is unknown: not invented, just absent.
+      expect(d1.participantPrincipalIds).toHaveLength(1);
+      expect(d1.segments[0]!.text).toBe('hello');
+    });
+
+    it('storing the same batch twice changes nothing', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'hello')]));
+      await database.db.query(
+        `UPDATE knowledge_documents SET index_status = 'indexed', indexed_hash = content_hash`,
+      );
+      const again = await sink.storeBatch(
+        await selectedC1(),
+        batch([doc('d1', 'hello')], [], 'cp2'),
+      );
+      expect(again.changed).toBe(0);
+      const { rows } = await database.db.query<{ index_status: string }>(
+        `SELECT index_status FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(rows[0]!.index_status).toBe('indexed');
+      expect((await selectedC1()).checkpoint).toBe('cp2');
+    });
+
+    it('a changed document becomes pending again', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'hello')]));
+      await database.db.query(
+        `UPDATE knowledge_documents SET index_status = 'indexed', indexed_hash = content_hash`,
+      );
+      const result = await sink.storeBatch(await selectedC1(), batch([doc('d1', 'hello, edited')]));
+      expect(result.changed).toBe(1);
+      const { rows } = await database.db.query<{ index_status: string }>(
+        `SELECT index_status FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(rows[0]!.index_status).toBe('pending');
+    });
+
+    it('redacts before storing and counts it on the document', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', `token ${GH_TOKEN} here`)]));
+      const { rows } = await database.db.query<{
+        segments: Array<{ text: string }>;
+        redactions: number;
+      }>(`SELECT segments, redactions FROM knowledge_documents WHERE external_id = 'd1'`);
+      expect(rows[0]!.segments[0]!.text).not.toContain(GH_TOKEN);
+      expect(rows[0]!.segments[0]!.text).toMatch(/\[redacted:/);
+      expect(rows[0]!.redactions).toBe(1);
+    });
+
+    it('stores a restricted item as a content-free stub that is never claimed', async () => {
+      const restricted = { ...doc('r1', ''), segments: [], restricted: true };
+      await sink.storeBatch(await selectedC1(), batch([restricted]));
+      const { rows } = await database.db.query<{ index_status: string; restricted: boolean }>(
+        `SELECT index_status, restricted FROM knowledge_documents WHERE external_id = 'r1'`,
+      );
+      expect(rows[0]).toEqual({ index_status: 'skipped', restricted: true });
+      expect(await store.claimPending(10)).toEqual([]);
+    });
+
+    it('tombstones deletions in the same batch and removes their chunks', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'hello')]));
+      const [d1] = await store.claimPending(10);
+      await store.replaceChunks(d1!.id, [chunk(0, 'hello')], {
+        indexedHash: d1!.contentHash!,
+        indexVersion: 1,
+      });
+      const result = await sink.storeBatch(await selectedC1(), batch([], ['d1'], 'cp3'));
+      expect(result).toEqual({ changed: 0, deleted: 1 });
+      const docs = await database.db.query<{
+        deleted_at: string | null;
+        segments: unknown[];
+        index_status: string;
+      }>(
+        `SELECT deleted_at, segments, index_status FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(docs.rows[0]!.deleted_at).not.toBeNull();
+      expect(docs.rows[0]!.segments).toEqual([]);
+      expect(docs.rows[0]!.index_status).toBe('skipped');
+      const chunks = await database.db.query(`SELECT 1 FROM knowledge_chunks`);
+      expect(chunks.rows).toHaveLength(0);
+    });
+
+    it('rolls the whole batch back when one row is invalid', async () => {
+      const bad = { ...doc('d2', 'x'), kind: 'not-a-kind' as 'slack_thread' };
+      await expect(
+        sink.storeBatch(await selectedC1(), batch([doc('d1', 'ok'), bad])),
+      ).rejects.toThrow();
+      const { rows } = await database.db.query(`SELECT 1 FROM knowledge_documents`);
+      expect(rows).toHaveLength(0);
+      expect((await selectedC1()).checkpoint).toBeNull();
+    });
+  });
+
+  describe('pruneMissing', () => {
+    it('tombstones the rest and removes their chunks', async () => {
+      await sink.storeBatch(
+        await selectedC1(),
+        batch([doc('d1', 'a'), doc('d2', 'b'), doc('d3', 'c')]),
+      );
+      const pruned = await sink.pruneMissing(await selectedC1(), ['d1', 'd3']);
+      expect(pruned).toBe(1);
+      const { rows } = await database.db.query<{ external_id: string }>(
+        `SELECT external_id FROM knowledge_documents WHERE deleted_at IS NOT NULL`,
+      );
+      expect(rows.map((r) => r.external_id)).toEqual(['d2']);
+      // A second prune with the same list deletes nothing more.
+      expect(await sink.pruneMissing(await selectedC1(), ['d1', 'd3'])).toBe(0);
+    });
+  });
+
+  describe('claims and chunks', () => {
+    it('reclaims a stale claim and leaves a fresh one alone', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      const first = await store.claimPending(1);
+      expect(first).toHaveLength(1);
+      // Age the claim past the stale window.
+      await database.db.query(
+        `UPDATE knowledge_documents SET index_claimed_at = now() - interval '11 minutes' WHERE id = $1`,
+        [first[0]!.id],
+      );
+      const next = await store.claimPending(10);
+      expect(next.map((d) => d.externalId).sort()).toEqual(['d1', 'd2']);
+      // Both are now freshly claimed: nothing left.
+      expect(await store.claimPending(10)).toEqual([]);
+    });
+
+    it('stops retrying after five failures and backs off before that', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        const [d] = await store.claimPending(10);
+        expect(d, `attempt ${attempt}`).toBeDefined();
+        await store.markFailed(d!.id, `boom ${attempt}`);
+        // Just failed: not claimable until the backoff passes.
+        expect(await store.claimPending(10)).toEqual([]);
+        await database.db.query(
+          `UPDATE knowledge_documents SET index_claimed_at = now() - interval '2 days'`,
+        );
+      }
+      expect(await store.claimPending(10)).toEqual([]);
+      const counts = await store.countsByIndexStatus();
+      expect(counts.failed).toBe(1);
+    });
+
+    it('replaces chunks, reuses embeddings by text hash and marks the document indexed', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [d] = await store.claimPending(10);
+      await store.replaceChunks(d!.id, [chunk(0, 'alpha'), chunk(1, 'beta')], {
+        indexedHash: d!.contentHash!,
+        indexVersion: 1,
+      });
+
+      const reusable = await store.existingChunkEmbeddings(d!.id, 'fake-model');
+      expect([...reusable.keys()]).toHaveLength(2);
+
+      await store.replaceChunks(d!.id, [chunk(0, 'beta')], { indexedHash: 'h2', indexVersion: 1 });
+      const { rows } = await database.db.query<{ text: string; embedding: string }>(
+        `SELECT text, embedding::text AS embedding FROM knowledge_chunks ORDER BY seq`,
+      );
+      expect(rows.map((r) => r.text)).toEqual(['beta']);
+      // halfvec stores 16-bit floats, so compare with tolerance, not as text.
+      const stored = JSON.parse(rows[0]!.embedding) as number[];
+      const expected = vectorFor('beta');
+      expect(stored).toHaveLength(768);
+      for (let i = 0; i < 768; i++) expect(stored[i]).toBeCloseTo(expected[i]!, 2);
+
+      const after = await store.getDocument(d!.id);
+      expect(after!.indexStatus).toBe('indexed');
+      expect(after!.indexedHash).toBe('h2');
+      expect(after!.indexVersion).toBe(1);
+      expect(after!.indexAttempts).toBe(0);
+    });
+
+    it('searches by cosine distance through the hnsw index', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [d] = await store.claimPending(10);
+      await store.replaceChunks(d!.id, [chunk(0, 'alpha'), chunk(1, 'beta')], {
+        indexedHash: 'h',
+        indexVersion: 1,
+      });
+      const { rows } = await database.db.query<{ text: string }>(
+        `SELECT text FROM knowledge_chunks ORDER BY embedding <=> $1::halfvec LIMIT 1`,
+        [toPgVector(vectorFor('beta'))],
+      );
+      expect(rows[0]!.text).toBe('beta');
+    });
+  });
+
+  describe('state and retention', () => {
+    it('round-trips state and deletes old tombstones only', async () => {
+      await store.setState('dictionary', { version: 3 });
+      expect(await store.getState<{ version: number }>('dictionary')).toEqual({ version: 3 });
+      expect(await store.getState('missing')).toBeNull();
+
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      await sink.pruneMissing(await selectedC1(), ['d2']);
+      await database.db.query(
+        `UPDATE knowledge_documents SET deleted_at = now() - interval '40 days' WHERE external_id = 'd1'`,
+      );
+      expect(await store.deleteTombstonesOlderThan(30)).toBe(1);
+      const { rows } = await database.db.query<{ external_id: string }>(
+        `SELECT external_id FROM knowledge_documents ORDER BY external_id`,
+      );
+      expect(rows.map((r) => r.external_id)).toEqual(['d2']);
+    });
+  });
+});
