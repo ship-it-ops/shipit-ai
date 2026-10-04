@@ -31,10 +31,13 @@ services:
       timeout: 5s
       retries: 5
 
-  # Postgres holds agent definitions and (later) run history. Optional for the
-  # rest of the product: without it the AI pages show setup guidance.
+  # Postgres holds agent definitions, run history and the knowledge layer's
+  # documents and embeddings. The image ships pgvector (a baseline requirement:
+  # the extension is not trusted, so a superuser must create it; see
+  # docker/postgres-init and `pnpm db:bootstrap`). Optional for the rest of the
+  # product: without it the AI pages show setup guidance.
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:0.8.7-pg17
     ports:
       - '5432:5432'
     environment:
@@ -43,6 +46,7 @@ services:
       POSTGRES_DB: shipit
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U shipit -d shipit']
       interval: 5s

@@ -6,3 +6,5 @@ build/
 coverage/
 pnpm-lock.yaml
 *.tsbuildinfo
+# Plan-execution scratch (git-ignored, written by tooling)
+.superpowers/

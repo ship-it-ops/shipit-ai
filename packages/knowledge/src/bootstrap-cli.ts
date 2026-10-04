@@ -1,0 +1,39 @@
+// `pnpm db:bootstrap`: creates the pgvector extension as a superuser. Run once
+// per database, before `pnpm db:migrate`. Safe to re-run.
+import { createDb, createPool } from '@shipit-ai/agents';
+import { ensureVectorExtension } from './bootstrap.js';
+
+async function main(): Promise<void> {
+  const connectionString = process.env.DATABASE_SUPERUSER_URL ?? process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('db:bootstrap needs DATABASE_URL (or DATABASE_SUPERUSER_URL) to be set.');
+    process.exitCode = 2;
+    return;
+  }
+  const pool = createPool({ connectionString, max: 1 });
+  try {
+    const outcome = await ensureVectorExtension(createDb(pool));
+    console.log(
+      outcome === 'created'
+        ? 'Created the "vector" extension (pgvector).'
+        : 'The "vector" extension (pgvector) is already present.',
+    );
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    // 42501 = insufficient_privilege: the role is not a superuser.
+    if (e.code === '42501') {
+      console.error(
+        'Creating the "vector" extension needs a superuser. Run db:bootstrap with a superuser ' +
+          'connection string (DATABASE_SUPERUSER_URL), or ask the database operator to run ' +
+          '`CREATE EXTENSION vector;` once.',
+      );
+    } else {
+      console.error(e.message ?? String(err));
+    }
+    process.exitCode = 1;
+  } finally {
+    await pool.end();
+  }
+}
+
+void main();

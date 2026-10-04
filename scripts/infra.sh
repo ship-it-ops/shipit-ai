@@ -24,7 +24,10 @@ while (( ELAPSED < MAX_WAIT )); do
     # Schema changes are applied here in local dev (and by the infra repo's
     # deploy step on GKE), never by the app at boot. Safe to re-run: applied
     # files are skipped.
-    echo "Applying database migrations..."
+    # pgvector first (needs the superuser, which the compose `shipit` user is),
+    # then schema changes. Both are safe to re-run.
+    echo "Ensuring the pgvector extension and applying database migrations..."
+    (cd "$ROOT_DIR" && DATABASE_URL="${DATABASE_URL:-postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@localhost:5432/shipit}" pnpm --silent db:bootstrap)
     (cd "$ROOT_DIR" && DATABASE_URL="${DATABASE_URL:-postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@localhost:5432/shipit}" pnpm --silent db:migrate)
     echo "Infrastructure ready!"
     exit 0

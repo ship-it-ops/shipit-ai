@@ -1,0 +1,39 @@
+{
+  "name": "@shipit-ai/knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run .integration --no-file-parallelism",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@secretlint/core": "^13.0.4",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
+    "@secretlint/types": "^13.0.4",
+    "@shipit-ai/agents": "workspace:*",
+    "@shipit-ai/connector-sdk": "workspace:*",
+    "@shipit-ai/shared": "workspace:*",
+    "pg": "^8.23.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.23.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

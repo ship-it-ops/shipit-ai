@@ -120,7 +120,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       postgres:
-        image: postgres:17-alpine
+        image: pgvector/pgvector:0.8.7-pg17
         env:
           POSTGRES_USER: shipit
           POSTGRES_PASSWORD: testpassword
