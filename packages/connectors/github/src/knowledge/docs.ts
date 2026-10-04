@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/docs.ts
 // Markdown docs come from the default branch's tree: one listing per run, then
 // one blob per file whose sha changed. Spec §GitHub text, "Docs".
 
@@ -71,5 +70,24 @@ export async function fetchBlobText(
   sha: string,
 ): Promise<string> {
   const { data } = await git.getBlob({ owner: repo.owner, repo: repo.name, file_sha: sha });
-  return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
+  return decodeText(Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8'));
+}
+
+/**
+ * Text by its byte-order mark. A UTF-16 file (what Windows PowerShell's `>`
+ * writes) read as UTF-8 is one NUL per character, which Postgres cannot store.
+ */
+function decodeText(bytes: Buffer): string {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return bytes.subarray(2).toString('utf16le');
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    // Big-endian: swap a copy to little-endian (swap16 needs an even length).
+    const body = Buffer.from(bytes.subarray(2, bytes.length - ((bytes.length - 2) % 2)));
+    return body.swap16().toString('utf16le');
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return bytes.subarray(3).toString('utf8');
+  }
+  return bytes.toString('utf8');
 }

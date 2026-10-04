@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/__tests__/docs.test.ts
 import { describe, it, expect } from 'vitest';
 import { fetchBlobText, globToRegExp, listDocBlobs, matchesAny, type TreeClient } from '../docs.js';
 
@@ -86,5 +85,30 @@ describe('fetchBlobText', () => {
   it('decodes base64 as UTF-8', async () => {
     const { git } = gitWith([], false, { s1: '# Título\ncuerpo' });
     expect(await fetchBlobText(git, { owner: 'a', name: 'b' }, 's1')).toBe('# Título\ncuerpo');
+  });
+
+  const blobOf = (bytes: Buffer): TreeClient => ({
+    async getTree() {
+      return { data: { tree: [] } };
+    },
+    async getBlob() {
+      return { data: { content: bytes.toString('base64'), encoding: 'base64' } };
+    },
+  });
+  const repo = { owner: 'a', name: 'b' };
+
+  it('decodes a UTF-16 file by its byte-order mark instead of filling the text with NULs', async () => {
+    // What Windows PowerShell's `>` writes. Read as UTF-8 it is one NUL per
+    // character, which Postgres refuses to store.
+    const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('# Título\nbody', 'utf16le')]);
+    expect(await fetchBlobText(blobOf(le), repo, 's')).toBe('# Título\nbody');
+    const be = Buffer.from(le);
+    be.swap16();
+    expect(await fetchBlobText(blobOf(be), repo, 's')).toBe('# Título\nbody');
+  });
+
+  it('drops a UTF-8 byte-order mark', async () => {
+    const utf8 = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('# Title\nbody')]);
+    expect(await fetchBlobText(blobOf(utf8), repo, 's')).toBe('# Title\nbody');
   });
 });

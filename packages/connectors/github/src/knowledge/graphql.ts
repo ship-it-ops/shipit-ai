@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/graphql.ts
 // Every GraphQL query of the knowledge facet. The shapes were run against
 // github.com on 2026-10-04 (see the plan's spike section). `Gql` is one call;
 // the connector builds it over octokit.graphql with rate-limit handling.
@@ -57,7 +56,7 @@ interface Listing<T> {
   repository: { items: Connection<T> };
 }
 
-const ACTOR = `author { login ... on User { databaseId } ... on Bot { databaseId } }`;
+const ACTOR = `author { __typename login ... on User { databaseId } ... on Bot { databaseId } }`;
 const COMMENT = `databaseId url createdAt body ${ACTOR}`;
 const COMMENTS = `comments(first: 100) { pageInfo { hasNextPage endCursor } nodes { ${COMMENT} } }`;
 const ISSUE_FIELDS = `number title body url state createdAt updatedAt ${ACTOR}

@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/index.ts
 export {
   GitHubKnowledgeConnector,
   NOTE_ISSUES_PERMISSION,

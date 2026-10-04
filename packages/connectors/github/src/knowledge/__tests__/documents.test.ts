@@ -1,8 +1,8 @@
-// packages/connectors/github/src/knowledge/__tests__/documents.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   issueDocument,
   markdownDocument,
+  principalsOf,
   pullRequestDocument,
   truncateDocument,
   type GqlPullRequest,
@@ -105,6 +105,37 @@ describe('pullRequestDocument', () => {
   it('keeps an empty body as a header segment so comments stay comments', () => {
     const doc = pullRequestDocument(repo, pr({ body: '' }));
     expect(doc.segments[0]).toMatchObject({ key: 'body', text: '(no description)' });
+  });
+});
+
+describe('principalsOf', () => {
+  it('lists everyone who wrote in the items once, bots as bots', () => {
+    const withBot = pr({
+      number: 13,
+      author: { __typename: 'Bot', login: 'dependabot', databaseId: 99 },
+      comments: { nodes: [] },
+      reviews: { nodes: [] },
+    });
+    expect(principalsOf([pr(), withBot])).toEqual([
+      { externalId: '7', kind: 'user', displayName: 'ada', login: 'ada', active: true },
+      { externalId: '8', kind: 'user', displayName: 'bob', login: 'bob', active: true },
+      {
+        externalId: '99',
+        kind: 'bot',
+        displayName: 'dependabot',
+        login: 'dependabot',
+        active: true,
+      },
+    ]);
+  });
+
+  it('leaves out an actor GitHub gives no id for', () => {
+    const ghost = pr({
+      author: { login: 'ghost' },
+      comments: { nodes: [] },
+      reviews: { nodes: [] },
+    });
+    expect(principalsOf([ghost])).toEqual([]);
   });
 });
 

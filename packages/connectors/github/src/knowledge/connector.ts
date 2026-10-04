@@ -1,8 +1,8 @@
-// packages/connectors/github/src/knowledge/connector.ts
 // The knowledge facet of the GitHub connector: repositories are containers;
 // pull requests, issues and Markdown docs are documents. Spec:
 // docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md §GitHub text.
 import type { Octokit } from '@octokit/rest';
+import { isRunCutShort } from '@shipit-ai/connector-sdk';
 import type {
   AuthResult,
   ChangeBatch,
@@ -23,6 +23,7 @@ import { fetchBlobText, listDocBlobs, type TreeClient } from './docs.js';
 import {
   issueDocument,
   markdownDocument,
+  principalsOf,
   pullRequestDocument,
   truncateDocument,
   type RepoRef,
@@ -38,11 +39,22 @@ import {
   type UpdatedRef,
 } from './graphql.js';
 import { docId, issueId } from './ids.js';
-import { RunBudgetEnded, withRateLimit } from './rate-limit.js';
+import { withRateLimit, type RateLimitState } from './rate-limit.js';
 
+export { NOTE_RATE_LIMITED } from './rate-limit.js';
 export const NOTE_ISSUES_PERMISSION = 'issues_permission_missing';
-export const NOTE_RATE_LIMITED = 'rate_limited';
 export const NOTE_TREE_TRUNCATED = 'tree_truncated';
+
+/** Items per page of the REST listings; a shorter page ends the listing. */
+const PAGE_SIZE = 100;
+
+export interface GitHubRepositorySummary {
+  id: number;
+  fullName: string;
+  htmlUrl: string;
+  visibility: string;
+  archived: boolean;
+}
 
 /** Everything the connector needs from GitHub. Tests fake it. */
 export interface GitHubKnowledgeClient {
@@ -54,14 +66,18 @@ export interface GitHubKnowledgeClient {
     signal?: AbortSignal,
   ): Promise<unknown>;
   git: TreeClient;
-  listRepositories(org: string): AsyncIterable<{
-    id: number;
-    fullName: string;
-    htmlUrl: string;
-    visibility: string;
-    archived: boolean;
-  }>;
-  listMembers(org: string): AsyncIterable<{ id: number; login: string }>;
+  /** One page (100) of the organisation's repositories, pages numbered from 1. */
+  listRepositoriesPage(
+    org: string,
+    page: number,
+    signal?: AbortSignal,
+  ): Promise<GitHubRepositorySummary[]>;
+  /** One page (100) of the organisation's members, pages numbered from 1. */
+  listMembersPage(
+    org: string,
+    page: number,
+    signal?: AbortSignal,
+  ): Promise<Array<{ id: number; login: string }>>;
 }
 
 export type ConnectResult =
@@ -78,6 +94,8 @@ export interface GitHubKnowledgeConnectorOptions {
   connect?: (config: ConnectorConfig) => Promise<ConnectResult>;
 }
 
+type ItemKind = 'pr' | 'issue';
+
 interface Checkpoint {
   v: 1;
   pr: string | null;
@@ -85,6 +103,13 @@ interface Checkpoint {
   tree: string | null;
   /** path → blob sha of every doc that is stored. */
   docs: Record<string, string>;
+  /** The docs settings the stored docs were chosen with (see `docsKeyOf`). */
+  docsKey?: string;
+  /**
+   * How far back each kind was backfilled: the horizon in force when its walk
+   * started, or null for "everything". Absent: not recorded, nothing to compare.
+   */
+  since?: Partial<Record<ItemKind, string | null>>;
 }
 
 const EMPTY: Checkpoint = { v: 1, pr: null, issue: null, tree: null, docs: {} };
@@ -100,6 +125,8 @@ function parseCheckpoint(raw: string | null): Checkpoint {
       issue: parsed.issue ?? null,
       tree: parsed.tree ?? null,
       docs: parsed.docs ?? {},
+      ...(typeof parsed.docsKey === 'string' ? { docsKey: parsed.docsKey } : {}),
+      ...(parsed.since ? { since: parsed.since } : {}),
     };
   } catch {
     // A checkpoint this code cannot read starts the container over; storing
@@ -108,10 +135,22 @@ function parseCheckpoint(raw: string | null): Checkpoint {
   }
 }
 
+/** The docs settings that decide which files are stored. A change re-reads the tree. */
+function docsKeyOf(docs: GitHubKnowledgeConfig['docs']): string {
+  return JSON.stringify([docs.paths, docs.maxFileBytes]);
+}
+
+/** True when the horizon now asked for is older than the one this kind was backfilled to. */
+function reachesFurtherBack(horizon: string | null, covered: string | null | undefined): boolean {
+  if (covered === undefined || covered === null) return false; // not recorded, or everything
+  return horizon === null || Date.parse(horizon) < Date.parse(covered);
+}
+
 function repoOf(container: SelectedContainer): RepoRef {
   const [owner, name] = container.name.split('/');
-  if (!owner || !name)
+  if (!owner || !name) {
     throw new Error(`container ${container.name} is not an owner/name repository`);
+  }
   return { id: Number(container.externalId), owner, name };
 }
 
@@ -120,37 +159,37 @@ function* chunks<T>(items: T[], size: number): Generator<T[]> {
 }
 
 export function clientFromOctokit(octokit: Octokit, issuesGranted: boolean): GitHubKnowledgeClient {
+  const withSignal = (signal?: AbortSignal): { request?: { signal: AbortSignal } } =>
+    signal ? { request: { signal } } : {};
   return {
     issuesGranted,
     graphql: (query, variables, signal) =>
-      octokit.graphql(query, { ...variables, ...(signal ? { request: { signal } } : {}) }),
+      octokit.graphql(query, { ...variables, ...withSignal(signal) }),
     git: octokit.rest.git as unknown as TreeClient,
-    async *listRepositories(org) {
-      const pages = octokit.paginate.iterator(octokit.rest.repos.listForOrg, {
+    async listRepositoriesPage(org, page, signal) {
+      const { data } = await octokit.rest.repos.listForOrg({
         org,
-        per_page: 100,
+        per_page: PAGE_SIZE,
+        page,
         type: 'all',
+        ...withSignal(signal),
       });
-      for await (const { data } of pages) {
-        for (const r of data) {
-          yield {
-            id: r.id,
-            fullName: r.full_name,
-            htmlUrl: r.html_url,
-            visibility: r.visibility ?? 'private',
-            archived: r.archived ?? false,
-          };
-        }
-      }
+      return data.map((r) => ({
+        id: r.id,
+        fullName: r.full_name,
+        htmlUrl: r.html_url,
+        visibility: r.visibility ?? 'private',
+        archived: r.archived ?? false,
+      }));
     },
-    async *listMembers(org) {
-      const pages = octokit.paginate.iterator(octokit.rest.orgs.listMembers, {
+    async listMembersPage(org, page, signal) {
+      const { data } = await octokit.rest.orgs.listMembers({
         org,
-        per_page: 100,
+        per_page: PAGE_SIZE,
+        page,
+        ...withSignal(signal),
       });
-      for await (const { data } of pages) {
-        for (const m of data) yield { id: m.id, login: m.login };
-      }
+      return data.map((m) => ({ id: m.id, login: m.login }));
     },
   };
 }
@@ -173,6 +212,18 @@ async function connectWithApp(config: ConnectorConfig): Promise<ConnectResult> {
   return { ok: true, client: clientFromOctokit(octokit, granted.issues !== undefined) };
 }
 
+/** What one fetchChanges call carries from kind to kind. */
+interface Run {
+  repo: RepoRef;
+  limits: RunLimits;
+  gql: Gql;
+  /** ISO time older than which nothing is fetched; null for everything. */
+  horizon: string | null;
+  cp: Checkpoint;
+  /** Notes ride on the next batch; a run that produces none still reports them. */
+  notes: string[];
+}
+
 export class GitHubKnowledgeConnector implements KnowledgeConnector {
   readonly manifest: ConnectorManifest = {
     name: 'github-knowledge',
@@ -187,6 +238,9 @@ export class GitHubKnowledgeConnector implements KnowledgeConnector {
   // Set when GitHub refuses an issues query although the installation
   // claimed the permission; treated like a missing permission from then on.
   private issuesForbidden = false;
+  // One per instance, so one per run: the next repository of a run does not
+  // spend a request to learn about the limit the previous one ran into.
+  private readonly rateLimit: RateLimitState = { limitedUntil: 0 };
   private readonly batchSize: number;
   private readonly now: () => number;
 
@@ -222,41 +276,74 @@ export class GitHubKnowledgeConnector implements KnowledgeConnector {
     return this.client && this.issuesListable ? ['github_issue'] : [];
   }
 
-  async *listContainers(): AsyncIterable<SourceContainer> {
-    for await (const r of this.github.listRepositories(this.org)) {
-      yield {
-        externalId: String(r.id),
-        kind: 'repository',
-        name: r.fullName,
-        url: r.htmlUrl,
-        visibility: r.visibility === 'private' ? 'restricted' : 'open',
-        archived: r.archived,
-      };
+  /** Every call to GitHub goes through here: rate limits are waited out, or end the run. */
+  private limited<T>(limits: RunLimits, fn: () => Promise<T>): Promise<T> {
+    return withRateLimit(fn, limits, { now: this.now, state: this.rateLimit });
+  }
+
+  async *listContainers(limits: RunLimits = {}): AsyncIterable<SourceContainer> {
+    for (let page = 1; ; page++) {
+      const repos = await this.limited(limits, () =>
+        this.github.listRepositoriesPage(this.org, page, limits.signal),
+      );
+      for (const r of repos) {
+        yield {
+          externalId: String(r.id),
+          kind: 'repository',
+          name: r.fullName,
+          url: r.htmlUrl,
+          visibility: r.visibility === 'private' ? 'restricted' : 'open',
+          archived: r.archived,
+        };
+      }
+      if (repos.length < PAGE_SIZE) return;
     }
   }
 
-  async *listPrincipals(): AsyncIterable<SourcePrincipal> {
-    for await (const m of this.github.listMembers(this.org)) {
-      yield {
-        externalId: String(m.id),
-        kind: 'user',
-        displayName: m.login,
-        login: m.login,
-        active: true,
-      };
+  async *listPrincipals(limits: RunLimits = {}): AsyncIterable<SourcePrincipal> {
+    for (let page = 1; ; page++) {
+      const members = await this.limited(limits, () =>
+        this.github.listMembersPage(this.org, page, limits.signal),
+      );
+      for (const m of members) {
+        yield {
+          externalId: String(m.id),
+          kind: 'user',
+          displayName: m.login,
+          login: m.login,
+          active: true,
+        };
+      }
+      if (members.length < PAGE_SIZE) return;
     }
   }
 
   private gqlFor(limits: RunLimits): Gql {
     const client = this.github;
     return <T>(query: string, variables: Record<string, unknown>) =>
-      withRateLimit(() => client.graphql(query, variables, limits.signal), limits, {
-        now: this.now,
-      }) as Promise<T>;
+      this.limited(limits, () => client.graphql(query, variables, limits.signal)) as Promise<T>;
   }
 
   private fit(doc: KnowledgeDocumentInput): KnowledgeDocumentInput {
     return truncateDocument(doc, this.options.maxDocumentChars);
+  }
+
+  /** A batch carrying the run's current checkpoint and whatever notes are waiting. */
+  private batchOf(
+    run: Run,
+    documents: KnowledgeDocumentInput[],
+    deletedExternalIds: string[] = [],
+    principals: SourcePrincipal[] = [],
+  ): ChangeBatch {
+    const out: ChangeBatch = {
+      documents,
+      deletedExternalIds,
+      checkpoint: JSON.stringify(run.cp),
+      ...(principals.length > 0 ? { principals } : {}),
+      ...(run.notes.length > 0 ? { notes: run.notes } : {}),
+    };
+    run.notes = [];
+    return out;
   }
 
   async *fetchChanges(
@@ -265,129 +352,154 @@ export class GitHubKnowledgeConnector implements KnowledgeConnector {
     options: FetchChangesOptions,
   ): AsyncIterable<ChangeBatch> {
     const cfg = this.options.knowledge;
-    const repo = repoOf(container);
     const limits: RunLimits = { signal: options.signal, deadline: options.deadline };
-    const gql = this.gqlFor(limits);
-    const horizon =
-      options.historyDays > 0
-        ? new Date(this.now() - options.historyDays * 86_400_000).toISOString()
-        : null;
-
-    let cp = parseCheckpoint(checkpoint);
-    // Notes ride on the next batch; a run that produces none still reports them.
-    let notes: string[] = [];
-    const batch = (
-      documents: KnowledgeDocumentInput[],
-      deletedExternalIds: string[] = [],
-    ): ChangeBatch => {
-      const out: ChangeBatch = {
-        documents,
-        deletedExternalIds,
-        checkpoint: JSON.stringify(cp),
-        ...(notes.length > 0 ? { notes } : {}),
-      };
-      notes = [];
-      return out;
+    const run: Run = {
+      repo: repoOf(container),
+      limits,
+      gql: this.gqlFor(limits),
+      horizon:
+        options.historyDays > 0
+          ? new Date(this.now() - options.historyDays * 86_400_000).toISOString()
+          : null,
+      cp: parseCheckpoint(checkpoint),
+      notes: [],
     };
 
-    try {
-      if (cfg.pullRequests) {
-        const refs = await listUpdated(gql, repo, 'pullRequests', { stopBefore: cp.pr, horizon });
-        for (const chunk of chunks<UpdatedRef>(refs, this.batchSize)) {
-          const prs = await fetchPullRequests(
-            gql,
-            repo,
-            chunk.map((r) => r.number),
-          );
-          const documents = prs.map((pr) => {
-            const doc = this.fit(pullRequestDocument(repo, pr));
-            return pr.reviewsTruncated
-              ? { ...doc, attributes: { ...doc.attributes, truncated: true } }
-              : doc;
-          });
-          cp = { ...cp, pr: chunk[chunk.length - 1]!.updatedAt };
-          yield batch(documents);
-        }
-      }
+    const kinds: Array<() => AsyncGenerator<ChangeBatch>> = [];
+    if (cfg.pullRequests) kinds.push(() => this.syncItems(run, 'pr'));
+    if (cfg.issues) kinds.push(() => this.syncIssues(run));
+    if (cfg.docs.enabled) kinds.push(() => this.syncDocs(run));
 
-      if (cfg.issues) {
-        if (!this.issuesListable) {
-          notes.push(NOTE_ISSUES_PERMISSION);
-        } else {
-          try {
-            const refs = await listUpdated(gql, repo, 'issues', { stopBefore: cp.issue, horizon });
-            for (const chunk of chunks<UpdatedRef>(refs, this.batchSize)) {
-              const issues = await fetchIssues(
-                gql,
-                repo,
-                chunk.map((r) => r.number),
-              );
-              cp = { ...cp, issue: chunk[chunk.length - 1]!.updatedAt };
-              yield batch(issues.map((issue) => this.fit(issueDocument(repo, issue))));
-            }
-          } catch (err) {
-            if (!(err instanceof GraphqlForbiddenError)) throw err;
-            this.issuesForbidden = true;
-            notes.push(NOTE_ISSUES_PERMISSION);
-          }
+    // The first kind that failed. The others still run: one pull request
+    // GitHub cannot serve must not keep the repository's docs from syncing.
+    let failure: { error: unknown } | null = null;
+    for (const kind of kinds) {
+      try {
+        yield* kind();
+      } catch (err) {
+        // GitHub asked for a wait that does not fit this run: nothing more can
+        // be fetched. Say what there is to say and let the harness end the
+        // run; the checkpoint holds what was stored and the next run goes on.
+        if (isRunCutShort(err)) {
+          if (run.notes.length > 0) yield this.batchOf(run, []);
+          throw err;
         }
+        failure ??= { error: err };
       }
-
-      if (cfg.docs.enabled) {
-        const head = await fetchRepoHead(gql, repo);
-        if (head && head.treeOid !== cp.tree) {
-          const rest = <T>(fn: () => Promise<T>): Promise<T> =>
-            withRateLimit(fn, limits, { now: this.now });
-          const { blobs, truncated } = await rest(() =>
-            listDocBlobs(this.github.git, repo, head.treeOid, cfg.docs),
-          );
-          if (truncated) notes.push(NOTE_TREE_TRUNCATED);
-          const present = new Set(blobs.map((b) => b.path));
-          // A truncated tree is an incomplete listing: delete nothing by it,
-          // and do not record the tree as seen.
-          const gone = truncated ? [] : Object.keys(cp.docs).filter((path) => !present.has(path));
-          const changed = blobs.filter((b) => cp.docs[b.path] !== b.sha);
-          const docs = { ...cp.docs };
-          for (const path of gone) delete docs[path];
-          const deleted = gone.map((path) => docId(repo.id, path));
-          const groups = [...chunks(changed, this.batchSize)];
-          if (groups.length === 0) {
-            cp = { ...cp, docs, tree: truncated ? cp.tree : head.treeOid };
-            yield batch([], deleted);
-          }
-          for (const [i, group] of groups.entries()) {
-            const documents: KnowledgeDocumentInput[] = [];
-            for (const blob of group) {
-              const text = await rest(() => fetchBlobText(this.github.git, repo, blob.sha));
-              documents.push(
-                this.fit(
-                  markdownDocument(repo, {
-                    path: blob.path,
-                    sha: blob.sha,
-                    text,
-                    branch: head.branch,
-                    committedAt: head.committedAt,
-                  }),
-                ),
-              );
-              docs[blob.path] = blob.sha;
-            }
-            const last = i === groups.length - 1;
-            // The tree is recorded only with the last batch: until then a
-            // restart must list it again and fetch what is still missing.
-            cp = { ...cp, docs: { ...docs }, tree: last && !truncated ? head.treeOid : cp.tree };
-            yield batch(documents, i === 0 ? deleted : []);
-          }
-        }
-      }
-    } catch (err) {
-      if (!(err instanceof RunBudgetEnded)) throw err;
-      // GitHub asked for a wait that does not fit this run. Not a failure:
-      // the checkpoint holds what was stored and the next run continues.
-      notes.push(NOTE_RATE_LIMITED);
     }
+    if (run.notes.length > 0) yield this.batchOf(run, []);
+    if (failure) throw failure.error;
+  }
 
-    if (notes.length > 0) yield batch([]);
+  /** Pull requests or issues updated since the cursor, oldest first. */
+  private async *syncItems(run: Run, kind: ItemKind): AsyncGenerator<ChangeBatch> {
+    // The horizon was moved further back than this kind was backfilled to
+    // (historyDays was raised): walk again from the new one. Storing is
+    // idempotent, so what is already stored costs GitHub calls, not embeddings.
+    let cursor = run.cp[kind];
+    if (cursor !== null && reachesFurtherBack(run.horizon, run.cp.since?.[kind])) cursor = null;
+    const fromTheStart = cursor === null;
+
+    const refs = await listUpdated(run.gql, run.repo, kind === 'pr' ? 'pullRequests' : 'issues', {
+      stopBefore: cursor,
+      horizon: run.horizon,
+    });
+    for (const chunk of chunks<UpdatedRef>(refs, this.batchSize)) {
+      const numbers = chunk.map((r) => r.number);
+      let documents: KnowledgeDocumentInput[];
+      let principals: SourcePrincipal[];
+      if (kind === 'pr') {
+        const prs = await fetchPullRequests(run.gql, run.repo, numbers);
+        principals = principalsOf(prs);
+        documents = prs.map((pr) => {
+          const doc = this.fit(pullRequestDocument(run.repo, pr));
+          return pr.reviewsTruncated
+            ? { ...doc, attributes: { ...doc.attributes, truncated: true } }
+            : doc;
+        });
+      } else {
+        const issues = await fetchIssues(run.gql, run.repo, numbers);
+        principals = principalsOf(issues);
+        documents = issues.map((issue) => this.fit(issueDocument(run.repo, issue)));
+      }
+      run.cp = {
+        ...run.cp,
+        [kind]: chunk[chunk.length - 1]!.updatedAt,
+        ...(fromTheStart ? { since: { ...run.cp.since, [kind]: run.horizon } } : {}),
+      };
+      yield this.batchOf(run, documents, [], principals);
+    }
+  }
+
+  private async *syncIssues(run: Run): AsyncGenerator<ChangeBatch> {
+    if (!this.issuesListable) {
+      run.notes.push(NOTE_ISSUES_PERMISSION);
+      return;
+    }
+    try {
+      yield* this.syncItems(run, 'issue');
+    } catch (err) {
+      if (!(err instanceof GraphqlForbiddenError)) throw err;
+      this.issuesForbidden = true;
+      run.notes.push(NOTE_ISSUES_PERMISSION);
+    }
+  }
+
+  /** Markdown docs on the default branch: what changed, and what left the tree. */
+  private async *syncDocs(run: Run): AsyncGenerator<ChangeBatch> {
+    const cfg = this.options.knowledge.docs;
+    const head = await fetchRepoHead(run.gql, run.repo);
+    if (!head) return;
+    // The tree is read again when it moved, and also when the settings that
+    // choose the files changed: a new glob must not wait for the next push.
+    const docsKey = docsKeyOf(cfg);
+    if (head.treeOid === run.cp.tree && run.cp.docsKey === docsKey) return;
+
+    const { blobs, truncated } = await this.limited(run.limits, () =>
+      listDocBlobs(this.github.git, run.repo, head.treeOid, cfg),
+    );
+    if (truncated) run.notes.push(NOTE_TREE_TRUNCATED);
+    const present = new Set(blobs.map((b) => b.path));
+    // A truncated tree is an incomplete listing: delete nothing by it, and do
+    // not record the tree as seen.
+    const gone = truncated ? [] : Object.keys(run.cp.docs).filter((path) => !present.has(path));
+    const changed = blobs.filter((b) => run.cp.docs[b.path] !== b.sha);
+    const docs = { ...run.cp.docs };
+    for (const path of gone) delete docs[path];
+    const deleted = gone.map((path) => docId(run.repo.id, path));
+    // Recorded only with the last batch: until then a restart must list the
+    // tree again and fetch what is still missing.
+    const seen = truncated ? {} : { tree: head.treeOid, docsKey };
+
+    const groups = [...chunks(changed, this.batchSize)];
+    if (groups.length === 0) {
+      run.cp = { ...run.cp, docs, ...seen };
+      yield this.batchOf(run, [], deleted);
+      return;
+    }
+    for (const [i, group] of groups.entries()) {
+      const documents: KnowledgeDocumentInput[] = [];
+      for (const blob of group) {
+        const text = await this.limited(run.limits, () =>
+          fetchBlobText(this.github.git, run.repo, blob.sha),
+        );
+        documents.push(
+          this.fit(
+            markdownDocument(run.repo, {
+              path: blob.path,
+              sha: blob.sha,
+              text,
+              branch: head.branch,
+              committedAt: head.committedAt,
+            }),
+          ),
+        );
+        docs[blob.path] = blob.sha;
+      }
+      const last = i === groups.length - 1;
+      run.cp = { ...run.cp, docs: { ...docs }, ...(last ? seen : {}) };
+      yield this.batchOf(run, documents, i === 0 ? deleted : []);
+    }
   }
 
   async *listDocumentIds(

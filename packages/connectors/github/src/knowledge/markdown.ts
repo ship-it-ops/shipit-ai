@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/markdown.ts
 // Splits a Markdown file into one segment per heading section. ATX headings
 // only (`# Title`); a `#` inside a fenced code block is content.
 export interface MarkdownSection {
@@ -8,7 +7,35 @@ export interface MarkdownSection {
   text: string;
 }
 
-const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+const HASH = 35;
+const SPACE = 32;
+const TAB = 9;
+
+/**
+ * An ATX heading: one to six hashes, then a space or a tab. Parsed by hand: a
+ * pattern with optional whitespace on both sides of a lazy title backtracks
+ * polynomially on a long run of spaces, and this runs on the api-server's
+ * event loop over files anyone with push access can write.
+ */
+function headingOf(line: string): { level: number; title: string } | null {
+  let level = 0;
+  while (level < 7 && line.charCodeAt(level) === HASH) level++;
+  if (level === 0 || level > 6) return null;
+  const after = line.charCodeAt(level);
+  if (after !== SPACE && after !== TAB) return null;
+  let title = line.slice(level + 1).trim();
+  // A closing run of hashes counts only when whitespace precedes it
+  // ("## Title ##"); in "# C# and F#" the last hash is part of the title.
+  let end = title.length;
+  while (end > 0 && title.charCodeAt(end - 1) === HASH) end--;
+  if (end < title.length) {
+    const before = end === 0 ? SPACE : title.charCodeAt(end - 1);
+    if (before === SPACE || before === TAB) title = title.slice(0, end).trimEnd();
+  }
+  // One space wherever the source had a run of them: the title becomes part
+  // of every chunk's prefix.
+  return { level, title: title.replace(/\s+/g, ' ') };
+}
 const FENCE = /^(```|~~~)/;
 
 export function splitMarkdownByHeading(markdown: string): MarkdownSection[] {
@@ -37,15 +64,14 @@ export function splitMarkdownByHeading(markdown: string): MarkdownSection[] {
       buffer.push(line);
       continue;
     }
-    const heading = fence === null ? HEADING.exec(line) : null;
+    const heading = fence === null ? headingOf(line) : null;
     if (!heading) {
       buffer.push(line);
       continue;
     }
     flush();
-    const level = heading[1]!.length;
-    while (stack.length > 0 && stack[stack.length - 1]!.level >= level) stack.pop();
-    stack.push({ level, title: heading[2]! });
+    while (stack.length > 0 && stack[stack.length - 1]!.level >= heading.level) stack.pop();
+    stack.push(heading);
   }
   flush();
   return sections;

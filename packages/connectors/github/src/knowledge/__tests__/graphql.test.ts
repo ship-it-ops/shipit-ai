@@ -1,4 +1,3 @@
-// packages/connectors/github/src/knowledge/__tests__/graphql.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   GraphqlForbiddenError,

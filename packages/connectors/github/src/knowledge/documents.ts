@@ -1,7 +1,10 @@
-// packages/connectors/github/src/knowledge/documents.ts
 // GitHub content → KnowledgeDocumentInput. Pure: the fetchers hand in what the
 // API returned, the connector hands the result to the sink.
-import type { DocumentSegment, KnowledgeDocumentInput } from '@shipit-ai/connector-sdk';
+import type {
+  DocumentSegment,
+  KnowledgeDocumentInput,
+  SourcePrincipal,
+} from '@shipit-ai/connector-sdk';
 import { docId, issueId, pullRequestId } from './ids.js';
 import { splitMarkdownByHeading } from './markdown.js';
 
@@ -12,6 +15,8 @@ export interface RepoRef {
 }
 
 export interface GqlActor {
+  /** `User`, `Bot`, `Organization`, `Mannequin`, … */
+  __typename?: string;
   login: string;
   /** Present for users and bots; absent for organisations and mannequins. */
   databaseId?: number | null;
@@ -99,6 +104,38 @@ function header(item: GqlIssueLike): DocumentSegment {
     item.createdAt,
     item.url,
   );
+}
+
+/**
+ * Everyone who wrote in these items, once each. The organisation's member
+ * listing does not cover bots and outside contributors, and it runs only at
+ * reconcile; a batch carries these so the sink can resolve authorship as it
+ * writes the documents.
+ */
+export function principalsOf(items: Array<GqlIssueLike | GqlPullRequest>): SourcePrincipal[] {
+  const seen = new Map<string, SourcePrincipal>();
+  const add = (actor: GqlActor | null): void => {
+    const id = actorId(actor);
+    if (!actor || !id || seen.has(id)) return;
+    seen.set(id, {
+      externalId: id,
+      kind: actor.__typename === 'Bot' ? 'bot' : 'user',
+      displayName: actor.login,
+      login: actor.login,
+      active: true,
+    });
+  };
+  for (const item of items) {
+    add(item.author);
+    for (const comment of item.comments.nodes) add(comment.author);
+    if ('reviews' in item) {
+      for (const review of item.reviews.nodes) {
+        add(review.author);
+        for (const comment of review.comments.nodes) add(comment.author);
+      }
+    }
+  }
+  return [...seen.values()];
 }
 
 export function pullRequestDocument(repo: RepoRef, pr: GqlPullRequest): KnowledgeDocumentInput {
