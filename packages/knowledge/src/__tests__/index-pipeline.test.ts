@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FakeEmbedder } from '../embedder.js';
+import { FakeEmbedder, type Embedder } from '../embedder.js';
 import { indexDocument, type IndexStore } from '../index-pipeline.js';
 import type { DocumentRow, StoredChunkInput } from '../store.js';
 
@@ -64,7 +64,7 @@ function row(overrides: Partial<DocumentRow> = {}): DocumentRow {
   };
 }
 
-const deps = (store: MemoryIndexStore, embedder = new FakeEmbedder(8)) => ({
+const deps = (store: MemoryIndexStore, embedder: Embedder = new FakeEmbedder(8)) => ({
   store,
   embedder,
   chunking: { chunkTokens: 600, maxChunkTokens: 800 },
