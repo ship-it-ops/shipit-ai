@@ -2,6 +2,7 @@
 // write SQL. Ids are UUIDs minted here; timestamps are set by Postgres.
 import { randomUUID } from 'node:crypto';
 import type { Db, SqlClient } from '@shipit-ai/agents';
+import { KnowledgeContainerChanged } from '@shipit-ai/connector-sdk';
 import type {
   ChangeBatch,
   ContainerKind,
@@ -222,6 +223,10 @@ export class KnowledgeStore {
     const { rows } = await this.db.query<Raw>(
       `SELECT ${CONTAINER_COLUMNS} FROM knowledge_containers
         WHERE connector_id = $1 AND selected AND gone_at IS NULL AND purge_requested_at IS NULL
+          -- Everything indexed is visible to every signed-in user, so content the
+          -- source restricts is fetched only once someone has acknowledged that.
+          -- A selected repository that turns private stops here until then.
+          AND (visibility = 'open' OR visibility_acknowledged_by IS NOT NULL)
         ORDER BY ${stamp} ASC NULLS FIRST, name`,
       [connectorId],
     );
@@ -271,7 +276,11 @@ export class KnowledgeStore {
               count(*) FILTER (WHERE ${live} AND d.restricted)::int AS restricted
          FROM knowledge_containers c
          LEFT JOIN knowledge_documents d ON d.container_id = c.id
-        WHERE c.connector_id = $1 AND c.gone_at IS NULL
+        WHERE c.connector_id = $1
+          -- A container the source no longer lists stays visible while it is
+          -- selected or still holds content, so an admin can deselect it.
+          AND (c.gone_at IS NULL OR c.selected
+               OR EXISTS (SELECT 1 FROM knowledge_documents x WHERE x.container_id = c.id))
           AND ($2::text IS NULL OR position(lower($2) IN lower(c.name)) > 0)
         GROUP BY c.id
         ORDER BY c.name`,
@@ -318,6 +327,23 @@ export class KnowledgeStore {
         WHERE connector_id = $1 AND id = $2`,
       [connectorId, id, input.selected, input.by, input.acknowledged],
     );
+  }
+
+  /**
+   * The connector was deleted: nothing of it is selected any more, and
+   * everything it holds is to be purged. Returns how many containers that was.
+   */
+  async deselectConnector(connectorId: string, by: string): Promise<number> {
+    const { rowCount } = await this.db.query(
+      `UPDATE knowledge_containers c
+          SET selected = false, selected_by = $2, selected_at = now(),
+              visibility_acknowledged_by = NULL, purge_requested_at = now(), updated_at = now()
+        WHERE c.connector_id = $1
+          AND (c.selected
+               OR EXISTS (SELECT 1 FROM knowledge_documents d WHERE d.container_id = c.id))`,
+      [connectorId, by],
+    );
+    return rowCount ?? 0;
   }
 
   /**
@@ -408,8 +434,16 @@ export class KnowledgeStore {
     redactions: Map<string, number>,
   ): Promise<{ changed: number; deleted: number }> {
     return this.db.tx(async (tx) => {
-      const containerRowResult = await tx.query<{ id: string; selected: boolean }>(
-        `SELECT id, selected FROM knowledge_containers WHERE connector_id = $1 AND external_id = $2`,
+      // Locked for the whole batch: a deselect, a purge or a reselect waits
+      // for it, and it sees theirs.
+      const containerRowResult = await tx.query<{
+        id: string;
+        selected: boolean;
+        checkpoint: string | null;
+      }>(
+        `SELECT id, selected, checkpoint FROM knowledge_containers
+          WHERE connector_id = $1 AND external_id = $2
+          FOR UPDATE`,
         [connectorId, container.externalId],
       );
       const found = containerRowResult.rows[0];
@@ -422,7 +456,18 @@ export class KnowledgeStore {
       // Deselected while this run was fetching: storing more would refill
       // what the purge is about to delete, or has just deleted.
       if (!found.selected) {
-        throw new Error(`container ${container.externalId} is not selected any more`);
+        throw new KnowledgeContainerChanged(
+          `container ${container.externalId} is not selected any more`,
+        );
+      }
+      // The run holds the checkpoint it read (and then wrote, batch by batch).
+      // If the stored one differs, the container was purged and selected again
+      // in between: this batch belongs to the old life of the container, and
+      // its checkpoint would tell the fresh backfill that everything is stored.
+      if ((found.checkpoint ?? null) !== (container.checkpoint ?? null)) {
+        throw new KnowledgeContainerChanged(
+          `container ${container.externalId} was reset since this run read it`,
+        );
       }
 
       const externalIds = batch.documents.map((d) => d.externalId);

@@ -33,7 +33,16 @@ export interface Redacted {
   count: number;
 }
 
-export async function redactText(text: string): Promise<Redacted> {
+/**
+ * Postgres cannot store U+0000 in text or jsonb, and one such character would
+ * fail a whole batch on every run. A UTF-16 file read as UTF-8 is full of them.
+ */
+export function stripNul(text: string): string {
+  return text.includes('\u0000') ? text.replaceAll('\u0000', '') : text;
+}
+
+export async function redactText(input: string): Promise<Redacted> {
+  const text = stripNul(input);
   if (text.length === 0) return { text, count: 0 };
   const result = await lintSource({
     source: {
@@ -73,7 +82,7 @@ export async function redactSegments(
   for (const segment of segments) {
     const redacted = await redactText(segment.text);
     count += redacted.count;
-    out.push(redacted.count > 0 ? { ...segment, text: redacted.text } : segment);
+    out.push(redacted.text !== segment.text ? { ...segment, text: redacted.text } : segment);
   }
   return { segments: out, count };
 }

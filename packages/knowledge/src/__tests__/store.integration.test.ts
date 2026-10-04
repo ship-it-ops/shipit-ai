@@ -112,6 +112,15 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
 
   const selectedC1 = async () =>
     (await sink.selectedContainers()).find((c) => c.externalId === 'C1')!;
+  const rowFor = async (externalId: string) =>
+    (await store.listContainers('slack-1')).find((c) => c.externalId === externalId)!;
+  /** Selects a container that is not open at the source, the way the route does once acknowledged. */
+  const selectAcknowledged = async (externalId: string) =>
+    store.selectContainer('slack-1', (await rowFor(externalId)).id, {
+      selected: true,
+      by: 'admin@example.com',
+      acknowledged: true,
+    });
 
   describe('containers', () => {
     it('lists only selected, present containers with their checkpoint', async () => {
@@ -476,7 +485,7 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
 
     it('I9: selectedContainers orders the least recently polled container first', async () => {
-      await store.setSelected('slack-1', 'C2', true, 'admin@example.com');
+      await selectAcknowledged('C2');
       expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1', 'C2']);
       await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
       expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C2', 'C1']);
@@ -579,7 +588,7 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
 
     it('orders reconcile by the last reconcile, and poll by the last poll visit', async () => {
-      await store.setSelected('slack-1', 'C2', true, 'admin@example.com');
+      await selectAcknowledged('C2');
       const [c1, c2] = await sink.selectedContainers('poll');
       expect([c1!.externalId, c2!.externalId]).toEqual(['C1', 'C2']);
 
@@ -602,7 +611,7 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
 
     it('a reconcile batch does not move the poll order', async () => {
-      await store.setSelected('slack-1', 'C2', true, 'admin@example.com');
+      await selectAcknowledged('C2');
       await sink.storeBatch(await selectedC1(), {
         documents: [doc('d1', 'a')],
         deletedExternalIds: [],
@@ -732,9 +741,175 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
         by: 'ada',
         acknowledged: false,
       });
-      await expect(sink.storeBatch(selected, batch([doc('d1', 'a')]))).rejects.toThrow(
-        /not selected/,
+      await expect(sink.storeBatch(selected, batch([doc('d1', 'a')]))).rejects.toMatchObject({
+        code: 'KNOWLEDGE_CONTAINER_CHANGED',
+        message: expect.stringMatching(/not selected/),
+      });
+    });
+  });
+
+  describe('final review fixes (K1a)', () => {
+    const NUL = String.fromCharCode(0);
+    const documents = async () =>
+      (
+        await database.db.query<{ external_id: string }>(
+          `SELECT external_id FROM knowledge_documents WHERE deleted_at IS NULL ORDER BY external_id`,
+        )
+      ).rows.map((r) => r.external_id);
+
+    it('refuses a batch for a container that was purged and selected again since the run read it', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')], [], 'cp1'));
+      const run = await selectedC1(); // a run reads the container: checkpoint cp1
+      const c1 = await rowFor('C1');
+      await store.selectContainer('slack-1', c1.id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      expect(await store.purgeRequested()).toBe(1);
+      await store.selectContainer('slack-1', c1.id, {
+        selected: true,
+        by: 'ada',
+        acknowledged: false,
+      });
+
+      // The run now reaches the container with what it read before the reset.
+      await expect(
+        sink.storeBatch(run, batch([doc('d9', 'newer than cp1')], [], 'cp2')),
+      ).rejects.toMatchObject({ code: 'KNOWLEDGE_CONTAINER_CHANGED' });
+
+      // Nothing was stored and the fresh backfill still starts from nothing.
+      expect(await documents()).toEqual([]);
+      expect((await selectedC1()).checkpoint).toBeNull();
+    });
+
+    it('accepts the next batch of the same run once the run holds the checkpoint it just wrote', async () => {
+      const run = await selectedC1();
+      await sink.storeBatch(run, batch([doc('d1', 'a')], [], 'cp1'));
+      run.checkpoint = 'cp1'; // what the harness does after every stored batch
+      await sink.storeBatch(run, batch([doc('d2', 'b')], [], 'cp2'));
+      expect(await documents()).toEqual(['d1', 'd2']);
+      expect((await selectedC1()).checkpoint).toBe('cp2');
+    });
+
+    it('leaves a selected container that is not open at the source out of a run until it is acknowledged', async () => {
+      // Selected while the last listing said "open"; the source has since made it private.
+      await sink.upsertContainers([{ ...C1, visibility: 'restricted' }, C2]);
+      expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual([]);
+
+      await selectAcknowledged('C1');
+      expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
+    });
+
+    it('shows a container the source no longer lists while it is selected or still holds content', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await sink.upsertContainers([C2]); // C1 is gone at the source
+      const rows = await store.containersWithCounts('slack-1');
+      expect(rows.map((r) => [r.externalId, r.goneAt !== null, r.documents])).toEqual([
+        ['C1', true, 1],
+        ['C2', false, 0],
+      ]);
+    });
+
+    it('deselectConnector requests a purge of everything the connector holds', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      await selectAcknowledged('C2');
+
+      expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
+      expect(await sink.selectedContainers()).toEqual([]);
+      expect(await store.purgeRequested()).toBe(2);
+      expect(await documents()).toEqual([]);
+      const rows = await store.containersWithCounts('slack-1');
+      expect(rows.map((r) => [r.selected, r.visibilityAcknowledgedBy])).toEqual([
+        [false, null],
+        [false, null],
+      ]);
+      // Another connector's containers are untouched.
+      expect(await store.deselectConnector('other', 'ada')).toBe(0);
+    });
+
+    it('upserts the principals a batch carries before its documents, so authorship resolves', async () => {
+      const bot = {
+        ...doc('d1', 'bump lodash'),
+        authorExternalId: 'B7',
+        participantExternalIds: ['B7'],
+      };
+      bot.segments = [{ key: 'm1', text: 'bump lodash', authorExternalId: 'B7' }];
+      await sink.storeBatch(await selectedC1(), {
+        ...batch([bot]),
+        principals: [
+          {
+            externalId: 'B7',
+            kind: 'bot',
+            displayName: 'dependabot[bot]',
+            login: 'dependabot[bot]',
+            active: true,
+          },
+        ],
+      });
+      const { rows } = await database.db.query<{ kind: string; author: string | null; n: number }>(
+        `SELECT p.kind, d.author_principal_id::text AS author, cardinality(d.participant_principal_ids) AS n
+           FROM knowledge_documents d LEFT JOIN knowledge_principals p ON p.id = d.author_principal_id`,
       );
+      expect(rows[0]).toMatchObject({ kind: 'bot', n: 1 });
+      expect(rows[0]!.author).not.toBeNull();
+    });
+
+    it('strips NUL characters, which Postgres cannot store, from every text field', async () => {
+      const dirty = {
+        ...doc('d1', `be${NUL}fore`),
+        title: `ti${NUL}tle`,
+        url: `https://example.test/d${NUL}1`,
+        attributes: { label: `a${NUL}b`, nested: [`c${NUL}d`] },
+      };
+      dirty.segments = [
+        {
+          key: 'm1',
+          text: `be${NUL}fore`,
+          headingPath: [`He${NUL}ading`],
+          authorName: `A${NUL}da`,
+          url: `https://example.test/s${NUL}1`,
+        },
+      ];
+      await sink.storeBatch(await selectedC1(), batch([dirty]));
+      const { rows } = await database.db.query<{
+        title: string;
+        url: string;
+        segments: unknown;
+        attributes: unknown;
+      }>(`SELECT title, url, segments, attributes FROM knowledge_documents`);
+      expect(rows[0]).toEqual({
+        title: 'title',
+        url: 'https://example.test/d1',
+        segments: [
+          {
+            key: 'm1',
+            text: 'before',
+            headingPath: ['Heading'],
+            authorName: 'Ada',
+            url: 'https://example.test/s1',
+          },
+        ],
+        attributes: { label: 'ab', nested: ['cd'] },
+      });
+    });
+
+    it('strips NUL characters from container and principal names too', async () => {
+      await sink.upsertContainers([C1, { ...C2, name: `o${NUL}ps` }]);
+      await sink.upsertPrincipals([
+        {
+          externalId: 'U8',
+          kind: 'user',
+          displayName: `Gr${NUL}ace`,
+          login: `gr${NUL}ace`,
+          active: true,
+        },
+      ]);
+      expect((await rowFor('C2')).name).toBe('ops');
+      const { rows } = await database.db.query<{ display_name: string; login: string }>(
+        `SELECT display_name, login FROM knowledge_principals WHERE external_id = 'U8'`,
+      );
+      expect(rows[0]).toEqual({ display_name: 'Grace', login: 'grace' });
     });
   });
 

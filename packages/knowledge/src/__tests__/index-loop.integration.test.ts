@@ -186,11 +186,13 @@ describe.skipIf(!DATABASE_TEST_URL)('harness → sink → loop end to end', () =
     const sink = new PostgresKnowledgeSink({ connectorId: 'fx-1', store });
     await sink.upsertContainers([container]);
     await store.setSelected('fx-1', 'C1', true, 'tests');
-    const [selected] = await sink.selectedContainers();
+    // Read afresh before every batch: the sink refuses a batch whose container
+    // does not hold the checkpoint that is stored.
+    const current = async () => (await sink.selectedContainers())[0]!;
     const embedder = new FakeEmbedder(768);
     const chunks = async () => (await database.db.query(`SELECT 1 FROM knowledge_chunks`)).rows;
 
-    await sink.storeBatch(selected!, {
+    await sink.storeBatch(await current(), {
       documents: [original],
       deletedExternalIds: [],
       checkpoint: 'a',
@@ -198,14 +200,14 @@ describe.skipIf(!DATABASE_TEST_URL)('harness → sink → loop end to end', () =
     await loopWith(embedder).runOnce();
     expect(await chunks()).toHaveLength(1);
 
-    await sink.storeBatch(selected!, {
+    await sink.storeBatch(await current(), {
       documents: [],
       deletedExternalIds: ['t1'],
       checkpoint: 'b',
     });
     expect(await chunks()).toHaveLength(0);
 
-    await sink.storeBatch(selected!, {
+    await sink.storeBatch(await current(), {
       documents: [original],
       deletedExternalIds: [],
       checkpoint: 'c',
@@ -219,16 +221,18 @@ describe.skipIf(!DATABASE_TEST_URL)('harness → sink → loop end to end', () =
     const sink = new PostgresKnowledgeSink({ connectorId: 'fx-1', store });
     await sink.upsertContainers([container]);
     await store.setSelected('fx-1', 'C1', true, 'tests');
-    const [selected] = await sink.selectedContainers();
+    // Read afresh before every batch: the sink refuses a batch whose container
+    // does not hold the checkpoint that is stored.
+    const current = async () => (await sink.selectedContainers())[0]!;
     const original = doc('t1', 'a paragraph someone later removes', '2026-01-01T00:00:00Z');
 
-    await sink.storeBatch(selected!, {
+    await sink.storeBatch(await current(), {
       documents: [original],
       deletedExternalIds: [],
       checkpoint: 'a',
     });
     await loopWith(new FakeEmbedder(768)).runOnce();
-    await sink.storeBatch(selected!, {
+    await sink.storeBatch(await current(), {
       documents: [{ ...original, segments: [] }],
       deletedExternalIds: [],
       checkpoint: 'b',

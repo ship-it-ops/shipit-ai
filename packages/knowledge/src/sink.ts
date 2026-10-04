@@ -13,7 +13,7 @@ import type {
   SourceContainer,
   SourcePrincipal,
 } from '@shipit-ai/connector-sdk';
-import { redactSegments, redactText } from './redaction.js';
+import { redactSegments, redactText, stripNul } from './redaction.js';
 import type { KnowledgeStore } from './store.js';
 
 export interface PostgresKnowledgeSinkOptions {
@@ -28,11 +28,26 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
   constructor(private readonly opts: PostgresKnowledgeSinkOptions) {}
 
   upsertContainers(containers: SourceContainer[]): Promise<void> {
-    return this.opts.store.upsertContainers(this.opts.connectorId, containers);
+    return this.opts.store.upsertContainers(
+      this.opts.connectorId,
+      containers.map((c) => ({
+        ...c,
+        name: stripNul(c.name),
+        ...(c.url ? { url: stripNul(c.url) } : {}),
+      })),
+    );
   }
 
   upsertPrincipals(principals: SourcePrincipal[]): Promise<void> {
-    return this.opts.store.upsertPrincipals(this.opts.connectorId, principals);
+    return this.opts.store.upsertPrincipals(
+      this.opts.connectorId,
+      principals.map((p) => ({
+        ...p,
+        displayName: stripNul(p.displayName),
+        ...(p.email ? { email: stripNul(p.email) } : {}),
+        ...(p.login ? { login: stripNul(p.login) } : {}),
+      })),
+    );
   }
 
   selectedContainers(mode?: KnowledgeRunMode): Promise<SelectedContainer[]> {
@@ -47,6 +62,11 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
     container: SelectedContainer,
     batch: ChangeBatch,
   ): Promise<{ changed: number; deleted: number }> {
+    // The people this batch refers to go in first, so the documents' authors
+    // and participants resolve as they are written.
+    if (batch.principals && batch.principals.length > 0) {
+      await this.upsertPrincipals(batch.principals);
+    }
     const redactions = new Map<string, number>();
     const documents: KnowledgeDocumentInput[] = [];
     for (const doc of batch.documents) {
@@ -54,6 +74,7 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
         // A restricted stub is stored the way a tombstone is: no content at all.
         documents.push({
           ...doc,
+          url: stripNul(doc.url),
           segments: [],
           title: '',
           attributes: {},
@@ -68,7 +89,14 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
       const segments = await redactSegments(doc.segments);
       count += segments.count;
       const withHeadings: typeof segments.segments = [];
-      for (const segment of segments.segments) {
+      for (const redacted of segments.segments) {
+        // Not redacted (they are identifiers, not prose), but they are stored
+        // as text all the same: no NUL may survive in them either.
+        const segment = {
+          ...redacted,
+          ...(redacted.authorName ? { authorName: stripNul(redacted.authorName) } : {}),
+          ...(redacted.url ? { url: stripNul(redacted.url) } : {}),
+        };
         if (!segment.headingPath) {
           withHeadings.push(segment);
           continue;
@@ -88,6 +116,7 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
       if (count > 0) redactions.set(doc.externalId, count);
       documents.push({
         ...doc,
+        url: stripNul(doc.url),
         segments: withHeadings,
         title: title.text,
         attributes: attributes.value as Record<string, unknown>,
