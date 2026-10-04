@@ -514,9 +514,15 @@ async function main() {
         redisUrl: config.backend.redis.url,
         registry: connectorRegistry,
         store: knowledgeStore,
-        buildContext: scheduler.context,
+        // Spread keeps the SAME globalApp object (the live reference the App
+        // service mutates); only the knowledge limit is added.
+        buildContext: {
+          ...scheduler.context,
+          maxDocumentChars: config.knowledge.index.maxDocumentChars,
+        },
         budgetMs: config.knowledge.sync.maxRunMinutes * 60_000,
         reconcileCron: config.knowledge.sync.reconcileCron,
+        historyDaysOf: (cfg) => (cfg.type === 'github' ? cfg.knowledge.historyDays : 365),
         isAvailable: () => knowledgeStatus.ingestionAvailable(),
         wake: wakeRedis
           ? async () => {

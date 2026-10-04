@@ -85,4 +85,34 @@ describe('github connector type', () => {
       message: expect.stringContaining('ENOENT'),
     });
   });
+
+  it('has its knowledge facet off until the instance switches it on', () => {
+    const type = getConnectorType('github')!;
+    expect(type.knowledgeEnabled!(gh)).toBe(false);
+    expect(type.knowledgeEnabled!({ ...gh, knowledge: { ...gh.knowledge, enabled: true } })).toBe(
+      true,
+    );
+  });
+
+  it('builds the knowledge connector with the same credentials as the graph one', async () => {
+    const c = ctx({ maxDocumentChars: 1234 });
+    const built = await getConnectorType('github')!.buildKnowledge!(gh, c);
+    expect(built.ok).toBe(true);
+    if (!built.ok) throw new Error('unreachable');
+    expect(built.connector.manifest.name).toBe('github-knowledge');
+    expect(built.sdkConfig).toEqual({
+      id: 'gh-acme',
+      type: 'github',
+      credentials: { appId: 'app-1', privateKey: 'PEM', installationId: '42' },
+      scope: { org: 'acme' },
+    });
+  });
+
+  it('refuses to build the knowledge connector without an App', async () => {
+    const built = await getConnectorType('github')!.buildKnowledge!(
+      gh,
+      ctx({ globalApp: { id: '', privateKeyPath: '' } }),
+    );
+    expect(built).toMatchObject({ ok: false, code: 'APP_NOT_CONFIGURED' });
+  });
 });

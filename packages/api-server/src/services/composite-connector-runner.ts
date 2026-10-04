@@ -29,14 +29,21 @@ export class CompositeConnectorRunner implements ConnectorRunner {
 
   async start(cfg: ConnectorInstanceConfig): Promise<void> {
     this.remember(cfg);
-    if (this.opts.graph && this.opts.hasGraphFacet(cfg)) await this.opts.graph.start(cfg);
-    if (this.opts.knowledge?.handles(cfg)) await this.opts.knowledge.start(cfg);
+    // One facet failing to start must not keep the other from starting.
+    try {
+      if (this.opts.graph && this.opts.hasGraphFacet(cfg)) await this.opts.graph.start(cfg);
+    } finally {
+      if (this.opts.knowledge?.handles(cfg)) await this.opts.knowledge.start(cfg);
+    }
   }
 
   async stop(connectorId: string): Promise<void> {
-    await this.opts.graph?.stop(connectorId);
-    await this.opts.knowledge?.stop(connectorId);
-    this.knowledgeOnly.delete(connectorId);
+    try {
+      await this.opts.graph?.stop(connectorId);
+    } finally {
+      await this.opts.knowledge?.stop(connectorId);
+      this.knowledgeOnly.delete(connectorId);
+    }
   }
 
   async triggerSync(
@@ -44,12 +51,16 @@ export class CompositeConnectorRunner implements ConnectorRunner {
     mode: 'full' | 'incremental',
   ): Promise<SyncRuntimeStatus> {
     this.remember(cfg);
+    // "full" for the knowledge facet is the reconcile pass; "incremental" a poll.
+    const knowledgeMode = mode === 'full' ? 'reconcile' : 'poll';
     if (this.opts.hasGraphFacet(cfg)) {
+      // A connector with both facets (GitHub) syncs both; the status the
+      // caller gets back is the graph one, as before.
+      if (this.opts.knowledge?.handles(cfg)) await this.opts.knowledge.trigger(cfg, knowledgeMode);
       return this.opts.graph ? this.opts.graph.triggerSync(cfg, mode) : idle(cfg.id);
     }
     if (this.opts.knowledge?.handles(cfg)) {
-      // "full" for a knowledge connector is the reconcile pass; "incremental" a poll.
-      return this.opts.knowledge.trigger(cfg, mode === 'full' ? 'reconcile' : 'poll');
+      return this.opts.knowledge.trigger(cfg, knowledgeMode);
     }
     return idle(cfg.id);
   }

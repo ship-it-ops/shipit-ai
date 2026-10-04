@@ -48,7 +48,7 @@ describe('CompositeConnectorRunner', () => {
     expect(knowledge.stop).toHaveBeenCalledWith('gh');
   });
 
-  it('routes a manual sync to the graph facet when there is one, else to knowledge', async () => {
+  it('a manual sync reaches every facet the connector has', async () => {
     const { graph, knowledge } = fakes();
     const runner = new CompositeConnectorRunner({
       graph,
@@ -57,8 +57,24 @@ describe('CompositeConnectorRunner', () => {
     });
     await runner.triggerSync(gh, 'incremental');
     expect(graph.triggerSync).toHaveBeenCalledOnce();
+    expect(knowledge.trigger).toHaveBeenCalledWith(gh, 'poll');
     await runner.triggerSync(slack, 'full');
     expect(knowledge.trigger).toHaveBeenCalledWith(slack, 'reconcile');
+  });
+
+  it('still starts and stops the knowledge facet when the graph facet throws', async () => {
+    const { graph, knowledge } = fakes();
+    graph.start.mockRejectedValueOnce(new Error('redis down'));
+    graph.stop.mockRejectedValueOnce(new Error('redis down'));
+    const runner = new CompositeConnectorRunner({
+      graph,
+      knowledge: knowledge as never,
+      hasGraphFacet: (c) => c.type === 'github',
+    });
+    await expect(runner.start(gh)).rejects.toThrow('redis down');
+    expect(knowledge.start).toHaveBeenCalledWith(gh);
+    await expect(runner.stop('gh')).rejects.toThrow('redis down');
+    expect(knowledge.stop).toHaveBeenCalledWith('gh');
   });
 
   it('reports the knowledge status for knowledge-only types and the graph status otherwise', () => {
