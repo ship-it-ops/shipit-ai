@@ -121,7 +121,7 @@ migration, harness), `d878d2d` (config section, LastRun.facet), `8e3c8f7` (SDK c
 harness, fixture), `3994296` (redaction, hashing), `0dbd710` (chunkers), `2a5f71c` (store,
 sink), `77f8d22` (embedder), `be3bf31` + `f63fe2f` (pipeline, loop), `b47ccbb`
 (knowledge-worker), `32ffe7a` (scheduler, composite runner), `50163b5` (status service,
-route, boot wiring), then the Task 13 docs commit. All pushed.
+route, boot wiring), `52650e1` (Task 13 docs), `b5882bf` (review fixes). All pushed.
 
 Hands-on on the local stack (2026-10-04): pgvector 0.8.7 on Postgres 17.11; `0002` applied;
 `GET /api/knowledge/status` answered `ingestionAvailable: true` with `embedding` failing
@@ -142,8 +142,40 @@ Learned while executing (also in the plan's ledger):
 - The agents workstream (same branch, same tree) holds `0003_runs.sql` and
   `EXPECTED_SCHEMA_VERSION '0003'`; K0 kept `0002` and added no further migration.
 
+**Whole-branch review (2026-10-04, fresh reviewer):** "ready with fixes" — 2 Critical, 9
+Important, 10 Minor. All Critical and Important items were fixed with a failing test first in
+`b5882bf`: an unchanged re-send no longer clears a document's claim stamp (failed documents
+stayed unretryable); the worker's write-backs apply only while the row is still its claim (a
+tombstoned or edited document could get its old chunks back); redaction now covers title,
+heading paths and attributes; restricted stubs carry no content fields; reconcile batches
+never move the poll checkpoint; prune is scoped to the listing's start time and refuses an
+empty listing over a populated container; one run per connector at a time; containers are
+visited least recently polled first; Vertex parallelism is capped and the SDK's RetryError is
+unwrapped; the disabled worker idles instead of exiting; `knowledge.enabled` is `false` in the
+committed config until the first release (local example sets `true`).
+
+Rulings recorded in that pass: sync jobs run while `ingestionAvailable` (database, schema,
+extension), not `available` — a dead worker must not stop fetching (spec §Feature gating
+amended); the worker's fail-loudly boot on missing prerequisites stands (core-writer
+precedent; spec amended); a missing pgvector blocks `0002` and therefore agents (accepted
+consequence of decision 10); permanently failed documents wait for the admin reindex route
+(K2/K3); `maxDocumentChars` is enforced by connectors from K1.
+
+Deferred minors from the review (not fixed, by rule): a document that crashes the worker is
+reclaimed every 10 minutes forever and there is no claim renewal for two workers; a manual
+trigger skipped as unavailable leaves the status `running`; `CompositeConnectorRunner` lets a
+graph start/stop throw skip the knowledge facet and reports only the graph side of a
+dual-facet connector (matters at K1); Slack-thread overlap can exceed `maxChunkTokens` with
+very large messages; the worker's container-name cache never refreshes; "Agent features:
+database configured." logs when only knowledge opened the pool; moving an existing compose
+volume from the Alpine to the Debian image changes collation under text indexes (docs should
+say reindex or reset); permanently failed rows stay in the claimable partial index; the
+Vertex embedder is tested only through its seam. Also deferred: `enableIDScanRule` for the
+secretlint aws rule (AWS key IDs are not flagged by default).
+
 **Next:** the K1 plan (GitHub text: pull requests, issues, docs; deterministic linking;
-entity Knowledge tab; the connector role gate), written against the K0 code.
+entity Knowledge tab; the connector role gate), written against the K0 code. Its hands-on
+check is the first live Vertex embedding.
 
 ## Related
 
