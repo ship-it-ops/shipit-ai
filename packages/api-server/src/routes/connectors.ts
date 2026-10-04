@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastif
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
+import { requireAdmin } from '../middleware/require-auth.js';
 import { ensureKeyDir } from '../secrets/key-dir.js';
 import { getConnectorType } from '../services/connector-types/index.js';
 import type { BuildContext } from '../services/connector-types/types.js';
@@ -221,6 +222,16 @@ interface ProbeBody {
 }
 
 const connectorRoutes: FastifyPluginAsync = async (server) => {
+  // Reading connectors is open to every signed-in user; creating, changing,
+  // deleting, probing and triggering are an administrator's. The first-boot
+  // setup routes are unaffected: their allow-listed principal is an admin.
+  server.addHook('preHandler', async (request, reply) => {
+    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
+      return undefined;
+    }
+    return requireAdmin(request, reply);
+  });
+
   const registry = server.connectorRegistry;
   // Run history is hydrated server-side so the API contract stays the
   // same as before the YAML→Redis migration — clients still see

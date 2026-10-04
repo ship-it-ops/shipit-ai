@@ -13,6 +13,7 @@ import {
   missingKnowledgeMigrations,
 } from '@shipit-ai/knowledge';
 import { loadConfig } from '@shipit-ai/shared';
+import { startHousekeeping } from './housekeeping.js';
 import { VertexEmbedder } from './vertex-embedder.js';
 import { listenForWakeUps } from './wake.js';
 
@@ -165,24 +166,19 @@ async function main(): Promise<void> {
       `batch ${knowledge.worker.batchSize}, concurrency ${knowledge.worker.concurrency}`,
   );
 
-  // Tombstones older than the retention window, once a day.
-  const DAY_MS = 24 * 60 * 60 * 1000;
-  const cleanup = async (): Promise<void> => {
-    try {
-      const removed = await store.deleteTombstonesOlderThan(knowledge.retention.tombstoneDays);
-      if (removed > 0) console.log(`knowledge-worker: removed ${removed} tombstone(s)`);
-    } catch (err) {
-      console.error(`knowledge-worker: tombstone cleanup failed: ${(err as Error).message}`);
-    }
-  };
-  void cleanup();
-  const cleanupTimer = setInterval(() => void cleanup(), DAY_MS);
-  cleanupTimer.unref?.();
+  // The purge of deselected containers (every minute) and tombstone retention
+  // (once a day).
+  const housekeeping = startHousekeeping({
+    store,
+    tombstoneDays: knowledge.retention.tombstoneDays,
+    log: (line) => console.log(`knowledge-worker: ${line}`),
+    logError: (line) => console.error(`knowledge-worker: ${line}`),
+  });
 
   const shutdown = async (signal: string): Promise<void> => {
     console.log(`knowledge-worker received ${signal}, shutting down...`);
     try {
-      clearInterval(cleanupTimer);
+      housekeeping.stop();
       await loop.stop();
       subscriber?.disconnect();
       redis?.disconnect();

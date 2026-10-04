@@ -78,6 +78,17 @@ function parseRedisUrl(url: string): ConnectionOptions {
   };
 }
 
+/** Why a container refresh could not run. `code` is safe to show; the route maps it to a status. */
+export class KnowledgeRefreshError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'KnowledgeRefreshError';
+  }
+}
+
 export class KnowledgeSyncScheduler {
   private readonly queue: KnowledgeQueueLike;
   private readonly worker: Worker | null;
@@ -185,6 +196,33 @@ export class KnowledgeSyncScheduler {
 
   getStatus(connectorId: string): SyncRuntimeStatus {
     return this.statuses.get(connectorId) ?? { connectorId, state: 'idle' };
+  }
+
+  /**
+   * Lists the source's containers now and stores the list, so an admin can
+   * pick from it without waiting for the nightly reconcile. Returns how many
+   * the source has.
+   */
+  async refreshContainers(connectorId: string): Promise<number> {
+    const cfg = this.opts.registry.get(connectorId); // throws 404 for an unknown id
+    const type = this.resolveType(cfg.type);
+    if (!type?.buildKnowledge || !this.handles(cfg)) {
+      throw new KnowledgeRefreshError(
+        'KNOWLEDGE_NOT_ENABLED',
+        'Knowledge is not switched on for this connector.',
+      );
+    }
+    const built = await type.buildKnowledge(cfg, this.opts.buildContext);
+    if (!built.ok) throw new KnowledgeRefreshError(built.code, built.message);
+    const auth = await built.connector.authenticate(built.sdkConfig);
+    if (!auth.success) {
+      throw new KnowledgeRefreshError('AUTH_FAILED', auth.error ?? 'Authentication failed');
+    }
+    // The whole list first: an incomplete one must not mark anything gone.
+    const all = [];
+    for await (const container of built.connector.listContainers()) all.push(container);
+    await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainers(all);
+    return all.length;
   }
 
   /** The job body. Public so tests (and a future admin "run now") can call it without BullMQ. */

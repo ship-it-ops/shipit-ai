@@ -79,6 +79,7 @@ describe('KnowledgeSyncScheduler', () => {
   let runs: LastRun[];
   let selected: Array<typeof C1 & { checkpoint: string | null }>;
   let stored: number;
+  let upserted: number;
   let available: boolean;
 
   const registry = {
@@ -93,7 +94,7 @@ describe('KnowledgeSyncScheduler', () => {
   // A store fake that only knows what the scheduler touches through the sink.
   const store = {
     selectedContainers: async () => selected,
-    upsertContainers: async () => undefined,
+    upsertContainers: async (_c: string, list: unknown[]) => void (upserted = list.length),
     upsertPrincipals: async () => undefined,
     storeBatch: async (_c: string, _container: unknown, batch: { documents: unknown[] }) => {
       stored += batch.documents.length;
@@ -123,6 +124,7 @@ describe('KnowledgeSyncScheduler', () => {
     runs = [];
     selected = [{ ...C1, checkpoint: null }];
     stored = 0;
+    upserted = 0;
     available = true;
   });
 
@@ -343,5 +345,36 @@ describe('KnowledgeSyncScheduler', () => {
     await s.runJob('fx-1', 'poll');
     expect(stored).toBe(0);
     expect(runs).toHaveLength(0);
+  });
+
+  it('refreshContainers lists the source and stores the list', async () => {
+    const s = scheduler(
+      fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),
+    );
+    expect(await s.refreshContainers('fx-1')).toBe(1);
+    expect(upserted).toBe(1);
+  });
+
+  it('refreshContainers says why it cannot run', async () => {
+    const off = {
+      ...fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),
+      knowledgeEnabled: () => false,
+    } as unknown as ConnectorType;
+    await expect(scheduler(off).refreshContainers('fx-1')).rejects.toMatchObject({
+      code: 'KNOWLEDGE_NOT_ENABLED',
+    });
+    const noToken = fixtureType(
+      createFixtureKnowledgeConnector({ containers: [C1], documents: {} }),
+      true,
+    );
+    await expect(scheduler(noToken).refreshContainers('fx-1')).rejects.toMatchObject({
+      code: 'NO_TOKEN',
+    });
+    const revoked = fixtureType(
+      createFixtureKnowledgeConnector({ containers: [C1], documents: {}, authError: 'revoked' }),
+    );
+    await expect(scheduler(revoked).refreshContainers('fx-1')).rejects.toMatchObject({
+      code: 'AUTH_FAILED',
+    });
   });
 });

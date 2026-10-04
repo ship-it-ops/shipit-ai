@@ -41,6 +41,17 @@ export interface ContainerRow {
   purgeRequestedAt: string | null;
 }
 
+export interface ContainerSummary extends ContainerRow {
+  visibilityAcknowledgedBy: string | null;
+  /** Documents with content: not deleted, not restricted stubs. */
+  documents: number;
+  indexed: number;
+  pending: number;
+  failed: number;
+  /** Items excluded because the source restricts them. */
+  restricted: number;
+}
+
 export interface DocumentRow {
   id: string;
   connectorId: string;
@@ -245,6 +256,102 @@ export class KnowledgeStore {
     );
   }
 
+  /** The picker's rows: every container the source still has, with what is stored for it. */
+  async containersWithCounts(connectorId: string, search?: string): Promise<ContainerSummary[]> {
+    const columns = CONTAINER_COLUMNS.split(',')
+      .map((c) => `c.${c.trim()}`)
+      .join(', ');
+    const live = `d.id IS NOT NULL AND d.deleted_at IS NULL`;
+    const { rows } = await this.db.query<Raw>(
+      `SELECT ${columns}, c.visibility_acknowledged_by,
+              count(*) FILTER (WHERE ${live} AND NOT d.restricted)::int AS documents,
+              count(*) FILTER (WHERE ${live} AND d.index_status = 'indexed')::int AS indexed,
+              count(*) FILTER (WHERE ${live} AND d.index_status IN ('pending', 'indexing'))::int AS pending,
+              count(*) FILTER (WHERE ${live} AND d.index_status = 'failed')::int AS failed,
+              count(*) FILTER (WHERE ${live} AND d.restricted)::int AS restricted
+         FROM knowledge_containers c
+         LEFT JOIN knowledge_documents d ON d.container_id = c.id
+        WHERE c.connector_id = $1 AND c.gone_at IS NULL
+          AND ($2::text IS NULL OR position(lower($2) IN lower(c.name)) > 0)
+        GROUP BY c.id
+        ORDER BY c.name`,
+      [connectorId, search?.trim() || null],
+    );
+    return rows.map((r) => ({
+      ...containerRow(r),
+      visibilityAcknowledgedBy: (r.visibility_acknowledged_by as string | null) ?? null,
+      documents: Number(r.documents),
+      indexed: Number(r.indexed),
+      pending: Number(r.pending),
+      failed: Number(r.failed),
+      restricted: Number(r.restricted),
+    }));
+  }
+
+  async getContainer(connectorId: string, id: string): Promise<ContainerRow | null> {
+    const { rows } = await this.db.query<Raw>(
+      `SELECT ${CONTAINER_COLUMNS} FROM knowledge_containers WHERE connector_id = $1 AND id = $2`,
+      [connectorId, id],
+    );
+    return rows[0] ? containerRow(rows[0]) : null;
+  }
+
+  /**
+   * Deselecting requests a purge (the worker deletes the content); selecting
+   * again before it ran cancels it. `acknowledged` records who accepted that a
+   * restricted container's content becomes visible to every signed-in user.
+   */
+  async selectContainer(
+    connectorId: string,
+    id: string,
+    input: { selected: boolean; by: string; acknowledged: boolean },
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_containers
+          SET selected = $3, selected_by = $4, selected_at = now(),
+              visibility_acknowledged_by = CASE
+                WHEN $3 AND $5 THEN $4
+                WHEN $3 THEN visibility_acknowledged_by
+                ELSE NULL END,
+              purge_requested_at = CASE WHEN $3 THEN NULL ELSE now() END,
+              updated_at = now()
+        WHERE connector_id = $1 AND id = $2`,
+      [connectorId, id, input.selected, input.by, input.acknowledged],
+    );
+  }
+
+  /**
+   * Deletes what deselected containers hold (chunks go by cascade) and resets
+   * their sync state, so selecting one again starts a fresh backfill. Returns
+   * the number of documents deleted.
+   */
+  async purgeRequested(limit = 20): Promise<number> {
+    return this.db.tx(async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `SELECT id FROM knowledge_containers
+          WHERE purge_requested_at IS NOT NULL AND NOT selected
+          ORDER BY purge_requested_at
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED`,
+        [limit],
+      );
+      if (rows.length === 0) return 0;
+      const ids = rows.map((r) => r.id);
+      const deleted = await tx.query(
+        `DELETE FROM knowledge_documents WHERE container_id = ANY($1::uuid[])`,
+        [ids],
+      );
+      await tx.query(
+        `UPDATE knowledge_containers
+            SET purge_requested_at = NULL, checkpoint = NULL, last_polled_at = NULL,
+                last_reconciled_at = NULL, updated_at = now()
+          WHERE id = ANY($1::uuid[])`,
+        [ids],
+      );
+      return deleted.rowCount ?? 0;
+    });
+  }
+
   // ── Principals ───────────────────────────────────────────────────────────
 
   async upsertPrincipals(connectorId: string, principals: SourcePrincipal[]): Promise<void> {
@@ -301,15 +408,21 @@ export class KnowledgeStore {
     redactions: Map<string, number>,
   ): Promise<{ changed: number; deleted: number }> {
     return this.db.tx(async (tx) => {
-      const containerRowResult = await tx.query<{ id: string }>(
-        `SELECT id FROM knowledge_containers WHERE connector_id = $1 AND external_id = $2`,
+      const containerRowResult = await tx.query<{ id: string; selected: boolean }>(
+        `SELECT id, selected FROM knowledge_containers WHERE connector_id = $1 AND external_id = $2`,
         [connectorId, container.externalId],
       );
-      const containerId = containerRowResult.rows[0]?.id;
-      if (!containerId) {
+      const found = containerRowResult.rows[0];
+      const containerId = found?.id;
+      if (!found || !containerId) {
         throw new Error(
           `container ${container.externalId} is not known to connector ${connectorId}`,
         );
+      }
+      // Deselected while this run was fetching: storing more would refill
+      // what the purge is about to delete, or has just deleted.
+      if (!found.selected) {
+        throw new Error(`container ${container.externalId} is not selected any more`);
       }
 
       const externalIds = batch.documents.map((d) => d.externalId);

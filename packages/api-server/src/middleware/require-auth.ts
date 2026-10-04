@@ -284,6 +284,23 @@ export function requireCapability(cap: string) {
 }
 
 /**
+ * preHandler for actions only an administrator may take (connector and
+ * knowledge-container mutations). The check is on the role, not on a
+ * capability: a bearer token is always a member, whatever its scopes. Run
+ * after registerRequireAuth has populated `request.ctx`.
+ */
+export async function requireAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply | void> {
+  if (request.ctx.user.role === 'admin') return undefined;
+  request.log.warn({ path: request.url.split('?')[0], code: 'FORBIDDEN' }, 'authz: admin required');
+  return reply.status(403).send({
+    error: { code: 'FORBIDDEN', message: 'This action requires an administrator.' },
+  });
+}
+
+/**
  * Register the per-request auth + context plumbing on the root server.
  * Called directly (not via `server.register`) so the preHandler is
  * installed in the root scope and reaches every route rather than being

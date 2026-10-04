@@ -45,6 +45,7 @@ import type { SettingsService } from './services/settings-service.js';
 import feedbackRoutes from './routes/feedback.js';
 import aiRoutes from './routes/ai.js';
 import knowledgeRoutes from './routes/knowledge.js';
+import connectorContainerRoutes from './routes/connector-containers.js';
 import agentsRoutes from './routes/agents.js';
 import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
 import type { RunEventHub } from './services/ai/run-event-hub.js';
@@ -123,6 +124,9 @@ export interface CreateServerOptions {
   aiStatus?: AiStatusService;
   // Live prerequisite checks for the knowledge layer. Optional for the same reason.
   knowledgeStatus?: KnowledgeStatusService;
+  /** The knowledge store and scheduler, for the container routes. Optional like the status. */
+  knowledgeStore?: FastifyInstance['knowledgeStore'];
+  knowledgeScheduler?: FastifyInstance['knowledgeScheduler'];
   // Agent runs and the queue the runner works from. Optional for the same reason.
   runStore?: RunStore;
   runQueue?: RunEnqueuer;
@@ -433,6 +437,8 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.knowledgeStatus) {
     server.decorate('knowledgeStatus', opts.knowledgeStatus);
   }
+  if (opts.knowledgeStore) server.decorate('knowledgeStore', opts.knowledgeStore);
+  if (opts.knowledgeScheduler) server.decorate('knowledgeScheduler', opts.knowledgeScheduler);
   if (opts.runStore) {
     server.decorate('runStore', opts.runStore);
   }
@@ -489,6 +495,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // definitions. Both answer 503 AI_UNAVAILABLE until a database is wired.
   await server.register(aiRoutes, { prefix: '/api/ai' });
   await server.register(knowledgeRoutes, { prefix: '/api/knowledge' });
+  await server.register(connectorContainerRoutes, { prefix: '/api/connectors' });
   await server.register(agentsRoutes, { prefix: '/api/agents' });
   // Runs: start one (POST /api/agents/:id/runs), list and read them, chat, cancel.
   await server.register(runsRoutes, { prefix: '/api', keepaliveMs: opts.runStreamKeepaliveMs });

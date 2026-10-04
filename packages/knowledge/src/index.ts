@@ -8,7 +8,7 @@ export { chunkDocument, estimateTokens, splitLongText } from './chunking.js';
 export type { ChunkDraft, ChunkableDocument, ChunkingOptions } from './chunking.js';
 export { toPgVector } from './vector.js';
 export { CLAIM_STALE_MS, KnowledgeStore, MAX_INDEX_ATTEMPTS } from './store.js';
-export type { ContainerRow, DocumentRow, StoredChunkInput } from './store.js';
+export type { ContainerRow, ContainerSummary, DocumentRow, StoredChunkInput } from './store.js';
 export { PostgresKnowledgeSink } from './sink.js';
 export type { PostgresKnowledgeSinkOptions } from './sink.js';
 export {

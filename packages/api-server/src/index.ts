@@ -579,6 +579,8 @@ async function main() {
     runEvents,
     aiStatus,
     knowledgeStatus,
+    knowledgeStore: knowledgeStore ?? undefined,
+    knowledgeScheduler: knowledgeScheduler ?? undefined,
   });
 
   // The built-in Graph assistant backs Ask. Seeded once the database answers

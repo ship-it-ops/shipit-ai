@@ -635,6 +635,109 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
   });
 
+  describe('containers for the picker', () => {
+    const rowOf = async (externalId: string) =>
+      (await store.listContainers('slack-1')).find((c) => c.externalId === externalId)!;
+
+    it('counts documents per container by index status', async () => {
+      await sink.storeBatch(
+        await selectedC1(),
+        batch([doc('d1', 'a'), doc('d2', 'b'), { ...doc('d3', 'c'), restricted: true }]),
+      );
+      const [claimed] = await store.claimPending(1);
+      await store.replaceChunks(claimed!.id, [chunk(0, 'alpha')], {
+        indexedHash: claimed!.contentHash!,
+        indexVersion: 1,
+      });
+      const rows = await store.containersWithCounts('slack-1');
+      expect(rows.map((r) => r.externalId)).toEqual(['C1', 'C2']);
+      expect(rows[0]).toMatchObject({
+        documents: 2,
+        indexed: 1,
+        pending: 1,
+        failed: 0,
+        restricted: 1,
+      });
+      expect(rows[1]).toMatchObject({ documents: 0, indexed: 0, restricted: 0 });
+    });
+
+    it('searches by name and leaves out containers that are gone', async () => {
+      expect((await store.containersWithCounts('slack-1', 'OPS')).map((r) => r.name)).toEqual([
+        'ops',
+      ]);
+      await sink.upsertContainers([C1]); // C2 is no longer listed upstream
+      expect((await store.containersWithCounts('slack-1')).map((r) => r.name)).toEqual(['general']);
+    });
+
+    it('records who selected a container and who acknowledged its visibility', async () => {
+      const c2 = await rowOf('C2');
+      await store.selectContainer('slack-1', c2.id, {
+        selected: true,
+        by: 'ada',
+        acknowledged: true,
+      });
+      const [, after] = await store.containersWithCounts('slack-1');
+      expect(after).toMatchObject({
+        selected: true,
+        selectedBy: 'ada',
+        visibilityAcknowledgedBy: 'ada',
+      });
+      expect(await store.getContainer('slack-1', c2.id)).toMatchObject({ externalId: 'C2' });
+      expect(await store.getContainer('other', c2.id)).toBeNull();
+    });
+
+    it('deselecting requests a purge; the purge deletes the content and resets the sync state', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      const c1 = await rowOf('C1');
+      await store.selectContainer('slack-1', c1.id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      expect((await rowOf('C1')).purgeRequestedAt).not.toBeNull();
+
+      expect(await store.purgeRequested()).toBe(2);
+      const { rows } = await database.db.query(`SELECT 1 FROM knowledge_documents`);
+      expect(rows).toHaveLength(0);
+      expect(await rowOf('C1')).toMatchObject({
+        purgeRequestedAt: null,
+        checkpoint: null,
+        selected: false,
+      });
+      expect(await store.purgeRequested()).toBe(0);
+    });
+
+    it('selecting again before the purge ran cancels it', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const c1 = await rowOf('C1');
+      await store.selectContainer('slack-1', c1.id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      await store.selectContainer('slack-1', c1.id, {
+        selected: true,
+        by: 'ada',
+        acknowledged: false,
+      });
+      expect(await store.purgeRequested()).toBe(0);
+      expect((await database.db.query(`SELECT 1 FROM knowledge_documents`)).rows).toHaveLength(1);
+    });
+
+    it('refuses a batch for a container that is no longer selected', async () => {
+      const selected = await selectedC1();
+      const c1 = await rowOf('C1');
+      await store.selectContainer('slack-1', c1.id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      await expect(sink.storeBatch(selected, batch([doc('d1', 'a')]))).rejects.toThrow(
+        /not selected/,
+      );
+    });
+  });
+
   describe('state and retention', () => {
     it('round-trips state and deletes old tombstones only', async () => {
       await store.setState('dictionary', { version: 3 });
