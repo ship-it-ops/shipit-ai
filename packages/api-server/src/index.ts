@@ -29,7 +29,12 @@ import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { FeedbackService } from './services/feedback-service.js';
 import { AgentStore, createDb, createPool, type Db } from '@shipit-ai/agents';
+import { KnowledgeStore } from '@shipit-ai/knowledge';
 import { AiStatusService } from './services/ai/ai-status-service.js';
+import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
+import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
+import { getConnectorType } from './services/connector-types/index.js';
 import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
@@ -427,13 +432,14 @@ async function main() {
     redis: runStoreRedis,
   });
 
-  // User-defined AI agents. Postgres is optional: with ai.enabled false or no
-  // database URL, no pool is opened, the store stays unwired and every agent
-  // route answers 503 AI_UNAVAILABLE while the rest of the API runs as before.
-  // The pool connects lazily, so an unreachable database does not fail boot
-  // either; AiStatusService reports it per request.
+  // User-defined AI agents and the knowledge layer share one Postgres pool.
+  // Postgres is optional: with both features off or no database URL, no pool
+  // is opened, the stores stay unwired and their routes answer 503 while the
+  // rest of the API runs as before. The pool connects lazily, so an
+  // unreachable database does not fail boot either; the status services
+  // report it per request.
   const agentPool =
-    config.ai.enabled && config.ai.database.url
+    (config.ai.enabled || config.knowledge.enabled) && config.ai.database.url
       ? createPool({ connectionString: config.ai.database.url })
       : null;
   const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
@@ -448,6 +454,57 @@ async function main() {
       ? 'Agent features: database configured.'
       : 'Agent features: off (ai.enabled is false or ai.database.url is empty).',
   );
+
+  // Knowledge layer. Same optionality as agents: without a database the status
+  // route explains what is missing and nothing is scheduled.
+  const knowledgeStore = agentDb && config.knowledge.enabled ? new KnowledgeStore(agentDb) : null;
+  const knowledgeStatus = new KnowledgeStatusService({
+    knowledge: config.knowledge,
+    ai: config.ai,
+    db: agentDb,
+    store: knowledgeStore,
+    redis: runStoreRedis,
+    log: (message) => console.warn(message),
+  });
+  console.log(
+    knowledgeStore
+      ? 'Knowledge layer: database configured.'
+      : 'Knowledge layer: off (knowledge.enabled is false or ai.database.url is empty).',
+  );
+
+  // Knowledge connectors are scheduled on their own queue; the registry sees
+  // one runner that fans out to both. Needs Redis (the queue) and the store.
+  let knowledgeScheduler: KnowledgeSyncScheduler | null = null;
+  if (knowledgeStore && scheduler && config.backend.redis.url) {
+    try {
+      const wakeRedis = runStoreRedis;
+      knowledgeScheduler = new KnowledgeSyncScheduler({
+        redisUrl: config.backend.redis.url,
+        registry: connectorRegistry,
+        store: knowledgeStore,
+        buildContext: scheduler.context,
+        budgetMs: config.knowledge.sync.maxRunMinutes * 60_000,
+        reconcileCron: config.knowledge.sync.reconcileCron,
+        isAvailable: () => knowledgeStatus.ingestionAvailable(),
+        wake: wakeRedis
+          ? async () => {
+              await wakeRedis.publish('shipit-knowledge-wake', '');
+            }
+          : undefined,
+      });
+      connectorRegistry.setRunner(
+        new CompositeConnectorRunner({
+          graph: scheduler,
+          knowledge: knowledgeScheduler,
+          hasGraphFacet: (cfg) => Boolean(getConnectorType(cfg.type)?.build),
+        }),
+      );
+    } catch (err) {
+      console.warn(
+        `Knowledge scheduling failed to start (knowledge syncs off, API stays up): ${(err as Error).message}`,
+      );
+    }
+  }
 
   const server = await createServer({
     logger: true,
@@ -480,6 +537,7 @@ async function main() {
     resolved,
     agentStore: agentDb ? new AgentStore(agentDb) : undefined,
     aiStatus,
+    knowledgeStatus,
   });
 
   // Start any pre-configured connectors after the server is constructed so
@@ -524,6 +582,7 @@ async function main() {
   const shutdown = async () => {
     await server.close();
     if (scheduler) await scheduler.close();
+    if (knowledgeScheduler) await knowledgeScheduler.close();
     if (webhookRefetch) await webhookRefetch.close();
     if (auditRetention) await auditRetention.close();
     // The event bus owns its own Queue + stream connections (the scheduler's

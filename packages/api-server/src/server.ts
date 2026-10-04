@@ -44,9 +44,11 @@ import type { SetupService } from './services/setup-service.js';
 import type { SettingsService } from './services/settings-service.js';
 import feedbackRoutes from './routes/feedback.js';
 import aiRoutes from './routes/ai.js';
+import knowledgeRoutes from './routes/knowledge.js';
 import agentsRoutes from './routes/agents.js';
 import type { AgentStore } from '@shipit-ai/agents';
 import type { AiStatusService } from './services/ai/ai-status-service.js';
+import type { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
 import type { FeedbackService } from './services/feedback-service.js';
 import { envSecretsView, type ResolvedSecrets } from './secrets/index.js';
 
@@ -117,6 +119,8 @@ export interface CreateServerOptions {
   agentStore?: AgentStore;
   // Live prerequisite checks for agent features. Optional for the same reason.
   aiStatus?: AiStatusService;
+  // Live prerequisite checks for the knowledge layer. Optional for the same reason.
+  knowledgeStatus?: KnowledgeStatusService;
 }
 
 declare module 'fastify' {
@@ -416,6 +420,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.aiStatus) {
     server.decorate('aiStatus', opts.aiStatus);
   }
+  if (opts.knowledgeStatus) {
+    server.decorate('knowledgeStatus', opts.knowledgeStatus);
+  }
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
@@ -462,6 +469,7 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // User-defined AI agents: instance status + model catalog, and agent
   // definitions. Both answer 503 AI_UNAVAILABLE until a database is wired.
   await server.register(aiRoutes, { prefix: '/api/ai' });
+  await server.register(knowledgeRoutes, { prefix: '/api/knowledge' });
   await server.register(agentsRoutes, { prefix: '/api/agents' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
