@@ -95,6 +95,11 @@ export class SyncScheduler implements ConnectorRunner {
   // Kubernetes linking tiers use.
   private readonly buildContext: BuildContext;
 
+  /** The same context the knowledge scheduler needs (live App, key reader, lookups). */
+  get context(): BuildContext {
+    return this.buildContext;
+  }
+
   constructor(opts: SyncSchedulerOptions) {
     this.registry = opts.registry;
     this.eventBus = opts.eventBus;
@@ -171,6 +176,8 @@ export class SyncScheduler implements ConnectorRunner {
 
   async start(connector: ConnectorInstanceConfig): Promise<void> {
     if (!connector.enabled) return;
+    // Knowledge-only types are scheduled by KnowledgeSyncScheduler.
+    if (!getConnectorType(connector.type)?.build) return;
     // Adding the same repeatable job again is a no-op in BullMQ as long as
     // (jobName, repeat) match — the job key is derived from the cron
     // string. Update flow (stop+start) covers schedule changes.
@@ -281,6 +288,15 @@ export class SyncScheduler implements ConnectorRunner {
         startedAt,
         startTime,
         `No connector type registered for "${cfg.type}"`,
+      );
+      return;
+    }
+    if (!type.build) {
+      await this.failRun(
+        connectorId,
+        startedAt,
+        startTime,
+        `Connector type "${cfg.type}" has no graph sync.`,
       );
       return;
     }

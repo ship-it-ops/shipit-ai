@@ -110,6 +110,9 @@ importers:
       '@shipit-ai/event-bus':
         specifier: workspace:*
         version: link:../event-bus
+      '@shipit-ai/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@shipit-ai/mcp-server':
         specifier: workspace:*
         version: link:../mcp-server

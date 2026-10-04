@@ -7,6 +7,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 #   shared → agents → event-bus → connector-sdk → mcp-server → connectors/* → api-server
 COPY packages/shared/ packages/shared/
 COPY packages/agents/ packages/agents/
+COPY packages/knowledge/ packages/knowledge/
 COPY packages/event-bus/ packages/event-bus/
 COPY packages/connector-sdk/ packages/connector-sdk/
 COPY packages/mcp-server/ packages/mcp-server/

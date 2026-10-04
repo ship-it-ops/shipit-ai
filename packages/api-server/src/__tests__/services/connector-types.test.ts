@@ -41,7 +41,7 @@ describe('connector-types registry', () => {
 describe('github connector type', () => {
   it('builds a GitHubConnector with the resolved App credentials and installation', async () => {
     const c = ctx();
-    const built = await getConnectorType('github')!.build(gh, c);
+    const built = await getConnectorType('github')!.build!(gh, c);
     expect(built.ok).toBe(true);
     if (!built.ok) throw new Error('unreachable');
     expect(built.connector.manifest.name).toBe('github');
@@ -56,7 +56,7 @@ describe('github connector type', () => {
 
   it('prefers the per-connector App override', async () => {
     const c = ctx();
-    const built = await getConnectorType('github')!.build(
+    const built = await getConnectorType('github')!.build!(
       { ...gh, app: { id: 'app-2', privateKeyPath: '/keys/override.pem' } },
       c,
     );
@@ -66,12 +66,12 @@ describe('github connector type', () => {
   });
 
   it('fails structurally when no App is configured or the key is unreadable', async () => {
-    const none = await getConnectorType('github')!.build(
+    const none = await getConnectorType('github')!.build!(
       gh,
       ctx({ globalApp: { id: '', privateKeyPath: '' } }),
     );
     expect(none).toMatchObject({ ok: false, code: 'APP_NOT_CONFIGURED' });
-    const unreadable = await getConnectorType('github')!.build(
+    const unreadable = await getConnectorType('github')!.build!(
       gh,
       ctx({
         readPrivateKey: () => {

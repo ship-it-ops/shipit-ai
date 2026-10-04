@@ -1,4 +1,8 @@
-import type { ConnectorConfig, ShipItConnector } from '@shipit-ai/connector-sdk';
+import type {
+  ConnectorConfig,
+  KnowledgeConnector,
+  ShipItConnector,
+} from '@shipit-ai/connector-sdk';
 import type { AppLike, ConnectorInstanceConfig } from '@shipit-ai/shared';
 
 /** What a connector type may need to turn a stored instance into a runnable connector. */
@@ -38,6 +42,10 @@ export interface ProbeResult {
   [key: string]: unknown;
 }
 
+export type KnowledgeBuildResult =
+  | { ok: true; connector: KnowledgeConnector; sdkConfig: ConnectorConfig }
+  | { ok: false; code: string; message: string };
+
 export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInstanceConfig> {
   readonly type: C['type'];
   /**
@@ -53,7 +61,10 @@ export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInst
    * must not sweep.
    */
   readonly sweepsAbsent: boolean;
-  build(cfg: C, ctx: BuildContext): Promise<BuildResult>;
+  /** The graph facet. Absent for a knowledge-only type (Slack, Confluence, Jira). */
+  build?(cfg: C, ctx: BuildContext): Promise<BuildResult>;
+  /** The knowledge facet. Absent for a graph-only type (Kubernetes). GitHub has both. */
+  buildKnowledge?(cfg: C, ctx: BuildContext): Promise<KnowledgeBuildResult>;
   /** Types whose probe lives in the factory (Kubernetes); GitHub's stays in the route. */
   probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>;
 }

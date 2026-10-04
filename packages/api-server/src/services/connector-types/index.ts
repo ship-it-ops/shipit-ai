@@ -8,6 +8,7 @@ export type {
   BuildResult,
   BuiltConnector,
   ConnectorType,
+  KnowledgeBuildResult,
   ProbeResult,
 } from './types.js';
 

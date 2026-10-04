@@ -32,6 +32,7 @@
     "@shipit-ai/connector-kubernetes": "workspace:*",
     "@shipit-ai/connector-sdk": "workspace:*",
     "@shipit-ai/event-bus": "workspace:*",
+    "@shipit-ai/knowledge": "workspace:*",
     "@shipit-ai/mcp-server": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
     "bullmq": "^5.79.1",
