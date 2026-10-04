@@ -46,7 +46,8 @@ import feedbackRoutes from './routes/feedback.js';
 import aiRoutes from './routes/ai.js';
 import knowledgeRoutes from './routes/knowledge.js';
 import agentsRoutes from './routes/agents.js';
-import type { AgentStore } from '@shipit-ai/agents';
+import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
+import type { AgentStore, RunStore } from '@shipit-ai/agents';
 import type { AiStatusService } from './services/ai/ai-status-service.js';
 import type { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
 import type { FeedbackService } from './services/feedback-service.js';
@@ -121,6 +122,9 @@ export interface CreateServerOptions {
   aiStatus?: AiStatusService;
   // Live prerequisite checks for the knowledge layer. Optional for the same reason.
   knowledgeStatus?: KnowledgeStatusService;
+  // Agent runs and the queue the runner works from. Optional for the same reason.
+  runStore?: RunStore;
+  runQueue?: RunEnqueuer;
 }
 
 declare module 'fastify' {
@@ -423,6 +427,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   if (opts.knowledgeStatus) {
     server.decorate('knowledgeStatus', opts.knowledgeStatus);
   }
+  if (opts.runStore) {
+    server.decorate('runStore', opts.runStore);
+  }
+  if (opts.runQueue) {
+    server.decorate('runQueue', opts.runQueue);
+  }
 
   // Register routes
   await server.register(healthRoutes, { prefix: '/api' });
@@ -471,6 +481,8 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   await server.register(aiRoutes, { prefix: '/api/ai' });
   await server.register(knowledgeRoutes, { prefix: '/api/knowledge' });
   await server.register(agentsRoutes, { prefix: '/api/agents' });
+  // Runs: start one (POST /api/agents/:id/runs), list and read them, chat, cancel.
+  await server.register(runsRoutes, { prefix: '/api' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak

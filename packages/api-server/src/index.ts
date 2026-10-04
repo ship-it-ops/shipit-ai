@@ -28,7 +28,7 @@ import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { FeedbackService } from './services/feedback-service.js';
-import { AgentStore, createDb, createPool, type Db } from '@shipit-ai/agents';
+import { AgentStore, RunQueue, RunStore, createDb, createPool, type Db } from '@shipit-ai/agents';
 import { KnowledgeStore } from '@shipit-ai/knowledge';
 import { AiStatusService } from './services/ai/ai-status-service.js';
 import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
@@ -443,6 +443,13 @@ async function main() {
       ? createPool({ connectionString: config.ai.database.url })
       : null;
   const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
+  // Runs are queued for the agent runner on Redis; with no Redis there is no
+  // queue, and the run routes answer 503 instead of creating runs nobody works.
+  // The pool may be open for the knowledge layer alone, so check ai.enabled too.
+  const runQueue =
+    config.ai.enabled && agentDb && config.backend.redis.url
+      ? new RunQueue({ redisUrl: config.backend.redis.url })
+      : undefined;
   const aiStatus = new AiStatusService({
     config: config.ai,
     db: agentDb,
@@ -536,6 +543,8 @@ async function main() {
     redis: runStoreRedis ?? undefined,
     resolved,
     agentStore: agentDb ? new AgentStore(agentDb) : undefined,
+    runStore: agentDb ? new RunStore(agentDb) : undefined,
+    runQueue,
     aiStatus,
     knowledgeStatus,
   });
@@ -589,6 +598,7 @@ async function main() {
     // close() only tears down the worker/queue it created), so close it here.
     if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
+    if (runQueue) await runQueue.close();
     if (agentPool) await agentPool.end();
     await neo4jService.close();
     process.exit(0);

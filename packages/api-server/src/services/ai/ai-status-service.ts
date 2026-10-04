@@ -3,10 +3,11 @@
 // prerequisite turns the feature off with a named reason instead of crashing a
 // process or returning a 500.
 import type { AiConfig } from '@shipit-ai/shared';
-import { EXPECTED_SCHEMA_VERSION, type Db } from '@shipit-ai/agents';
+import { EXPECTED_SCHEMA_VERSION, RUNNER_HEARTBEAT_KEY, type Db } from '@shipit-ai/agents';
 
-/** Written by agent-runner every 15s with a 60s TTL. Absent = no runner. */
-export const RUNNER_HEARTBEAT_KEY = 'shipit-agent-runner-heartbeat';
+// Written by agent-runner every 15s with a 60s TTL; absent means no runner.
+// Defined in @shipit-ai/agents, which the runner also writes it from.
+export { RUNNER_HEARTBEAT_KEY };
 
 export type AiCheckName = 'enabled' | 'database' | 'schema' | 'models' | 'runner';
 
