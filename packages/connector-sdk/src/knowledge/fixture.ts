@@ -5,6 +5,7 @@ import type {
   ChangeBatch,
   DocumentKind,
   FetchChangesOptions,
+  RunLimits,
   KnowledgeConnector,
   KnowledgeDocumentInput,
   SelectedContainer,
@@ -46,6 +47,9 @@ export interface FixtureKnowledgeConnector extends KnowledgeConnector {
     listDocumentIds: number;
     /** Pages yielded per container by listDocumentIds. */
     listedPages: Record<string, number>;
+    /** The run limits each listing was handed. */
+    listContainersOptions: Array<RunLimits | undefined>;
+    listPrincipalsOptions: Array<RunLimits | undefined>;
   };
 }
 
@@ -60,6 +64,8 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
     fetchOptions: [],
     listDocumentIds: 0,
     listedPages: {},
+    listContainersOptions: [],
+    listPrincipalsOptions: [],
   };
 
   const manifest: ConnectorManifest = {
@@ -77,13 +83,15 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
     async authenticate(_config: ConnectorConfig): Promise<AuthResult> {
       return seed.authError ? { success: false, error: seed.authError } : { success: true };
     },
-    async *listContainers() {
+    async *listContainers(options?: RunLimits) {
+      calls.listContainersOptions.push(options);
       for (const [i, c] of seed.containers.entries()) {
         if (i === 1 && seed.listContainersError) throw seed.listContainersError;
         yield c;
       }
     },
-    async *listPrincipals() {
+    async *listPrincipals(options?: RunLimits) {
+      calls.listPrincipalsOptions.push(options);
       for (const p of seed.principals ?? []) yield p;
     },
     async *fetchChanges(

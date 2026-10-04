@@ -20,6 +20,12 @@ export type {
   SourcePrincipal,
 } from './types.js';
 export { KnowledgeHarness } from './harness.js';
+export {
+  KnowledgeContainerChanged,
+  KnowledgeRunCutShort,
+  isContainerChanged,
+  isRunCutShort,
+} from './errors.js';
 export type { KnowledgeHarnessOptions } from './harness.js';
 export { createFixtureKnowledgeConnector } from './fixture.js';
 export type { FixtureKnowledgeConnector, FixtureSeed } from './fixture.js';

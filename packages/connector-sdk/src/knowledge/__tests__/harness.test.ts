@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { KnowledgeContainerChanged, KnowledgeRunCutShort } from '../errors.js';
 import { KnowledgeHarness } from '../harness.js';
 import { createFixtureKnowledgeConnector, type FixtureSeed } from '../fixture.js';
 import type {
@@ -276,6 +277,51 @@ describe('KnowledgeHarness poll', () => {
     expect(sink.visited).toEqual([]); // nothing was finished, so the next run starts here
   });
 
+  it('skips a container the sink says changed under the run, without failing the run', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    const original = sink.storeBatch.bind(sink);
+    sink.storeBatch = async (container, batch) => {
+      if (container.externalId === 'C1') {
+        throw new KnowledgeContainerChanged('container C1 was reset since this run read it');
+      }
+      return original(container, batch);
+    };
+
+    const result = await harness(connector, sink).run('poll');
+
+    expect(result.status).toBe('success');
+    expect(result.errors).toEqual([]);
+    expect(result.notes).toEqual([
+      'general: changed during the run (deselected or reset); skipped',
+    ]);
+    expect(sink.stored.map((s) => s.container)).toEqual(['C2']); // the others still ran
+    expect(sink.visited).toEqual([{ container: 'C2', mode: 'poll' }]);
+  });
+
+  it('ends the run when the connector says the source asked to wait past the budget', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    connector.fetchChanges = () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw new KnowledgeRunCutShort('rate_limited');
+        },
+      }),
+    });
+
+    const result = await harness(connector, sink).run('poll');
+
+    expect(result.status).toBe('success'); // not a failure: the next run resumes
+    expect(result.errors).toEqual([]);
+    expect(result.authFailed).toBe(false);
+    expect(result.notes).toEqual(['rate_limited']);
+    expect(result.budgetExhausted).toBe(true);
+    expect(sink.visited).toEqual([]); // and no further container was tried
+  });
+
   it('reports a failed run instead of throwing when the sink cannot list containers', async () => {
     const sink = new MemorySink();
     sink.failSelected = new Error('connection refused');
@@ -376,6 +422,48 @@ describe('KnowledgeHarness reconcile', () => {
     await harness(connector, sink).run('reconcile');
 
     expect([...sink.containers.keys()]).toEqual(['C1', 'C2']);
+  });
+
+  it('ends a reconcile that is cut short while listing containers, marking nothing gone', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    connector.listContainers = () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw new KnowledgeRunCutShort('rate_limited');
+        },
+      }),
+    });
+
+    const result = await harness(connector, sink).run('reconcile');
+
+    expect(result.status).toBe('success');
+    expect(result.authFailed).toBe(false);
+    expect(result.notes).toEqual(['rate_limited']);
+    expect(result.budgetExhausted).toBe(true);
+    expect([...sink.containers.keys()]).toEqual(['C1', 'C2']);
+    expect(sink.pruned).toEqual([]); // the run ended there
+  });
+
+  it('hands the run limits to the container and principal listings', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    const controller = new AbortController();
+
+    await new KnowledgeHarness(connector, sink, config, {
+      historyDays: 365,
+      budgetMs: 60_000,
+      now: () => 1_000,
+      signal: controller.signal,
+    }).run('reconcile');
+
+    expect(connector.calls.listContainersOptions).toEqual([
+      { signal: controller.signal, deadline: 61_000 },
+    ]);
+    expect(connector.calls.listPrincipalsOptions).toEqual([
+      { signal: controller.signal, deadline: 61_000 },
+    ]);
   });
 
   it('scopes the prune to the time the listing started', async () => {

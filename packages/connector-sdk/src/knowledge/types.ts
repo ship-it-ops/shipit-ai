@@ -94,6 +94,13 @@ export interface ChangeBatch {
    */
   checkpoint: string | null;
   /**
+   * People and bots this batch's documents refer to. The source's principal
+   * listing does not cover everyone who writes (outside contributors, bots),
+   * and it runs only at reconcile; the sink upserts these before the
+   * documents, so authorship resolves when the documents are written.
+   */
+  principals?: SourcePrincipal[];
+  /**
    * Things an admin should see that are not failures (a permission the source
    * has not granted yet, a kind skipped on purpose). They land on the run
    * record; the run stays successful.
@@ -138,8 +145,8 @@ export interface ReconcileOptions extends RunLimits {
 export interface KnowledgeConnector {
   readonly manifest: ConnectorManifest;
   authenticate(config: ConnectorConfig): Promise<AuthResult>;
-  listContainers(): AsyncIterable<SourceContainer>;
-  listPrincipals(): AsyncIterable<SourcePrincipal>;
+  listContainers(options?: RunLimits): AsyncIterable<SourceContainer>;
+  listPrincipals(options?: RunLimits): AsyncIterable<SourcePrincipal>;
   /** Changes since the checkpoint, oldest first. A null checkpoint starts the backfill. */
   fetchChanges(
     container: SelectedContainer,

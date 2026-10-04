@@ -3,6 +3,7 @@
 // sink commits with the batch (so an interrupted backfill resumes), and a time
 // budget (so one container's backfill cannot hold a job for hours).
 import type { ConnectorConfig } from '../interface.js';
+import { isContainerChanged, isRunCutShort } from './errors.js';
 import type {
   KnowledgeConnector,
   KnowledgeRunMode,
@@ -100,9 +101,20 @@ export class KnowledgeHarness {
       return finish();
     }
 
+    // The source asked for a wait that does not fit this run (a rate limit):
+    // the run ends there, with the connector's note, and is not a failure.
+    const cutShort = (err: unknown): boolean => {
+      if (!isRunCutShort(err)) return false;
+      this.addNotes(result, [err.note]);
+      result.budgetExhausted = true;
+      return true;
+    };
+
     if (mode === 'reconcile') {
-      await this.refreshContainers(recordError);
-      await this.refreshPrincipals(recordError);
+      const ended =
+        (await this.refreshContainers(recordError, cutShort, limits)) ||
+        (await this.refreshPrincipals(recordError, cutShort, limits));
+      if (ended) return finish();
     }
 
     let containers: SelectedContainer[];
@@ -133,6 +145,16 @@ export class KnowledgeHarness {
         if (this.options.signal?.aborted) {
           result.budgetExhausted = true;
           break;
+        }
+        if (cutShort(err)) break;
+        // The sink refused the batch because the container was deselected, or
+        // purged and selected again, since this run read it. Not a failure of
+        // the source: leave it for the next run, which reads it afresh.
+        if (isContainerChanged(err)) {
+          this.addNotes(result, [
+            `${container.name}: changed during the run (deselected or reset); skipped`,
+          ]);
+          continue;
         }
         recordError(scope, err);
       }
@@ -216,25 +238,38 @@ export class KnowledgeHarness {
     return true;
   }
 
-  private async refreshContainers(recordError: RecordError): Promise<void> {
+  /** Returns true when the run was cut short and must end. */
+  private async refreshContainers(
+    recordError: RecordError,
+    cutShort: (err: unknown) => boolean,
+    limits: RunLimits,
+  ): Promise<boolean> {
     const all: SourceContainer[] = [];
     try {
-      for await (const c of this.connector.listContainers()) all.push(c);
+      for await (const c of this.connector.listContainers(limits)) all.push(c);
     } catch (err) {
+      // Either way an incomplete list must not mark anything gone.
+      if (cutShort(err)) return true;
       recordError('listContainers', err);
-      return; // an incomplete list must not mark anything gone
+      return false;
     }
     try {
       await this.sink.upsertContainers(all);
     } catch (err) {
       recordError('upsertContainers', err);
     }
+    return false;
   }
 
-  private async refreshPrincipals(recordError: RecordError): Promise<void> {
+  /** Returns true when the run was cut short and must end. */
+  private async refreshPrincipals(
+    recordError: RecordError,
+    cutShort: (err: unknown) => boolean,
+    limits: RunLimits,
+  ): Promise<boolean> {
     let page: SourcePrincipal[] = [];
     try {
-      for await (const p of this.connector.listPrincipals()) {
+      for await (const p of this.connector.listPrincipals(limits)) {
         page.push(p);
         if (page.length >= PRINCIPAL_BATCH) {
           await this.sink.upsertPrincipals(page);
@@ -243,7 +278,9 @@ export class KnowledgeHarness {
       }
       if (page.length > 0) await this.sink.upsertPrincipals(page);
     } catch (err) {
+      if (cutShort(err)) return true;
       recordError('listPrincipals', err);
     }
+    return false;
   }
 }
