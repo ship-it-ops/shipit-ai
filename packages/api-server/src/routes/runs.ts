@@ -11,6 +11,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { hasCapability, type AiConfig } from '@shipit-ai/shared';
 import {
   RUN_STATUSES,
+  TERMINAL_RUN_STATUSES,
   RunNotFoundError,
   RunNotWaitingError,
   type AgentDefinition,
@@ -22,6 +23,7 @@ import {
   type StoredMessage,
 } from '@shipit-ai/agents';
 import { requireCapability } from '../middleware/require-auth.js';
+import type { RunEventHub } from '../services/ai/run-event-hub.js';
 
 /** Anything that can put a run id on the agent-runs queue. */
 export interface RunEnqueuer {
@@ -32,10 +34,14 @@ declare module 'fastify' {
   interface FastifyInstance {
     runStore?: RunStore;
     runQueue?: RunEnqueuer;
+    runEvents?: RunEventHub;
   }
 }
 
 const MAX_TEXT = 20_000;
+// A comment line this often keeps proxies and load balancers from closing an
+// idle stream.
+const KEEPALIVE_MS = 15_000;
 const MAX_INPUT_JSON = 64_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -72,6 +78,15 @@ function openingMessage(input: string | Record<string, unknown>): StoredMessage 
 }
 
 const runsRoutes: FastifyPluginAsync = async (server) => {
+  // Open run streams never finish on their own, and Fastify's close() waits for
+  // every in-flight response: without this a SIGTERM with a viewer connected
+  // hangs until the pod is killed. Ending them first lets the server close;
+  // clients reconnect (to another pod) and resume with Last-Event-ID.
+  const openStreams = new Set<() => void>();
+  server.addHook('preClose', async () => {
+    for (const end of [...openStreams]) end();
+  });
+
   // `needRunner`: starting work needs the whole platform (models and a working
   // runner); reading needs only the stored definitions and runs.
   async function ready(
@@ -317,6 +332,104 @@ const runsRoutes: FastifyPluginAsync = async (server) => {
         ctx.runs.listToolCalls(run.id),
       ]);
       return { messages, toolCalls };
+    },
+  );
+
+  // Server-sent events: `run` (the run record) on connect and whenever its
+  // status changes, `message` (one transcript message, id = its seq) as the
+  // transcript grows, and `end` once the run has finished. Reconnecting with
+  // Last-Event-ID (or ?afterSeq) resumes after that message.
+  server.get<{ Params: { id: string }; Querystring: { afterSeq?: string } }>(
+    '/runs/:id/stream',
+    { preHandler: requireCapability('agents:read') },
+    async (request, reply) => {
+      const ctx = await ready(reply, false);
+      if (!ctx) return reply;
+      const hub = server.runEvents;
+      if (!hub) {
+        return fail(
+          reply,
+          503,
+          'AI_UNAVAILABLE',
+          'Live run updates are not available on this server.',
+        );
+      }
+      const run = await ctx.runs.get(request.params.id);
+      if (!run) return fail(reply, 404, 'NOT_FOUND', `Run ${request.params.id} not found`);
+      if (!(await canSeeContent(request, run, ctx.agents))) {
+        return fail(
+          reply,
+          403,
+          'FORBIDDEN',
+          "Only the run's starter, the agent's author and admins can read it.",
+        );
+      }
+      const resumeFrom = Number(request.headers['last-event-id'] ?? request.query.afterSeq);
+      let lastSeq = Number.isInteger(resumeFrom) ? resumeFrom : -1;
+
+      reply.hijack();
+      const out = reply.raw;
+      out.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        // nginx and some ingresses buffer responses unless told not to.
+        'X-Accel-Buffering': 'no',
+      });
+      const send = (event: string, data: unknown, id?: number) =>
+        out.write(
+          `event: ${event}\n${id === undefined ? '' : `id: ${id}\n`}data: ${JSON.stringify(data)}\n\n`,
+        );
+
+      let closed = false;
+      let first = true;
+      // Catch-ups run one at a time, in order, so messages never interleave.
+      let chain = Promise.resolve();
+      const catchUp = (statusChanged: boolean) => {
+        chain = chain
+          .then(async () => {
+            if (closed) return;
+            const current = await ctx.runs.get(run.id);
+            if (!current || closed) return;
+            let sentRun = false;
+            if (first || statusChanged) {
+              send('run', current);
+              sentRun = true;
+              first = false;
+            }
+            for (const message of await ctx.runs.listMessages(run.id, { afterSeq: lastSeq })) {
+              if (closed) return;
+              send('message', message, message.seq);
+              lastSeq = message.seq;
+            }
+            if (TERMINAL_RUN_STATUSES.has(current.status)) {
+              if (!sentRun) send('run', current);
+              send('end', { status: current.status });
+              stop();
+              out.end();
+            }
+          })
+          .catch((err: Error) => {
+            request.log.warn({ err, runId: run.id }, 'runs: stream catch-up failed');
+          });
+      };
+      // Subscribe before the first catch-up, so nothing written in between is missed.
+      const unsubscribe = hub.subscribe(run.id, (event) => catchUp(event.status !== undefined));
+      const keepalive = setInterval(() => out.write(': ping\n\n'), KEEPALIVE_MS);
+      const stop = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(keepalive);
+        unsubscribe();
+        openStreams.delete(endStream);
+      };
+      const endStream = () => {
+        stop();
+        out.end();
+      };
+      openStreams.add(endStream);
+      request.raw.on('close', stop);
+      catchUp(false);
     },
   );
 

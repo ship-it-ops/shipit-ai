@@ -47,6 +47,7 @@ import aiRoutes from './routes/ai.js';
 import knowledgeRoutes from './routes/knowledge.js';
 import agentsRoutes from './routes/agents.js';
 import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
+import type { RunEventHub } from './services/ai/run-event-hub.js';
 import type { AgentStore, RunStore } from '@shipit-ai/agents';
 import type { AiStatusService } from './services/ai/ai-status-service.js';
 import type { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
@@ -125,6 +126,9 @@ export interface CreateServerOptions {
   // Agent runs and the queue the runner works from. Optional for the same reason.
   runStore?: RunStore;
   runQueue?: RunEnqueuer;
+  // Fan-out of the runner's run events to open streams. Optional: without it
+  // GET /api/runs/:id/stream answers 503.
+  runEvents?: RunEventHub;
 }
 
 declare module 'fastify' {
@@ -432,6 +436,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   }
   if (opts.runQueue) {
     server.decorate('runQueue', opts.runQueue);
+  }
+  if (opts.runEvents) {
+    server.decorate('runEvents', opts.runEvents);
   }
 
   // Register routes

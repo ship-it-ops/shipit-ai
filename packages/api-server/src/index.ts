@@ -28,9 +28,18 @@ import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
 import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { FeedbackService } from './services/feedback-service.js';
-import { AgentStore, RunQueue, RunStore, createDb, createPool, type Db } from '@shipit-ai/agents';
+import {
+  AgentStore,
+  RUN_EVENTS_CHANNEL,
+  RunQueue,
+  RunStore,
+  createDb,
+  createPool,
+  type Db,
+} from '@shipit-ai/agents';
 import { KnowledgeStore } from '@shipit-ai/knowledge';
 import { AiStatusService } from './services/ai/ai-status-service.js';
+import { RunEventHub } from './services/ai/run-event-hub.js';
 import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
 import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
 import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
@@ -450,6 +459,20 @@ async function main() {
     config.ai.enabled && agentDb && config.backend.redis.url
       ? new RunQueue({ redisUrl: config.backend.redis.url })
       : undefined;
+  // Live run updates: one subscriber connection (a subscribed ioredis client
+  // can do nothing else) fanned out to every open /api/runs/:id/stream.
+  let runEventsSubscriber: Redis | null = null;
+  let runEvents: RunEventHub | undefined;
+  if (config.ai.enabled && agentDb && config.backend.redis.url) {
+    runEventsSubscriber = new Redis(config.backend.redis.url, { maxRetriesPerRequest: null });
+    runEventsSubscriber.on('error', (err: Error) => {
+      console.warn(`Run events subscriber error (live run updates degraded): ${err.message}`);
+    });
+    runEventsSubscriber.subscribe(RUN_EVENTS_CHANNEL).catch((err: Error) => {
+      console.warn(`Run events subscribe failed (live run updates off): ${err.message}`);
+    });
+    runEvents = new RunEventHub(runEventsSubscriber);
+  }
   const aiStatus = new AiStatusService({
     config: config.ai,
     db: agentDb,
@@ -545,6 +568,7 @@ async function main() {
     agentStore: agentDb ? new AgentStore(agentDb) : undefined,
     runStore: agentDb ? new RunStore(agentDb) : undefined,
     runQueue,
+    runEvents,
     aiStatus,
     knowledgeStatus,
   });
@@ -588,7 +612,12 @@ async function main() {
     process.exit(1);
   }
 
+  // Runs once: a second signal (Kubernetes, or an impatient Ctrl-C) must not
+  // close everything twice; pg's pool, for one, throws on a second end().
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     await server.close();
     if (scheduler) await scheduler.close();
     if (knowledgeScheduler) await knowledgeScheduler.close();
@@ -599,6 +628,7 @@ async function main() {
     if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
     if (runQueue) await runQueue.close();
+    if (runEventsSubscriber) runEventsSubscriber.disconnect();
     if (agentPool) await agentPool.end();
     await neo4jService.close();
     process.exit(0);
