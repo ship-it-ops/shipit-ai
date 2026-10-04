@@ -249,6 +249,33 @@ describe('KnowledgeHarness poll', () => {
     expect(sink.visited).toEqual([]); // C1 was not finished
   });
 
+  it('an error thrown after the shutdown signal is the run being cut short, not a failure', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    const controller = new AbortController();
+    // What a connector's HTTP client does when its request is aborted mid-flight.
+    connector.fetchChanges = () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          controller.abort();
+          throw new Error('This operation was aborted');
+        },
+      }),
+    });
+
+    const result = await new KnowledgeHarness(connector, sink, config, {
+      historyDays: 365,
+      budgetMs: 60_000,
+      signal: controller.signal,
+    }).run('poll');
+
+    expect(result.errors).toEqual([]);
+    expect(result.status).toBe('success');
+    expect(result.budgetExhausted).toBe(true);
+    expect(sink.visited).toEqual([]); // nothing was finished, so the next run starts here
+  });
+
   it('reports a failed run instead of throwing when the sink cannot list containers', async () => {
     const sink = new MemorySink();
     sink.failSelected = new Error('connection refused');

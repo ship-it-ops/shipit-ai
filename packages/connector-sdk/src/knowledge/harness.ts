@@ -127,6 +127,13 @@ export class KnowledgeHarness {
           result.containersProcessed += 1;
         }
       } catch (err) {
+        // The shutdown signal interrupted this container mid-call (an aborted
+        // request throws). That is the run being cut short, not the container
+        // failing: end it the way an abort between batches does.
+        if (this.options.signal?.aborted) {
+          result.budgetExhausted = true;
+          break;
+        }
         recordError(scope, err);
       }
     }
