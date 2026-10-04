@@ -278,6 +278,39 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(body.serverHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('PATCH /api/connectors/:id replaces the knowledge block', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { enabled: true, pullRequests: false } },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().knowledge).toMatchObject({
+      enabled: true,
+      pullRequests: false,
+      issues: true,
+    });
+    const get = await server.inject({ method: 'GET', url: '/api/connectors/github-test' });
+    expect(get.json().knowledge.enabled).toBe(true);
+    // Back to the default, so the tests below see the connector they expect.
+    const reset = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { enabled: false } },
+    });
+    expect(reset.json().knowledge).toMatchObject({ enabled: false, pullRequests: true });
+  });
+
+  it('PATCH /api/connectors/:id rejects a knowledge block that does not validate', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { historyDays: -5 } },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('POST /api/connectors/:id/sync triggers sync via the runner', async () => {
     const response = await server.inject({
       method: 'POST',

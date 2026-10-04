@@ -154,6 +154,8 @@ export interface UpdateConnectorInput {
   mapping?: unknown;
   // Explicit `null` clears an existing GitHub App override; `undefined` leaves it alone.
   app?: GitHubConnectorConfig['app'] | null;
+  // The GitHub connector's knowledge facet. Replaced whole, like scope and entities.
+  knowledge?: unknown;
 }
 
 export class ConnectorRegistry {
@@ -319,6 +321,8 @@ export class ConnectorRegistry {
       // `app: null` clears an existing override; `app: {...}` replaces it; `app: undefined` leaves it alone.
       patch.app =
         input.app === null ? undefined : input.app !== undefined ? input.app : existing.app;
+      // The knowledge block is replaced whole, like scope and entities.
+      if (input.knowledge !== undefined) patch.knowledge = input.knowledge;
     }
     const next = parseConnectorInstance({ ...existing, ...patch });
 

@@ -198,6 +198,8 @@ interface UpdateConnectorBody {
   cluster?: unknown;
   access?: { kubeconfigPath?: string; tokenPath?: string; caDataPath?: string } | null;
   mapping?: unknown;
+  // GitHub only: the connector's knowledge facet (pull requests, issues, docs).
+  knowledge?: unknown;
 }
 
 interface KubernetesCredentialsBody {
@@ -1115,6 +1117,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
             cluster: request.body?.cluster,
             access: request.body?.access ?? undefined,
             mapping: request.body?.mapping,
+            knowledge: request.body?.knowledge,
           },
           ifMatch,
         );

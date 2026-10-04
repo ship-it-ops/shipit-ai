@@ -164,6 +164,7 @@ export type {
   ConfigPaths,
   ConnectorInstanceConfig,
   GitHubConnectorConfig,
+  GitHubKnowledgeConfig,
   LastRun,
   ResolvedAppCredentials,
   AppLike,

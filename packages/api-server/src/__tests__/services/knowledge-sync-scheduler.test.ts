@@ -317,4 +317,31 @@ describe('KnowledgeSyncScheduler', () => {
       /^knowledge~fx-1~manual~\d+$/,
     );
   });
+
+  it('does not schedule an instance whose type says knowledge is off for it', async () => {
+    const type = {
+      ...fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),
+      knowledgeEnabled: () => false,
+    } as unknown as ConnectorType;
+    const s = scheduler(type);
+    expect(s.handles(connectorCfg)).toBe(false);
+    await s.start(connectorCfg);
+    expect(queue.schedulers.size).toBe(0);
+  });
+
+  it('drops a queued job for an instance that switched knowledge off', async () => {
+    const type = {
+      ...fixtureType(
+        createFixtureKnowledgeConnector({
+          containers: [C1],
+          documents: { C1: [docAt('2026-01-01T00:00:00Z')] },
+        }),
+      ),
+      knowledgeEnabled: () => false,
+    } as unknown as ConnectorType;
+    const s = scheduler(type);
+    await s.runJob('fx-1', 'poll');
+    expect(stored).toBe(0);
+    expect(runs).toHaveLength(0);
+  });
 });

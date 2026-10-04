@@ -20,6 +20,8 @@ export interface BuildContext {
   lookupRepositoryNames?(org: string): Promise<string[]>;
   lookupTeamSlugs?(org: string): Promise<string[]>;
   listConnectors(): ConnectorInstanceConfig[];
+  /** knowledge.index.maxDocumentChars, for knowledge connectors to truncate at. */
+  maxDocumentChars?: number;
   /** Structured warn sink; defaults to console. Tests inject a spy so output stays pristine. */
   logger?: { warn(message: string, meta?: unknown): void };
 }
@@ -65,6 +67,12 @@ export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInst
   build?(cfg: C, ctx: BuildContext): Promise<BuildResult>;
   /** The knowledge facet. Absent for a graph-only type (Kubernetes). GitHub has both. */
   buildKnowledge?(cfg: C, ctx: BuildContext): Promise<KnowledgeBuildResult>;
+  /**
+   * Whether THIS instance has its knowledge facet switched on. Absent: on for
+   * every instance of a type that has `buildKnowledge` (Slack, Atlassian).
+   * GitHub answers from `cfg.knowledge.enabled`.
+   */
+  knowledgeEnabled?(cfg: C): boolean;
   /** Types whose probe lives in the factory (Kubernetes); GitHub's stays in the route. */
   probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>;
 }

@@ -140,7 +140,9 @@ export class KnowledgeSyncScheduler {
 
   /** True when the connector's type has a knowledge facet. */
   handles(cfg: ConnectorInstanceConfig): boolean {
-    return Boolean(this.resolveType(cfg.type)?.buildKnowledge);
+    const type = this.resolveType(cfg.type);
+    if (!type?.buildKnowledge) return false;
+    return type.knowledgeEnabled ? type.knowledgeEnabled(cfg) : true;
   }
 
   async start(cfg: ConnectorInstanceConfig): Promise<void> {
@@ -206,6 +208,8 @@ export class KnowledgeSyncScheduler {
     } catch {
       return; // deleted while queued; do not resurrect its status
     }
+    // Knowledge was switched off for this instance after the job was queued.
+    if (!this.handles(cfg)) return;
     if (!(await this.opts.isAvailable())) {
       this.log(`knowledge sync for ${connectorId} skipped: the knowledge layer is unavailable`);
       return;

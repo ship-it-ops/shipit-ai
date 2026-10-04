@@ -136,6 +136,34 @@ const githubConnectorAppOverrideSchema = z
   })
   .optional();
 
+// ── The knowledge facet of a GitHub connector ─────────────────────────────
+// Off by default: turning it on makes the connector fetch pull requests,
+// issues and Markdown docs for the repositories an admin selects. Spec:
+// docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md §GitHub text.
+const GITHUB_KNOWLEDGE_DOC_PATHS = ['README.md', 'docs/**/*.md', 'adr/**/*.md', '**/ADR-*.md'];
+
+const githubKnowledgeDocsSchema = z.object({
+  enabled: z.boolean().default(true),
+  // Globs over repository paths on the default branch. `**` crosses directories.
+  paths: z.array(z.string().min(1)).default(GITHUB_KNOWLEDGE_DOC_PATHS),
+  maxFileBytes: z.number().int().positive().default(200000),
+});
+
+const githubKnowledgeSchema = z.object({
+  enabled: z.boolean().default(false),
+  pullRequests: z.boolean().default(true),
+  issues: z.boolean().default(true),
+  docs: githubKnowledgeDocsSchema.default({
+    enabled: true,
+    paths: GITHUB_KNOWLEDGE_DOC_PATHS,
+    maxFileBytes: 200000,
+  }),
+  // Backfill horizon in days; 0 means everything.
+  historyDays: z.number().int().nonnegative().default(365),
+});
+
+export type GitHubKnowledgeConfig = z.infer<typeof githubKnowledgeSchema>;
+
 const githubConnectorSchema = z.object({
   id: z.string().min(1),
   type: z.literal('github'),
@@ -162,6 +190,13 @@ const githubConnectorSchema = z.object({
     cappedAcknowledged: false,
   }),
   entities: githubEntitiesSchema,
+  knowledge: githubKnowledgeSchema.default({
+    enabled: false,
+    pullRequests: true,
+    issues: true,
+    docs: { enabled: true, paths: GITHUB_KNOWLEDGE_DOC_PATHS, maxFileBytes: 200000 },
+    historyDays: 365,
+  }),
   // Last N runs, newest first. Capped at 20 by the scheduler — older entries
   // are dropped when persisting back to YAML.
   lastRuns: z.array(lastRunSchema).default([]),
