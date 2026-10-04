@@ -100,6 +100,7 @@ describe('KnowledgeSyncScheduler', () => {
       return { changed: batch.documents.length, deleted: 0 };
     },
     pruneMissing: async () => 0,
+    markVisited: async () => undefined,
   };
 
   function scheduler(type: ConnectorType, overrides: Partial<KnowledgeSyncSchedulerOptions> = {}) {
@@ -182,6 +183,67 @@ describe('KnowledgeSyncScheduler', () => {
     expect(runs[0]).toMatchObject({ status: 'failed', facet: 'knowledge' });
     expect(runs[0]!.errors[0]).toContain('no token on file');
     expect(s.getStatus('fx-1')).toMatchObject({ state: 'failed' });
+  });
+
+  it('records a failed run when building the connector throws', async () => {
+    const type = {
+      type: 'fixture',
+      pollMode: 'incremental',
+      sweepsAbsent: false,
+      buildKnowledge: async () => {
+        throw new Error('secret store unreachable');
+      },
+    } as unknown as ConnectorType;
+    const s = scheduler(type);
+    await expect(s.runJob('fx-1', 'poll')).resolves.toBeUndefined();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ status: 'failed', facet: 'knowledge' });
+    expect(runs[0]!.errors[0]).toContain('secret store unreachable');
+    expect(s.getStatus('fx-1')).toMatchObject({ state: 'failed' });
+  });
+
+  it('records a failed run when the store is unreachable mid-run', async () => {
+    const s = scheduler(
+      fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),
+      {
+        store: {
+          ...store,
+          selectedContainers: async () => {
+            throw new Error('connection terminated');
+          },
+        } as never,
+      },
+    );
+    await s.runJob('fx-1', 'poll');
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.status).toBe('failed');
+    expect(runs[0]!.errors[0]).toContain('connection terminated');
+    expect(s.getStatus('fx-1').state).toBe('failed');
+  });
+
+  it('puts connector notes on the run record without failing it', async () => {
+    const connector = createFixtureKnowledgeConnector({
+      containers: [C1],
+      documents: { C1: [docAt('2026-01-01T00:00:00Z')] },
+      fetchNotes: { C1: ['issues_permission_missing'] },
+    });
+    const s = scheduler(fixtureType(connector));
+    await s.runJob('fx-1', 'poll');
+    expect(runs[0]).toMatchObject({ status: 'success', notes: ['issues_permission_missing'] });
+    expect(s.getStatus('fx-1').state).toBe('idle');
+  });
+
+  it('hands every run a signal that close() aborts', async () => {
+    const connector = createFixtureKnowledgeConnector({
+      containers: [C1],
+      documents: { C1: [docAt('2026-01-01T00:00:00Z')] },
+    });
+    const s = scheduler(fixtureType(connector));
+    await s.runJob('fx-1', 'poll');
+    const signal = connector.calls.fetchOptions[0]!.signal!;
+    expect(signal.aborted).toBe(false);
+    await s.close();
+    expect(signal.aborted).toBe(true);
   });
 
   it('marks degraded when authentication fails', async () => {

@@ -180,4 +180,62 @@ describe.skipIf(!DATABASE_TEST_URL)('harness → sink → loop end to end', () =
     const { rows } = await database.db.query<{ text: string }>(`SELECT text FROM knowledge_chunks`);
     expect(rows.map((r) => r.text).join()).toContain('second version');
   });
+
+  it('a document deleted upstream and restored unchanged is indexed again', async () => {
+    const original = doc('t1', 'the deploy runbook', '2026-01-01T00:00:00Z');
+    const sink = new PostgresKnowledgeSink({ connectorId: 'fx-1', store });
+    await sink.upsertContainers([container]);
+    await store.setSelected('fx-1', 'C1', true, 'tests');
+    const [selected] = await sink.selectedContainers();
+    const embedder = new FakeEmbedder(768);
+    const chunks = async () => (await database.db.query(`SELECT 1 FROM knowledge_chunks`)).rows;
+
+    await sink.storeBatch(selected!, {
+      documents: [original],
+      deletedExternalIds: [],
+      checkpoint: 'a',
+    });
+    await loopWith(embedder).runOnce();
+    expect(await chunks()).toHaveLength(1);
+
+    await sink.storeBatch(selected!, {
+      documents: [],
+      deletedExternalIds: ['t1'],
+      checkpoint: 'b',
+    });
+    expect(await chunks()).toHaveLength(0);
+
+    await sink.storeBatch(selected!, {
+      documents: [original],
+      deletedExternalIds: [],
+      checkpoint: 'c',
+    });
+    const stats = await loopWith(embedder).runOnce();
+    expect(stats.indexed).toBe(1);
+    expect(await chunks()).toHaveLength(1);
+  });
+
+  it('a document edited down to nothing loses the chunks of its old text', async () => {
+    const sink = new PostgresKnowledgeSink({ connectorId: 'fx-1', store });
+    await sink.upsertContainers([container]);
+    await store.setSelected('fx-1', 'C1', true, 'tests');
+    const [selected] = await sink.selectedContainers();
+    const original = doc('t1', 'a paragraph someone later removes', '2026-01-01T00:00:00Z');
+
+    await sink.storeBatch(selected!, {
+      documents: [original],
+      deletedExternalIds: [],
+      checkpoint: 'a',
+    });
+    await loopWith(new FakeEmbedder(768)).runOnce();
+    await sink.storeBatch(selected!, {
+      documents: [{ ...original, segments: [] }],
+      deletedExternalIds: [],
+      checkpoint: 'b',
+    });
+    const stats = await loopWith(new FakeEmbedder(768)).runOnce();
+
+    expect(stats.skipped).toBe(1);
+    expect((await database.db.query(`SELECT 1 FROM knowledge_chunks`)).rows).toHaveLength(0);
+  });
 });

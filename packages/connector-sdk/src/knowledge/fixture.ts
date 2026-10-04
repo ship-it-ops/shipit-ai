@@ -3,6 +3,7 @@
 import type { AuthResult, ConnectorConfig, ConnectorManifest } from '../interface.js';
 import type {
   ChangeBatch,
+  DocumentKind,
   FetchChangesOptions,
   KnowledgeConnector,
   KnowledgeDocumentInput,
@@ -22,12 +23,16 @@ export interface FixtureSeed {
   authError?: string;
   /** fetchChanges throws this for the container. */
   fetchErrors?: Record<string, Error>;
-  /** listDocumentIds throws this for the container. */
+  /** listDocumentIds yields its first page (when there is one), then throws this. */
   listIdErrors?: Record<string, Error>;
   /** listContainers yields the first container, then throws this. */
   listContainersError?: Error;
   /** Batches the reconcile hook yields per container. Absent: no hook. */
   reconcileBatches?: Record<string, ChangeBatch[]>;
+  /** Notes every fetchChanges batch of the container carries. */
+  fetchNotes?: Record<string, string[]>;
+  /** The connector's `prunableKinds`. Absent: the listing covers every kind. */
+  prunableKinds?: DocumentKind[];
 }
 
 export interface FixtureKnowledgeConnector extends KnowledgeConnector {
@@ -35,7 +40,13 @@ export interface FixtureKnowledgeConnector extends KnowledgeConnector {
   deleteDocument(containerId: string, externalId: string): void;
   /** Simulate an upstream edit or arrival. */
   putDocument(containerId: string, doc: KnowledgeDocumentInput): void;
-  readonly calls: { fetchChanges: Array<{ container: string; checkpoint: string | null }> };
+  readonly calls: {
+    fetchChanges: Array<{ container: string; checkpoint: string | null }>;
+    fetchOptions: FetchChangesOptions[];
+    listDocumentIds: number;
+    /** Pages yielded per container by listDocumentIds. */
+    listedPages: Record<string, number>;
+  };
 }
 
 export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowledgeConnector {
@@ -44,7 +55,12 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
     documents.set(container, [...docs]);
   }
   const batchSize = seed.batchSize ?? 50;
-  const calls = { fetchChanges: [] as Array<{ container: string; checkpoint: string | null }> };
+  const calls: FixtureKnowledgeConnector['calls'] = {
+    fetchChanges: [],
+    fetchOptions: [],
+    listDocumentIds: 0,
+    listedPages: {},
+  };
 
   const manifest: ConnectorManifest = {
     name: 'fixture',
@@ -57,6 +73,7 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
   const connector: FixtureKnowledgeConnector = {
     manifest,
     calls,
+    ...(seed.prunableKinds ? { prunableKinds: seed.prunableKinds } : {}),
     async authenticate(_config: ConnectorConfig): Promise<AuthResult> {
       return seed.authError ? { success: false, error: seed.authError } : { success: true };
     },
@@ -72,9 +89,11 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
     async *fetchChanges(
       container: SelectedContainer,
       checkpoint: string | null,
-      _options: FetchChangesOptions,
+      options: FetchChangesOptions,
     ) {
       calls.fetchChanges.push({ container: container.externalId, checkpoint });
+      calls.fetchOptions.push(options);
+      const notes = seed.fetchNotes?.[container.externalId];
       const error = seed.fetchErrors?.[container.externalId];
       if (error) throw error;
       const all = documents.get(container.externalId) ?? [];
@@ -86,14 +105,22 @@ export function createFixtureKnowledgeConnector(seed: FixtureSeed): FixtureKnowl
           documents: slice,
           deletedExternalIds: [],
           checkpoint: slice[slice.length - 1]!.sourceUpdatedAt,
+          ...(notes ? { notes } : {}),
         };
       }
     },
     async *listDocumentIds(container: SelectedContainer) {
+      calls.listDocumentIds += 1;
       const error = seed.listIdErrors?.[container.externalId];
-      if (error) throw error;
       const ids = (documents.get(container.externalId) ?? []).map((d) => d.externalId);
-      for (let i = 0; i < ids.length; i += batchSize) yield ids.slice(i, i + batchSize);
+      for (let i = 0; i < ids.length; i += batchSize) {
+        yield ids.slice(i, i + batchSize);
+        calls.listedPages[container.externalId] =
+          (calls.listedPages[container.externalId] ?? 0) + 1;
+        // A listing that fails does so partway: the harness must not prune on it.
+        if (error) throw error;
+      }
+      if (error) throw error;
     },
     deleteDocument(containerId, externalId) {
       documents.set(

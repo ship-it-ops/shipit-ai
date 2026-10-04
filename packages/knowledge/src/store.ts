@@ -9,6 +9,7 @@ import type {
   DocumentKind,
   DocumentSegment,
   DocumentState,
+  KnowledgeRunMode,
   PruneOptions,
   SelectedContainer,
   SourceAcl,
@@ -201,14 +202,33 @@ export class KnowledgeStore {
     return rows.map(containerRow);
   }
 
-  async selectedContainers(connectorId: string): Promise<SelectedContainer[]> {
+  /** The container a run of `mode` visited longest ago comes first. */
+  async selectedContainers(
+    connectorId: string,
+    mode: KnowledgeRunMode = 'poll',
+  ): Promise<SelectedContainer[]> {
+    const stamp = mode === 'reconcile' ? 'last_reconciled_at' : 'last_polled_at';
     const { rows } = await this.db.query<Raw>(
       `SELECT ${CONTAINER_COLUMNS} FROM knowledge_containers
         WHERE connector_id = $1 AND selected AND gone_at IS NULL AND purge_requested_at IS NULL
-        ORDER BY last_polled_at ASC NULLS FIRST, name`,
+        ORDER BY ${stamp} ASC NULLS FIRST, name`,
       [connectorId],
     );
     return rows.map(containerRow).map(toSelected);
+  }
+
+  /** A run of `mode` finished with the container, whether or not it stored anything. */
+  async markVisited(
+    connectorId: string,
+    container: SelectedContainer,
+    mode: KnowledgeRunMode,
+  ): Promise<void> {
+    const stamp = mode === 'reconcile' ? 'last_reconciled_at' : 'last_polled_at';
+    await this.db.query(
+      `UPDATE knowledge_containers SET ${stamp} = now(), updated_at = now()
+        WHERE connector_id = $1 AND external_id = $2`,
+      [connectorId, container.externalId],
+    );
   }
 
   async setSelected(
@@ -328,6 +348,11 @@ export class KnowledgeStore {
              author_principal_id = EXCLUDED.author_principal_id, participant_principal_ids = EXCLUDED.participant_principal_ids,
              state = EXCLUDED.state, attributes = EXCLUDED.attributes, restricted = EXCLUDED.restricted,
              acl = COALESCE(EXCLUDED.acl, knowledge_documents.acl), redactions = EXCLUDED.redactions,
+             -- A stub loses its chunks below, so it must also forget the hash
+             -- they were built from: the same content coming back later has
+             -- to be indexed again, not waved through as unchanged.
+             indexed_hash = CASE WHEN EXCLUDED.restricted THEN NULL ELSE knowledge_documents.indexed_hash END,
+             index_version = CASE WHEN EXCLUDED.restricted THEN NULL ELSE knowledge_documents.index_version END,
              index_status = CASE
                WHEN EXCLUDED.restricted THEN 'skipped'
                WHEN knowledge_documents.deleted_at IS NOT NULL
@@ -381,7 +406,10 @@ export class KnowledgeStore {
 
       await tx.query(
         `UPDATE knowledge_containers
-            SET checkpoint = COALESCE($3, checkpoint), last_polled_at = now(), updated_at = now()
+            SET checkpoint = COALESCE($3, checkpoint),
+                -- Only a poll batch (it carries a checkpoint) counts as a poll.
+                last_polled_at = CASE WHEN $3::text IS NOT NULL THEN now() ELSE last_polled_at END,
+                updated_at = now()
           WHERE connector_id = $1 AND external_id = $2`,
         [connectorId, container.externalId, batch.checkpoint],
       );
@@ -399,6 +427,7 @@ export class KnowledgeStore {
       `UPDATE knowledge_documents
           SET deleted_at = now(), segments = '[]'::jsonb, title = '', attributes = '{}'::jsonb,
               participant_principal_ids = '{}', author_principal_id = NULL, content_hash = NULL,
+              indexed_hash = NULL, index_version = NULL,
               index_status = 'skipped', index_claimed_at = NULL, updated_at = now()
         WHERE connector_id = $1 AND external_id = ANY($2::text[]) AND deleted_at IS NULL
         RETURNING id`,
@@ -424,12 +453,33 @@ export class KnowledgeStore {
            JOIN knowledge_containers c ON c.id = d.container_id
           WHERE d.connector_id = $1 AND c.external_id = $2 AND d.deleted_at IS NULL
             AND NOT (d.external_id = ANY($3::text[]))
-            AND ($4::timestamptz IS NULL OR d.updated_at < $4::timestamptz)`,
-        [connectorId, container.externalId, presentIds, options.listedAt ?? null],
+            AND ($4::timestamptz IS NULL OR d.updated_at < $4::timestamptz)
+            AND ($5::text[] IS NULL OR d.kind = ANY($5::text[]))`,
+        [
+          connectorId,
+          container.externalId,
+          presentIds,
+          options.listedAt ?? null,
+          options.kinds ?? null,
+        ],
       );
       // An empty listing over a populated container is a fault far more often
-      // than a mass delete: prune nothing and let the next listing decide.
-      if (presentIds.length === 0 && rows.length > 0) return 0;
+      // than a mass delete, so the first one prunes nothing and is only
+      // remembered. A second empty listing in a row is believed: a container
+      // really emptied at the source must not keep its copies for ever.
+      const emptyKey = `empty-listing:${connectorId}:${container.externalId}`;
+      if (presentIds.length === 0 && rows.length > 0) {
+        const seen = await tx.query(`SELECT 1 FROM knowledge_state WHERE key = $1`, [emptyKey]);
+        if (seen.rows.length === 0) {
+          await tx.query(
+            `INSERT INTO knowledge_state (key, value) VALUES ($1, to_jsonb(now()))
+             ON CONFLICT (key) DO NOTHING`,
+            [emptyKey],
+          );
+          return 0;
+        }
+      }
+      await tx.query(`DELETE FROM knowledge_state WHERE key = $1`, [emptyKey]);
       const deleted = await this.tombstone(
         tx,
         connectorId,
@@ -555,13 +605,24 @@ export class KnowledgeStore {
     );
   }
 
+  /**
+   * Nothing to index (no segments). Chunks left from an earlier version go in
+   * the same transaction, or text the source removed would stay searchable.
+   */
   async markSkipped(documentId: string): Promise<void> {
-    await this.db.query(
-      `UPDATE knowledge_documents
-          SET index_status = 'skipped', index_claimed_at = NULL, updated_at = now()
-        WHERE id = $1 AND index_status = 'indexing'`,
-      [documentId],
-    );
+    await this.db.tx(async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `UPDATE knowledge_documents
+            SET index_status = 'skipped', index_claimed_at = NULL, indexed_hash = NULL,
+                index_version = NULL, updated_at = now()
+          WHERE id = $1 AND index_status = 'indexing'
+          RETURNING id`,
+        [documentId],
+      );
+      if (rows.length > 0) {
+        await tx.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId]);
+      }
+    });
   }
 
   async markFailed(documentId: string, error: string): Promise<void> {

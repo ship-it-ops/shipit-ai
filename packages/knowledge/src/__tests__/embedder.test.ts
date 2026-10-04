@@ -107,6 +107,16 @@ describe('isRetryableEmbeddingError', () => {
     expect(isRetryableEmbeddingError(new Error('x'))).toBe(false);
   });
 
+  it('retries a network failure the way the AI SDK reports it', () => {
+    // fetch failed: APICallError with no status, isRetryable set, the socket error as cause.
+    const network = { name: 'AI_APICallError', isRetryable: true, cause: { code: 'ECONNRESET' } };
+    expect(isRetryableEmbeddingError(network)).toBe(true);
+    expect(isRetryableEmbeddingError({ name: 'AI_RetryError', lastError: network })).toBe(true);
+    expect(isRetryableEmbeddingError({ cause: { code: 'ETIMEDOUT' } })).toBe(true);
+    // A status always wins over the flag: a 400 is never retried.
+    expect(isRetryableEmbeddingError({ statusCode: 400, isRetryable: true })).toBe(false);
+  });
+
   it('looks through the AI SDK RetryError to the last underlying error', () => {
     const wrapped = { name: 'AI_RetryError', lastError: { statusCode: 429 } };
     expect(isRetryableEmbeddingError(wrapped)).toBe(true);

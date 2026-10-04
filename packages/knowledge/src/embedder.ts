@@ -67,6 +67,8 @@ export function isRetryableEmbeddingError(err: unknown): boolean {
     code?: string;
     name?: string;
     lastError?: unknown;
+    isRetryable?: boolean;
+    cause?: { code?: string };
   };
   // The AI SDK's own retry wrapper surfaces as RetryError with the last
   // underlying error inside; judge that one.
@@ -75,8 +77,13 @@ export function isRetryableEmbeddingError(err: unknown): boolean {
   }
   const status = e?.status ?? e?.statusCode;
   if (status === 429 || status === 408) return true;
-  if (typeof status === 'number' && status >= 500) return true;
-  return typeof e?.code === 'string' && RETRYABLE_CODES.has(e.code);
+  if (typeof status === 'number') return status >= 500;
+  // No HTTP status: a network failure. The AI SDK reports it as an
+  // APICallError flagged retryable with the socket error as its cause; plain
+  // Node errors carry the code themselves.
+  const code = e?.code ?? e?.cause?.code;
+  if (typeof code === 'string' && RETRYABLE_CODES.has(code)) return true;
+  return e?.name === 'AI_APICallError' && e.isRetryable === true;
 }
 
 export interface RetryOptions {

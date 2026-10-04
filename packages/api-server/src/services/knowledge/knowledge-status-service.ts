@@ -42,6 +42,8 @@ export interface KnowledgeStatusServiceOptions {
   /** null when Redis is not configured. Only `get` is used. */
   redis: { get(key: string): Promise<string | null> } | null;
   cacheMs?: number;
+  /** How long the worker check waits for Redis before giving up. Default 2 000. */
+  redisTimeoutMs?: number;
   now?: () => number;
   log?: (message: string) => void;
 }
@@ -59,6 +61,7 @@ const fail = (name: KnowledgeCheckName, detail: string): KnowledgeCheck => ({
 
 export class KnowledgeStatusService {
   private cached: { at: number; status: KnowledgeStatus } | null = null;
+  private inFlight: Promise<KnowledgeStatus> | null = null;
 
   constructor(private readonly opts: KnowledgeStatusServiceOptions) {}
 
@@ -66,9 +69,17 @@ export class KnowledgeStatusService {
     const now = (this.opts.now ?? Date.now)();
     const ttl = this.opts.cacheMs ?? 5_000;
     if (this.cached && now - this.cached.at < ttl) return this.cached.status;
-    const status = await this.compute();
-    this.cached = { at: now, status };
-    return status;
+    // Callers that arrive while a computation is running share it, so a slow
+    // dependency costs one set of probes, not one per request.
+    this.inFlight ??= this.compute()
+      .then((status) => {
+        this.cached = { at: now, status };
+        return status;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+    return this.inFlight;
   }
 
   async ingestionAvailable(): Promise<boolean> {
@@ -162,7 +173,13 @@ export class KnowledgeStatusService {
     const { redis } = this.opts;
     if (!redis) return fail('worker', 'Redis is not configured, so no worker can be seen.');
     try {
-      const beat = await redis.get(WORKER_HEARTBEAT_KEY);
+      // ioredis queues commands while it is disconnected, so without a limit
+      // this read (and with it the whole status, and the sync gate behind it)
+      // would wait for as long as Redis is down.
+      const beat = await withTimeout(
+        redis.get(WORKER_HEARTBEAT_KEY),
+        this.opts.redisTimeoutMs ?? 2_000,
+      );
       return beat
         ? pass('worker', 'The knowledge worker is alive.')
         : fail('worker', 'No heartbeat from the knowledge worker in the last minute.');
@@ -171,4 +188,20 @@ export class KnowledgeStatusService {
       return fail('worker', 'The knowledge worker could not be checked.');
     }
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`no answer from Redis in ${ms} ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
 }

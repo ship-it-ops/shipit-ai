@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { DATABASE_TEST_URL, createMigratedTestDatabase, type TestDatabase } from './test-db.js';
+import { randomBytes } from 'node:crypto';
+import { createDb, createPool, runMigrations } from '@shipit-ai/agents';
+import {
+  DATABASE_TEST_URL,
+  MIGRATIONS_DIR,
+  createMigratedTestDatabase,
+  type TestDatabase,
+} from './test-db.js';
 import { missingKnowledgeMigrations } from '../status.js';
 import { hasVectorExtension } from '../bootstrap.js';
 
@@ -50,5 +57,30 @@ describe.skipIf(!DATABASE_TEST_URL)('0002_knowledge on a real pgvector Postgres'
          VALUES (gen_random_uuid(), 'c1', 'x', 'bucket', 'x')`,
       ),
     ).rejects.toThrow(/knowledge_containers_kind/);
+  });
+});
+
+// The extension is per database, so the only way to meet a database without it
+// is to create one. The CI and compose `shipit` user may; the suite's shared
+// database is left as it is.
+describe.skipIf(!DATABASE_TEST_URL)('0002_knowledge without pgvector', () => {
+  it('fails with a readable message when the vector extension is missing', async () => {
+    const name = `ktest_noext_${randomBytes(6).toString('hex')}`;
+    const admin = createPool({ connectionString: DATABASE_TEST_URL!, max: 1 });
+    await admin.query(`CREATE DATABASE ${name}`);
+    const url = new URL(DATABASE_TEST_URL!);
+    url.pathname = `/${name}`;
+    const pool = createPool({ connectionString: url.toString(), max: 2 });
+    try {
+      await expect(runMigrations({ db: createDb(pool), dir: MIGRATIONS_DIR })).rejects.toThrow(
+        /"vector" extension \(pgvector\) is not installed/,
+      );
+      const { rows } = await pool.query(`SELECT to_regclass('knowledge_documents') AS t`);
+      expect(rows[0].t).toBeNull();
+    } finally {
+      await pool.end();
+      await admin.query(`DROP DATABASE ${name}`);
+      await admin.end();
+    }
   });
 });

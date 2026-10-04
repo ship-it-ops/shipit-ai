@@ -6,6 +6,7 @@
 import type {
   ChangeBatch,
   KnowledgeDocumentInput,
+  KnowledgeRunMode,
   KnowledgeSink,
   PruneOptions,
   SelectedContainer,
@@ -34,8 +35,12 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
     return this.opts.store.upsertPrincipals(this.opts.connectorId, principals);
   }
 
-  selectedContainers(): Promise<SelectedContainer[]> {
-    return this.opts.store.selectedContainers(this.opts.connectorId);
+  selectedContainers(mode?: KnowledgeRunMode): Promise<SelectedContainer[]> {
+    return this.opts.store.selectedContainers(this.opts.connectorId, mode);
+  }
+
+  markVisited(container: SelectedContainer, mode: KnowledgeRunMode): Promise<void> {
+    return this.opts.store.markVisited(this.opts.connectorId, container, mode);
   }
 
   async storeBatch(

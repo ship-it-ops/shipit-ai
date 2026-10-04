@@ -8,6 +8,7 @@ import type {
   KnowledgeRunMode,
   KnowledgeRunResult,
   KnowledgeSink,
+  RunLimits,
   SelectedContainer,
   SourceContainer,
   SourcePrincipal,
@@ -20,6 +21,8 @@ export interface KnowledgeHarnessOptions {
   rescanDays?: number;
   /** Wall-clock budget for one run. The run yields between batches once it is spent. */
   budgetMs: number;
+  /** Aborted at shutdown: the run stops between batches and the connector gets the signal. */
+  signal?: AbortSignal;
   /** Test seam. */
   now?: () => number;
   log?: (line: string) => void;
@@ -28,7 +31,8 @@ export interface KnowledgeHarnessOptions {
 const PRINCIPAL_BATCH = 500;
 
 function statusOf(err: unknown): number | undefined {
-  const e = err as { status?: number; statusCode?: number };
+  // A connector can throw anything, including null.
+  const e = (err ?? {}) as { status?: number; statusCode?: number };
   return e.status ?? e.statusCode;
 }
 
@@ -61,8 +65,10 @@ export class KnowledgeHarness {
       errors: [],
       authFailed: false,
       budgetExhausted: false,
+      notes: [],
       durationMs: 0,
     };
+    const limits: RunLimits = { signal: this.options.signal, deadline };
     const finish = (): KnowledgeRunResult => {
       result.durationMs = Math.max(0, this.now() - startedAt);
       if (result.errors.length === 0) result.status = 'success';
@@ -70,7 +76,7 @@ export class KnowledgeHarness {
       return result;
     };
     const budgetLeft = (): boolean => {
-      if (this.now() < deadline) return true;
+      if (!this.options.signal?.aborted && this.now() < deadline) return true;
       result.budgetExhausted = true;
       return false;
     };
@@ -99,17 +105,27 @@ export class KnowledgeHarness {
       await this.refreshPrincipals(recordError);
     }
 
-    const containers = await this.sink.selectedContainers();
+    let containers: SelectedContainer[];
+    try {
+      containers = await this.sink.selectedContainers(mode);
+    } catch (err) {
+      recordError('selectedContainers', err);
+      return finish();
+    }
     for (const container of containers) {
       if (!budgetLeft()) break;
       const scope = `container ${container.name} (${container.externalId})`;
       try {
-        if (mode === 'poll') {
-          await this.pollContainer(container, result, budgetLeft);
-        } else {
-          await this.reconcileContainer(container, result, budgetLeft);
+        const finished =
+          mode === 'poll'
+            ? await this.pollContainer(container, result, budgetLeft, limits)
+            : await this.reconcileContainer(container, result, budgetLeft, limits);
+        if (finished) {
+          // Stamped even when nothing changed, so the order of the next run of
+          // this mode starts with whoever has waited longest.
+          await this.sink.markVisited(container, mode);
+          result.containersProcessed += 1;
         }
-        result.containersProcessed += 1;
       } catch (err) {
         recordError(scope, err);
       }
@@ -117,50 +133,80 @@ export class KnowledgeHarness {
     return finish();
   }
 
+  private addNotes(result: KnowledgeRunResult, notes: string[] | undefined): void {
+    for (const note of notes ?? []) {
+      if (!result.notes.includes(note)) result.notes.push(note);
+    }
+  }
+
+  /** Returns false when the budget ended the container early. */
   private async pollContainer(
     container: SelectedContainer,
     result: KnowledgeRunResult,
     budgetLeft: () => boolean,
-  ): Promise<void> {
+    limits: RunLimits,
+  ): Promise<boolean> {
     const batches = this.connector.fetchChanges(container, container.checkpoint, {
       historyDays: this.options.historyDays,
+      ...limits,
     });
-    for await (const batch of batches) {
+    const iterator = batches[Symbol.asyncIterator]();
+    for (;;) {
+      const next = await iterator.next();
+      if (next.done) return true;
+      const batch = next.value;
       const stored = await this.sink.storeBatch(container, batch);
       result.documentsSynced += stored.changed;
       result.documentsDeleted += stored.deleted;
-      container.checkpoint = batch.checkpoint;
-      // `break` runs the generator's return(): the connector stops fetching.
-      if (!budgetLeft()) break;
+      this.addNotes(result, batch.notes);
+      if (batch.checkpoint !== null) container.checkpoint = batch.checkpoint;
+      if (!budgetLeft()) {
+        // return() tells the connector to stop fetching.
+        await iterator.return?.();
+        return false;
+      }
     }
   }
 
+  /** Returns false when the budget ended the container before its prune. */
   private async reconcileContainer(
     container: SelectedContainer,
     result: KnowledgeRunResult,
     budgetLeft: () => boolean,
-  ): Promise<void> {
+    limits: RunLimits,
+  ): Promise<boolean> {
     if (this.connector.reconcile) {
       const batches = this.connector.reconcile(container, {
         days: this.options.rescanDays ?? 14,
+        ...limits,
       });
       for await (const batch of batches) {
         // A rescan must never move the poll cursor.
         const stored = await this.sink.storeBatch(container, { ...batch, checkpoint: null });
         result.documentsSynced += stored.changed;
         result.documentsDeleted += stored.deleted;
-        if (!budgetLeft()) return;
+        this.addNotes(result, batch.notes);
+        if (!budgetLeft()) return false;
       }
     }
-    // Collect the WHOLE listing before pruning: a listing that throws halfway
-    // must never delete anything (spec §Error handling). Documents stored after
-    // the listing started were invisible to it and are spared.
+    // A connector whose listing covers no kind has nothing to prune by.
+    const kinds = this.connector.prunableKinds;
+    if (kinds && kinds.length === 0) return true;
+    // Collect the WHOLE listing before pruning: a listing that throws halfway,
+    // or that the budget cuts short, must never delete anything (spec §Error
+    // handling). Documents stored after the listing started were invisible to
+    // it and are spared.
     const listedAt = new Date(this.now()).toISOString();
     const presentIds: string[] = [];
-    for await (const page of this.connector.listDocumentIds(container)) {
+    for await (const page of this.connector.listDocumentIds(container, limits)) {
       presentIds.push(...page);
+      if (!budgetLeft()) return false;
     }
-    result.documentsDeleted += await this.sink.pruneMissing(container, presentIds, { listedAt });
+    result.documentsDeleted += await this.sink.pruneMissing(container, presentIds, {
+      listedAt,
+      ...(kinds ? { kinds } : {}),
+    });
+    return true;
   }
 
   private async refreshContainers(recordError: RecordError): Promise<void> {
@@ -171,7 +217,11 @@ export class KnowledgeHarness {
       recordError('listContainers', err);
       return; // an incomplete list must not mark anything gone
     }
-    await this.sink.upsertContainers(all);
+    try {
+      await this.sink.upsertContainers(all);
+    } catch (err) {
+      recordError('upsertContainers', err);
+    }
   }
 
   private async refreshPrincipals(recordError: RecordError): Promise<void> {

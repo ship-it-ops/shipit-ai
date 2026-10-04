@@ -12,6 +12,7 @@ export type {
   KnowledgeRunResult,
   KnowledgeSink,
   PruneOptions,
+  RunLimits,
   ReconcileOptions,
   SelectedContainer,
   SourceAcl,

@@ -32,6 +32,9 @@ export interface LoopStats {
 export class IndexLoop {
   private running = false;
   private wakeResolve: (() => void) | null = null;
+  // A wake-up that arrives while a batch is running has no wait to cut short;
+  // it is remembered so the next claim follows straight away.
+  private wakePending = false;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private loopPromise: Promise<void> | null = null;
 
@@ -85,7 +88,8 @@ export class IndexLoop {
 
   /** Called on a Redis wake-up: cut the current wait short. */
   kick(): void {
-    this.wakeResolve?.();
+    if (this.wakeResolve) this.wakeResolve();
+    else this.wakePending = true;
   }
 
   async stop(): Promise<void> {
@@ -108,11 +112,18 @@ export class IndexLoop {
       if (!this.running) break;
       // A full batch means more is probably waiting: go straight back.
       if (stats && stats.claimed >= this.opts.batchSize) continue;
+      if (this.wakePending) {
+        this.wakePending = false;
+        continue;
+      }
+      // The timer is deliberately not unref'd: with Postgres down and no Redis
+      // it is the only handle left, and the process must stay up to retry.
+      let timer: NodeJS.Timeout | undefined;
       await new Promise<void>((resolve) => {
         this.wakeResolve = resolve;
-        const timer = setTimeout(resolve, interval);
-        timer.unref?.();
+        timer = setTimeout(resolve, interval);
       });
+      clearTimeout(timer);
       this.wakeResolve = null;
     }
   }

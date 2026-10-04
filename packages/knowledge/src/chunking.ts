@@ -30,6 +30,7 @@ export interface ChunkDraft {
   occurredAt?: string;
   prefix: string;
   text: string;
+  /** sha256 of `prefix + "\n" + text`: exactly what is embedded. */
   textHash: string;
   tokenEstimate: number;
 }
@@ -66,7 +67,9 @@ export function chunkDocument(doc: ChunkableDocument, options: ChunkingOptions):
         occurredAt: window.find((p) => p.at)?.at,
         prefix: group.prefix,
         text,
-        textHash: sha256Hex(text),
+        // The prefix is embedded with the text, so it is part of what decides
+        // whether an existing embedding can be reused.
+        textHash: sha256Hex(`${group.prefix}\n${text}`),
         tokenEstimate: estimateTokens(text),
       });
     }

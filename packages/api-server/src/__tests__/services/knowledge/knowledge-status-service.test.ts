@@ -60,6 +60,32 @@ describe('KnowledgeStatusService', () => {
     ]);
   });
 
+  it('answers when Redis never does, with the other checks intact', async () => {
+    // ioredis queues commands while disconnected: the promise simply never settles.
+    const hung = { get: () => new Promise<string | null>(() => undefined) };
+    const started = Date.now();
+    const s = await service({ redis: hung, redisTimeoutMs: 20 }).status();
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(check(s, 'worker')).toMatchObject({ ok: false });
+    expect(check(s, 'worker').detail).toContain('could not be checked');
+    expect(s.ingestionAvailable).toBe(true);
+  });
+
+  it('shares one computation between callers that arrive together', async () => {
+    let migrationReads = 0;
+    const counting = dbAnswering((sql) => {
+      if (sql.includes('schema_migrations')) {
+        migrationReads += 1;
+        return { rows: [{ version: '0002' }] };
+      }
+      if (sql.includes('pg_extension')) return { rows: [{ extversion: '0.8.7' }] };
+      return { rows: [] };
+    });
+    const svc = service({ db: counting });
+    await Promise.all([svc.status(), svc.status(), svc.status()]);
+    expect(migrationReads).toBe(1);
+  });
+
   it('names the master switch', async () => {
     const s = await service({ knowledge: { ...cfg.knowledge, enabled: false } }).status();
     expect(s.available).toBe(false);

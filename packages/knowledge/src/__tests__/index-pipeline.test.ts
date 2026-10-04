@@ -150,6 +150,55 @@ describe('indexDocument', () => {
     expect(embedder.calls).toBe(0);
   });
 
+  it('embeds the same text under two headings once per heading', async () => {
+    const store = new MemoryIndexStore();
+    const texts: string[] = [];
+    const fake = new FakeEmbedder(8);
+    const recording: Embedder = {
+      model: fake.model,
+      dimensions: 8,
+      embedDocuments: (input) => {
+        texts.push(...input);
+        return fake.embedDocuments(input);
+      },
+      embedQuery: (text) => fake.embedQuery(text),
+    };
+    await indexDocument(
+      deps(store, recording),
+      row({
+        kind: 'confluence_page',
+        segments: [
+          { key: 'a', headingPath: ['Alpha'], text: 'TBD' },
+          { key: 'b', headingPath: ['Beta'], text: 'TBD' },
+        ],
+      }),
+    );
+    const chunks = store.replaced[0]!.chunks;
+    expect(texts).toEqual(['T › Alpha\nTBD', 'T › Beta\nTBD']);
+    expect(chunks[0]!.textHash).not.toBe(chunks[1]!.textHash);
+    expect(chunks[0]!.embedding).not.toBe(chunks[1]!.embedding);
+  });
+
+  it('embeds again when only the prefix changed (a rename)', async () => {
+    const store = new MemoryIndexStore();
+    const embedder = new FakeEmbedder(8);
+    const page = (title: string) =>
+      row({
+        kind: 'confluence_page',
+        title,
+        contentHash: `h-${title}`,
+        segments: [{ key: 'a', headingPath: ['Rollback'], text: 'drain the node first' }],
+      });
+    await indexDocument(deps(store, embedder), page('Runbook'));
+    store.existing.set(
+      'doc-1',
+      new Map(store.replaced[0]!.chunks.map((c) => [c.textHash, c.embedding])),
+    );
+    embedder.calls = 0;
+    await indexDocument(deps(store, embedder), page('Payments runbook'));
+    expect(embedder.calls).toBe(1);
+  });
+
   it('fails loudly when the embedder returns vectors of a different dimension than it claims', async () => {
     const store = new MemoryIndexStore();
     // Claims 8 dimensions, returns 7: the pipeline must not store it.

@@ -483,6 +483,158 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
   });
 
+  describe('audit fixes', () => {
+    const indexD1 = async (text = 'a') => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', text)]));
+      const [d] = await store.claimPending(10);
+      await store.replaceChunks(d!.id, [chunk(0, 'alpha')], {
+        indexedHash: d!.contentHash!,
+        indexVersion: 1,
+      });
+      return d!;
+    };
+    const chunkCount = async () =>
+      (await database.db.query(`SELECT 1 FROM knowledge_chunks`)).rows.length;
+
+    it('a tombstoned document that returns unchanged forgets it was ever indexed', async () => {
+      const d = await indexD1();
+      await sink.storeBatch(await selectedC1(), batch([], ['d1'], 'cp2'));
+      expect((await store.getDocument(d.id))!.indexedHash).toBeNull();
+
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')], [], 'cp3'));
+      const [again] = await store.claimPending(10);
+      expect(again!.contentHash).toBe(d.contentHash);
+      // Not equal to the content hash, so the pipeline rebuilds the chunks.
+      expect(again!.indexedHash).toBeNull();
+      expect(again!.indexVersion).toBeNull();
+    });
+
+    it('a document restricted and then opened again unchanged forgets it was ever indexed', async () => {
+      const d = await indexD1();
+      await sink.storeBatch(
+        await selectedC1(),
+        batch([{ ...doc('d1', 'a'), restricted: true }], [], 'cp2'),
+      );
+      expect(await chunkCount()).toBe(0);
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')], [], 'cp3'));
+      const [again] = await store.claimPending(10);
+      expect(again!.id).toBe(d.id);
+      expect(again!.indexedHash).toBeNull();
+    });
+
+    it('markSkipped removes the chunks of the previous version', async () => {
+      const d = await indexD1();
+      await sink.storeBatch(
+        await selectedC1(),
+        batch([{ ...doc('d1', 'a'), segments: [] }], [], 'cp2'),
+      );
+      const [emptied] = await store.claimPending(10);
+      await store.markSkipped(emptied!.id);
+      expect(await chunkCount()).toBe(0);
+      const after = await store.getDocument(d.id);
+      expect(after!.indexStatus).toBe('skipped');
+      expect(after!.indexedHash).toBeNull();
+    });
+
+    it('markSkipped leaves the chunks alone when the row is no longer its claim', async () => {
+      const d = await indexD1();
+      await store.markSkipped(d.id); // status is `indexed`, not `indexing`
+      expect(await chunkCount()).toBe(1);
+    });
+
+    it('believes a second consecutive empty listing', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      expect(await sink.pruneMissing(await selectedC1(), [])).toBe(0);
+      expect(await sink.pruneMissing(await selectedC1(), [])).toBe(2);
+      const { rows } = await database.db.query(
+        `SELECT 1 FROM knowledge_documents WHERE deleted_at IS NULL`,
+      );
+      expect(rows).toHaveLength(0);
+    });
+
+    it('a listing with ids between two empty ones starts the count again', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      expect(await sink.pruneMissing(await selectedC1(), [])).toBe(0);
+      expect(await sink.pruneMissing(await selectedC1(), ['d1', 'd2'])).toBe(0);
+      expect(await sink.pruneMissing(await selectedC1(), [])).toBe(0);
+    });
+
+    it('prunes only the kinds the listing covers', async () => {
+      await sink.storeBatch(
+        await selectedC1(),
+        batch([
+          { ...doc('issue-1', 'a'), kind: 'github_issue' },
+          { ...doc('issue-2', 'b'), kind: 'github_issue' },
+          { ...doc('pr-1', 'c'), kind: 'github_pull_request' },
+        ]),
+      );
+      const pruned = await sink.pruneMissing(await selectedC1(), ['issue-1'], {
+        kinds: ['github_issue'],
+      });
+      expect(pruned).toBe(1);
+      const { rows } = await database.db.query<{ external_id: string }>(
+        `SELECT external_id FROM knowledge_documents WHERE deleted_at IS NULL ORDER BY external_id`,
+      );
+      expect(rows.map((r) => r.external_id)).toEqual(['issue-1', 'pr-1']);
+    });
+
+    it('orders reconcile by the last reconcile, and poll by the last poll visit', async () => {
+      await store.setSelected('slack-1', 'C2', true, 'admin@example.com');
+      const [c1, c2] = await sink.selectedContainers('poll');
+      expect([c1!.externalId, c2!.externalId]).toEqual(['C1', 'C2']);
+
+      // A poll that found nothing still moves C1 to the back of the poll order.
+      await sink.markVisited(c1!, 'poll');
+      expect((await sink.selectedContainers('poll')).map((c) => c.externalId)).toEqual([
+        'C2',
+        'C1',
+      ]);
+      // The reconcile order is its own: nothing has been reconciled yet.
+      expect((await sink.selectedContainers('reconcile')).map((c) => c.externalId)).toEqual([
+        'C1',
+        'C2',
+      ]);
+      await sink.markVisited(c1!, 'reconcile');
+      expect((await sink.selectedContainers('reconcile')).map((c) => c.externalId)).toEqual([
+        'C2',
+        'C1',
+      ]);
+    });
+
+    it('a reconcile batch does not move the poll order', async () => {
+      await store.setSelected('slack-1', 'C2', true, 'admin@example.com');
+      await sink.storeBatch(await selectedC1(), {
+        documents: [doc('d1', 'a')],
+        deletedExternalIds: [],
+        checkpoint: null,
+      });
+      expect((await sink.selectedContainers('poll')).map((c) => c.externalId)).toEqual([
+        'C1',
+        'C2',
+      ]);
+    });
+
+    it('waits 4^attempts minutes before retrying a failed document', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const age = (minutes: number) =>
+        database.db.query(
+          `UPDATE knowledge_documents SET index_claimed_at = now() - ($1::int * interval '1 minute')`,
+          [minutes],
+        );
+      const [d] = await store.claimPending(10);
+      await store.markFailed(d!.id, 'boom 1'); // attempts = 1: 4 minutes
+      await age(3);
+      expect(await store.claimPending(10)).toEqual([]);
+      await age(5);
+      expect(await store.claimPending(10)).toHaveLength(1);
+      await store.markFailed(d!.id, 'boom 2'); // attempts = 2: 16 minutes
+      await age(15);
+      expect(await store.claimPending(10)).toEqual([]);
+      await age(17);
+      expect(await store.claimPending(10)).toHaveLength(1);
+    });
+  });
+
   describe('state and retention', () => {
     it('round-trips state and deletes old tombstones only', async () => {
       await store.setState('dictionary', { version: 3 });

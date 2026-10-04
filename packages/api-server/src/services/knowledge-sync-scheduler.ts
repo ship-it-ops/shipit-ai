@@ -10,7 +10,11 @@
 // the harness against a PostgresKnowledgeSink and records the outcome in the
 // registry's run history with facet: 'knowledge'.
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq';
-import { KnowledgeHarness, type KnowledgeRunMode } from '@shipit-ai/connector-sdk';
+import {
+  KnowledgeHarness,
+  type KnowledgeRunMode,
+  type KnowledgeRunResult,
+} from '@shipit-ai/connector-sdk';
 import { COMPLETED_JOB_RETENTION, FAILED_JOB_RETENTION } from '@shipit-ai/event-bus';
 import { PostgresKnowledgeSink, type KnowledgeStore } from '@shipit-ai/knowledge';
 import type { ConnectorInstanceConfig } from '@shipit-ai/shared';
@@ -81,6 +85,9 @@ export class KnowledgeSyncScheduler {
   // One run per connector at a time (spec §Scheduling): a reconcile that
   // overlapped a poll could prune a document the poll just stored.
   private readonly running = new Map<string, Promise<void>>();
+  // Aborted by close(): an in-flight run stops between batches instead of
+  // holding shutdown for the rest of its time budget.
+  private readonly shutdown = new AbortController();
   private readonly resolveType: (type: string) => ConnectorType | undefined;
   private readonly log: (line: string) => void;
 
@@ -215,23 +222,36 @@ export class KnowledgeSyncScheduler {
       );
       return;
     }
-    const built = await type.buildKnowledge(cfg, this.opts.buildContext);
-    if (!built.ok) {
-      await this.failRun(connectorId, startedAt, startTime, built.message);
+    // Anything that throws from here on is still a run an admin must be able
+    // to see: record it as failed instead of leaving the history silent.
+    let result: KnowledgeRunResult;
+    try {
+      const built = await type.buildKnowledge(cfg, this.opts.buildContext);
+      if (!built.ok) {
+        await this.failRun(connectorId, startedAt, startTime, built.message);
+        return;
+      }
+      const sink = new PostgresKnowledgeSink({
+        connectorId,
+        store: this.opts.store,
+        wake: this.opts.wake,
+        log: this.log,
+      });
+      const harness = new KnowledgeHarness(built.connector, sink, built.sdkConfig, {
+        historyDays: this.opts.historyDaysOf?.(cfg) ?? 365,
+        budgetMs: this.opts.budgetMs,
+        signal: this.shutdown.signal,
+      });
+      result = await harness.run(mode);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await this.failRun(connectorId, startedAt, startTime, message);
       return;
     }
-
-    const sink = new PostgresKnowledgeSink({
-      connectorId,
-      store: this.opts.store,
-      wake: this.opts.wake,
-      log: this.log,
-    });
-    const harness = new KnowledgeHarness(built.connector, sink, built.sdkConfig, {
-      historyDays: this.opts.historyDaysOf?.(cfg) ?? 365,
-      budgetMs: this.opts.budgetMs,
-    });
-    const result = await harness.run(mode);
+    const notes = [
+      ...result.notes,
+      ...(result.budgetExhausted ? ['Time budget spent; the next run continues.'] : []),
+    ];
 
     try {
       await this.opts.registry.recordRun(connectorId, {
@@ -241,9 +261,7 @@ export class KnowledgeSyncScheduler {
         entitiesSynced: result.documentsSynced,
         errors: result.errors,
         facet: 'knowledge',
-        ...(result.budgetExhausted
-          ? { notes: ['Time budget spent; the next poll continues the backfill.'] }
-          : {}),
+        ...(notes.length > 0 ? { notes } : {}),
       });
     } catch (err) {
       this.log(
@@ -265,8 +283,12 @@ export class KnowledgeSyncScheduler {
   }
 
   async close(): Promise<void> {
-    await this.worker?.close();
-    await this.queue.close();
+    this.shutdown.abort();
+    try {
+      await this.worker?.close();
+    } finally {
+      await this.queue.close();
+    }
   }
 
   private async failRun(

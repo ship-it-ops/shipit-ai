@@ -14,6 +14,7 @@ import {
 } from '@shipit-ai/knowledge';
 import { loadConfig } from '@shipit-ai/shared';
 import { VertexEmbedder } from './vertex-embedder.js';
+import { listenForWakeUps } from './wake.js';
 
 export const HEARTBEAT_KEY = 'shipit-knowledge-worker-heartbeat';
 export const WAKE_CHANNEL = 'shipit-knowledge-wake';
@@ -148,16 +149,17 @@ async function main(): Promise<void> {
     log: (line) => console.warn(`knowledge-worker: ${line}`),
   });
 
-  if (subscriber) {
-    await subscriber
-      .subscribe(WAKE_CHANNEL)
-      .catch((err: Error) =>
-        console.warn(`knowledge-worker: could not subscribe to ${WAKE_CHANNEL}: ${err.message}`),
-      );
-    subscriber.on('message', () => loop.kick());
-  }
-
+  // The loop starts first and the subscription is not awaited: Redis being
+  // down at boot must not keep the worker from polling.
   loop.start();
+  if (subscriber) {
+    listenForWakeUps(
+      subscriber,
+      WAKE_CHANNEL,
+      () => loop.kick(),
+      (line) => console.warn(`knowledge-worker: ${line}`),
+    );
+  }
   console.log(
     `knowledge-worker: indexing with ${knowledge.embedding.model} (${knowledge.embedding.dimensions}d), ` +
       `batch ${knowledge.worker.batchSize}, concurrency ${knowledge.worker.concurrency}`,

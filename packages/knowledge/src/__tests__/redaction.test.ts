@@ -29,6 +29,24 @@ describe('redactText', () => {
     expect(out.text).toBe('[redacted:github]\n[redacted:privatekey]\n[redacted:github]');
   });
 
+  // secretlint's preset honours `secretlint-disable` comments. In our own
+  // source tree that is a feature; in ingested content it would let whoever
+  // wrote the text switch redaction off. Built by concatenation for the same
+  // reason as the token.
+  it('ignores secretlint directives found in the content', async () => {
+    const directive = 'secretlint-' + 'disable';
+    const out = await redactText(`# ${directive}\ntoken: ${GH_TOKEN}\n# secretlint-` + 'enable');
+    expect(out.count).toBe(1);
+    expect(out.text).not.toContain(GH_TOKEN);
+    // The directive itself is content and stays as written.
+    expect(out.text).toContain(directive);
+  });
+
+  it('ignores a next-line directive too', async () => {
+    const out = await redactText('// secretlint-' + `disable-next-line\n${GH_TOKEN}`);
+    expect(out.text).not.toContain(GH_TOKEN);
+  });
+
   it('returns empty text unchanged without calling the linter', async () => {
     expect(await redactText('')).toEqual({ text: '', count: 0 });
   });

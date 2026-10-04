@@ -12,6 +12,16 @@ const CONFIG: SecretLintCoreConfig = {
   rules: [{ id: '@secretlint/secretlint-rule-preset-recommend', rule: recommendedPreset }],
 };
 
+// The preset bundles the filter-comments rule: a `secretlint-disable` comment
+// switches detection off for what follows. That is for source trees; in
+// ingested content it would let the text's author (or a pasted config file)
+// turn redaction off. The preset offers no way to drop that rule, so the
+// linter is shown a copy with the directive word blanked out, same length, and
+// the ranges it reports are cut from the original.
+const DIRECTIVE = /secretlint-(?:disable|enable)/g;
+const blankDirectives = (text: string): string =>
+  text.replace(DIRECTIVE, (match) => 'x'.repeat(match.length));
+
 const RULE_PREFIX = '@secretlint/secretlint-rule-';
 
 function shortRule(ruleId: string): string {
@@ -26,7 +36,12 @@ export interface Redacted {
 export async function redactText(text: string): Promise<Redacted> {
   if (text.length === 0) return { text, count: 0 };
   const result = await lintSource({
-    source: { content: text, filePath: 'segment.txt', ext: '.txt', contentType: 'text' },
+    source: {
+      content: blankDirectives(text),
+      filePath: 'segment.txt',
+      ext: '.txt',
+      contentType: 'text',
+    },
     options: { config: CONFIG, locale: 'en', maskSecrets: false, noPhysicFilePath: true },
   });
   const ranges = result.messages
