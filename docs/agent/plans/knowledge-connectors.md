@@ -111,16 +111,39 @@ most likely to be asked for first:
 
 ## Status
 
-Spec written 2026-10-02 and **approved by the owner on 2026-10-03** ("you are good"),
-including the nine choices in its "To confirm in review" section, which were shown in
-summary and not individually confirmed. Committed on branch `ai-agents-design` on
-2026-10-03 (`git log --oneline -- docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`
-gives the SHA). Nothing is implemented.
+Spec written 2026-10-02 and **approved by the owner on 2026-10-03**, including the nine
+choices in its "To confirm in review" section (shown in summary, not individually confirmed).
 
-**K0 implementation plan written 2026-10-03:**
-`docs/superpowers/plans/2026-10-03-knowledge-foundations.md` (13 tasks, TDD, every file in
-full). Awaiting owner review and the choice of execution method. K1 (GitHub text) gets its
-own plan when K0 is close to done, per the spec's rule.
+**K0 (foundations) implemented on `ai-agents-design`, 2026-10-03/04**, natively from
+`docs/superpowers/plans/2026-10-03-knowledge-foundations.md`, one commit per task:
+`427fd6f` (plan), `37ee7eb` (package, pgvector image, db:bootstrap), `2d1526a` (0002
+migration, harness), `d878d2d` (config section, LastRun.facet), `8e3c8f7` (SDK contract,
+harness, fixture), `3994296` (redaction, hashing), `0dbd710` (chunkers), `2a5f71c` (store,
+sink), `77f8d22` (embedder), `be3bf31` + `f63fe2f` (pipeline, loop), `b47ccbb`
+(knowledge-worker), `32ffe7a` (scheduler, composite runner), `50163b5` (status service,
+route, boot wiring), then the Task 13 docs commit. All pushed.
+
+Hands-on on the local stack (2026-10-04): pgvector 0.8.7 on Postgres 17.11; `0002` applied;
+`GET /api/knowledge/status` answered `ingestionAvailable: true` with `embedding` failing
+(no Vertex project locally) and `worker` failing until `knowledge-worker` ran, then
+`worker: ok` (heartbeat TTL 49 s). The worker image built locally and its runtime bundle
+resolved `@shipit-ai/knowledge` and the Vertex provider. **Not done:** a live Vertex
+embedding call (no ADC in the session); the worker never embedded a real document. The
+first live run is the K1 hands-on check.
+
+Learned while executing (also in the plan's ledger):
+
+- pgvector is not trusted and lives in `public`: every test harness that applies
+  `db/migrations/` needs `public` on its `search_path` (the agents harness gained it).
+- `db:bootstrap` uses `pg` directly so it runs under tsx with no build; CI bootstraps
+  before the integration suites.
+- secretlint's aws rule only scans access key IDs with `enableIDScanRule`; the
+  privatekey rule needs a 100+ char body. Test fixtures use a GitHub token and a PEM.
+- The agents workstream (same branch, same tree) holds `0003_runs.sql` and
+  `EXPECTED_SCHEMA_VERSION '0003'`; K0 kept `0002` and added no further migration.
+
+**Next:** the K1 plan (GitHub text: pull requests, issues, docs; deterministic linking;
+entity Knowledge tab; the connector role gate), written against the K0 code.
 
 ## Related
 

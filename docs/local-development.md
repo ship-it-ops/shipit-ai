@@ -165,7 +165,7 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 
 | Script                | What it starts                                                             |
 | --------------------- | -------------------------------------------------------------------------- |
-| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres, then applies database migrations         |
+| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates |
 | `pnpm start:backend`  | Infra + `api-server` + `core-writer` (auto-seeds demo data if graph empty) |
 | `pnpm start:frontend` | Web UI dev server only                                                     |
 | `pnpm start:mcp`      | MCP server only (stdio)                                                    |
@@ -173,6 +173,7 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 | `pnpm stop`           | Bring all docker-compose services down                                     |
 | `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)               |
 | `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)             |
+| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first  |
 
 ### Manual paths
 
@@ -181,6 +182,7 @@ For surgical control:
 ```bash
 # Terminal 1 — infra
 docker compose -f docker/docker-compose.yml up -d neo4j redis postgres
+DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:bootstrap
 DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:migrate
 
 # Terminal 2 — api-server (watch mode)
@@ -230,6 +232,17 @@ does not migrate at boot. `pnpm start:infra` applies pending files locally; on
 GKE the infra repo's deploy step applies the same files. When you add a
 migration, bump `EXPECTED_SCHEMA_VERSION` in
 `packages/agents/src/schema-version.ts` in the same change.
+
+The knowledge layer (`packages/knowledge`, `packages/knowledge-worker`) stores
+documents and embeddings in the same database and needs the pgvector extension.
+pgvector is not a trusted extension, so a superuser creates it once:
+`pnpm db:bootstrap` locally (the compose `shipit` user is the superuser), the
+infra bootstrap step on GKE. The compose `postgres` service runs a pgvector
+image and creates the extension on a fresh volume; `pnpm start:infra` runs the
+bootstrap before migrating so an older volume catches up. `GET /api/knowledge/status`
+reports what is missing. `docker compose --profile knowledge up` also starts
+`knowledge-worker`, which needs `GOOGLE_CLOUD_PROJECT` and Application Default
+Credentials to embed; without the worker, documents wait as `pending`.
 
 Run the Postgres-backed tests with the compose database up:
 

@@ -2,7 +2,7 @@
 type: status
 status: active
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-04
 author: claude-session-2026-10-01-knowledge-connectors
 branch: ai-agents-design
 agent: claude-session-2026-10-01-knowledge-connectors
@@ -10,10 +10,12 @@ tags: [knowledge, connectors, postgres, pgvector, worker]
 importance: core
 ---
 
-# Implementing knowledge layer K0 (foundations) on `ai-agents-design`
+# Knowledge layer K0 (foundations) implemented on `ai-agents-design`; K1 plan next
 
-Executing `docs/superpowers/plans/2026-10-03-knowledge-foundations.md` natively, task by task,
-in this working tree. **Another session (the agents workstream) commits on the same branch
+K0 is implemented and pushed (13 commits, `427fd6f`..the Task 13 docs commit; see
+[knowledge-connectors](../plans/knowledge-connectors.md) for the list). The final whole-branch
+review and the K1 plan are next. This note stays while the knowledge work continues on this
+branch. **Another session (the agents workstream) commits on the same branch
 and tree**; if that is you, these are the files this work touches, so coordinate before editing
 them:
 

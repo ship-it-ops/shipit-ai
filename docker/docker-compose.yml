@@ -60,7 +60,11 @@ services:
     build:
       context: ..
       dockerfile: packages/api-server/Dockerfile
-    command: ['node', 'node_modules/@shipit-ai/agents/dist/migrate-cli.js']
+    # pgvector first (the compose `shipit` user is the superuser), then schema.
+    command:
+      - sh
+      - -c
+      - node node_modules/@shipit-ai/knowledge/dist/bootstrap-cli.js && node node_modules/@shipit-ai/agents/dist/migrate-cli.js
     volumes:
       - ../db/migrations:/app/db/migrations:ro
     environment:
