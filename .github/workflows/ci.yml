@@ -150,6 +150,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # pgvector first, as on every deploy: the migrations the suites apply
+      # include the knowledge tables, which need the extension present.
+      - name: bootstrap pgvector
+        run: DATABASE_URL=$DATABASE_TEST_URL pnpm db:bootstrap
+
       - name: core-writer integration (Neo4j)
         run: pnpm --filter @shipit-ai/core-writer run test:integration
 
@@ -161,6 +166,9 @@ jobs:
 
       - name: agents integration (Postgres)
         run: pnpm --filter @shipit-ai/agents run test:integration
+
+      - name: knowledge integration (Postgres + pgvector)
+        run: pnpm --filter @shipit-ai/knowledge run test:integration
 
   build:
     name: Build

@@ -32,7 +32,14 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     await admin.end();
   }
 
-  const pool = createPool({ connectionString: DATABASE_TEST_URL, max: 4, searchPath: schema });
+  // `public` stays on the search_path: db/migrations/ includes the knowledge
+  // layer's tables, whose halfvec columns and operators come from the pgvector
+  // extension installed in `public` (created by `pnpm db:bootstrap`).
+  const pool = createPool({
+    connectionString: DATABASE_TEST_URL,
+    max: 4,
+    searchPath: `${schema},public`,
+  });
   return {
     db: createDb(pool),
     async drop() {

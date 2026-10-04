@@ -1,6 +1,10 @@
 // `pnpm db:bootstrap`: creates the pgvector extension as a superuser. Run once
 // per database, before `pnpm db:migrate`. Safe to re-run.
-import { createDb, createPool } from '@shipit-ai/agents';
+//
+// Uses `pg` directly rather than @shipit-ai/agents' pool helper so it runs
+// under tsx with no workspace build (the CI integration job calls it straight
+// after `pnpm install`), the same way migrate-cli.ts stays self-contained.
+import { Pool } from 'pg';
 import { ensureVectorExtension } from './bootstrap.js';
 
 async function main(): Promise<void> {
@@ -10,9 +14,15 @@ async function main(): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const pool = createPool({ connectionString, max: 1 });
+  const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5_000 });
+  pool.on('error', (err) => console.error(`db:bootstrap: pool error: ${err.message}`));
   try {
-    const outcome = await ensureVectorExtension(createDb(pool));
+    const outcome = await ensureVectorExtension({
+      async query<R extends object>(text: string, params?: ReadonlyArray<unknown>) {
+        const result = await pool.query(text, params ? [...params] : undefined);
+        return { rows: result.rows as R[], rowCount: result.rowCount };
+      },
+    });
     console.log(
       outcome === 'created'
         ? 'Created the "vector" extension (pgvector).'
