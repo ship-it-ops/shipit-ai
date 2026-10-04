@@ -10,7 +10,7 @@ tags: [ai, agents, workflows, handoff, postgres, vertex]
 importance: core
 ---
 
-# Handoff: AI agents and workflows — M0 nav, M1 foundation and the agent runner built; UI plan in progress
+# Handoff: AI agents and workflows — M0 nav, M1 foundation and the agent runner built; UI plan awaits review
 
 Read this first, then the spec. It replaces the conversations that produced it.
 
@@ -29,7 +29,7 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 | Plan: agents foundation (M1, part 1)     | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
 | Foundation Task 9 (Vertex probe)         | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
 | Plan: agent runner (M1, part 2, backend) | **Implemented** (`8009189`..`0b3af28`); final review fixes in `bb650d3`.         |
-| Plan: agents UI (M1, part 3)             | Being written; see "Next" below.                                                 |
+| Plan: agents UI (M1, part 3)             | **Written and verified; awaiting the owner's review.** Not executed.             |
 
 ## Waiting on the owner
 
@@ -116,14 +116,36 @@ failed chat turn ends the conversation; `ask` grants are not offered until appro
 Claude and open models are untested (no quota); `agents:run` is not a token scope yet
 (Milestone 2); the runner image runs as root like the others.
 
-## Next: the Milestone 1 UI plan
+## The agents UI plan (2026-10-04)
 
-In progress in a scratch worktree, not on the branch yet: an API client and live-stream hook,
-the transcript view, the AI off-states, the agents list, the tools-and-permissions matrix, the
-agent editor (draft save with `If-Match`, publish with a diff, versions, runs, archive), the
-test panel and Ask on a shared chat component. Still to build: the run view and navigation.
-The plan will be `docs/superpowers/plans/2026-10-04-agents-ui.md`; the owner reviews it before
-execution (native, as before).
+`docs/superpowers/plans/2026-10-04-agents-ui.md`: 9 tasks, base `4447981`. It adds
+`GET /api/tools` and a CORS fix to the api-server, and to the web UI an API client and live
+run stream, the transcript view, the AI off-states, the agents list, the
+tools-and-permissions matrix, the agent editor (draft save with `If-Match`, publish with a
+diff, versions, runs, archive), the test panel and Ask on one chat component, and the run
+view with navigation. Built test-first in a scratch worktree, replayed task by task into a
+clean one with every fail and pass step run, and the plan text was re-applied and matched the
+replay tree for all 9 tasks. Every flow was exercised in a browser against the real stack,
+except seeing a model's answer arrive in the test panel or Ask: the local Google credentials
+had expired (see "Waiting on the owner").
+
+**Next:** the owner reviews the plan; then execute it natively on `ai-agents-design`
+(committing and pushing per task). The knowledge session is executing its K1a plan on the same
+branch and also edits `server.ts` and `docs/local-development.md`; the plan's header says how
+to apply its two diffs to those files if they have moved.
+
+Found while building it:
+
+- **CORS (already on `main`):** `@fastify/cors` 11 allows only `GET`, `HEAD` and `POST` and
+  hides `ETag`. In local dev (UI on :3000, API on :3001) no save, edit or delete works from
+  the browser, and the schema and connector editors never send `If-Match`. Fixed in the plan's
+  Task 1; not on the branch yet.
+- **`pnpm start:all`** could not start on this branch: 13 `dev` tasks, and turbo allows 9 by
+  default. Fixed in `4447981` (`"concurrency": "20"` in `turbo.json`).
+- **Do not run the compose file from another worktree.** Its relative mount paths differ, so
+  Docker recreates the Postgres and Neo4j containers. It happened once during this work; the
+  data is in named volumes and was intact, and the containers were recreated from the main
+  checkout.
 
 Found while building it, fixed in `8825bd3`: the mcp-server entry started its server whenever the
 process script ended in `index.js`, so every api-server process also ran an MCP server on port

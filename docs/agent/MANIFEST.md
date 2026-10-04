@@ -33,7 +33,7 @@ Last updated: 2026-10-04 | Total notes: 100
 <!-- always-read at session start -->
 
 - [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-04 | knowledge K0 audited and fixed on ai-agents-design; K1a plan awaiting review
-- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | AI nav, agents foundation and runner (M1 backend) built on ai-agents-design; UI plan in progress
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | AI nav, agents foundation and runner (M1 backend) built on ai-agents-design; agents UI plan awaits review
 
 ## Decisions
 
