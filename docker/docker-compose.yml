@@ -113,6 +113,30 @@ services:
       redis:
         condition: service_healthy
 
+  # Chunks and embeds knowledge documents. Needs Postgres (with pgvector) and
+  # Vertex AI credentials: mount ADC and set GOOGLE_CLOUD_PROJECT, or leave it
+  # out of `up` and let documents wait as `pending`. Off by default:
+  # `docker compose --profile knowledge up` adds it.
+  knowledge-worker:
+    build:
+      context: ..
+      dockerfile: packages/knowledge-worker/Dockerfile
+    volumes:
+      - ../shipit.config.yaml:/app/shipit.config.yaml:ro
+    environment:
+      REDIS_URL: redis://redis:6379
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    profiles: ['knowledge']
+
   mcp-server:
     build:
       context: ..

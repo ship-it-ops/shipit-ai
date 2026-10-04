@@ -1,0 +1,36 @@
+{
+  "name": "@shipit-ai/knowledge-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@ai-sdk/google-vertex": "^5.0.101",
+    "@shipit-ai/agents": "workspace:*",
+    "@shipit-ai/knowledge": "workspace:*",
+    "@shipit-ai/shared": "workspace:*",
+    "ai": "^7.0.126",
+    "ioredis": "^5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

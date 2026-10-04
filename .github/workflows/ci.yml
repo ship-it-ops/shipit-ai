@@ -201,6 +201,8 @@ jobs:
             dockerfile: packages/core-writer/Dockerfile
           - service: mcp-server
             dockerfile: packages/mcp-server/Dockerfile
+          - service: knowledge-worker
+            dockerfile: packages/knowledge-worker/Dockerfile
     steps:
       - uses: actions/checkout@v7
 

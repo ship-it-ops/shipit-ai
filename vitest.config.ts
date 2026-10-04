@@ -10,6 +10,7 @@ export default defineConfig({
       'packages/shared',
       'packages/agents',
       'packages/knowledge',
+      'packages/knowledge-worker',
       'packages/event-bus',
       'packages/core-writer',
       'packages/connector-sdk',
