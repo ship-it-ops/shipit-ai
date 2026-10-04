@@ -11,3 +11,11 @@ export { CLAIM_STALE_MS, KnowledgeStore, MAX_INDEX_ATTEMPTS } from './store.js';
 export type { ContainerRow, DocumentRow, StoredChunkInput } from './store.js';
 export { PostgresKnowledgeSink } from './sink.js';
 export type { PostgresKnowledgeSinkOptions } from './sink.js';
+export {
+  EmbeddingDimensionError,
+  FakeEmbedder,
+  assertDimensions,
+  isRetryableEmbeddingError,
+  withRetry,
+} from './embedder.js';
+export type { Embedder, RetryOptions } from './embedder.js';
