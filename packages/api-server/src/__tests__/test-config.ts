@@ -137,6 +137,22 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       ],
       limits: { maxSteps: 25, maxTokens: 400_000, timeoutSeconds: 900, dailyTokens: 4_000_000 },
     },
+    knowledge: {
+      enabled: true,
+      embedding: { model: 'gemini-embedding-2', dimensions: 768 },
+      sync: { maxRunMinutes: 10, reconcileCron: '0 3 * * *' },
+      worker: { concurrency: 8, batchSize: 16 },
+      index: { maxDocumentChars: 400000, chunkTokens: 600, maxChunkTokens: 800 },
+      linking: { labels: ['LogicalService', 'Repository', 'Team'], stopList: [] },
+      search: { defaultLimit: 8, maxLimit: 25, candidatesPerLeg: 50, resultChars: 1500 },
+      suggestions: {
+        enabled: true,
+        minSupport: 3,
+        extraction: { enabled: false, model: '', dailyTokens: 2000000 },
+      },
+      agents: { askWritesAfterRead: true },
+      retention: { tombstoneDays: 30 },
+    },
     secrets: {},
     ...overrides,
   };

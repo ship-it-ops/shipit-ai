@@ -109,6 +109,11 @@ export const lastRunSchema = z.object({
    * field existed still parse.
    */
   notes: z.array(z.string()).optional(),
+  /**
+   * Which half of a connector produced this run. Absent on runs recorded
+   * before knowledge connectors existed, which were all graph runs.
+   */
+  facet: z.enum(['graph', 'knowledge']).optional(),
 });
 
 // ── Per-connector App override ────────────────────────────────────────────
@@ -725,6 +730,90 @@ const aiConfigSchema = z.object({
 export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type AiModelConfig = z.infer<typeof aiModelSchema>;
 
+// ── Knowledge layer ───────────────────────────────────────────────────────
+// Ingested text (Slack, Confluence, Jira, GitHub discussions) indexed in
+// Postgres with pgvector. Design: docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md.
+// Shares `ai.database.url` and `ai.vertex` with the agent platform.
+
+export const KNOWLEDGE_EMBEDDING_DIMENSIONS = 768;
+
+const knowledgeConfigSchema = z.object({
+  // Master switch. False hides the feature without touching stored data.
+  enabled: z.boolean().default(true),
+  embedding: z
+    .object({
+      model: z.string().default('gemini-embedding-2'),
+      // Must match the halfvec(768) column; a mismatch disables indexing.
+      dimensions: z.number().int().positive().default(KNOWLEDGE_EMBEDDING_DIMENSIONS),
+    })
+    .default({ model: 'gemini-embedding-2', dimensions: KNOWLEDGE_EMBEDDING_DIMENSIONS }),
+  sync: z
+    .object({
+      // A poll run yields after this long; the next run resumes from the checkpoint.
+      maxRunMinutes: z.number().int().positive().default(10),
+      reconcileCron: z.string().default('0 3 * * *').refine(isCrontabShape, {
+        message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "0 3 * * *".',
+      }),
+    })
+    .default({ maxRunMinutes: 10, reconcileCron: '0 3 * * *' }),
+  worker: z
+    .object({
+      concurrency: z.number().int().positive().default(8),
+      batchSize: z.number().int().positive().default(16),
+    })
+    .default({ concurrency: 8, batchSize: 16 }),
+  index: z
+    .object({
+      maxDocumentChars: z.number().int().positive().default(400000),
+      chunkTokens: z.number().int().positive().default(600),
+      maxChunkTokens: z.number().int().positive().default(800),
+    })
+    .default({ maxDocumentChars: 400000, chunkTokens: 600, maxChunkTokens: 800 }),
+  linking: z
+    .object({
+      labels: z.array(z.string()).default(['LogicalService', 'Repository', 'Team']),
+      stopList: z.array(z.string()).default([]),
+    })
+    .default({ labels: ['LogicalService', 'Repository', 'Team'], stopList: [] }),
+  search: z
+    .object({
+      defaultLimit: z.number().int().positive().default(8),
+      maxLimit: z.number().int().positive().default(25),
+      candidatesPerLeg: z.number().int().positive().default(50),
+      resultChars: z.number().int().positive().default(1500),
+    })
+    .default({ defaultLimit: 8, maxLimit: 25, candidatesPerLeg: 50, resultChars: 1500 }),
+  suggestions: z
+    .object({
+      enabled: z.boolean().default(true),
+      minSupport: z.number().int().positive().default(3),
+      extraction: z
+        .object({
+          enabled: z.boolean().default(false),
+          model: z.string().default(''),
+          dailyTokens: z.number().int().positive().default(2000000),
+        })
+        .default({ enabled: false, model: '', dailyTokens: 2000000 }),
+    })
+    .default({
+      enabled: true,
+      minSupport: 3,
+      extraction: { enabled: false, model: '', dailyTokens: 2000000 },
+    }),
+  agents: z
+    .object({
+      // After a run reads knowledge content, `allow` becomes `ask` for writes.
+      askWritesAfterRead: z.boolean().default(true),
+    })
+    .default({ askWritesAfterRead: true }),
+  retention: z
+    .object({
+      tombstoneDays: z.number().int().positive().default(30),
+    })
+    .default({ tombstoneDays: 30 }),
+});
+export type KnowledgeConfig = z.infer<typeof knowledgeConfigSchema>;
+
 const baseConfigSchema = z.object({
   // Secrets registry — maps logical secret keys to their GSM container and
   // consumption mode. Defaults include all 13 canonical entries so a config
@@ -945,6 +1034,22 @@ const baseConfigSchema = z.object({
     models: [],
     defaultModel: '',
     limits: AI_LIMIT_DEFAULTS,
+  }),
+  knowledge: knowledgeConfigSchema.default({
+    enabled: true,
+    embedding: { model: 'gemini-embedding-2', dimensions: KNOWLEDGE_EMBEDDING_DIMENSIONS },
+    sync: { maxRunMinutes: 10, reconcileCron: '0 3 * * *' },
+    worker: { concurrency: 8, batchSize: 16 },
+    index: { maxDocumentChars: 400000, chunkTokens: 600, maxChunkTokens: 800 },
+    linking: { labels: ['LogicalService', 'Repository', 'Team'], stopList: [] },
+    search: { defaultLimit: 8, maxLimit: 25, candidatesPerLeg: 50, resultChars: 1500 },
+    suggestions: {
+      enabled: true,
+      minSupport: 3,
+      extraction: { enabled: false, model: '', dailyTokens: 2000000 },
+    },
+    agents: { askWritesAfterRead: true },
+    retention: { tombstoneDays: 30 },
   }),
 });
 
