@@ -15,7 +15,7 @@ importance: core
 K0 is implemented, reviewed and pushed (`37ee7eb`..`52650e1`, review fixes in `b5882bf`; see
 [knowledge-connectors](../plans/knowledge-connectors.md) for the list). An independent audit on
 2026-10-04 found nine bugs and three SDK contract gaps; all are fixed on the branch (plan note,
-"Independent audit" and "Audit fixes"). The K1 plan is next. This note stays while the knowledge work continues on this
+"Independent audit" and "Audit fixes"). The K1a plan (`docs/superpowers/plans/2026-10-04-knowledge-github-text.md`) is written and awaits the owner's review. This note stays while the knowledge work continues on this
 branch. **Another session (the agents workstream) commits on the same branch
 and tree**; if that is you, these are the files this work touches, so coordinate before editing
 them:

@@ -32,7 +32,7 @@ Last updated: 2026-10-04 | Total notes: 100
 
 <!-- always-read at session start -->
 
-- [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-04 | knowledge K0 on ai-agents-design; audited and fixed, K1 plan next
+- [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-04 | knowledge K0 audited and fixed on ai-agents-design; K1a plan awaiting review
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | AI nav, agents foundation and runner (M1 backend) built on ai-agents-design; UI plan in progress
 
 ## Decisions
@@ -81,7 +81,7 @@ Last updated: 2026-10-04 | Total notes: 100
 
 ## Plans
 
-- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-04 | knowledge connectors: K0 foundations shipped, reviewed and audited on ai-agents-design; K1 GitHub text next
+- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-04 | knowledge connectors: K0 shipped and audited; K1 split in three, K1a (GitHub text) plan awaiting review
 - [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-01 | AI nav + agent builder; spec committed (85aa05c); plans for M0 + M1 foundation written, awaiting review
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained

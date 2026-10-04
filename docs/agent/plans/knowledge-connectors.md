@@ -241,9 +241,28 @@ bugs fixed test-first; the three contract gaps closed additively in the SDK:
 Still open: the deferred minors listed above; surrogate pairs at hard cuts; `enableIDScanRule`.
 The agents session bounded the same Redis wait in `AiStatusService` in `bb650d3`.
 
-**Next:** the K1 plan (GitHub text: pull requests, issues, docs; deterministic linking;
-entity Knowledge tab; the connector role gate), written against the K0 code. Its hands-on
-check is the first live Vertex embedding.
+**K1 is three plans (decided 2026-10-04).** The spec's K1 covers three subsystems that each
+ship on their own: **K1a** the GitHub text facet, instance config, container routes, the
+connector admin gate and the first live embedding; **K1b** the alias dictionary, deterministic
+linking, references, people matching and their migration (`0005` or later), with the timeline
+and document routes; **K1c** the web UI (GitHub Knowledge section, container picker and
+acknowledgement, permission banner, entity Knowledge tab).
+
+**K1a plan written, awaiting the owner's review:**
+`docs/superpowers/plans/2026-10-04-knowledge-github-text.md`, nine tasks. The K1 spike is
+answered in it: `issues: read` can be added to a manifest-created App in its settings
+(Permissions & events) without recreating it, and each installation then approves the request;
+until then the installation keeps its old permissions. Design choices made in the plan: the
+connector reads the installation's granted permissions and skips issues with the note
+`issues_permission_missing`; pull requests and issues are listed newest first down to the
+checkpoint and stored oldest first, so a run cut short resumes without skipping; the checkpoint
+is JSON holding the two cursors, the tree sha and the path-to-blob-sha map of stored docs; only
+issues are pruned by the id listing; selecting a non-open container needs an explicit
+acknowledgement on the API; deselecting purges through the worker. The code of plan Tasks 3 to
+6 was compiled and its 66 tests run before the plan was committed; the api-server and store
+tasks were not.
+
+**Next:** the owner's review of the K1a plan, then executing it; the K1b plan after that.
 
 ## Related
 
