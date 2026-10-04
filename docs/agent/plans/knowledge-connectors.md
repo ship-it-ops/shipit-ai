@@ -317,6 +317,61 @@ Found while doing it, not fixed:
 - Reviews beyond the first fifty per pull request, and review comments beyond the first fifty
   per review, are not fetched; the document is flagged `truncated` when reviews overflow.
 
+**Whole-range review of K1a (2026-10-04, fresh reviewer): "ready to merge with fixes"** — no
+Critical, ten Important, twelve Minor findings; it agreed with every ruling made while
+executing. All ten Important findings were fixed with a failing test first, in `5ceb9b5`
+(SDK), `e980f18` (store and sink), `f71dbc1` (connector) and `f1dc690` (api-server):
+
+1. Deselect, purge and reselect during a run left the repository permanently incomplete (the
+   run wrote its old checkpoint over the fresh backfill). `storeBatch` now locks the container
+   row and refuses a batch whose container is not selected or does not hold the checkpoint the
+   run holds (`KnowledgeContainerChanged`); the harness skips that container with a note.
+2. A member could replace the shared GitHub App through the manifest flow, which is made of
+   GETs. Launch, callback and pending-credentials are now admin-only.
+3. A GraphQL rate limit (HTTP 200 with a `RATE_LIMITED` error, headers on `err.headers`) was
+   not recognised, so runs failed. It is recognised, remembered for the rest of the run, and
+   ends the run through `KnowledgeRunCutShort`; the repository and member listings are paged
+   inside the same wrapper, so a rate-limit 403 there no longer reads as an auth failure.
+4. The heading pattern backtracked polynomially (16 s for a line with 5,000 spaces) and would
+   have blocked the api-server's event loop. Headings are parsed by hand, in linear time.
+5. Changing `docs.paths`, `docs.maxFileBytes` or `historyDays` had no effect on a repository
+   that already had a checkpoint. The checkpoint now carries a fingerprint of the docs
+   settings and the horizon each kind was backfilled to.
+6. A UTF-16 Markdown file filled the text with NULs, which Postgres rejects, failing the batch
+   on every run: blobs are decoded by byte-order mark and the sink strips U+0000 from every
+   text field. The three kinds now sync independently.
+7. Authors were unresolved for the whole first backfill, and never for bots and outside
+   contributors: a batch carries its principals and the sink upserts them first; the admin's
+   container refresh loads the organisation's members too.
+8. Content outlived its connector: deleting a connector now deselects everything it holds,
+   and a container the source no longer lists is shown, flagged `gone`, while it is selected
+   or holds content.
+9. The acknowledgement was checked once against a listing up to a day old: an unacknowledged
+   selection now asks the source first, and a selected container that stops being open is
+   left out of runs until acknowledged.
+10. Tests for the branches that protect data: a truncated tree, docs spanning batches, a
+    deletion-only change (the first two checked by mutation), rate-limit fakes in the shape
+    Octokit really throws, the manifest routes in the gate test, housekeeping on fake timers.
+
+Ruled, not fixed: a single item whose query fails persistently is not skipped (telling a
+poisoned item from a GitHub incident needs a failure counter that survives runs; it now blocks
+only its own kind for that repository, loudly); a container the source no longer lists is not
+purged automatically (a transient listing fault would delete a repository's whole index).
+
+Deferred minors from the review (not fixed, by rule): the abort signal reaches GraphQL and the
+listings but not `getTree`/`getBlob`, and a sleep ignores a signal aborted before it began;
+"Sync now" from the UI sends no mode, which for the knowledge facet is a reconcile (no documents
+until the scheduled poll), and a failing knowledge trigger also prevents the graph trigger; the
+refresh route turns a non-auth GitHub error into an opaque 500; `purgeRequested` deletes all
+documents of up to 20 containers in one statement; `containersWithCounts` has no paging; every
+poll re-fetches the item at each cursor; a refused issue-id listing on reconcile is an error,
+not the note; doc URLs are not percent-encoded; `truncateDocument` can cut a surrogate pair
+(unreachable with the default limit); a four-backtick fence containing a three-backtick line
+ends early; the container `PUT` can select a `gone` container.
+
+Left to the owner: switching a kind or the whole facet off stops fetching but leaves what is
+stored in place until the container is deselected.
+
 **Next:** refresh the credentials and run the live embedding; then the K1b plan (alias
 dictionary, deterministic linking, references, people matching, their migration at `0005` or
 later, the timeline and document routes), written against this code.

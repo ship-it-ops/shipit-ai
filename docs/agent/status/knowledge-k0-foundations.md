@@ -15,7 +15,7 @@ importance: core
 K0 is implemented, reviewed and pushed (`37ee7eb`..`52650e1`, review fixes in `b5882bf`; see
 [knowledge-connectors](../plans/knowledge-connectors.md) for the list). An independent audit on
 2026-10-04 found nine bugs and three SDK contract gaps; all are fixed on the branch (plan note,
-"Independent audit" and "Audit fixes"). K1a (GitHub text) is implemented from `docs/superpowers/plans/2026-10-04-knowledge-github-text.md`; the one open item is the first live Vertex embedding, which waits for the owner to refresh the machine's Application Default Credentials. The K1b plan is next. This note stays while the knowledge work continues on this
+"Independent audit" and "Audit fixes"). K1a (GitHub text) is implemented from `docs/superpowers/plans/2026-10-04-knowledge-github-text.md` and its whole-range review is fixed; the one open item is the first live Vertex embedding, which waits for the owner to refresh the machine's Application Default Credentials. The K1b plan is next. This note stays while the knowledge work continues on this
 branch. **Another session (the agents workstream) commits on the same branch
 and tree**; if that is you, these are the files this work touches, so coordinate before editing
 them:

@@ -301,6 +301,16 @@ Amendments from the K0 audit (2026-10-04); the code in
   one is believed. A container emptied at the source is therefore cleared at the second
   reconcile, two days at most.
 - A listing the budget cuts short prunes nothing and the container is retried first.
+- `listContainers` and `listPrincipals` receive the same `signal` and `deadline`.
+- A `ChangeBatch` may carry `principals`: the people its documents refer to. The sink
+  upserts them before the documents, so authors the principal listing does not cover
+  (bots, outside contributors), or has not listed yet, still resolve.
+- Two signals end work without being failures. A connector throws `KnowledgeRunCutShort`
+  (with a note) when the source asks it to wait longer than the run has left; the harness
+  ends the run. A sink throws `KnowledgeContainerChanged` when a container was deselected,
+  or purged and selected again, since the run read it; the harness skips that container.
+- The sink removes U+0000 from every text field: Postgres cannot store it, and one such
+  character would fail a batch on every run.
 
 The SDK stays free of storage: `KnowledgeSink` is an interface, implemented with Postgres
 in `@shipit-ai/knowledge`, the same way `EventBusClient` is implemented outside the SDK.
@@ -433,194 +443,45 @@ a link to the App's permission page. Whether a permission can be added to a
 manifest-created App without recreating it is checked in the K1 spike; the banner text
 depends on the answer.
 
-**As built in K1a (2026-10-04).** The spike's answer is yes: `issues: read` is added in the
-App's settings (Permissions & events) and each installation approves it; nothing is
-recreated. The connector reads the installation's granted permissions at authentication and
-skips issues with the note `issues_permission_missing` while the permission is absent; a
-`FORBIDDEN` answer from GitHub on an issues query is treated the same way. Pull requests and
-issues are listed newest first down to the checkpoint and then stored oldest first, so a run
-cut short resumes without skipping anything. The checkpoint also holds the path and blob sha
-of every stored doc, which is how a file that left the tree is deleted in the same run. The
-id listing covers issues only (`prunableKinds`), and covers nothing while issues cannot be
-listed. A tree GitHub truncates deletes nothing and is listed again next run
-(`tree_truncated`). A rate-limit wait that outlives the run ends the run with `rate_limited`,
-and a request cut off by shutdown ends it as cut short; neither is a failure. External ids
-are built on the repository's numeric id: `pr:<repoId>:<number>`, `issue:<repoId>:<number>`,
-`doc:<repoId>:<path>`. Reviews beyond the first fifty per pull request are not fetched; the
-document is flagged `truncated`. Selecting a container that is not `open` at the source needs
-`acknowledgeVisibility: true` on the API (the dialog is K1c); deselecting one deletes its
-content through the worker; a batch for a container that is no longer selected is refused.
-Every connector mutation, the manual sync included, needs an admin.
+**As built in K1a (2026-10-04).**
 
-### Jira
-
-- **Auth:** an Atlassian service account with a scoped API token, sent as Basic auth
-  (account email and token) to `https://api.atlassian.com/ex/jira/<cloudId>`. The wizard
-  takes the site URL, the account email and the token, and resolves the cloud id. Token
-  traffic is governed by burst limits, not by the points quotas that apply to OAuth and
-  Forge apps. The token's expiry date is stored; the connector reports `degraded` 14 days
-  before it and the Hub shows a rotation prompt.
-- **Containers:** projects. Visibility is `unknown`: reading permission schemes needs Jira
-  administration rights the service account should not have.
-- **Documents:** one per issue. First segment: summary, key, type, status, priority,
-  labels, components, fix versions, parent, description. Then one segment per comment.
-  Bodies are Atlassian Document Format, converted by the shared walker. A comment that
-  carries a visibility restriction is skipped. `attributes` holds the structured fields
-  and the issue links.
-- **Poll:** `POST /rest/api/3/search/jql` with
-  `project = <id> AND updated >= <checkpoint minus one hour> ORDER BY updated ASC`, token
-  pagination, then `POST /rest/api/3/issue/bulkfetch` for the bodies. Comments beyond the
-  first page are fetched per issue. `sourceVersion` is `updated`.
-- **Restricted items:** an issue with a security level is stored as a restricted stub.
-- **Deletion:** Jira leaves no tombstone. `listDocumentIds` lists the project's issue ids
-  daily and the sink prunes the rest.
-- **Linked pull requests:** Jira has no supported API for them. `knowledge_document_refs`
-  recovers the links from pull request and issue text that mentions an issue key.
-- **External id:** the numeric issue id, which survives a move between projects. The key
-  lives in `attributes.key`.
-
-### Confluence
-
-- **Auth:** the same service account and token, against
-  `https://api.atlassian.com/ex/confluence/<cloudId>`. The Atlassian wizard can create
-  both instances from one credential entry.
-- **Containers:** spaces (REST v2). Visibility comes from the space's permissions: `open`
-  when a group covering all licensed users can read it, otherwise `restricted`. Personal
-  spaces are hidden.
-- **Documents:** one per page or blog post. Segments follow the heading structure of the
-  body, then footer and inline comments. The body is requested as `atlas_doc_format` so
-  the Jira walker is reused; the K3 spike confirms this beats converting `storage` format.
-- **Poll:** REST v2 has no modified-since filter, so the v1 search endpoint is used with
-  CQL `space = <key> AND type in (page, blogpost) AND lastmodified >= <checkpoint minus one
-day>`. CQL dates have minute resolution and are read in the account's time zone; the
-  one-day overlap covers both, and an unchanged version number skips the page.
-  `sourceVersion` is the version number.
-- **Restricted items:** a page with a read restriction of its own, or one inherited from
-  an ancestor, is stored as a restricted stub. Inheritance is not documented, so the
-  connector walks the ancestors. It fails closed: a page whose restrictions cannot be
-  established is treated as restricted.
-- **Deletion:** the reconcile pass lists `trashed` and `archived` pages, then prunes by id.
-  Trashed pages are deleted. Archived pages are kept with `state: 'archived'`.
-- **No webhooks.** Confluence offers them only to Forge and Connect apps.
-
-### Slack
-
-- **App:** each customer creates their own Slack app from a manifest we supply. The wizard
-  opens `https://api.slack.com/apps?new_app=1&manifest_json=…`, the admin installs the app
-  to the workspace and pastes the bot token, and a probe (`auth.test`) confirms the
-  workspace and the granted scopes.
-- **Scopes:** `channels:read`, `channels:history`, `channels:join`, `users:read`,
-  `users:read.email`, `usergroups:read`, `team:read`. No events, no Socket Mode, no user
-  token.
-- **Containers:** public channels that are not shared through Slack Connect. Private
-  channels, direct messages and shared channels are not listed. Selecting a channel makes
-  the bot join it (`conversations.join`).
-- **Documents:**
-  - **`slack_thread`** — a message with replies. External id `<channel>/<thread_ts>`. One
-    segment per message.
-  - **`slack_channel_day`** — the channel's un-threaded messages for one UTC day. External
-    id `<channel>/d/<yyyy-mm-dd>`. One segment per message. Day buckets give stable ids;
-    the chunker splits a day where the conversation pauses. A message that later gains a
-    reply moves out of its day document into its own thread, and the day is rebuilt.
-  - Join, leave and other system messages are dropped. Bot messages are kept, because
-    alert and deploy bots carry operational history; `includeBots: false` turns them off.
-  - Each segment carries the message permalink, so a citation opens the exact message.
-- **Poll:** `conversations.history` from the checkpoint minus one hour; every day touched
-  is refetched whole; every parent whose reply count or latest reply changed is refetched
-  with `conversations.replies`.
-- **Reconcile:** daily, the last `rescanDays` (default 14) of each channel are refetched,
-  which catches edits, deletions and late replies. Weekly, the full message-id list of
-  each channel is walked and documents whose messages are gone are deleted. Whether a
-  workspace retention purge emits anything is unverified; this pass covers it either way.
-- **Rate limits:** a customer-created internal app keeps Tier 3 on both history methods.
-  Thread fetches are the bottleneck, at one call per thread.
-- **Defaults:** `historyDays: 365`.
-- **Identity:** `users.list` gives the email, and flags bots, guests and deactivated
-  accounts.
-
-## Visibility
-
-The source credential's reach is the outer boundary: the Slack bot sees public channels,
-and the Atlassian service account sees what its org admin granted it. The admin's
-selection is the inner boundary. Nothing outside both is fetched.
-
-| Case                                                         | v1 behaviour                                                                                                                             |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Container with `visibility: 'open'`                          | Selectable.                                                                                                                              |
-| Container that is `restricted` or `unknown`                  | Selectable only with an explicit acknowledgement that every logged-in ShipIt user will see its content. Who acknowledged it is recorded. |
-| Slack private channel, direct message, Slack Connect channel | Never listed.                                                                                                                            |
-| Restricted Confluence page, Jira issue with a security level | Stored as a stub with no content.                                                                                                        |
-| Restricted Jira comment                                      | Skipped.                                                                                                                                 |
-
-**What is recorded for later.** Each container and each document stores an `acl` when the
-source provides one cheaply, with the time it was captured. Every query in
-`@shipit-ai/knowledge` passes through one function, `visibilityPredicate(ctx)`, which
-returns `TRUE` in v1. Permission mirroring later adds a permission-sync job and a real
-predicate; no table changes and no re-ingest. The recorded ACLs are a snapshot. They are
-not kept fresh in v1 and must not be used for filtering until the sync job exists.
-
-**Who may configure.** Creating, updating and deleting a knowledge connector, changing a
-container selection and deciding a suggestion require an admin. `routes/connectors.ts`
-has no role gate today (a side finding of the agents deep dive); this work adds one for
-all connector mutations, because a member who can add a Slack connector can publish a
-channel to the whole installation.
-
-## Index pipeline
-
-The worker claims work straight from Postgres:
-
-```sql
-UPDATE knowledge_documents SET index_status = 'indexing', index_claimed_at = now()
-WHERE id IN (
-  SELECT id FROM knowledge_documents
-  WHERE index_status = 'pending'
-     OR (index_status = 'indexing' AND index_claimed_at < now() - interval '10 minutes')
-  ORDER BY updated_at LIMIT $1 FOR UPDATE SKIP LOCKED
-) RETURNING id;
-```
-
-It wakes on a Redis pub/sub message (`shipit-knowledge-wake`, sent by the sink after a
-batch commits) and otherwise every 10 seconds. A lost wake-up costs at most that delay.
-The stale-claim clause recovers documents a crashed worker left behind.
-
-For each document:
-
-1. **Skip** when `restricted`, deleted or empty. When `content_hash` equals
-   `indexed_hash` and `index_version` is current, only the links are refreshed.
-2. **Chunk** (below).
-3. **Embed** every chunk whose `text_hash` does not match a chunk the document already
-   has. A thread that gained one reply re-embeds one chunk. `text_hash` covers the prefix
-   and the text, because both are embedded: a rename re-embeds, and the same text under
-   two headings gets two vectors.
-4. **Link** entities and references (§Entity linking).
-5. **Commit** in one transaction: replace the chunks, links and references, set
-   `indexed_hash` and `index_status = 'indexed'`.
-
-A failure sets `index_status = 'failed'` with the error and increments `index_attempts`.
-Failed documents are retried with backoff up to 5 attempts and then left for the status
-page.
-
-**Chunking.** Tokens are estimated at four characters each. Target 600 tokens, maximum 800. A chunk never splits a segment unless that segment alone exceeds the maximum.
-
-| Kind                  | Chunks                                                                               | Prefix                                       |
-| --------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------- |
-| Pages and docs        | Consecutive segments under one heading path, packed to the target.                   | Title and heading path.                      |
-| Issues, pull requests | A header chunk (title, key, state, labels, description), then comment windows.       | Key or number, title, repository or project. |
-| Slack thread          | The whole thread when it fits; otherwise message windows overlapping by one message. | Channel, date, the first line of the thread. |
-| Slack channel day     | Split where the gap between messages exceeds 10 minutes, then packed to the target.  | Channel and date.                            |
-
-Each message line reads `Name (HH:MM): text`. The prefix is embedded and indexed with the
-text, which gives each chunk its context without a model call.
-
-**Embedding.** `gemini-embedding-2` through `@ai-sdk/google-vertex`, 768 dimensions,
-`taskType: 'RETRIEVAL_DOCUMENT'` for chunks and `'RETRIEVAL_QUERY'` for queries, the
-document title passed as `title`. The provider sends this model one value per call, so
-the worker runs `knowledge.worker.concurrency` calls in parallel (default 8) and retries
-429 and 5xx with backoff. `embedding_model` is stored on every chunk. Changing the model
-or the dimension is a new migration plus a full re-embed.
-
-**`index_version`** is a constant in `@shipit-ai/knowledge`. Raising it (a chunker change)
-marks every document `pending` through an admin action, never automatically at boot.
+- The spike's answer is yes: `issues: read` is added in the App's settings (Permissions &
+  events) and each installation approves it; nothing is recreated. The connector reads the
+  installation's granted permissions at authentication and skips issues with the note
+  `issues_permission_missing` while the permission is absent; a `FORBIDDEN` answer from
+  GitHub on an issues query is treated the same way.
+- Pull requests and issues are listed newest first down to the checkpoint and then stored
+  oldest first, so a run cut short resumes without skipping anything. The three kinds sync
+  independently: one failing does not keep the others from advancing, and the repository
+  is still reported with the first error.
+- The checkpoint is JSON: the two cursors; the horizon each kind was backfilled to; the
+  tree sha; the path and blob sha of every stored doc; and a fingerprint of the docs
+  settings. A file that left the tree is deleted in the same run. Changing `docs.paths` or
+  `docs.maxFileBytes` re-reads the tree at the next poll even when the tree did not move,
+  and raising `historyDays` walks the older items (storing is idempotent, so that costs
+  GitHub calls, not embeddings). Lowering `historyDays` deletes nothing.
+- The id listing covers issues only (`prunableKinds`), and covers nothing while issues
+  cannot be listed. A tree GitHub truncates deletes nothing and is listed again next run
+  (`tree_truncated`).
+- A rate limit, REST or GraphQL (which GitHub answers with HTTP 200 and a `RATE_LIMITED`
+  error), is waited out when the wait fits the run; when it does not, the run ends with
+  `rate_limited` on its record and is not a failure. A request cut off by shutdown ends
+  the run the same way.
+- External ids are built on the repository's numeric id: `pr:<repoId>:<number>`,
+  `issue:<repoId>:<number>`, `doc:<repoId>:<path>`. Each batch carries the people its
+  items refer to, bots and outside contributors included, so authorship resolves when the
+  documents are written. A UTF-16 doc is decoded by its byte-order mark. Reviews beyond
+  the first fifty per pull request are not fetched; the document is flagged `truncated`.
+- Selecting a container that is not `open` at the source needs
+  `acknowledgeVisibility: true` on the API (the dialog is K1c). A selection without it
+  asks the source again first, and a selected container that stops being open is not
+  synced until someone acknowledges it. Deselecting deletes the content through the worker,
+  and deleting a connector deselects everything it holds. A batch for a container that was
+  deselected, or purged and selected again, since the run read it is refused and the
+  container skipped. A container the source no longer lists is shown, flagged `gone`,
+  while it is selected or still holds content; it is not purged automatically.
+- Every connector mutation needs an admin: every non-GET route, and the GitHub App
+  manifest flow (launch, callback, pending credentials), which is made of GETs.
 
 ## Entity linking
 

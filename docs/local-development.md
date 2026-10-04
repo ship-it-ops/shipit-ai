@@ -274,8 +274,11 @@ curl -s -X POST $API/sync -H 'content-type: application/json' -d '{"mode":"incre
 ```
 
 The `PATCH` replaces the whole `knowledge` block, so send every setting you changed from
-its default, not only the one you are changing now. Deselecting a repository
-(`{"selected":false}`) deletes what was indexed for it, within about a minute.
+its default, not only the one you are changing now. A change to `docs.paths`,
+`docs.maxFileBytes` or `historyDays` takes effect at the next poll. Deselecting a repository
+(`{"selected":false}`) deletes what was indexed for it, within about a minute, and so does
+deleting the connector. Selecting a repository without `acknowledgeVisibility` lists the
+organisation's repositories again first, to make sure it is still public.
 
 Pull requests and docs need nothing new from the GitHub App. Issues need the App's
 **Issues: read** permission: the App's owner adds it under the App's settings, Permissions
