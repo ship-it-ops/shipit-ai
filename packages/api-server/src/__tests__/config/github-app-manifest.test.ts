@@ -1,4 +1,3 @@
-// packages/api-server/src/__tests__/config/github-app-manifest.test.ts
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

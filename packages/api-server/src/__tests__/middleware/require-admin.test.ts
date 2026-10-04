@@ -1,4 +1,3 @@
-// packages/api-server/src/__tests__/middleware/require-admin.test.ts
 import { describe, it, expect } from 'vitest';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { requireAdmin } from '../../middleware/require-auth.js';

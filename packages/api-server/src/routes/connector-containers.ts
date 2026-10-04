@@ -1,4 +1,3 @@
-// packages/api-server/src/routes/connector-containers.ts
 // The containers of a knowledge connector (mounted /api/connectors, beside the
 // connector routes): what the source has, what an admin selected, and what is
 // stored for each. Spec §API. Reading is open to every signed-in user;
@@ -16,7 +15,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     knowledgeStore?: Pick<
       KnowledgeStore,
-      'containersWithCounts' | 'getContainer' | 'selectContainer'
+      'containersWithCounts' | 'getContainer' | 'selectContainer' | 'deselectConnector'
     >;
     knowledgeScheduler?: Pick<KnowledgeSyncScheduler, 'refreshContainers'>;
   }
@@ -37,6 +36,9 @@ function present(c: ContainerSummary) {
     selected: c.selected,
     visibilityAcknowledged: c.visibilityAcknowledgedBy !== null,
     purging: c.purgeRequestedAt !== null,
+    // The source no longer lists it; it is shown while it is selected or
+    // still holds content, so that it can be deselected.
+    gone: c.goneAt !== null,
     lastPolledAt: c.lastPolledAt,
     lastReconciledAt: c.lastReconciledAt,
     documents: c.documents,
@@ -57,6 +59,10 @@ const notWired = (reply: FastifyReply): FastifyReply =>
       message: 'The knowledge layer is not available on this server.',
     },
   });
+
+/** The status a refused container refresh answers with. */
+const refreshStatus = (err: KnowledgeRefreshError): number =>
+  err.code === 'KNOWLEDGE_NOT_ENABLED' ? 409 : err.code === 'AUTH_FAILED' ? 502 : 400;
 
 const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
   const available = requireKnowledge(server);
@@ -93,9 +99,9 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
         return { containers: await server.knowledgeScheduler.refreshContainers(request.params.id) };
       } catch (err) {
         if (!(err instanceof KnowledgeRefreshError)) throw err;
-        const status =
-          err.code === 'KNOWLEDGE_NOT_ENABLED' ? 409 : err.code === 'AUTH_FAILED' ? 502 : 400;
-        return reply.status(status).send({ error: { code: err.code, message: err.message } });
+        return reply
+          .status(refreshStatus(err))
+          .send({ error: { code: err.code, message: err.message } });
       }
     },
   );
@@ -109,30 +115,47 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
     async (request, reply) => {
       const { id, containerId } = request.params;
       if (!connectorExists(id)) return notFound(reply, 'No such connector.');
-      if (!server.knowledgeStore) return notWired(reply);
+      const store = server.knowledgeStore;
+      if (!store) return notWired(reply);
       const selected = request.body?.selected;
       if (typeof selected !== 'boolean') {
         return reply.status(400).send({
           error: { code: 'VALIDATION_ERROR', message: '`selected` must be true or false.' },
         });
       }
-      const container = UUID.test(containerId)
-        ? await server.knowledgeStore.getContainer(id, containerId)
-        : null;
+      const find = async () =>
+        UUID.test(containerId) ? store.getContainer(id, containerId) : null;
+      let container = await find();
       if (!container) return notFound(reply, 'No such container.');
       const acknowledged = request.body?.acknowledgeVisibility === true;
       // Everything indexed is visible to every signed-in user (spec
       // §Visibility), so content the source restricts needs an explicit yes.
-      if (selected && container.visibility !== 'open' && !acknowledged) {
-        return reply.status(409).send({
+      const refuse = (): FastifyReply =>
+        reply.status(409).send({
           error: {
             code: 'VISIBILITY_NOT_ACKNOWLEDGED',
             message:
               'This container is not open to everyone at the source. Indexing it makes its content visible to every signed-in user; send acknowledgeVisibility: true to accept that.',
           },
         });
+      if (selected && !acknowledged) {
+        if (container.visibility !== 'open') return refuse();
+        // "Open" is what the last listing said, up to a day ago. Before
+        // content is indexed without an acknowledgement, ask the source now.
+        if (!server.knowledgeScheduler) return notWired(reply);
+        try {
+          await server.knowledgeScheduler.refreshContainers(id);
+        } catch (err) {
+          if (!(err instanceof KnowledgeRefreshError)) throw err;
+          return reply
+            .status(refreshStatus(err))
+            .send({ error: { code: err.code, message: err.message } });
+        }
+        container = await find();
+        if (!container) return notFound(reply, 'No such container.');
+        if (container.visibility !== 'open') return refuse();
       }
-      await server.knowledgeStore.selectContainer(id, containerId, {
+      await store.selectContainer(id, containerId, {
         selected,
         by: request.ctx.user.email ?? request.ctx.user.id,
         acknowledged,

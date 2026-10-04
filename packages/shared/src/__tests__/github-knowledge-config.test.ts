@@ -1,4 +1,3 @@
-// packages/shared/src/__tests__/github-knowledge-config.test.ts
 import { describe, it, expect } from 'vitest';
 import { connectorInstanceSchema } from '../config/index.js';
 

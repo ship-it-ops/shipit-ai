@@ -80,6 +80,7 @@ describe('KnowledgeSyncScheduler', () => {
   let selected: Array<typeof C1 & { checkpoint: string | null }>;
   let stored: number;
   let upserted: number;
+  let principals: number;
   let available: boolean;
 
   const registry = {
@@ -95,7 +96,7 @@ describe('KnowledgeSyncScheduler', () => {
   const store = {
     selectedContainers: async () => selected,
     upsertContainers: async (_c: string, list: unknown[]) => void (upserted = list.length),
-    upsertPrincipals: async () => undefined,
+    upsertPrincipals: async (_c: string, list: unknown[]) => void (principals += list.length),
     storeBatch: async (_c: string, _container: unknown, batch: { documents: unknown[] }) => {
       stored += batch.documents.length;
       return { changed: batch.documents.length, deleted: 0 };
@@ -125,6 +126,7 @@ describe('KnowledgeSyncScheduler', () => {
     selected = [{ ...C1, checkpoint: null }];
     stored = 0;
     upserted = 0;
+    principals = 0;
     available = true;
   });
 
@@ -351,6 +353,37 @@ describe('KnowledgeSyncScheduler', () => {
     const s = scheduler(
       fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),
     );
+    expect(await s.refreshContainers('fx-1')).toBe(1);
+    expect(upserted).toBe(1);
+  });
+
+  it('refreshContainers also loads the people, so the first documents find their authors', async () => {
+    const s = scheduler(
+      fixtureType(
+        createFixtureKnowledgeConnector({
+          containers: [C1],
+          documents: {},
+          principals: [
+            { externalId: 'U1', kind: 'user', displayName: 'Ada', active: true },
+            { externalId: 'U2', kind: 'user', displayName: 'Bob', active: true },
+          ],
+        }),
+      ),
+    );
+    expect(await s.refreshContainers('fx-1')).toBe(1);
+    expect(principals).toBe(2);
+  });
+
+  it('refreshContainers still answers when the people cannot be listed', async () => {
+    const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+    connector.listPrincipals = () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw new Error('members: 403');
+        },
+      }),
+    });
+    const s = scheduler(fixtureType(connector));
     expect(await s.refreshContainers('fx-1')).toBe(1);
     expect(upserted).toBe(1);
   });

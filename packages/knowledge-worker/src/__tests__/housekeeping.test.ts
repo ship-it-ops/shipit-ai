@@ -1,10 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { startHousekeeping } from '../housekeeping.js';
 
-const tick = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+// Fake timers: the chores run on a one-minute and a one-day interval, and the
+// test decides when a minute has passed.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+const MINUTE = 60_000;
 
 describe('startHousekeeping', () => {
-  it('purges deselected containers on its interval and removes old tombstones at start', async () => {
+  it('purges deselected containers every minute and removes old tombstones at start', async () => {
     const calls: string[] = [];
     const log: string[] = [];
     const purges = (): number => calls.filter((c) => c === 'purge').length;
@@ -20,23 +29,26 @@ describe('startHousekeeping', () => {
         },
       },
       tombstoneDays: 30,
-      purgeEveryMs: 10,
       log: (line) => log.push(line),
     });
-    await tick(45);
-    housekeeping.stop();
 
-    const seen = purges();
-    expect(seen).toBeGreaterThanOrEqual(2);
-    expect(calls).toContain('tombstones:30');
+    await vi.advanceTimersByTimeAsync(0); // what it does at start
+    expect(calls).toEqual(['tombstones:30', 'purge']);
     // Only the purge that deleted something is worth a log line.
     expect(log).toEqual(['purged 3 document(s)']);
 
-    await tick(40);
-    expect(purges()).toBe(seen); // stopped: no call after stop()
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    expect(purges()).toBe(2);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    expect(purges()).toBe(3);
+    expect(calls.filter((c) => c.startsWith('tombstones'))).toHaveLength(1); // daily, not yet
+
+    housekeeping.stop();
+    await vi.advanceTimersByTimeAsync(60 * MINUTE);
+    expect(purges()).toBe(3); // stopped: no call after stop()
   });
 
-  it('logs a failing purge and keeps going', async () => {
+  it('logs a failing chore and tries again at the next tick', async () => {
     let attempts = 0;
     const errors: string[] = [];
     const housekeeping = startHousekeeping({
@@ -51,15 +63,17 @@ describe('startHousekeeping', () => {
         },
       },
       tombstoneDays: 30,
-      purgeEveryMs: 10,
       log: () => undefined,
       logError: (line) => errors.push(line),
     });
-    await tick(45);
-    housekeeping.stop();
 
-    expect(errors).toContain('purge failed: connection refused');
-    expect(errors).toContain('tombstone cleanup failed: statement timeout');
-    expect(attempts).toBeGreaterThanOrEqual(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(errors).toEqual([
+      'tombstone cleanup failed: statement timeout',
+      'purge failed: connection refused',
+    ]);
+    await vi.advanceTimersByTimeAsync(MINUTE);
+    expect(attempts).toBe(2);
+    housekeeping.stop();
   });
 });

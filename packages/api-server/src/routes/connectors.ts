@@ -225,10 +225,19 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // Reading connectors is open to every signed-in user; creating, changing,
   // deleting, probing and triggering are an administrator's. The first-boot
   // setup routes are unaffected: their allow-listed principal is an admin.
+  //
+  // Three GETs are mutations in disguise and are gated with the rest: the
+  // GitHub App manifest flow sends the browser to GitHub and back, and its
+  // callback overwrites the App every connector authenticates with.
+  const adminOnlyGets = new Set([
+    `${server.prefix}/github/manifest/launch`,
+    `${server.prefix}/github/app-manifest-callback`,
+    `${server.prefix}/github/manifest/pending-instance/:nonce`,
+  ]);
   server.addHook('preHandler', async (request, reply) => {
-    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') {
-      return undefined;
-    }
+    const reads =
+      request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS';
+    if (reads && !adminOnlyGets.has(request.routeOptions.url ?? '')) return undefined;
     return requireAdmin(request, reply);
   });
 
@@ -1165,6 +1174,20 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       if (removed) {
         removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
           request.log.warn(obj, msg),
+        );
+      }
+      // What the connector indexed goes with it: nothing of it stays selected,
+      // and the worker deletes the content (spec §API). The connector is
+      // already gone, so a failure here is logged, not returned.
+      try {
+        await server.knowledgeStore?.deselectConnector(
+          request.params.id,
+          request.ctx.user.email ?? request.ctx.user.id,
+        );
+      } catch (err) {
+        request.log.error(
+          { connectorId: request.params.id, err: (err as Error).message },
+          'knowledge: could not schedule the purge of a deleted connector',
         );
       }
       return reply.status(204).send();

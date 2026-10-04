@@ -14,6 +14,7 @@ import {
   KnowledgeHarness,
   type KnowledgeRunMode,
   type KnowledgeRunResult,
+  type SourcePrincipal,
 } from '@shipit-ai/connector-sdk';
 import { COMPLETED_JOB_RETENTION, FAILED_JOB_RETENTION } from '@shipit-ai/event-bus';
 import { PostgresKnowledgeSink, type KnowledgeStore } from '@shipit-ai/knowledge';
@@ -221,7 +222,26 @@ export class KnowledgeSyncScheduler {
     // The whole list first: an incomplete one must not mark anything gone.
     const all = [];
     for await (const container of built.connector.listContainers()) all.push(container);
-    await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainers(all);
+    const sink = new PostgresKnowledgeSink({ connectorId, store: this.opts.store });
+    await sink.upsertContainers(all);
+    // The people too: the principal listing otherwise runs only at the nightly
+    // reconcile, after a first backfill has stored documents without authors.
+    // The containers are what was asked for, so a failure here is logged.
+    try {
+      let page: SourcePrincipal[] = [];
+      for await (const principal of built.connector.listPrincipals()) {
+        page.push(principal);
+        if (page.length >= 500) {
+          await sink.upsertPrincipals(page);
+          page = [];
+        }
+      }
+      if (page.length > 0) await sink.upsertPrincipals(page);
+    } catch (err) {
+      this.log(
+        `knowledge: could not list principals for ${connectorId} during a container refresh: ${(err as Error).message}`,
+      );
+    }
     return all.length;
   }
 

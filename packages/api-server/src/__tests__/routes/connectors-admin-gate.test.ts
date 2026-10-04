@@ -130,6 +130,12 @@ describe('connector routes: mutations need an administrator', () => {
     ['PATCH', '/api/connectors/gh-1', { knowledge: { enabled: true } }],
     ['DELETE', '/api/connectors/gh-1', undefined],
     ['POST', '/api/connectors/gh-1/sync', { mode: 'incremental' }],
+    // Creating or replacing the GitHub App is a mutation made of GETs: the
+    // browser is sent to GitHub and comes back to the callback, which
+    // overwrites the App every connector authenticates with.
+    ['GET', '/api/connectors/github/manifest/launch', undefined],
+    ['GET', '/api/connectors/github/app-manifest-callback?code=c&state=s', undefined],
+    ['GET', '/api/connectors/github/manifest/pending-instance/some-nonce', undefined],
     // The knowledge-container mutations live in their own plugin and carry the gate themselves.
     ['POST', '/api/connectors/gh-1/containers/refresh', undefined],
     [
@@ -141,6 +147,13 @@ describe('connector routes: mutations need an administrator', () => {
     const res = await server.inject({ method, url, headers: as('member'), payload });
     expect(res.statusCode).toBe(403);
     expect(res.json().error.code).toBe('FORBIDDEN');
+  });
+
+  it('still lets a member read the manifest spec and the App summary', async () => {
+    for (const url of ['/api/connectors/github/manifest', '/api/connectors/github/app']) {
+      const res = await server.inject({ method: 'GET', url, headers: as('member') });
+      expect(res.statusCode, url).not.toBe(403);
+    }
   });
 
   it('lets a member read the containers route (it answers for the layer, not with 403)', async () => {
