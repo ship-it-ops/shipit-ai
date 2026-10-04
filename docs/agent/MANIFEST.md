@@ -33,7 +33,7 @@ Last updated: 2026-10-04 | Total notes: 100
 <!-- always-read at session start -->
 
 - [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-04 | knowledge K0 on ai-agents-design; audited and fixed, K1 plan next
-- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-03 | AI nav (M0) + agents foundation (M1a) built on ai-agents-design; Gemini probed OK, Claude needs Vertex quota
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | AI nav, agents foundation and runner (M1 backend) built on ai-agents-design; UI plan in progress
 
 ## Decisions
 

@@ -2,7 +2,7 @@
 type: status
 status: active
 created: 2026-10-01
-updated: 2026-10-03
+updated: 2026-10-04
 author: claude-session-2026-09-30 (handoff written at context limit)
 branch: ai-agents-design
 agent: claude-session-2026-10-02 (executing the plans)
@@ -10,7 +10,7 @@ tags: [ai, agents, workflows, handoff, postgres, vertex]
 importance: core
 ---
 
-# Handoff: AI agents and workflows — M0 nav and M1 foundation built; Gemini probed OK, Claude blocked on Vertex quota
+# Handoff: AI agents and workflows — M0 nav, M1 foundation and the agent runner built; UI plan in progress
 
 Read this first, then the spec. It replaces the conversations that produced it.
 
@@ -28,7 +28,8 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 | Plan: AI nav (Milestone 0)               | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
 | Plan: agents foundation (M1, part 1)     | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
 | Foundation Task 9 (Vertex probe)         | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
-| Plan: agent runner (M1, part 2, backend) | Rebased onto K0 (`52650e1`) and re-verified; executing natively (see below).     |
+| Plan: agent runner (M1, part 2, backend) | **Implemented** (`8009189`..`0b3af28`); final review fixes in `bb650d3`.         |
+| Plan: agents UI (M1, part 3)             | Being written; see "Next" below.                                                 |
 
 ## Waiting on the owner
 
@@ -45,6 +46,17 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
    every capability-gated route (the new `/api/agents*` and `/api/ai/models`, and the
    existing `graph:write` manual-edit routes). Change the example to `'*'`? Not changed yet.
 
+3. **Local Google credentials expired again (2026-10-04).** Vertex answers `invalid_grant`
+   (`invalid_rapt`) for the application-default credentials, so no local run can reach a model
+   until the owner runs `gcloud auth application-default login`. The runner fails such a run
+   cleanly with `MODEL_ERROR`.
+4. **The pull request.** The knowledge session relayed the owner's decision: no PR until the
+   agents work is complete, then the branch goes up as a whole. Tell the owner and the
+   knowledge session when it is PR-ready.
+5. **A per-user cap for Ask?** The daily token cap is per agent, so one person can use up the
+   shared Graph assistant for everyone until the next UTC day. That is the spec's design; say
+   if a per-user cap is wanted.
+
 Owner approvals on 2026-10-02: both plans ("good to go"); native execution; commit at each
 plan commit step and push after each commit on `ai-agents-design`. Pushing elsewhere,
 opening a PR or merging still needs its own approval.
@@ -57,14 +69,61 @@ Graph assistant). Every task was built and tested in a scratch worktree, replaye
 a clean one with each task's checks, and the plan text was then re-applied from scratch and
 compared byte-for-byte with that replay. The UI half of Milestone 1 is the next plan.
 
-**Rebased onto K0 on 2026-10-03.** The plan's diffs are now against `52650e1` (all 13 K0 tasks
-on the branch). As agreed with the K0 session, the runs migration is `0003_runs.sql` and
-`EXPECTED_SCHEMA_VERSION` is `'0003'`; the moved test harness keeps K0's `public` on the search
-path (pgvector); the api-server shares K0's Postgres pool, which can be open for knowledge alone,
-so the run queue, run-event subscriber and built-in agent seed also check `ai.enabled`. Every
-task's checks were re-run at its rebased commit, and the plan text was re-applied in a clean
-worktree and matched each task's tree. Executing it natively on `ai-agents-design` next,
-committing and pushing per task; then the Milestone 1 UI plan.
+**Rebased onto K0, then executed (2026-10-03 to 04).** The plan's diffs are against `52650e1`.
+All 11 tasks are on the branch, one commit each (`8009189` mcp registry, `7356c83` run store,
+`cb92201` tool resolution and queue, `22b0471` model client, `84730e2` graph tools, `2811f55`
+run loop, `242d432` process/image/compose/CI, `b62b98a` runs API, `0e9733f` stream, `4735083`
+built-in agent, `0b3af28` docs and infra brief 2). The hands-on check passed against real
+Gemini: a chat on the Graph assistant answered from the local graph, a follow-up resumed the
+stream, and neither a SIGTERM with a viewer nor a Postgres outage broke anything.
+
+**Decisions made while executing** (the owner has not reviewed these yet):
+
+- `turbo.json`: the `dev` task passes `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and
+  `GOOGLE_APPLICATION_CREDENTIALS` through. Turbo 2 strips undeclared variables, so
+  `GOOGLE_CLOUD_PROJECT=… pnpm start:backend` reached no process.
+- The workspace gate ran in a clean worktree at each commit while the knowledge session had
+  uncommitted work in the shared tree.
+
+**Final review (Opus; the Fable reviewer hit the account's usage limit before reporting).** No
+Critical findings, 6 Important, 9 Minor. Fixed in `bb650d3`, each with a test that failed first:
+
+- The stream response carried no CORS headers, so a browser on another origin (local dev)
+  could not read it.
+- A stream could hang open: it now also catches up on its 15 s keep-alive tick.
+- With Redis down the run routes hung: the heartbeat read (2 s) and the enqueue (3 s) are bounded.
+- Sweeper gaps: a queued run whose job was lost is queued again after a minute; a cancelled run
+  whose worker died is finished as cancelled; a takeover no longer resets the stall clock.
+- The lease owner was one name per process: each claim now has its own, so a worker slot that
+  lost a run cannot write to it.
+- The daily cap missed tokens spent after midnight by a chat begun earlier: migration
+  **`0004_agent_usage.sql`** (`agent_usage_daily`), `EXPECTED_SCHEMA_VERSION` **`'0004'`**.
+- Re-graded up from Minor: a last-step note ("you cannot call tools any more") was replayed on
+  later chat questions; the compose `agent-runner` service is now behind `--profile agents` and
+  mounts the gcloud directory (a missing credentials file used to become a directory).
+
+**Deferred minors** (not fixed; the owner decides): empty `sweep failed:` log text; tool calls
+have no timeout or abort (a slow Cypher query outlives the run timeout and holds a worker
+slot); `?afterSeq=` (empty) skips message 0; a possible write after end on stream shutdown; one
+agent lookup per row on the run list; tool results matched by call id alone; no re-entrancy
+guard on the sweep; a chat continues on a disabled or archived agent; a crash between append
+and `recordStep` loses that step's usage; a model-auth failure shows Google's raw JSON as the
+run's error.
+
+**Left as designed** (reviewer set these aside; they stand unless the owner says otherwise): a
+failed chat turn ends the conversation; `ask` grants are not offered until approvals
+(Milestone 3); agents need the pgvector bootstrap because migration `0002` precedes `0003`;
+Claude and open models are untested (no quota); `agents:run` is not a token scope yet
+(Milestone 2); the runner image runs as root like the others.
+
+## Next: the Milestone 1 UI plan
+
+In progress in a scratch worktree, not on the branch yet: an API client and live-stream hook,
+the transcript view, the AI off-states, the agents list, the tools-and-permissions matrix, the
+agent editor (draft save with `If-Match`, publish with a diff, versions, runs, archive), the
+test panel and Ask on a shared chat component. Still to build: the run view and navigation.
+The plan will be `docs/superpowers/plans/2026-10-04-agents-ui.md`; the owner reviews it before
+execution (native, as before).
 
 Found while building it, fixed in `8825bd3`: the mcp-server entry started its server whenever the
 process script ended in `index.js`, so every api-server process also ran an MCP server on port
