@@ -140,6 +140,14 @@ placeholder pages (Agents, Workflows, Tools) until their milestones land.
 `/api/ai/status`, `/api/ai/models` and the `/api/agents` definitions API. No runner, model
 layer or UI yet.
 
+**Milestone 1, second half (backend) implemented** per
+`docs/superpowers/plans/2026-10-03-agent-runner.md`: the `agent-runner` process (BullMQ
+worker, Vertex model client, graph read tools via `@shipit-ai/mcp-server/tools`, the run
+loop with leases, limits, cancel, chat turns and crash recovery), migration `0003_runs.sql`,
+the runs API and live stream in api-server, and the built-in Graph assistant. Approvals
+(Milestone 3) are not in it: a tool whose grant is `ask` is not offered yet. The UI half
+(agent editor, test panel, run view, Ask) is the next plan.
+
 ## Related
 
 - [api-server-config-persistence-strategy](../decisions/api-server-config-persistence-strategy.md) — Postgres as planned Phase 2; scheduler must leave api-server before replicas > 1

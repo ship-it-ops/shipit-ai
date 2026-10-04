@@ -163,17 +163,17 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 
 ### Recommended: scripted starts
 
-| Script                | What it starts                                                             |
-| --------------------- | -------------------------------------------------------------------------- |
-| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates |
-| `pnpm start:backend`  | Infra + `api-server` + `core-writer` (auto-seeds demo data if graph empty) |
-| `pnpm start:frontend` | Web UI dev server only                                                     |
-| `pnpm start:mcp`      | MCP server only (stdio)                                                    |
-| `pnpm start:all`      | Everything in parallel                                                     |
-| `pnpm stop`           | Bring all docker-compose services down                                     |
-| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)               |
-| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)             |
-| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first  |
+| Script                | What it starts                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates                    |
+| `pnpm start:backend`  | Infra + `api-server` + `core-writer` + `agent-runner` (seeds demo data if the graph is empty) |
+| `pnpm start:frontend` | Web UI dev server only                                                                        |
+| `pnpm start:mcp`      | MCP server only (stdio)                                                                       |
+| `pnpm start:all`      | Everything in parallel                                                                        |
+| `pnpm stop`           | Bring all docker-compose services down                                                        |
+| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)                                  |
+| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)                                |
+| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first                     |
 
 ### Manual paths
 
@@ -193,6 +193,9 @@ pnpm --filter @shipit-ai/core-writer dev
 
 # Terminal 4 — web-ui (Next.js dev server)
 pnpm --filter @shipit-ai/web-ui dev
+
+# Terminal 5 — agent-runner (watch mode; see "Running agents locally")
+GOOGLE_CLOUD_PROJECT=<your project> pnpm --filter @shipit-ai/agent-runner dev
 ```
 
 ### Ports
@@ -222,9 +225,9 @@ ai:
     url: postgres://shipit:shipit-dev@localhost:5432/shipit
 ```
 
-`GET http://localhost:3001/api/ai/status` then reports each prerequisite. The
-`runner` check stays red until the agent runner exists; definitions work
-without it.
+`GET http://localhost:3001/api/ai/status` then reports each prerequisite.
+Definitions work with the database alone; running agents also needs the
+runner and a model (next section).
 
 The schema is plain SQL in `db/migrations/`, named `NNNN_description.sql` and
 forward-only: never edit a file that has been applied, add a new one. The app
@@ -252,6 +255,44 @@ DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
 ```
 
 Each suite creates and drops its own schema, so it does not touch your data.
+
+### Running agents locally
+
+Runs are worked by the `agent-runner` process, which calls models on Vertex AI
+and runs the graph tools against your local Neo4j. It needs:
+
+- **Application Default Credentials:** `gcloud auth application-default login`.
+- **A Vertex project:** `GOOGLE_CLOUD_PROJECT` in the runner's environment (or
+  `ai.vertex.project` in `shipit.config.local.yaml`), with the models in
+  `ai.models` enabled, and given quota, in that project.
+- **A local dev user that may run agents.** With auth off, the dev user's
+  capabilities come from `frontend.devUser.capabilities` in
+  `shipit.config.local.yaml`; use `'*'`. (`admin` is not a capability name,
+  so it grants nothing.)
+
+`pnpm start:backend` starts the runner with the rest of the backend. On its
+first boot with a database, the api-server creates the built-in **Graph
+assistant**. Try it from a terminal:
+
+```bash
+AGENT=$(curl -s localhost:3001/api/agents | jq -r '.items[] | select(.slug=="graph-assistant") | .id')
+RUN=$(curl -s -X POST localhost:3001/api/agents/$AGENT/runs \
+  -H 'content-type: application/json' \
+  -d '{"input":"Which pipelines build the shipit-ai repository?","mode":"chat"}' | jq -r .id)
+curl -N localhost:3001/api/runs/$RUN/stream          # live events; Ctrl-C when it waits
+curl -s -X POST localhost:3001/api/runs/$RUN/messages \
+  -H 'content-type: application/json' -d '{"text":"Who owns it?"}'
+curl -s localhost:3001/api/runs/$RUN/messages | jq '.toolCalls[] | {toolId, status}'
+```
+
+The runner's suites need Postgres and Redis; the live model check needs ADC:
+
+```bash
+DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit REDIS_TEST_URL=redis://localhost:6379 \
+  pnpm --filter @shipit-ai/agent-runner run test:integration
+VERTEX_TEST_PROJECT=<your project> VERTEX_TEST_MODELS=gemini:gemini-3.8-flash \
+  pnpm --filter @shipit-ai/agent-runner run test:live
+```
 
 ---
 
