@@ -258,6 +258,30 @@ without a worker, documents wait as `pending`. `docker compose --profile knowled
 the same worker in a container, but that one reads the committed config and so idles until
 `knowledge.enabled` is true there.
 
+To index a GitHub connector's text, switch its knowledge facet on, list its repositories
+and select the ones to index. All of it needs an admin (the local dev user is one):
+
+```bash
+API=http://localhost:3001/api/connectors/<connector-id>
+curl -s -X PATCH $API -H 'content-type: application/json' -d '{"knowledge":{"enabled":true}}'
+curl -s -X POST $API/containers/refresh
+curl -s $API/containers | jq '.containers[] | {id, name, visibility, selected, documents}'
+# A private repository needs "acknowledgeVisibility": true: its content becomes
+# visible to every signed-in user.
+curl -s -X PUT $API/containers/<container-id> -H 'content-type: application/json' \
+  -d '{"selected":true,"acknowledgeVisibility":true}'
+curl -s -X POST $API/sync -H 'content-type: application/json' -d '{"mode":"incremental"}'
+```
+
+The `PATCH` replaces the whole `knowledge` block, so send every setting you changed from
+its default, not only the one you are changing now. Deselecting a repository
+(`{"selected":false}`) deletes what was indexed for it, within about a minute.
+
+Pull requests and docs need nothing new from the GitHub App. Issues need the App's
+**Issues: read** permission: the App's owner adds it under the App's settings, Permissions
+& events, and an owner of the organisation approves the request GitHub emails. Until then
+runs succeed with the note `issues_permission_missing` in the connector's run history.
+
 If your `postgres_data` volume was created by the earlier `postgres:17-alpine` image, the
 pgvector image (Debian) sorts text with a different collation library, and indexes on text
 columns built under the old one can return wrong results. Either start clean

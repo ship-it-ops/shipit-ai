@@ -26,9 +26,7 @@
     "@secretlint/types": "^13.0.4",
     "@shipit-ai/agents": "workspace:*",
     "@shipit-ai/connector-sdk": "workspace:*",
-    "@shipit-ai/shared": "workspace:*",
-    "pg": "^8.23.1",
-    "zod": "^4.4.3"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

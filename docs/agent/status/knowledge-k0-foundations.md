@@ -10,18 +10,22 @@ tags: [knowledge, connectors, postgres, pgvector, worker]
 importance: core
 ---
 
-# Knowledge layer K0 (foundations) implemented on `ai-agents-design`; K1 plan next
+# Knowledge layer on `ai-agents-design`: K0 (foundations) and K1a (GitHub text) implemented; K1b plan next
 
 K0 is implemented, reviewed and pushed (`37ee7eb`..`52650e1`, review fixes in `b5882bf`; see
 [knowledge-connectors](../plans/knowledge-connectors.md) for the list). An independent audit on
 2026-10-04 found nine bugs and three SDK contract gaps; all are fixed on the branch (plan note,
-"Independent audit" and "Audit fixes"). The K1a plan (`docs/superpowers/plans/2026-10-04-knowledge-github-text.md`) is written and awaits the owner's review. This note stays while the knowledge work continues on this
+"Independent audit" and "Audit fixes"). K1a (GitHub text) is implemented from `docs/superpowers/plans/2026-10-04-knowledge-github-text.md`; the one open item is the first live Vertex embedding, which waits for the owner to refresh the machine's Application Default Credentials. The K1b plan is next. This note stays while the knowledge work continues on this
 branch. **Another session (the agents workstream) commits on the same branch
 and tree**; if that is you, these are the files this work touches, so coordinate before editing
 them:
 
 ## Scope
 
+- K1a added: `packages/connectors/github/src/knowledge/`, `packages/api-server/src/routes/connector-containers.ts`,
+  `packages/knowledge-worker/src/housekeeping.ts`, and the `knowledge` block on the GitHub connector schema
+  (`packages/shared/src/config/schema.ts`); it also changed `routes/connectors.ts` (admin gate),
+  `middleware/require-auth.ts`, `server.ts` and `index.ts`.
 - New: `packages/knowledge/`, `packages/knowledge-worker/`, `db/migrations/0002_knowledge.sql`,
   `docker/postgres-init/`, `packages/connector-sdk/src/knowledge/`
 - Modified: `docker/docker-compose.yml` (postgres image, migrate command, knowledge-worker

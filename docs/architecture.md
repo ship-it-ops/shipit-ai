@@ -215,7 +215,7 @@ Guardrails for the `graph_query` tool (configured under `backend.mcp.rateLimits`
 
 ## Knowledge Layer
 
-Knowledge connectors (Slack, Confluence, Jira, and the GitHub connector's text facet) do not add resources to the graph. They produce documents, which the api-server's `KnowledgeSyncScheduler` fetches on its own BullMQ queue and stores in Postgres through a redacting sink (`@shipit-ai/knowledge`); `knowledge-worker` claims pending documents straight from Postgres, chunks and embeds them through Vertex AI, and writes the chunks back (`halfvec(768)`, pgvector). Content reaches Neo4j only through a suggestion a person accepts. `GET /api/knowledge/status` reports the prerequisites (the `knowledge.enabled` switch, database, schema, pgvector, Vertex project, worker heartbeat). Design: `docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`.
+Knowledge connectors (Slack, Confluence, Jira, and the GitHub connector's text facet) do not add resources to the graph. They produce documents, which the api-server's `KnowledgeSyncScheduler` fetches on its own BullMQ queue and stores in Postgres through a redacting sink (`@shipit-ai/knowledge`); the first source is the GitHub connector's text facet (pull requests, issues and Markdown docs of the repositories an admin selects); `knowledge-worker` claims pending documents straight from Postgres, chunks and embeds them through Vertex AI, and writes the chunks back (`halfvec(768)`, pgvector). Content reaches Neo4j only through a suggestion a person accepts. `GET /api/knowledge/status` reports the prerequisites (the `knowledge.enabled` switch, database, schema, pgvector, Vertex project, worker heartbeat). Design: `docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`.
 
 ## API Server
 
@@ -226,7 +226,8 @@ Route prefixes (registered in `packages/api-server/src/server.ts`):
 - `/api/health` — Liveness check
 - `/api/auth` — Auth flow: providers list, login start, OIDC + GitHub callbacks, `/me`, logout
 - `/api/tokens` — Personal access tokens _(only when `accessControl.auth.enabled`)_
-- `/api/connectors` — Connector CRUD, sync triggers, run history
+- `/api/connectors` — Connector CRUD, sync triggers, run history; `/:id/containers` lists and selects what a knowledge connector indexes. Reading is open to every signed-in user; every mutation needs an admin
+- `/api/knowledge` — Knowledge layer status (prerequisites and document counts)
 - `/api/schema` — Schema management (YAML)
 - `/api/graph` — Graph queries: stats, neighborhood, search _(requires Neo4j)_
 - `/api/query` — Saved/ad-hoc Cypher queries _(requires Neo4j)_

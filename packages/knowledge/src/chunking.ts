@@ -237,7 +237,15 @@ export function splitLongText(text: string, maxTokens: number): string[] {
     for (const unit of units) {
       if (unit.length > maxChars) {
         flush();
-        for (let i = 0; i < unit.length; i += maxChars) out.push(unit.slice(i, i + maxChars));
+        for (let i = 0; i < unit.length;) {
+          let end = Math.min(i + maxChars, unit.length);
+          // Do not leave half of a surrogate pair (an emoji, a rare CJK
+          // character) at the end of a part: it would be stored as U+FFFD.
+          const last = unit.charCodeAt(end - 1);
+          if (end < unit.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+          out.push(unit.slice(i, end));
+          i = end;
+        }
         continue;
       }
       if ((buffer + '\n\n' + unit).length > maxChars) flush();

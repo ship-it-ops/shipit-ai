@@ -248,21 +248,78 @@ linking, references, people matching and their migration (`0005` or later), with
 and document routes; **K1c** the web UI (GitHub Knowledge section, container picker and
 acknowledgement, permission banner, entity Knowledge tab).
 
-**K1a plan written, awaiting the owner's review:**
-`docs/superpowers/plans/2026-10-04-knowledge-github-text.md`, nine tasks. The K1 spike is
-answered in it: `issues: read` can be added to a manifest-created App in its settings
-(Permissions & events) without recreating it, and each installation then approves the request;
-until then the installation keeps its old permissions. Design choices made in the plan: the
-connector reads the installation's granted permissions and skips issues with the note
-`issues_permission_missing`; pull requests and issues are listed newest first down to the
-checkpoint and stored oldest first, so a run cut short resumes without skipping; the checkpoint
-is JSON holding the two cursors, the tree sha and the path-to-blob-sha map of stored docs; only
-issues are pruned by the id listing; selecting a non-open container needs an explicit
-acknowledgement on the API; deselecting purges through the worker. The code of plan Tasks 3 to
-6 was compiled and its 66 tests run before the plan was committed; the api-server and store
-tasks were not.
+**K1a (GitHub text) implemented on `ai-agents-design`, 2026-10-04**, natively from
+`docs/superpowers/plans/2026-10-04-knowledge-github-text.md`, test first, one or more commits
+per task: `800c302` (manifest asks for `issues: read`), `46a21c5` (the `knowledge` block on a
+GitHub connector; per-instance switch on the scheduler; PATCH accepts the block), `d56bde3`
+(documents from pull requests, issues and Markdown), `b3b5d47` (GraphQL fetchers), `f561b64`
+(docs from the tree; rate-limit waits), `de30a13` (SDK: an error after the shutdown signal is
+the run cut short, not a failure), `e2a4a9c` (a refused listing is a missing permission too),
+`2e3eafa` (`GitHubKnowledgeConnector`), `9bd3196` (the `github` type builds the knowledge
+facet; a manual sync reaches both facets), `fa904e2` (container routes, the admin gate, the
+purge), and the commit that carries this note (hard cuts keep surrogate pairs whole, two unused
+dependencies dropped, docs).
 
-**Next:** the owner's review of the K1a plan, then executing it; the K1b plan after that.
+What it does: an admin switches knowledge on with `PATCH /api/connectors/:id`
+(`{"knowledge":{"enabled":true}}`, the block is replaced whole), lists repositories with
+`POST …/containers/refresh` and `GET …/containers`, and selects with
+`PUT …/containers/:containerId`. A repository that is not public needs
+`acknowledgeVisibility: true`. Deselecting deletes the content through the worker within about
+a minute. Every non-GET route under `/api/connectors` now needs role `admin`, the manual sync
+and the probe included; the web UI does not hide those actions from members yet (K1c).
+
+Decisions taken while executing, beyond the plan (all in the commits above):
+
+- The K1 spike: `issues: read` can be added to a manifest-created App in its settings
+  (Permissions & events) without recreating it; each installation then approves the request.
+- A request aborted by shutdown ends the run as cut short, not as a failed container.
+- A `FORBIDDEN` answer on the issues listing is treated like the missing permission.
+- The worker's periodic chores (purge, tombstone retention) live in
+  `packages/knowledge-worker/src/housekeeping.ts`, tested, not inline in `main.ts`.
+- `storeBatch` refuses a container that is no longer selected (closes the K0 deferred minor).
+- The composite runner starts and stops the knowledge facet even when the graph facet throws,
+  and a manual sync triggers both (closes the K0 deferred minor).
+
+Hands-on on 2026-10-04 against the real `ship-it-ops` installation, in an isolated setup (own
+port, scratch Postgres database, Redis database 5):
+
+- Status: `ingestionAvailable: true` with the worker check failing until the worker ran, then
+  `available: true`.
+- `refresh` listed 6 repositories (private ones `restricted`, public ones `open`); a private
+  one without the acknowledgement answered 409 `VISIBILITY_NOT_ACKNOWLEDGED`.
+- One sync of `ship-it-ops/shipit-ai` (14 days of history, two doc files) stored 13 pull
+  requests and 2 docs; the run was recorded with `facet: knowledge`, `status: success` and the
+  note `issues_permission_missing`: that installation has not been granted Issues: read.
+- Deselecting purged all 15 documents within a minute and reset the checkpoint.
+- With no database configured the server booted, `/api/connectors` answered as before and the
+  containers route answered 503 `KNOWLEDGE_UNAVAILABLE` naming the database.
+
+**Not done: the first live Vertex embedding.** Every embedding call failed with
+`invalid_grant` / `invalid_rapt`: the machine's Application Default Credentials need an
+interactive `gcloud auth application-default login`. The 15 documents went to `failed` with
+the error recorded; nothing was embedded, so the provider option names in
+`packages/knowledge-worker/src/vertex-embedder.ts` are still typechecked only. Redo the first
+two hands-on steps of the plan once the credentials are refreshed. A GitHub rate limit longer
+than a run's budget was not provoked live either; it is unit-tested.
+
+Found while doing it, not fixed:
+
+- **A credentials failure spends retry attempts.** It is classified non-retryable, so each
+  claimed document loses one of its five attempts; an outage longer than about 5.7 hours
+  (4 + 16 + 64 + 256 minutes) leaves every claimed document permanently `failed` until the
+  admin reindex route exists (K2/K3). Worth a circuit breaker: treat an auth failure as the
+  embedder being unavailable, pause the loop, spend no attempts.
+- **The event bus ignores the database index in the Redis URL** (`redis://host/5` still
+  publishes to database 0), while the schedulers and the run store honour it. The hands-on
+  run found this the hard way: 50 graph events from its manual sync went to
+  `bull:shipit-events` in the dev Redis database 0. They were left there; core-writer applies
+  them idempotently when it next runs.
+- Reviews beyond the first fifty per pull request, and review comments beyond the first fifty
+  per review, are not fetched; the document is flagged `truncated` when reviews overflow.
+
+**Next:** refresh the credentials and run the live embedding; then the K1b plan (alias
+dictionary, deterministic linking, references, people matching, their migration at `0005` or
+later, the timeline and document routes), written against this code.
 
 ## Related
 

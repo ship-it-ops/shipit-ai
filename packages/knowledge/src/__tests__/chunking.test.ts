@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { DocumentSegment } from '@shipit-ai/connector-sdk';
-import { chunkDocument, estimateTokens, type ChunkableDocument } from '../chunking.js';
+import {
+  chunkDocument,
+  estimateTokens,
+  type ChunkableDocument,
+  splitLongText,
+} from '../chunking.js';
 
 const opts = { chunkTokens: 600, maxChunkTokens: 800 };
 const words = (n: number, w = 'word') => Array.from({ length: n }, () => w).join(' ');
@@ -149,5 +154,21 @@ describe('chunkDocument: hashes', () => {
       opts,
     )[0]!;
     expect(a.textHash).toBe(b.textHash);
+  });
+});
+
+describe('splitLongText hard cuts', () => {
+  it('never cuts an emoji in half', () => {
+    // One character, then two-unit emoji: a cut every 16 units lands inside a pair.
+    const parts = splitLongText('a' + '😀'.repeat(200), 4);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const part of parts) {
+      const last = part.charCodeAt(part.length - 1);
+      const first = part.charCodeAt(0);
+      expect(last >= 0xd800 && last <= 0xdbff, 'ends with a lone high surrogate').toBe(false);
+      expect(first >= 0xdc00 && first <= 0xdfff, 'starts with a lone low surrogate').toBe(false);
+      expect(part.length).toBeLessThanOrEqual(16);
+    }
+    expect(parts.join('')).toBe('a' + '😀'.repeat(200));
   });
 });

@@ -433,6 +433,25 @@ a link to the App's permission page. Whether a permission can be added to a
 manifest-created App without recreating it is checked in the K1 spike; the banner text
 depends on the answer.
 
+**As built in K1a (2026-10-04).** The spike's answer is yes: `issues: read` is added in the
+App's settings (Permissions & events) and each installation approves it; nothing is
+recreated. The connector reads the installation's granted permissions at authentication and
+skips issues with the note `issues_permission_missing` while the permission is absent; a
+`FORBIDDEN` answer from GitHub on an issues query is treated the same way. Pull requests and
+issues are listed newest first down to the checkpoint and then stored oldest first, so a run
+cut short resumes without skipping anything. The checkpoint also holds the path and blob sha
+of every stored doc, which is how a file that left the tree is deleted in the same run. The
+id listing covers issues only (`prunableKinds`), and covers nothing while issues cannot be
+listed. A tree GitHub truncates deletes nothing and is listed again next run
+(`tree_truncated`). A rate-limit wait that outlives the run ends the run with `rate_limited`,
+and a request cut off by shutdown ends it as cut short; neither is a failure. External ids
+are built on the repository's numeric id: `pr:<repoId>:<number>`, `issue:<repoId>:<number>`,
+`doc:<repoId>:<path>`. Reviews beyond the first fifty per pull request are not fetched; the
+document is flagged `truncated`. Selecting a container that is not `open` at the source needs
+`acknowledgeVisibility: true` on the API (the dialog is K1c); deselecting one deletes its
+content through the worker; a batch for a container that is no longer selected is refused.
+Every connector mutation, the manual sync included, needs an admin.
+
 ### Jira
 
 - **Auth:** an Atlassian service account with a scoped API token, sent as Basic auth
