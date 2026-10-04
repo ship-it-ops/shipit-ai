@@ -23,8 +23,20 @@ async function main(): Promise<void> {
   const { knowledge, ai } = config;
 
   if (!knowledge.enabled) {
+    // A promise with no handle behind it lets Node exit; hold a timer so the
+    // pod stays Running (a Deployment would otherwise restart-loop) until a
+    // signal arrives.
     console.log('knowledge-worker: knowledge.enabled is false; idling so the pod stays healthy.');
-    await new Promise(() => undefined);
+    await new Promise<void>((resolve) => {
+      const keepAlive = setInterval(() => undefined, 60_000);
+      const stop = (signal: string): void => {
+        console.log(`knowledge-worker received ${signal} while idle, exiting.`);
+        clearInterval(keepAlive);
+        resolve();
+      };
+      process.once('SIGTERM', () => stop('SIGTERM'));
+      process.once('SIGINT', () => stop('SIGINT'));
+    });
     return;
   }
   if (!ai.database.url) {
@@ -71,6 +83,9 @@ async function main(): Promise<void> {
     location: ai.vertex.location,
     model: knowledge.embedding.model,
     dimensions: knowledge.embedding.dimensions,
+    // The loop already indexes `concurrency` documents at once; keep each
+    // document's own fan-out small so the two do not multiply into a 429 storm.
+    maxParallelCalls: 2,
   });
 
   // Container names for chunk prefixes, cached per process.

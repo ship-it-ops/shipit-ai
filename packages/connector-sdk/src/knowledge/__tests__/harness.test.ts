@@ -43,7 +43,9 @@ class MemorySink implements KnowledgeSink {
     for (const d of batch.deletedExternalIds) ids.delete(d);
     this.docs.set(container.externalId, ids);
     const current = this.containers.get(container.externalId)!;
-    this.containers.set(container.externalId, { ...current, checkpoint: batch.checkpoint });
+    if (batch.checkpoint !== null) {
+      this.containers.set(container.externalId, { ...current, checkpoint: batch.checkpoint });
+    }
     return { changed: batch.documents.length, deleted: batch.deletedExternalIds.length };
   }
   async pruneMissing(container: SelectedContainer, presentIds: string[]): Promise<number> {
@@ -241,6 +243,29 @@ describe('KnowledgeHarness reconcile', () => {
 
     expect(result.errors[0]).toContain('boom');
     expect([...sink.containers.keys()]).toEqual(['C1', 'C2']);
+  });
+
+  it('reconcile batches never move the poll checkpoint', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector({
+      ...seed(),
+      reconcileBatches: {
+        C1: [
+          {
+            documents: [doc('C1', 'd9', '2026-01-09T00:00:00Z')],
+            deletedExternalIds: [],
+            checkpoint: 'rescan-cursor',
+          },
+        ],
+      },
+    });
+    sink.select(seed().containers[0]!, 'poll-cursor');
+
+    await harness(connector, sink).run('reconcile');
+
+    const stored = sink.stored.find((s) => s.batch.documents[0]?.externalId === 'C1/d9')!;
+    expect(stored.batch.checkpoint).toBeNull();
+    expect(sink.containers.get('C1')!.checkpoint).toBe('poll-cursor');
   });
 
   it('runs the connector reconcile hook when present', async () => {

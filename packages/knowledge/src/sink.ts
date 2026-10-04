@@ -7,11 +7,12 @@ import type {
   ChangeBatch,
   KnowledgeDocumentInput,
   KnowledgeSink,
+  PruneOptions,
   SelectedContainer,
   SourceContainer,
   SourcePrincipal,
 } from '@shipit-ai/connector-sdk';
-import { redactSegments } from './redaction.js';
+import { redactSegments, redactText } from './redaction.js';
 import type { KnowledgeStore } from './store.js';
 
 export interface PostgresKnowledgeSinkOptions {
@@ -45,12 +46,47 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
     const documents: KnowledgeDocumentInput[] = [];
     for (const doc of batch.documents) {
       if (doc.restricted) {
-        documents.push({ ...doc, segments: [] });
+        // A restricted stub is stored the way a tombstone is: no content at all.
+        documents.push({
+          ...doc,
+          segments: [],
+          title: '',
+          attributes: {},
+          authorExternalId: undefined,
+          participantExternalIds: [],
+        });
         continue;
       }
-      const redacted = await redactSegments(doc.segments);
-      if (redacted.count > 0) redactions.set(doc.externalId, redacted.count);
-      documents.push({ ...doc, segments: redacted.segments });
+      // Everything that can reach a chunk prefix or the model is redacted: the
+      // segments, the title, heading paths and every string in attributes.
+      let count = 0;
+      const segments = await redactSegments(doc.segments);
+      count += segments.count;
+      const withHeadings: typeof segments.segments = [];
+      for (const segment of segments.segments) {
+        if (!segment.headingPath) {
+          withHeadings.push(segment);
+          continue;
+        }
+        const headingPath: string[] = [];
+        for (const heading of segment.headingPath) {
+          const r = await redactText(heading);
+          count += r.count;
+          headingPath.push(r.text);
+        }
+        withHeadings.push({ ...segment, headingPath });
+      }
+      const title = await redactText(doc.title);
+      count += title.count;
+      const attributes = await redactStrings(doc.attributes);
+      count += attributes.count;
+      if (count > 0) redactions.set(doc.externalId, count);
+      documents.push({
+        ...doc,
+        segments: withHeadings,
+        title: title.text,
+        attributes: attributes.value as Record<string, unknown>,
+      });
     }
     const result = await this.opts.store.storeBatch(
       this.opts.connectorId,
@@ -70,7 +106,40 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
     return result;
   }
 
-  pruneMissing(container: SelectedContainer, presentIds: string[]): Promise<number> {
-    return this.opts.store.pruneMissing(this.opts.connectorId, container, presentIds);
+  pruneMissing(
+    container: SelectedContainer,
+    presentIds: string[],
+    options?: PruneOptions,
+  ): Promise<number> {
+    return this.opts.store.pruneMissing(this.opts.connectorId, container, presentIds, options);
   }
+}
+
+/** Redacts every string nested anywhere in a JSON value; other values pass through. */
+async function redactStrings(value: unknown): Promise<{ value: unknown; count: number }> {
+  if (typeof value === 'string') {
+    const r = await redactText(value);
+    return { value: r.text, count: r.count };
+  }
+  if (Array.isArray(value)) {
+    let count = 0;
+    const out: unknown[] = [];
+    for (const item of value) {
+      const r = await redactStrings(item);
+      count += r.count;
+      out.push(r.value);
+    }
+    return { value: out, count };
+  }
+  if (value && typeof value === 'object') {
+    let count = 0;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const r = await redactStrings(v);
+      count += r.count;
+      out[k] = r.value;
+    }
+    return { value: out, count };
+  }
+  return { value, count: 0 };
 }

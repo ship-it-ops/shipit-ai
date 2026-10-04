@@ -823,11 +823,19 @@ API responses, logs or documents.
 | `embedding` | `ai.vertex.project` empty, or `knowledge.embedding.dimensions` is not 768 |
 | `worker`    | no heartbeat (`shipit-knowledge-worker-heartbeat`, every 15s, 60s TTL)    |
 
-When unavailable, knowledge routes return `503 KNOWLEDGE_UNAVAILABLE` with the failing
-checks, knowledge sync jobs do not run, the `knowledge.*` tools resolve to `off`, and the
-rest of the product is unaffected. No process exits because a knowledge prerequisite is
-missing. The agents feature is not a prerequisite for ingestion: content can be indexed
-and browsed on entity pages before any agent exists.
+The status has two levels. `ingestionAvailable` needs `enabled`, `database`, `schema` and
+`extension`; `available` needs all six. Sync jobs fetch and store while `ingestionAvailable`
+holds, so a dead worker or an unconfigured Vertex project never stops ingestion: documents
+wait as `pending` and the worker catches up when it returns (K0 ruling, 2026-10-04; the
+earlier text said sync jobs stop when anything is unavailable). When `ingestionAvailable`
+is false, knowledge routes return `503 KNOWLEDGE_UNAVAILABLE` with the failing checks and
+sync jobs do not run. When `available` is false the `knowledge.*` tools resolve to `off`.
+The rest of the product is unaffected either way. api-server never exits because a
+knowledge prerequisite is missing; `knowledge-worker` exits non-zero when the database,
+schema, extension or Vertex project is missing, so the Deployment restarts it after the
+migration step (the core-writer precedent), and idles when `knowledge.enabled` is false.
+The agents feature is not a prerequisite for ingestion: content can be indexed and browsed
+on entity pages before any agent exists.
 
 ## Error handling
 

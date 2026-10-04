@@ -9,6 +9,7 @@ import type {
   DocumentKind,
   DocumentSegment,
   DocumentState,
+  PruneOptions,
   SelectedContainer,
   SourceAcl,
   SourceContainer,
@@ -204,7 +205,7 @@ export class KnowledgeStore {
     const { rows } = await this.db.query<Raw>(
       `SELECT ${CONTAINER_COLUMNS} FROM knowledge_containers
         WHERE connector_id = $1 AND selected AND gone_at IS NULL AND purge_requested_at IS NULL
-        ORDER BY name`,
+        ORDER BY last_polled_at ASC NULLS FIRST, name`,
       [connectorId],
     );
     return rows.map(containerRow).map(toSelected);
@@ -332,7 +333,18 @@ export class KnowledgeStore {
                WHEN knowledge_documents.deleted_at IS NOT NULL
                  OR EXCLUDED.content_hash IS DISTINCT FROM knowledge_documents.content_hash THEN 'pending'
                ELSE knowledge_documents.index_status END,
-             index_claimed_at = NULL, deleted_at = NULL, updated_at = now()`,
+             -- Only a status move clears the claim stamp. An unchanged re-send
+             -- must leave a failed document's backoff anchor and an in-flight
+             -- claim's age alone, or neither is ever retried or reclaimed.
+             index_claimed_at = CASE
+               WHEN EXCLUDED.restricted
+                 OR knowledge_documents.deleted_at IS NOT NULL
+                 OR EXCLUDED.content_hash IS DISTINCT FROM knowledge_documents.content_hash THEN NULL
+               ELSE knowledge_documents.index_claimed_at END,
+             index_attempts = CASE
+               WHEN EXCLUDED.content_hash IS DISTINCT FROM knowledge_documents.content_hash THEN 0
+               ELSE knowledge_documents.index_attempts END,
+             deleted_at = NULL, updated_at = now()`,
           [
             randomUUID(),
             connectorId,
@@ -368,7 +380,8 @@ export class KnowledgeStore {
       const deleted = await this.tombstone(tx, connectorId, batch.deletedExternalIds);
 
       await tx.query(
-        `UPDATE knowledge_containers SET checkpoint = $3, last_polled_at = now(), updated_at = now()
+        `UPDATE knowledge_containers
+            SET checkpoint = COALESCE($3, checkpoint), last_polled_at = now(), updated_at = now()
           WHERE connector_id = $1 AND external_id = $2`,
         [connectorId, container.externalId, batch.checkpoint],
       );
@@ -403,15 +416,20 @@ export class KnowledgeStore {
     connectorId: string,
     container: SelectedContainer,
     presentIds: string[],
+    options: PruneOptions = {},
   ): Promise<number> {
     return this.db.tx(async (tx) => {
       const { rows } = await tx.query<{ external_id: string }>(
         `SELECT d.external_id FROM knowledge_documents d
            JOIN knowledge_containers c ON c.id = d.container_id
           WHERE d.connector_id = $1 AND c.external_id = $2 AND d.deleted_at IS NULL
-            AND NOT (d.external_id = ANY($3::text[]))`,
-        [connectorId, container.externalId, presentIds],
+            AND NOT (d.external_id = ANY($3::text[]))
+            AND ($4::timestamptz IS NULL OR d.updated_at < $4::timestamptz)`,
+        [connectorId, container.externalId, presentIds, options.listedAt ?? null],
       );
+      // An empty listing over a populated container is a fault far more often
+      // than a mass delete: prune nothing and let the next listing decide.
+      if (presentIds.length === 0 && rows.length > 0) return 0;
       const deleted = await this.tombstone(
         tx,
         connectorId,
@@ -470,12 +488,27 @@ export class KnowledgeStore {
     return new Map(rows.map((r) => [r.text_hash, r.embedding]));
   }
 
+  /**
+   * Writes the chunks and marks the document indexed, but only when the row is
+   * still the claim the worker took: `indexing`, same content hash, not deleted,
+   * not restricted. The sink may have tombstoned, restricted or edited the
+   * document while it was being embedded; then nothing is written and the
+   * sink's state stands. Returns false in that case.
+   */
   async replaceChunks(
     documentId: string,
     chunks: StoredChunkInput[],
     meta: { indexedHash: string; indexVersion: number },
-  ): Promise<void> {
-    await this.db.tx(async (tx) => {
+  ): Promise<boolean> {
+    return this.db.tx(async (tx) => {
+      const claim = await tx.query<{ id: string }>(
+        `SELECT id FROM knowledge_documents
+          WHERE id = $1 AND index_status = 'indexing' AND content_hash = $2
+            AND deleted_at IS NULL AND NOT restricted
+          FOR UPDATE`,
+        [documentId, meta.indexedHash],
+      );
+      if (claim.rows.length === 0) return false;
       await tx.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId]);
       for (const c of chunks) {
         await tx.query(
@@ -505,19 +538,28 @@ export class KnowledgeStore {
           WHERE id = $1`,
         [documentId, meta.indexedHash, meta.indexVersion],
       );
+      return true;
     });
   }
 
+  // The three marks below apply only while the row is still `indexing`: once
+  // the sink has moved it (tombstone, restriction, edit), the worker's late
+  // verdict about the old content must not overwrite the new state.
+
   async markUnchanged(documentId: string, indexVersion: number): Promise<void> {
     await this.db.query(
-      `UPDATE knowledge_documents SET index_status = 'indexed', index_version = $2, index_claimed_at = NULL, updated_at = now() WHERE id = $1`,
+      `UPDATE knowledge_documents
+          SET index_status = 'indexed', index_version = $2, index_claimed_at = NULL, updated_at = now()
+        WHERE id = $1 AND index_status = 'indexing'`,
       [documentId, indexVersion],
     );
   }
 
   async markSkipped(documentId: string): Promise<void> {
     await this.db.query(
-      `UPDATE knowledge_documents SET index_status = 'skipped', index_claimed_at = NULL, updated_at = now() WHERE id = $1`,
+      `UPDATE knowledge_documents
+          SET index_status = 'skipped', index_claimed_at = NULL, updated_at = now()
+        WHERE id = $1 AND index_status = 'indexing'`,
       [documentId],
     );
   }
@@ -527,7 +569,7 @@ export class KnowledgeStore {
       `UPDATE knowledge_documents
           SET index_status = 'failed', index_attempts = index_attempts + 1, index_error = left($2, 2000),
               index_claimed_at = now(), updated_at = now()
-        WHERE id = $1`,
+        WHERE id = $1 AND index_status = 'indexing'`,
       [documentId, error],
     );
   }

@@ -6,7 +6,8 @@ import { assertDimensions, withRetry, type Embedder } from './embedder.js';
 import type { DocumentRow, StoredChunkInput } from './store.js';
 import { toPgVector } from './vector.js';
 
-export type IndexOutcome = 'indexed' | 'unchanged' | 'skipped';
+/** `superseded`: the sink changed the document while it was being indexed; nothing was written. */
+export type IndexOutcome = 'indexed' | 'unchanged' | 'skipped' | 'superseded';
 
 /** The slice of KnowledgeStore the pipeline uses; tests fake it in memory. */
 export interface IndexStore {
@@ -15,7 +16,7 @@ export interface IndexStore {
     documentId: string,
     chunks: StoredChunkInput[],
     meta: { indexedHash: string; indexVersion: number },
-  ): Promise<void>;
+  ): Promise<boolean>;
   markUnchanged(documentId: string, indexVersion: number): Promise<void>;
   markSkipped(documentId: string): Promise<void>;
 }
@@ -70,7 +71,7 @@ export async function indexDocument(
     toEmbed.forEach((d, i) => byHash.set(d.textHash, toPgVector(vectors[i]!)));
   }
 
-  await deps.store.replaceChunks(
+  const written = await deps.store.replaceChunks(
     doc.id,
     drafts.map((d) => ({
       seq: d.seq,
@@ -86,5 +87,5 @@ export async function indexDocument(
     })),
     { indexedHash: doc.contentHash, indexVersion: deps.indexVersion },
   );
-  return 'indexed';
+  return written ? 'indexed' : 'superseded';
 }

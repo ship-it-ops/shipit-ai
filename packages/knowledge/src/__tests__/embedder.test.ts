@@ -106,4 +106,12 @@ describe('isRetryableEmbeddingError', () => {
     expect(isRetryableEmbeddingError({ status: 401 })).toBe(false);
     expect(isRetryableEmbeddingError(new Error('x'))).toBe(false);
   });
+
+  it('looks through the AI SDK RetryError to the last underlying error', () => {
+    const wrapped = { name: 'AI_RetryError', lastError: { statusCode: 429 } };
+    expect(isRetryableEmbeddingError(wrapped)).toBe(true);
+    expect(isRetryableEmbeddingError({ name: 'AI_RetryError', lastError: { status: 400 } })).toBe(
+      false,
+    );
+  });
 });

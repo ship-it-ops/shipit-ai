@@ -145,19 +145,22 @@ export class KnowledgeHarness {
         days: this.options.rescanDays ?? 14,
       });
       for await (const batch of batches) {
-        const stored = await this.sink.storeBatch(container, batch);
+        // A rescan must never move the poll cursor.
+        const stored = await this.sink.storeBatch(container, { ...batch, checkpoint: null });
         result.documentsSynced += stored.changed;
         result.documentsDeleted += stored.deleted;
         if (!budgetLeft()) return;
       }
     }
     // Collect the WHOLE listing before pruning: a listing that throws halfway
-    // must never delete anything (spec §Error handling).
+    // must never delete anything (spec §Error handling). Documents stored after
+    // the listing started were invisible to it and are spared.
+    const listedAt = new Date(this.now()).toISOString();
     const presentIds: string[] = [];
     for await (const page of this.connector.listDocumentIds(container)) {
       presentIds.push(...page);
     }
-    result.documentsDeleted += await this.sink.pruneMissing(container, presentIds);
+    result.documentsDeleted += await this.sink.pruneMissing(container, presentIds, { listedAt });
   }
 
   private async refreshContainers(recordError: RecordError): Promise<void> {

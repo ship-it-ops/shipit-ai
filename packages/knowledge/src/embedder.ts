@@ -61,7 +61,18 @@ export class FakeEmbedder implements Embedder {
 const RETRYABLE_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EAI_AGAIN', 'EPIPE']);
 
 export function isRetryableEmbeddingError(err: unknown): boolean {
-  const e = err as { status?: number; statusCode?: number; code?: string };
+  const e = err as {
+    status?: number;
+    statusCode?: number;
+    code?: string;
+    name?: string;
+    lastError?: unknown;
+  };
+  // The AI SDK's own retry wrapper surfaces as RetryError with the last
+  // underlying error inside; judge that one.
+  if (e?.name === 'AI_RetryError' && e.lastError !== undefined) {
+    return isRetryableEmbeddingError(e.lastError);
+  }
   const status = e?.status ?? e?.statusCode;
   if (status === 429 || status === 408) return true;
   if (typeof status === 'number' && status >= 500) return true;

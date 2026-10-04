@@ -78,6 +78,9 @@ export class KnowledgeSyncScheduler {
   private readonly queue: KnowledgeQueueLike;
   private readonly worker: Worker | null;
   private readonly statuses = new Map<string, SyncRuntimeStatus>();
+  // One run per connector at a time (spec §Scheduling): a reconcile that
+  // overlapped a poll could prune a document the poll just stored.
+  private readonly running = new Map<string, Promise<void>>();
   private readonly resolveType: (type: string) => ConnectorType | undefined;
   private readonly log: (line: string) => void;
 
@@ -177,6 +180,17 @@ export class KnowledgeSyncScheduler {
 
   /** The job body. Public so tests (and a future admin "run now") can call it without BullMQ. */
   async runJob(connectorId: string, mode: KnowledgeRunMode): Promise<void> {
+    const previous = this.running.get(connectorId) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => this.runJobNow(connectorId, mode));
+    this.running.set(connectorId, run);
+    try {
+      await run;
+    } finally {
+      if (this.running.get(connectorId) === run) this.running.delete(connectorId);
+    }
+  }
+
+  private async runJobNow(connectorId: string, mode: KnowledgeRunMode): Promise<void> {
     const startTime = Date.now();
     const startedAt = new Date(startTime).toISOString();
     let cfg: ConnectorInstanceConfig;

@@ -87,7 +87,14 @@ describe.skipIf(!DATABASE_TEST_URL)('harness → sink → loop end to end', () =
 
     const embedder = new FakeEmbedder(768);
     const stats = await loopWith(embedder).runOnce();
-    expect(stats).toEqual({ claimed: 2, indexed: 2, unchanged: 0, skipped: 0, failed: 0 });
+    expect(stats).toEqual({
+      claimed: 2,
+      indexed: 2,
+      unchanged: 0,
+      skipped: 0,
+      superseded: 0,
+      failed: 0,
+    });
     expect(await store.countsByIndexStatus()).toEqual({ indexed: 2 });
 
     const q = toPgVector(await embedder.embedQuery('payments api outage'));

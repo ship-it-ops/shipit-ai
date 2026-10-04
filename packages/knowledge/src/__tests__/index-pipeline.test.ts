@@ -22,6 +22,7 @@ class MemoryIndexStore implements IndexStore {
     meta: { indexedHash: string; indexVersion: number },
   ) {
     this.replaced.push({ documentId, chunks, meta });
+    return true;
   }
   async markUnchanged(documentId: string) {
     this.unchanged.push(documentId);

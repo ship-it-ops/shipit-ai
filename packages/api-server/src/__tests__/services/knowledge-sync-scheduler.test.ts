@@ -219,6 +219,28 @@ describe('KnowledgeSyncScheduler', () => {
     expect(runs).toHaveLength(0);
   });
 
+  it('serializes runs for the same connector so a reconcile cannot overlap a poll', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const slowStore = {
+      ...store,
+      selectedContainers: async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight -= 1;
+        return selected;
+      },
+    };
+    const s = scheduler(
+      fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: { C1: [] } })),
+      { store: slowStore as never },
+    );
+    await Promise.all([s.runJob('fx-1', 'poll'), s.runJob('fx-1', 'reconcile')]);
+    expect(maxInFlight).toBe(1);
+    expect(runs).toHaveLength(2);
+  });
+
   it('enqueues a one-shot job on trigger and reports running', async () => {
     const s = scheduler(
       fixtureType(createFixtureKnowledgeConnector({ containers: [C1], documents: {} })),

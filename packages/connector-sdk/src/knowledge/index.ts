@@ -11,6 +11,7 @@ export type {
   KnowledgeRunMode,
   KnowledgeRunResult,
   KnowledgeSink,
+  PruneOptions,
   ReconcileOptions,
   SelectedContainer,
   SourceAcl,

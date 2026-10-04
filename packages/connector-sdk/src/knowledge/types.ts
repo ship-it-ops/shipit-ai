@@ -87,8 +87,20 @@ export interface KnowledgeDocumentInput {
 export interface ChangeBatch {
   documents: KnowledgeDocumentInput[];
   deletedExternalIds: string[];
-  /** The checkpoint to store once this batch is committed. Opaque to the harness. */
-  checkpoint: string;
+  /**
+   * The checkpoint to store once this batch is committed. Opaque to the harness.
+   * `null` leaves the stored checkpoint untouched; the harness forces that for
+   * batches from the reconcile hook so a rescan never moves the poll cursor.
+   */
+  checkpoint: string | null;
+}
+
+export interface PruneOptions {
+  /**
+   * When the id listing started (ISO-8601). Documents stored after it were not
+   * visible to the listing and are spared; the harness sets it.
+   */
+  listedAt?: string;
 }
 
 export interface FetchChangesOptions {
@@ -129,8 +141,16 @@ export interface KnowledgeSink {
     container: SelectedContainer,
     batch: ChangeBatch,
   ): Promise<{ changed: number; deleted: number }>;
-  /** Tombstones every document in the container whose external id is not listed. */
-  pruneMissing(container: SelectedContainer, presentIds: string[]): Promise<number>;
+  /**
+   * Tombstones every document in the container whose external id is not listed.
+   * An empty listing over a container that has documents prunes nothing: a
+   * source answering with nothing is far more often a fault than a mass delete.
+   */
+  pruneMissing(
+    container: SelectedContainer,
+    presentIds: string[],
+    options?: PruneOptions,
+  ): Promise<number>;
 }
 
 export type KnowledgeRunMode = 'poll' | 'reconcile';

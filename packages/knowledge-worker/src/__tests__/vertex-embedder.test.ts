@@ -28,6 +28,7 @@ describe('VertexEmbedder', () => {
       taskType: 'RETRIEVAL_DOCUMENT',
       outputDimensionality: 768,
       title: 'T',
+      maxParallelCalls: 4,
     });
   });
 
@@ -43,6 +44,20 @@ describe('VertexEmbedder', () => {
     await e.embedQuery('q');
     expect(calls[0]!.taskType).toBe('RETRIEVAL_QUERY');
     expect(calls[0]!.title).toBeUndefined();
+  });
+
+  it('caps parallel requests at the configured concurrency', async () => {
+    const { calls, embed } = fakeEmbed(768);
+    const e = new VertexEmbedder({
+      project: 'p',
+      location: 'global',
+      model: 'm',
+      dimensions: 768,
+      maxParallelCalls: 2,
+      embed,
+    });
+    await e.embedDocuments(['a']);
+    expect(calls[0]!.maxParallelCalls).toBe(2);
   });
 
   it('rejects vectors of the wrong dimension', async () => {

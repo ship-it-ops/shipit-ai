@@ -25,6 +25,7 @@ export interface LoopStats {
   indexed: number;
   unchanged: number;
   skipped: number;
+  superseded: number;
   failed: number;
 }
 
@@ -38,7 +39,14 @@ export class IndexLoop {
 
   /** Claims one batch and processes it. Returns what happened; tests call this directly. */
   async runOnce(): Promise<LoopStats> {
-    const stats: LoopStats = { claimed: 0, indexed: 0, unchanged: 0, skipped: 0, failed: 0 };
+    const stats: LoopStats = {
+      claimed: 0,
+      indexed: 0,
+      unchanged: 0,
+      skipped: 0,
+      superseded: 0,
+      failed: 0,
+    };
     const docs = await this.opts.store.claimPending(this.opts.batchSize);
     stats.claimed = docs.length;
     await mapWithConcurrency(docs, this.opts.concurrency, async (doc) => {

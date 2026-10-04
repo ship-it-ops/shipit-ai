@@ -213,7 +213,10 @@ ai:
 # ai.database.url and ai.vertex. Everything below is the default; the block
 # exists so operators can find the knobs.
 knowledge:
-  enabled: true
+  # Off in the committed config until the knowledge layer's first release
+  # (spec: milestones merge behind `enabled: false` until K6). Local dev turns it
+  # on in shipit.config.local.yaml.
+  enabled: false
   embedding:
     model: gemini-embedding-2
     dimensions: 768
