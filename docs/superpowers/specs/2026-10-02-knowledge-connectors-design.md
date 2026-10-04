@@ -974,9 +974,9 @@ estimates, not a broken-down plan.
 
 **Dependency on the agents work.** K0 needs the Postgres foundation from the agents
 spec's Milestone 1: `db/migrations/`, the `pnpm db:migrate` runner in `packages/agents`,
-Postgres in compose and CI. That is the plan
-`docs/superpowers/plans/2026-10-01-agents-foundation.md`, written and not yet executed.
-K2 needs the tool gateway and the runner from the same milestone. Success criterion 10
+Postgres in compose and CI. That plan
+(`docs/superpowers/plans/2026-10-01-agents-foundation.md`) was executed on the branch on
+2026-10-03, so K0 builds on real code. K2 needs the tool gateway and the runner from the same milestone. Success criterion 10
 needs a write tool, which arrives with the agents spec's Milestone 3; until then ceiling 5
 is covered by the runner's unit tests. Connector fetchers,
 chunkers and the linker need neither and can be built against fixtures first. If the

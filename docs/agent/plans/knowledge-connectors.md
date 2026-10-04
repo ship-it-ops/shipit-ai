@@ -72,9 +72,10 @@ and nobody has started on it. The addendum
 `docs/agent/briefs/infra-pgvector-for-knowledge.md` has NOT been placed in the infra repo;
 it should go there before that work starts, with the owner's say-so.
 
-The K0 foundation this plan needs is the agents workstream's plan
-`docs/superpowers/plans/2026-10-01-agents-foundation.md` (written, not executed). Its
-compose and CI Postgres image must become a pgvector image for the knowledge migrations.
+The Postgres foundation this plan needs (`packages/agents`, `db/migrations/0001_agents.sql`,
+`pnpm db:migrate`, Postgres in compose and CI) **was executed by the agents workstream on
+2026-10-03** (commits `21a4c4a`..`36524db` on `ai-agents-design`). K0 builds on that code,
+and swaps the compose and CI Postgres image for a pgvector image.
 
 ## Verify in spikes before building on them
 
@@ -114,7 +115,12 @@ Spec written 2026-10-02 and **approved by the owner on 2026-10-03** ("you are go
 including the nine choices in its "To confirm in review" section, which were shown in
 summary and not individually confirmed. Committed on branch `ai-agents-design` on
 2026-10-03 (`git log --oneline -- docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`
-gives the SHA). Nothing is implemented. Next: the implementation plan for K0 and K1.
+gives the SHA). Nothing is implemented.
+
+**K0 implementation plan written 2026-10-03:**
+`docs/superpowers/plans/2026-10-03-knowledge-foundations.md` (13 tasks, TDD, every file in
+full). Awaiting owner review and the choice of execution method. K1 (GitHub text) gets its
+own plan when K0 is close to done, per the spec's rule.
 
 ## Related
 
