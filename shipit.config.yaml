@@ -210,8 +210,8 @@ ai:
 
 # Knowledge layer: ingested text from Slack, Confluence, Jira and GitHub,
 # indexed in the same Postgres as the agent platform (needs pgvector). Shares
-# ai.database.url and ai.vertex. Everything below is the default; the block
-# exists so operators can find the knobs.
+# ai.database.url and ai.vertex. Everything below except `enabled` is the
+# default; the block exists so operators can find the knobs.
 knowledge:
   # Off in the committed config until the knowledge layer's first release
   # (spec: milestones merge behind `enabled: false` until K6). Local dev turns it

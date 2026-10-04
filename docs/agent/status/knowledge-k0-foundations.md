@@ -12,9 +12,10 @@ importance: core
 
 # Knowledge layer K0 (foundations) implemented on `ai-agents-design`; K1 plan next
 
-K0 is implemented and pushed (13 commits, `427fd6f`..the Task 13 docs commit; see
-[knowledge-connectors](../plans/knowledge-connectors.md) for the list). The final whole-branch
-review and the K1 plan are next. This note stays while the knowledge work continues on this
+K0 is implemented, reviewed and pushed (`37ee7eb`..`52650e1`, review fixes in `b5882bf`; see
+[knowledge-connectors](../plans/knowledge-connectors.md) for the list). An independent audit on
+2026-10-04 found nine bugs and three SDK contract gaps; all are fixed on the branch (plan note,
+"Independent audit" and "Audit fixes"). The K1 plan is next. This note stays while the knowledge work continues on this
 branch. **Another session (the agents workstream) commits on the same branch
 and tree**; if that is you, these are the files this work touches, so coordinate before editing
 them:
@@ -26,7 +27,7 @@ them:
 - Modified: `docker/docker-compose.yml` (postgres image, migrate command, knowledge-worker
   service), `.github/workflows/ci.yml` (postgres image, knowledge integration step, docker
   matrix), `scripts/infra.sh`, root `package.json` (`db:bootstrap`), root `vitest.config.ts`,
-  `packages/agents/src/schema-version.ts` (→ `0002`), `packages/shared/src/config/schema.ts`
+  `packages/agents/src/schema-version.ts` (now `0003`, with the agents workstream's `0003_runs.sql`), `packages/shared/src/config/schema.ts`
   (`knowledge` section, `LastRun.facet`), `shipit.config.yaml`,
   `packages/api-server/src/__tests__/test-config.ts`, `packages/api-server/src/services/connector-types/types.ts`
   (`build` optional, `buildKnowledge`), `packages/api-server/src/services/sync-scheduler.ts`

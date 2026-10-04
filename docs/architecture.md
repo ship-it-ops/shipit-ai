@@ -215,7 +215,7 @@ Guardrails for the `graph_query` tool (configured under `backend.mcp.rateLimits`
 
 ## Knowledge Layer
 
-Knowledge connectors (Slack, Confluence, Jira, and the GitHub connector's text facet) do not add resources to the graph. They produce documents, which the api-server's `KnowledgeSyncScheduler` fetches on its own BullMQ queue and stores in Postgres through a redacting sink (`@shipit-ai/knowledge`); `knowledge-worker` claims pending documents straight from Postgres, chunks and embeds them through Vertex AI, and writes the chunks back (`halfvec(768)`, pgvector). Content reaches Neo4j only through a suggestion a person accepts. `GET /api/knowledge/status` reports the prerequisites (database, schema, pgvector, Vertex project, worker heartbeat). Design: `docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`.
+Knowledge connectors (Slack, Confluence, Jira, and the GitHub connector's text facet) do not add resources to the graph. They produce documents, which the api-server's `KnowledgeSyncScheduler` fetches on its own BullMQ queue and stores in Postgres through a redacting sink (`@shipit-ai/knowledge`); `knowledge-worker` claims pending documents straight from Postgres, chunks and embeds them through Vertex AI, and writes the chunks back (`halfvec(768)`, pgvector). Content reaches Neo4j only through a suggestion a person accepts. `GET /api/knowledge/status` reports the prerequisites (the `knowledge.enabled` switch, database, schema, pgvector, Vertex project, worker heartbeat). Design: `docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`.
 
 ## API Server
 

@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-04
 author: claude-session-2026-10-01-knowledge-connectors
 tags: [knowledge, connectors, slack, jira, confluence, github, retrieval, suggestions]
 importance: core
@@ -172,6 +172,74 @@ volume from the Alpine to the Debian image changes collation under text indexes 
 say reindex or reset); permanently failed rows stay in the claimable partial index; the
 Vertex embedder is tested only through its seam. Also deferred: `enableIDScanRule` for the
 secretlint aws rule (AWS key IDs are not flagged by default).
+
+**Independent audit (2026-10-04, second session).** Gates green uncached
+(typecheck, build, unit suites, knowledge 34 and agents 44 integration tests on pgvector). All 13
+tasks delivered, every Global Constraints value matches. Bugs found, the first three reproduced
+against Postgres:
+
+1. A document tombstoned or restricted and then restored with the same content ends `indexed`
+   with zero chunks: the tombstone and the restricted branch delete chunks but leave
+   `indexed_hash`, so the pipeline's unchanged shortcut fires (`store.ts` tombstone and restricted
+   branch, `index-pipeline.ts` unchanged check).
+2. A `secretlint-disable` comment line in content switches redaction off for the rest of that
+   string (the recommended preset bundles the filter-comments rule); the secret is stored.
+3. A document edited down to no segments is marked `skipped` but keeps its old chunks.
+4. knowledge-worker awaits the Redis `subscribe` before starting the loop; with Redis configured
+   but down at boot it never indexes (ioredis queues the command forever).
+5. `GET /api/knowledge/status` and the sync gate await a Redis `get` with no timeout; same hang.
+6. A knowledge run that throws (`harness.run`, `buildKnowledge`) records no run history.
+7. Embedding reuse is keyed on chunk text, but prefix + text is what is embedded: identical text
+   under two headings gets one vector, and a rename keeps the old vectors.
+8. The empty-listing prune guard never resolves, so a container whose documents were all deleted
+   upstream keeps them (against decision 13).
+9. Reconcile visits containers in `last_polled_at` order, which only a stored batch moves; under
+   a tight budget the same containers can go unpruned every night.
+
+Contract gaps to settle in the K1 plan: prune is container-wide with no per-kind scope (a GitHub
+connector listing only issue ids would tombstone every PR and doc); no deadline or abort signal
+reaches the connector; no channel for a non-failure note, and any thrown 403 marks the connector
+degraded. Docs: the compose `knowledge-worker` service cannot index as written (unset
+`NEO4J_USER`/`SHIPIT_API_URL`/`SHIPIT_WEB_ORIGIN`, committed config has `enabled: false`, no ADC
+mount); `local-development.md` and the worker infra brief never mention `knowledge.enabled` and
+the brief's "Done when" cannot be met from the committed config; no collation note for the
+Alpine-to-Debian volume move. Weak tests: the "incomplete listing never prunes" fixture throws
+before the first page; nothing applies `0002` without the extension; the backoff schedule and
+`IndexLoop.start/stop` are untested.
+
+**Audit fixes (2026-10-04, same session).** All nine
+bugs fixed test-first; the three contract gaps closed additively in the SDK:
+
+- 1 and 3: tombstone, restricted stub and `markSkipped` clear `indexed_hash`/`index_version`;
+  `markSkipped` deletes the old chunks in the same transaction.
+- 2: the linter is shown a copy with `secretlint-disable|enable` blanked (same length); the
+  preset has no switch for its filter-comments rule (`disabled: true` on it did not work).
+- 4: `knowledge-worker` starts the loop before the Redis subscription and does not await it
+  (`wake.ts`); a wake-up during a batch is remembered; the loop's wait timer is no longer
+  unref'd.
+- 5: the worker check has a 2 s Redis timeout and concurrent status calls share one
+  computation. `AiStatusService.checkRunner` has the same hang; reported to the agents session.
+- 6: any throw in a knowledge run records a failed run; the harness also turns a failing
+  `selectedContainers`/`upsertContainers` into a recorded error.
+- 7: `text_hash` is sha256 of prefix + text (what is embedded).
+- 8: a second consecutive empty listing is believed; the first is remembered in
+  `knowledge_state` under `empty-listing:<connector>:<container>`. No migration.
+- 9: `selectedContainers(mode)` orders by the stamp of that mode; `markVisited` stamps every
+  finished container; only a batch with a checkpoint stamps `last_polled_at`.
+- Contract: `prunableKinds` on the connector and `kinds` on the prune; `signal` and `deadline`
+  on `fetchChanges`/`reconcile`/`listDocumentIds`, with the scheduler aborting on `close()`;
+  `notes` on a batch, carried to the run record. A thrown 401/403 still sets `authFailed`:
+  a connector reports a soft 403 as a note instead of throwing.
+- Tests added for: an incomplete listing (fixture now fails after its first page), `0002`
+  against a database without the extension, the 4^n backoff, `IndexLoop` start/stop/kick.
+
+- Docs: the compose `knowledge-worker` block loads the config and mounts ADC; `local-development.md`
+  says how to switch the layer on, how to run the worker on the host, and what to do about the
+  Alpine-to-Debian collation change; the worker infra brief names every env var and
+  `knowledge.enabled`.
+
+Still open: the deferred minors listed above; surrogate pairs at hard cuts; `enableIDScanRule`.
+The agents session bounded the same Redis wait in `AiStatusService` in `bb650d3`.
 
 **Next:** the K1 plan (GitHub text: pull requests, issues, docs; deterministic linking;
 entity Knowledge tab; the connector role gate), written against the K0 code. Its hands-on

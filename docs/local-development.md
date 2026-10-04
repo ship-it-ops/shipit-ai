@@ -243,9 +243,25 @@ pgvector is not a trusted extension, so a superuser creates it once:
 infra bootstrap step on GKE. The compose `postgres` service runs a pgvector
 image and creates the extension on a fresh volume; `pnpm start:infra` runs the
 bootstrap before migrating so an older volume catches up. `GET /api/knowledge/status`
-reports what is missing. `docker compose --profile knowledge up` also starts
-`knowledge-worker`, which needs `GOOGLE_CLOUD_PROJECT` and Application Default
-Credentials to embed; without the worker, documents wait as `pending`.
+reports what is missing.
+
+The layer is off in the committed `shipit.config.yaml` until its first release. To work on
+it, set `knowledge: { enabled: true }` in your `shipit.config.local.yaml` (the example file
+has it) and run the worker on the host, which reads that file:
+
+```bash
+GOOGLE_CLOUD_PROJECT=<project> pnpm --filter @shipit-ai/knowledge-worker dev
+```
+
+It needs Application Default Credentials (`gcloud auth application-default login`) to embed;
+without a worker, documents wait as `pending`. `docker compose --profile knowledge up` runs
+the same worker in a container, but that one reads the committed config and so idles until
+`knowledge.enabled` is true there.
+
+If your `postgres_data` volume was created by the earlier `postgres:17-alpine` image, the
+pgvector image (Debian) sorts text with a different collation library, and indexes on text
+columns built under the old one can return wrong results. Either start clean
+(`pnpm stop:clean`, which deletes the local database) or run `REINDEX DATABASE shipit;` once.
 
 Run the Postgres-backed tests with the compose database up:
 

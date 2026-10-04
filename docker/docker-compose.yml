@@ -118,22 +118,35 @@ services:
         condition: service_healthy
 
   # Chunks and embeds knowledge documents. Needs Postgres (with pgvector) and
-  # Vertex AI credentials: mount ADC and set GOOGLE_CLOUD_PROJECT, or leave it
-  # out of `up` and let documents wait as `pending`. Off by default:
-  # `docker compose --profile knowledge up` adds it.
+  # Vertex AI: GOOGLE_CLOUD_PROJECT and your application-default credentials
+  # (`gcloud auth application-default login`). The gcloud directory is mounted,
+  # not the credentials file, for the reason given on agent-runner below.
+  # Off by default: `docker compose --profile knowledge up` adds it. It reads
+  # the committed shipit.config.yaml, where knowledge.enabled is false until
+  # the first release, so in this container it idles until that is true; for
+  # local work run it on the host instead
+  # (`pnpm --filter @shipit-ai/knowledge-worker dev`), which reads your
+  # shipit.config.local.yaml. Without a worker, documents wait as `pending`.
   knowledge-worker:
     build:
       context: ..
       dockerfile: packages/knowledge-worker/Dockerfile
     volumes:
       - ../shipit.config.yaml:/app/shipit.config.yaml:ro
+      - ${HOME}/.config/gcloud:/gcloud:ro
     environment:
       REDIS_URL: redis://redis:6379
       NEO4J_URI: bolt://neo4j:7687
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them, though the worker opens no Neo4j or HTTP connection.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
       DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
     depends_on:
       redis:
         condition: service_healthy

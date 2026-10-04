@@ -14,9 +14,14 @@ You are working in the infra repo. Read its `docs/agent/MANIFEST.md`, `status/` 
   repo (same shape as `core-writer`; CI builds it in the docker matrix). Add it to
   `build-images.yml`.
 - It reads the mounted `shipit.config.yaml` like every other backend service and needs
-  these env vars: `DATABASE_URL` (ESO, the `shipit_app` role), `REDIS_URL`, `NEO4J_URI` and
-  `NEO4J_PASSWORD` (config placeholders; no Neo4j connection is opened yet),
-  `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`.
+  these env vars: `DATABASE_URL` (ESO, the `shipit_app` role), `REDIS_URL`,
+  `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION=global`, and the placeholders the config
+  file has no fallback for, exactly as `core-writer` gets them: `NEO4J_URI`, `NEO4J_USER`,
+  `NEO4J_PASSWORD`, `SHIPIT_API_URL`, `SHIPIT_WEB_ORIGIN` (no Neo4j connection is opened
+  yet; the loader refuses to start with any of them unset).
+- **`knowledge.enabled` must be `true` in the mounted config.** The committed
+  `shipit.config.yaml` ships it `false` until the first release; with it off the worker
+  logs `knowledge.enabled is false; idling` and never heartbeats, by design.
 - It calls Vertex AI embeddings (`gemini-embedding-2`) with Application Default
   Credentials: run it as KSA `shipit/knowledge-worker`, bound to the GSA with
   `roles/aiplatform.user` from the pgvector brief.
@@ -28,13 +33,16 @@ You are working in the infra repo. Read its `docs/agent/MANIFEST.md`, `status/` 
 - No readiness probe is needed; liveness can be a process check. The app's
   `/api/knowledge/status` reports a `worker` check from a Redis heartbeat
   (`shipit-knowledge-worker-heartbeat`, written every 15 s, 60 s TTL).
-- Start order does not matter: with the schema or the extension missing the pod exits
-  non-zero and restarts; with no documents it idles and heartbeats.
+- Start order does not matter: with the schema or the extension missing, `DATABASE_URL` or
+  `GOOGLE_CLOUD_PROJECT` empty, or `knowledge.embedding.dimensions` not 768, the pod exits
+  non-zero and restarts; with no documents it idles and heartbeats. Redis being down at
+  boot does not stop it: it polls Postgres and picks the wake-ups up when Redis returns.
 - Egress: Google APIs only. It does not call Slack, Atlassian or GitHub.
 
 ## Done when
 
-1. The pod is `Running` and `kubectl logs` shows `knowledge-worker: indexing with …`.
+1. With `knowledge.enabled: true` in the mounted config, the pod is `Running` and
+   `kubectl logs` shows `knowledge-worker: indexing with …`.
 2. `GET /api/knowledge/status` on portal-demo reports `worker: ok`.
 3. The image is produced by `build-images.yml` and deployed by `deploy.yml` with the other
    services.

@@ -283,6 +283,25 @@ export interface KnowledgeSink {
   container, run `reconcile` when the connector has one, then `listDocumentIds` and
   `pruneMissing`.
 
+Amendments from the K0 audit (2026-10-04); the code in
+`packages/connector-sdk/src/knowledge/types.ts` is the contract:
+
+- `fetchChanges`, `reconcile` and `listDocumentIds` receive `signal` (aborted at shutdown)
+  and `deadline` (when the run's budget ends), so a connector told to wait past the
+  budget can end its iteration instead.
+- A connector may declare `prunableKinds`: the kinds its id listing covers. Only those are
+  pruned; an empty array means no listing and no prune. GitHub declares
+  `['github_issue']`.
+- A `ChangeBatch` may carry `notes`: things an admin should see that are not failures.
+  They land on the run record and the run stays successful.
+- `selectedContainers(mode)` returns the container a run of that mode visited longest ago
+  first, and `markVisited` stamps every finished container, changes or not, so a run that
+  spends its budget is followed by one that starts where it stopped.
+- One empty id listing over a populated container prunes nothing; a second consecutive
+  one is believed. A container emptied at the source is therefore cleared at the second
+  reconcile, two days at most.
+- A listing the budget cuts short prunes nothing and the container is retried first.
+
 The SDK stays free of storage: `KnowledgeSink` is an interface, implemented with Postgres
 in `@shipit-ai/knowledge`, the same way `EventBusClient` is implemented outside the SDK.
 
@@ -551,7 +570,9 @@ For each document:
    `indexed_hash` and `index_version` is current, only the links are refreshed.
 2. **Chunk** (below).
 3. **Embed** every chunk whose `text_hash` does not match a chunk the document already
-   has. A thread that gained one reply re-embeds one chunk.
+   has. A thread that gained one reply re-embeds one chunk. `text_hash` covers the prefix
+   and the text, because both are embedded: a rename re-embeds, and the same text under
+   two headings gets two vectors.
 4. **Link** entities and references (§Entity linking).
 5. **Commit** in one transaction: replace the chunks, links and references, set
    `indexed_hash` and `index_status = 'indexed'`.
