@@ -67,6 +67,23 @@ https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash.
   `providerOptions` block**, and its tests must assert the stored transcript still holds
   `thoughtSignature`, because the SDK will not fail when it is missing.
 
+### Further findings while building the runner (2026-10-03, `ai@7.0.127`, Gemini)
+
+- **The SDK answers some tool calls itself.** For a call to a tool that was not declared,
+  `generateText` returns the call in `toolCalls` and also appends a `tool` message with an
+  `error-text` result (`AI_NoSuchToolError`). A runner that stores `responseMessages` as-is
+  lets that call bypass its gateway and audit. The model client keeps only the assistant
+  message and sends every call to the gateway.
+- **`toolChoice: 'none'` removes the tools from the request** for the Google provider
+  (`tools` and `toolConfig` absent). Gemini, with earlier tool calls in the transcript, then
+  invents tool names: 5 of 5 calls did. Removing the tools has the same effect.
+- **Asking for a final answer:** with the tools still declared, a note in the system
+  instructions worked on a short transcript (5/5) but failed on a real 14-message one (0/4
+  answered). The same note as a trailing user message worked 4/4 on that transcript. The
+  runner's last step uses both, with the tools declared.
+- **Real runs:** the Graph assistant on `gemini-3.8-flash` answered catalog questions in 3 to
+  8 steps against the local graph, 5k to 30k input tokens per run.
+
 ## Prevention
 
 The runner plan adds an opt-in live suite gated on `VERTEX_TEST_PROJECT` that repeats these

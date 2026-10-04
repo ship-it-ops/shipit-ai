@@ -21,14 +21,14 @@ agents, tool permissions, triggers and LangGraph-style workflows. The design, tw
 implementation plans, and the code for both plans (except the foundation plan's Task 9
 spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 
-| Stage                                      | State                                                                            |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| Deep dive, owner decisions, design spec    | Done.                                                                            |
-| Infra brief                                | Worked in infra PR #91 (open 2026-10-03). Vertex APIs already live.              |
-| Plan: AI nav (Milestone 0)                 | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
-| Plan: agents foundation (M1, part 1)       | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
-| Foundation Task 9 (Vertex probe)           | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
-| Plan: runner, model layer, UI (M1, part 2) | **Not written, on purpose.** Waits for the Task 9 findings.                      |
+| Stage                                    | State                                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| Deep dive, owner decisions, design spec  | Done.                                                                            |
+| Infra brief                              | Worked in infra PR #91 (open 2026-10-03). Vertex APIs already live.              |
+| Plan: AI nav (Milestone 0)               | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
+| Plan: agents foundation (M1, part 1)     | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
+| Foundation Task 9 (Vertex probe)         | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
+| Plan: agent runner (M1, part 2, backend) | Written, code proven; awaiting review and the K0 rebase (see below).             |
 
 ## Waiting on the owner
 
@@ -48,6 +48,26 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 Owner approvals on 2026-10-02: both plans ("good to go"); native execution; commit at each
 plan commit step and push after each commit on `ai-agents-design`. Pushing elsewhere,
 opening a PR or merging still needs its own approval.
+
+## The agent-runner plan (2026-10-03)
+
+`docs/superpowers/plans/2026-10-03-agent-runner.md`: 11 tasks, Milestone 1's backend (runner
+process, Vertex model client, graph read tools, run loop, runs API, live stream, built-in
+Graph assistant). Every task was built and tested in a scratch worktree, replayed in order into
+a clean one with each task's checks, and the plan text was then re-applied from scratch and
+compared byte-for-byte with that replay. The UI half of Milestone 1 is the next plan.
+
+**It must be rebased before executing.** The knowledge K0 session (`knowledge-k0-foundations`
+status note) is implementing in this same tree and branch and touches the same shared files.
+Agreed with it: K0 keeps migration `0002`; the runs migration becomes `0003_runs.sql` with
+`EXPECTED_SCHEMA_VERSION` `'0003'`. It will message when its commits (13 tasks; its api-server
+wiring lands in Task 12) are on the branch. Rebase then: apply the plan to `2186875`, merge onto
+the K0 head, resolve the shared files, re-run every task's checks.
+
+Found while building it, fixed in `8825bd3`: the mcp-server entry started its server whenever the
+process script ended in `index.js`, so every api-server process also ran an MCP server on port
+3002, and `pnpm start:mcp` (`tsx src/index.ts`) ran none. It now compares real paths, and the
+api-server imports `@shipit-ai/mcp-server/metadata`.
 
 ## Standing rules that bit or nearly bit this session
 
