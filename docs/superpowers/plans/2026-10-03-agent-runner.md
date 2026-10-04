@@ -12,7 +12,7 @@
 
 **How this plan was checked.** Every code block was first written and run in a scratch worktree, then replayed into a clean one task by task: after each task the workspace typechecked and that task's suites passed, and each block below is the diff git computed between consecutive task states. On this machine, against Docker Postgres 17 and Redis 7: the whole workspace gate (`pnpm typecheck && pnpm test && pnpm lint && pnpm format:check`) and every Postgres and Redis integration suite passed; the live suite passed against `gemini-3.8-flash` and `gemini-3.1-pro-preview` on Vertex; the real runner process, started from its build, answered questions through the real graph tools, through the HTTP API and its live stream; the agent-runner image built. Claude was not run: the project has no Claude quota yet (see the probe note).
 
-**Base, and a rebase before executing.** The diffs below are against `2186875` (branch `ai-agents-design` on 2026-10-03). The knowledge-layer K0 work (`docs/superpowers/plans/2026-10-03-knowledge-foundations.md`, another session, same branch) also adds migration `0002` and edits several of the same files (compose, CI, root `vitest.config.ts` and `package.json`, the shared config schema, the api-server test config, `server.ts` and `index.ts`, where it introduces a shared Postgres pool). Agreed with that session on 2026-10-03: K0 keeps `0002_knowledge.sql`; this plan's migration becomes **`0003_runs.sql`** and `EXPECTED_SCHEMA_VERSION` **`'0003'`**. Once K0's commits are on the branch, regenerate this plan's diffs on top of them (apply this plan to `2186875`, then merge onto the K0 head and resolve the shared files), and re-run every task's checks. K0 also adds `.superpowers/` to `.prettierignore`.
+**Base.** The diffs below are against `52650e1`, the head of `ai-agents-design` once the knowledge layer's K0 work (`docs/superpowers/plans/2026-10-03-knowledge-foundations.md`, another session, same branch) had landed. This plan was first written against `2186875` and rebased onto K0 on 2026-10-03, as agreed with that session: K0 owns `0002_knowledge.sql`, so this plan's migration is **`0003_runs.sql`** and `EXPECTED_SCHEMA_VERSION` is **`'0003'`**; the moved Postgres test harness keeps K0's `public` schema on the search path (pgvector lives there); and the api-server now shares K0's Postgres pool, which can be open for the knowledge layer alone, so the run queue, the run-event subscriber and the built-in agent seed also check `ai.enabled`. Every task's checks were re-run on the rebased commits, and the expected counts below are from that run.
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
 - **Verify before each commit:** `pnpm typecheck && pnpm test && pnpm lint && pnpm format:check`. Run `npx prettier --write <files>` on what you touch.
 - **Commits:** the owner approved committing at each plan commit step and pushing after each commit on `ai-agents-design`. No `Co-Authored-By` or other AI-attribution trailer. Pushing anywhere else, a PR or a merge each needs its own approval.
 - **Never commit `packages/web-ui/next-env.d.ts`** (test runs rewrite it).
-- **Postgres-backed suites** are `*.integration.test.ts`, gated on `DATABASE_TEST_URL`, run with `--no-file-parallelism`. Redis-backed ones also need `REDIS_TEST_URL`. Local values: `DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit`, `REDIS_TEST_URL=redis://localhost:6379`. Docker must be running (`pnpm start:infra`).
+- **Postgres-backed suites** are `*.integration.test.ts`, gated on `DATABASE_TEST_URL`, run with `--no-file-parallelism`. Redis-backed ones also need `REDIS_TEST_URL`. Local values: `DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit`, `REDIS_TEST_URL=redis://localhost:6379`. Docker must be running (`pnpm start:infra`). The knowledge migration needs the pgvector extension: on a local database created before K0, run `DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:bootstrap` once (`pnpm start:infra` does it).
 - **New workspace dependency in three places** (scar `docker-builder-copies-fixed-package-set`): the consuming package's Dockerfile `COPY` list, its vitest alias list, the lockfile.
 - **BullMQ:** no colon in a queue name or job id (scar `bullmq-5-forbids-colons-in-queue-names-and-job-ids`); every Queue, Worker and ioredis client gets an `error` listener (scar `redis-memory-limit-below-dataset-oomkills`).
 - **The transcript is stored verbatim.** `run_messages.content` is the AI SDK message object as the model layer returned it, `providerOptions` included. Never rebuild or edit a stored message: dropping Gemini's `thoughtSignature` does not fail, the SDK silently replays without the model's reasoning (probe finding).
@@ -50,7 +50,7 @@ Also checked by hand in Task 11: a stopped Postgres or Redis does not crash eith
 | Path                                                    | Responsibility                                                                                        |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `packages/mcp-server/src/tools/registry.ts`             | The 8 graph tools as in-process functions, captured from their `register*` functions.                 |
-| `db/migrations/0002_runs.sql`                           | `runs` (with the lease), `run_messages`, `tool_calls`.                                                |
+| `db/migrations/0003_runs.sql`                           | `runs` (with the lease), `run_messages`, `tool_calls`.                                                |
 | `packages/agents/src/run-store.ts`                      | `RunStore`: create, claim and lease, messages, steps, tool calls, finish, chat turns, cancel, sweeps. |
 | `packages/agents/src/tools.ts`                          | `ToolDescriptor`, grant resolution with the four ceilings, model-facing tool names.                   |
 | `packages/agents/src/queues.ts`, `run-queue.ts`         | Queue, channel and key names; `RunQueue` (enqueue) shared by api-server and runner.                   |
@@ -445,7 +445,7 @@ Run:
 pnpm --filter @shipit-ai/mcp-server exec vitest run && pnpm --filter @shipit-ai/mcp-server build
 ```
 
-Expected: PASS — 13 files, 105 tests (registry 5, metadata 15); `dist/tools/registry.js` exists.
+Expected: PASS — 14 files, 110 tests (registry 5, metadata 15); `dist/tools/registry.js` exists.
 
 - [ ] **Step 5: Commit**
 
@@ -465,7 +465,7 @@ Runs, their transcripts and their tool calls go in Postgres. A run is worked by 
 
 **Files:**
 
-- Create: `db/migrations/0002_runs.sql`
+- Create: `db/migrations/0003_runs.sql`
 - Modify: `packages/agents/package.json`
 - Test: `packages/agents/src/__tests__/run-store.integration.test.ts` (create)
 - Test: `packages/agents/src/__tests__/test-db.ts` (modify)
@@ -481,7 +481,7 @@ Runs, their transcripts and their tool calls go in Postgres. A run is worked by 
   - `class RunStore { constructor(db: Db) }` with `create(input: CreateRunInput): Promise<RunRecord>`, `get(id)`, `list({ agentId?, status?, limit?, offset? })`, `claim(id, owner, leaseSeconds)`, `renewLease(id, owner, leaseSeconds): Promise<{ held; cancelRequested }>`, `expiredLeases(): Promise<string[]>`, `appendMessages(id, messages, owner?)`, `listMessages(id, { afterSeq? })`, `recordStep(id, { input, output })`, `addWarning(id, text)`, `finish(id, outcome, owner?)`, `waitForInput(id, owner?)`, `addUserMessage(id, message)`, `requestCancel(id)`, `startToolCall(input)`, `finishToolCall(id, result)`, `listToolCalls(runId)`, `tokensSince(agentId, since)`, `failStalled()`, `closeIdleChats(idleMinutes)`.
   - Errors `RunNotFoundError`, `RunNotWaitingError` (with `status`), `RunLeaseLostError`; constants `RUN_STATUSES`, `TERMINAL_RUN_STATUSES`; types `RunRecord`, `RunMessageRecord`, `StoredMessage`, `ToolCallRecord`, `StartToolCallInput`, `RunStatus`, `RunMode`, `RunWritePolicy`, `RunTriggerKind`, `RunError`, `RunErrorCode`, `ToolCallStatus`, `CreateRunInput`, `ListRunsOptions`.
   - `@shipit-ai/agents/testing`: `createTestDatabase()`, `createMigratedTestDatabase()`, `DATABASE_TEST_URL`, `MIGRATIONS_DIR`, `TestDatabase`.
-  - `EXPECTED_SCHEMA_VERSION = '0002'`.
+  - `EXPECTED_SCHEMA_VERSION = '0003'`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -909,7 +909,14 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     await admin.end();
   }
 
-  const pool = createPool({ connectionString: DATABASE_TEST_URL, max: 4, searchPath: schema });
+  // `public` stays on the search_path: db/migrations/ includes the knowledge
+  // layer's tables, whose halfvec columns and operators come from the pgvector
+  // extension installed in `public` (created by `pnpm db:bootstrap`).
+  const pool = createPool({
+    connectionString: DATABASE_TEST_URL,
+    max: 4,
+    searchPath: `${schema},public`,
+  });
   return {
     db: createDb(pool),
     async drop() {
@@ -936,10 +943,10 @@ export async function createMigratedTestDatabase(): Promise<TestDatabase> {
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/agents/src/__tests__/test-db.ts b/packages/agents/src/__tests__/test-db.ts
-index 9494e02..337809b 100644
+index 200cd36..337809b 100644
 --- a/packages/agents/src/__tests__/test-db.ts
 +++ b/packages/agents/src/__tests__/test-db.ts
-@@ -1,46 +1,2 @@
+@@ -1,53 +1,2 @@
 -// Shared harness for the Postgres-backed suites. Each call creates a private
 -// schema and a pool whose search_path points at it, so suites cannot see each
 -// other's tables. The suites still run with --no-file-parallelism (see the scar
@@ -974,7 +981,14 @@ index 9494e02..337809b 100644
 -    await admin.end();
 -  }
 -
--  const pool = createPool({ connectionString: DATABASE_TEST_URL, max: 4, searchPath: schema });
+-  // `public` stays on the search_path: db/migrations/ includes the knowledge
+-  // layer's tables, whose halfvec columns and operators come from the pgvector
+-  // extension installed in `public` (created by `pnpm db:bootstrap`).
+-  const pool = createPool({
+-    connectionString: DATABASE_TEST_URL,
+-    max: 4,
+-    searchPath: `${schema},public`,
+-  });
 -  return {
 -    db: createDb(pool),
 -    async drop() {
@@ -1024,15 +1038,15 @@ DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
 
 Expected: FAIL — cannot resolve `../run-store.js`.
 
-Add the migration. The schema-version guard should now fail, because the newest file is `0002` and the constant still says `0001`:
+Add the migration. The schema-version guard should now fail, because the newest file is `0003` and the constant still says `0002`:
 
 - [ ] **Step 4: Implement**
 
-Create `db/migrations/0002_runs.sql`:
+Create `db/migrations/0003_runs.sql`:
 
 <!-- prettier-ignore-start -->
 ```sql
--- 0002_runs.sql: agent runs, their transcripts, and the tool calls they make.
+-- 0003_runs.sql: agent runs, their transcripts, and the tool calls they make.
 --
 -- Applied by the migration step, never by the app at boot. Forward-only.
 
@@ -1151,15 +1165,15 @@ Expected: FAIL — `ends at EXPECTED_SCHEMA_VERSION, so the code and the schema 
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/agents/src/schema-version.ts b/packages/agents/src/schema-version.ts
-index 8462a8d..d81329c 100644
+index d81329c..4dca316 100644
 --- a/packages/agents/src/schema-version.ts
 +++ b/packages/agents/src/schema-version.ts
 @@ -3,4 +3,4 @@
  // schema_migrations at boot and switch agent features off, without crashing,
  // when the database is behind. Bump it in the same change that adds a file to
  // db/migrations/.
--export const EXPECTED_SCHEMA_VERSION = '0001';
-+export const EXPECTED_SCHEMA_VERSION = '0002';
+-export const EXPECTED_SCHEMA_VERSION = '0002';
++export const EXPECTED_SCHEMA_VERSION = '0003';
 ```
 <!-- prettier-ignore-end -->
 
@@ -1937,7 +1951,7 @@ Expected: PASS — unit: 47 passed, 44 skipped; integration: 44 passed (run stor
 npx prettier --write packages/agents/package.json packages/agents/src/__tests__/run-store.integration.test.ts packages/agents/src/__tests__/test-db.ts packages/agents/src/index.ts packages/agents/src/run-store.ts packages/agents/src/schema-version.ts packages/agents/src/testing.ts
 pnpm typecheck && pnpm test && pnpm lint && pnpm format:check
 git checkout -- packages/web-ui/next-env.d.ts
-git add db/migrations/0002_runs.sql packages/agents/package.json packages/agents/src/__tests__/run-store.integration.test.ts packages/agents/src/__tests__/test-db.ts packages/agents/src/index.ts packages/agents/src/run-store.ts packages/agents/src/schema-version.ts packages/agents/src/testing.ts
+git add db/migrations/0003_runs.sql packages/agents/package.json packages/agents/src/__tests__/run-store.integration.test.ts packages/agents/src/__tests__/test-db.ts packages/agents/src/index.ts packages/agents/src/run-store.ts packages/agents/src/schema-version.ts packages/agents/src/testing.ts
 git commit -m "agents: runs, transcripts and tool calls in Postgres, with run leases"
 ```
 
@@ -2554,7 +2568,7 @@ export default defineConfig({
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/vitest.config.ts b/vitest.config.ts
-index 6c53819..9156fb0 100644
+index 03408d4..03d11f6 100644
 --- a/vitest.config.ts
 +++ b/vitest.config.ts
 @@ -9,6 +9,7 @@ export default defineConfig({
@@ -2562,9 +2576,9 @@ index 6c53819..9156fb0 100644
        'packages/shared',
        'packages/agents',
 +      'packages/agent-runner',
+       'packages/knowledge',
+       'packages/knowledge-worker',
        'packages/event-bus',
-       'packages/core-writer',
-       'packages/connector-sdk',
 ```
 <!-- prettier-ignore-end -->
 
@@ -5022,10 +5036,10 @@ Expected: FAIL — 3 tests (the defaults, the partial block, and the new rejecti
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/shared/src/config/schema.ts b/packages/shared/src/config/schema.ts
-index 7695721..ef16bd0 100644
+index 1d21eae..aec40d9 100644
 --- a/packages/shared/src/config/schema.ts
 +++ b/packages/shared/src/config/schema.ts
-@@ -688,6 +688,8 @@ const AI_LIMIT_DEFAULTS = {
+@@ -693,6 +693,8 @@ const AI_LIMIT_DEFAULTS = {
    maxTokens: 400_000,
    timeoutSeconds: 900,
    dailyTokens: 4_000_000,
@@ -5034,7 +5048,7 @@ index 7695721..ef16bd0 100644
  };
  
  const aiConfigSchema = z.object({
-@@ -712,6 +714,13 @@ const aiConfigSchema = z.object({
+@@ -717,6 +719,13 @@ const aiConfigSchema = z.object({
    models: z.array(aiModelSchema).default([]),
    // Key of the model a new agent starts with. Empty means "no default".
    defaultModel: z.string().default(''),
@@ -5048,7 +5062,7 @@ index 7695721..ef16bd0 100644
    // Instance ceilings. An agent's own limits may be lower, never higher.
    limits: z
      .object({
-@@ -719,6 +728,11 @@ const aiConfigSchema = z.object({
+@@ -724,6 +733,11 @@ const aiConfigSchema = z.object({
        maxTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxTokens),
        timeoutSeconds: z.number().int().positive().default(AI_LIMIT_DEFAULTS.timeoutSeconds),
        dailyTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.dailyTokens),
@@ -5060,14 +5074,14 @@ index 7695721..ef16bd0 100644
      })
      .default(AI_LIMIT_DEFAULTS),
  });
-@@ -944,6 +958,7 @@ const baseConfigSchema = z.object({
+@@ -1033,6 +1047,7 @@ const baseConfigSchema = z.object({
      vertex: { project: '', location: 'global' },
      models: [],
      defaultModel: '',
 +    runner: { concurrency: 4 },
      limits: AI_LIMIT_DEFAULTS,
    }),
- });
+   knowledge: knowledgeConfigSchema.default({
 ```
 <!-- prettier-ignore-end -->
 
@@ -5076,7 +5090,7 @@ index 7695721..ef16bd0 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/__tests__/test-config.ts b/packages/api-server/src/__tests__/test-config.ts
-index bb583a1..a98e2fe 100644
+index 9d32da8..7fcf8e0 100644
 --- a/packages/api-server/src/__tests__/test-config.ts
 +++ b/packages/api-server/src/__tests__/test-config.ts
 @@ -135,7 +135,15 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
@@ -5094,8 +5108,8 @@ index bb583a1..a98e2fe 100644
 +        chatIdleMinutes: 60,
 +      },
      },
-     secrets: {},
-     ...overrides,
+     knowledge: {
+       enabled: true,
 ```
 <!-- prettier-ignore-end -->
 
@@ -5107,7 +5121,7 @@ Run:
 pnpm --filter @shipit-ai/shared exec vitest run && pnpm --filter @shipit-ai/shared build && pnpm --filter @shipit-ai/api-server typecheck
 ```
 
-Expected: PASS — shared 152 tests; the api-server fixture typechecks with the new keys.
+Expected: PASS — shared 155 tests; the api-server fixture typechecks with the new keys.
 
 - [ ] **Step 5: Write the failing tests**
 
@@ -5796,12 +5810,12 @@ CMD ["node", "dist/main.js"]
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/docker/docker-compose.yml b/docker/docker-compose.yml
-index 22dd975..bc5ef5d 100644
+index 0b7cdf8..322cb62 100644
 --- a/docker/docker-compose.yml
 +++ b/docker/docker-compose.yml
-@@ -109,6 +109,32 @@ services:
-       redis:
-         condition: service_healthy
+@@ -141,6 +141,32 @@ services:
+         condition: service_completed_successfully
+     profiles: ['knowledge']
  
 +  # Works the agent runs the api-server queues: model calls on Vertex AI and
 +  # the tools each agent is granted. Locally it authenticates to Vertex with
@@ -5840,12 +5854,12 @@ index 22dd975..bc5ef5d 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
-index 9d59748..c5dc4a5 100644
+index e65c22a..2d10ccf 100644
 --- a/.github/workflows/ci.yml
 +++ b/.github/workflows/ci.yml
-@@ -162,6 +162,9 @@ jobs:
-       - name: agents integration (Postgres)
-         run: pnpm --filter @shipit-ai/agents run test:integration
+@@ -170,6 +170,9 @@ jobs:
+       - name: knowledge integration (Postgres + pgvector)
+         run: pnpm --filter @shipit-ai/knowledge run test:integration
  
 +      - name: agent-runner integration (Postgres, Redis)
 +        run: pnpm --filter @shipit-ai/agent-runner run test:integration
@@ -5853,10 +5867,10 @@ index 9d59748..c5dc4a5 100644
    build:
      name: Build
      runs-on: ubuntu-latest
-@@ -193,6 +196,8 @@ jobs:
-             dockerfile: packages/core-writer/Dockerfile
-           - service: mcp-server
+@@ -203,6 +206,8 @@ jobs:
              dockerfile: packages/mcp-server/Dockerfile
+           - service: knowledge-worker
+             dockerfile: packages/knowledge-worker/Dockerfile
 +          - service: agent-runner
 +            dockerfile: packages/agent-runner/Dockerfile
      steps:
@@ -6376,7 +6390,7 @@ describe.skipIf(!DATABASE_TEST_URL)('runs routes — Postgres integration', () =
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/vitest.config.ts b/packages/api-server/vitest.config.ts
-index b4a376a..ec32a8f 100644
+index 834283e..bb29ed4 100644
 --- a/packages/api-server/vitest.config.ts
 +++ b/packages/api-server/vitest.config.ts
 @@ -21,6 +21,7 @@ export default defineConfig({
@@ -6385,8 +6399,8 @@ index b4a376a..ec32a8f 100644
        '@shipit-ai/shared': r('shared/src/index.ts'),
 +      '@shipit-ai/agents/testing': r('agents/src/testing.ts'),
        '@shipit-ai/agents': r('agents/src/index.ts'),
+       '@shipit-ai/knowledge': r('knowledge/src/index.ts'),
        '@shipit-ai/event-bus': r('event-bus/src/index.ts'),
-       '@shipit-ai/connector-sdk': r('connector-sdk/src/index.ts'),
 ```
 <!-- prettier-ignore-end -->
 
@@ -6791,32 +6805,32 @@ export default runsRoutes;
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/server.ts b/packages/api-server/src/server.ts
-index d572f52..1c2580b 100644
+index 6ef417c..c884c06 100644
 --- a/packages/api-server/src/server.ts
 +++ b/packages/api-server/src/server.ts
-@@ -45,7 +45,8 @@ import type { SettingsService } from './services/settings-service.js';
- import feedbackRoutes from './routes/feedback.js';
+@@ -46,7 +46,8 @@ import feedbackRoutes from './routes/feedback.js';
  import aiRoutes from './routes/ai.js';
+ import knowledgeRoutes from './routes/knowledge.js';
  import agentsRoutes from './routes/agents.js';
 -import type { AgentStore } from '@shipit-ai/agents';
 +import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
 +import type { AgentStore, RunStore } from '@shipit-ai/agents';
  import type { AiStatusService } from './services/ai/ai-status-service.js';
+ import type { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
  import type { FeedbackService } from './services/feedback-service.js';
- import { envSecretsView, type ResolvedSecrets } from './secrets/index.js';
-@@ -117,6 +118,9 @@ export interface CreateServerOptions {
-   agentStore?: AgentStore;
-   // Live prerequisite checks for agent features. Optional for the same reason.
+@@ -121,6 +122,9 @@ export interface CreateServerOptions {
    aiStatus?: AiStatusService;
+   // Live prerequisite checks for the knowledge layer. Optional for the same reason.
+   knowledgeStatus?: KnowledgeStatusService;
 +  // Agent runs and the queue the runner works from. Optional for the same reason.
 +  runStore?: RunStore;
 +  runQueue?: RunEnqueuer;
  }
  
  declare module 'fastify' {
-@@ -416,6 +420,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
-   if (opts.aiStatus) {
-     server.decorate('aiStatus', opts.aiStatus);
+@@ -423,6 +427,12 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
+   if (opts.knowledgeStatus) {
+     server.decorate('knowledgeStatus', opts.knowledgeStatus);
    }
 +  if (opts.runStore) {
 +    server.decorate('runStore', opts.runStore);
@@ -6827,9 +6841,9 @@ index d572f52..1c2580b 100644
  
    // Register routes
    await server.register(healthRoutes, { prefix: '/api' });
-@@ -463,6 +473,8 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
-   // definitions. Both answer 503 AI_UNAVAILABLE until a database is wired.
+@@ -471,6 +481,8 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
    await server.register(aiRoutes, { prefix: '/api/ai' });
+   await server.register(knowledgeRoutes, { prefix: '/api/knowledge' });
    await server.register(agentsRoutes, { prefix: '/api/agents' });
 +  // Runs: start one (POST /api/agents/:id/runs), list and read them, chat, cancel.
 +  await server.register(runsRoutes, { prefix: '/api' });
@@ -6870,7 +6884,7 @@ index b8c7eba..c7dc0ea 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/index.ts b/packages/api-server/src/index.ts
-index 5cbba10..be3bf29 100644
+index 1ad7ed0..e51938b 100644
 --- a/packages/api-server/src/index.ts
 +++ b/packages/api-server/src/index.ts
 @@ -28,7 +28,14 @@ import { OidcSettingsService } from './services/auth/oidc-settings-service.js';
@@ -6886,32 +6900,33 @@ index 5cbba10..be3bf29 100644
 +  createPool,
 +  type Db,
 +} from '@shipit-ai/agents';
+ import { KnowledgeStore } from '@shipit-ai/knowledge';
  import { AiStatusService } from './services/ai/ai-status-service.js';
- import {
-   applyDerivedAuthConfig,
-@@ -437,6 +444,12 @@ async function main() {
+ import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+@@ -443,6 +450,13 @@ async function main() {
        ? createPool({ connectionString: config.ai.database.url })
        : null;
    const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
 +  // Runs are queued for the agent runner on Redis; with no Redis there is no
 +  // queue, and the run routes answer 503 instead of creating runs nobody works.
++  // The pool may be open for the knowledge layer alone, so check ai.enabled too.
 +  const runQueue =
-+    agentDb && config.backend.redis.url
++    config.ai.enabled && agentDb && config.backend.redis.url
 +      ? new RunQueue({ redisUrl: config.backend.redis.url })
 +      : undefined;
    const aiStatus = new AiStatusService({
      config: config.ai,
      db: agentDb,
-@@ -479,6 +492,8 @@ async function main() {
+@@ -536,6 +550,8 @@ async function main() {
      redis: runStoreRedis ?? undefined,
      resolved,
      agentStore: agentDb ? new AgentStore(agentDb) : undefined,
 +    runStore: agentDb ? new RunStore(agentDb) : undefined,
 +    runQueue,
      aiStatus,
+     knowledgeStatus,
    });
- 
-@@ -530,6 +545,7 @@ async function main() {
+@@ -589,6 +605,7 @@ async function main() {
      // close() only tears down the worker/queue it created), so close it here.
      if (eventBus) await eventBus.close();
      if (runStoreRedis) runStoreRedis.disconnect();
@@ -6931,7 +6946,7 @@ pnpm --filter @shipit-ai/api-server typecheck && pnpm --filter @shipit-ai/api-se
   pnpm --filter @shipit-ai/api-server run test:integration
 ```
 
-Expected: PASS — unit 677 tests; integration 32 passed, 42 skipped (the Neo4j suites skip without `NEO4J_TEST_URI`), runs 19.
+Expected: PASS — unit 704 passed, 70 skipped; integration 32 passed, 42 skipped (the Neo4j suites skip without `NEO4J_TEST_URI`), runs 19.
 
 - [ ] **Step 6: Commit**
 
@@ -7427,18 +7442,18 @@ index c2837e9..6ed4472 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/server.ts b/packages/api-server/src/server.ts
-index 1c2580b..f8550be 100644
+index c884c06..ce9811c 100644
 --- a/packages/api-server/src/server.ts
 +++ b/packages/api-server/src/server.ts
-@@ -46,6 +46,7 @@ import feedbackRoutes from './routes/feedback.js';
- import aiRoutes from './routes/ai.js';
+@@ -47,6 +47,7 @@ import aiRoutes from './routes/ai.js';
+ import knowledgeRoutes from './routes/knowledge.js';
  import agentsRoutes from './routes/agents.js';
  import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
 +import type { RunEventHub } from './services/ai/run-event-hub.js';
  import type { AgentStore, RunStore } from '@shipit-ai/agents';
  import type { AiStatusService } from './services/ai/ai-status-service.js';
- import type { FeedbackService } from './services/feedback-service.js';
-@@ -121,6 +122,9 @@ export interface CreateServerOptions {
+ import type { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+@@ -125,6 +126,9 @@ export interface CreateServerOptions {
    // Agent runs and the queue the runner works from. Optional for the same reason.
    runStore?: RunStore;
    runQueue?: RunEnqueuer;
@@ -7448,7 +7463,7 @@ index 1c2580b..f8550be 100644
  }
  
  declare module 'fastify' {
-@@ -426,6 +430,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
+@@ -433,6 +437,9 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
    if (opts.runQueue) {
      server.decorate('runQueue', opts.runQueue);
    }
@@ -7466,7 +7481,7 @@ index 1c2580b..f8550be 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/index.ts b/packages/api-server/src/index.ts
-index be3bf29..da041c2 100644
+index e51938b..29b076a 100644
 --- a/packages/api-server/src/index.ts
 +++ b/packages/api-server/src/index.ts
 @@ -30,6 +30,7 @@ import { SettingsService } from './services/settings-service.js';
@@ -7477,23 +7492,23 @@ index be3bf29..da041c2 100644
    RunQueue,
    RunStore,
    createDb,
-@@ -37,6 +38,7 @@ import {
-   type Db,
+@@ -38,6 +39,7 @@ import {
  } from '@shipit-ai/agents';
+ import { KnowledgeStore } from '@shipit-ai/knowledge';
  import { AiStatusService } from './services/ai/ai-status-service.js';
 +import { RunEventHub } from './services/ai/run-event-hub.js';
- import {
-   applyDerivedAuthConfig,
-   evaluateAuthBootability,
-@@ -450,6 +452,20 @@ async function main() {
-     agentDb && config.backend.redis.url
+ import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+ import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
+ import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
+@@ -457,6 +459,20 @@ async function main() {
+     config.ai.enabled && agentDb && config.backend.redis.url
        ? new RunQueue({ redisUrl: config.backend.redis.url })
        : undefined;
 +  // Live run updates: one subscriber connection (a subscribed ioredis client
 +  // can do nothing else) fanned out to every open /api/runs/:id/stream.
 +  let runEventsSubscriber: Redis | null = null;
 +  let runEvents: RunEventHub | undefined;
-+  if (agentDb && config.backend.redis.url) {
++  if (config.ai.enabled && agentDb && config.backend.redis.url) {
 +    runEventsSubscriber = new Redis(config.backend.redis.url, { maxRetriesPerRequest: null });
 +    runEventsSubscriber.on('error', (err: Error) => {
 +      console.warn(`Run events subscriber error (live run updates degraded): ${err.message}`);
@@ -7506,15 +7521,15 @@ index be3bf29..da041c2 100644
    const aiStatus = new AiStatusService({
      config: config.ai,
      db: agentDb,
-@@ -494,6 +510,7 @@ async function main() {
+@@ -552,6 +568,7 @@ async function main() {
      agentStore: agentDb ? new AgentStore(agentDb) : undefined,
      runStore: agentDb ? new RunStore(agentDb) : undefined,
      runQueue,
 +    runEvents,
      aiStatus,
+     knowledgeStatus,
    });
- 
-@@ -536,7 +553,12 @@ async function main() {
+@@ -595,7 +612,12 @@ async function main() {
      process.exit(1);
    }
  
@@ -7526,8 +7541,8 @@ index be3bf29..da041c2 100644
 +    shuttingDown = true;
      await server.close();
      if (scheduler) await scheduler.close();
-     if (webhookRefetch) await webhookRefetch.close();
-@@ -546,6 +568,7 @@ async function main() {
+     if (knowledgeScheduler) await knowledgeScheduler.close();
+@@ -606,6 +628,7 @@ async function main() {
      if (eventBus) await eventBus.close();
      if (runStoreRedis) runStoreRedis.disconnect();
      if (runQueue) await runQueue.close();
@@ -7790,26 +7805,26 @@ export async function ensureBuiltinAgents(
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/packages/api-server/src/index.ts b/packages/api-server/src/index.ts
-index da041c2..9a8d3be 100644
+index 29b076a..d3b0117 100644
 --- a/packages/api-server/src/index.ts
 +++ b/packages/api-server/src/index.ts
-@@ -39,6 +39,7 @@ import {
- } from '@shipit-ai/agents';
+@@ -40,6 +40,7 @@ import {
+ import { KnowledgeStore } from '@shipit-ai/knowledge';
  import { AiStatusService } from './services/ai/ai-status-service.js';
  import { RunEventHub } from './services/ai/run-event-hub.js';
 +import { ensureBuiltinAgents } from './services/ai/builtin-agents.js';
- import {
-   applyDerivedAuthConfig,
-   evaluateAuthBootability,
-@@ -446,6 +447,7 @@ async function main() {
+ import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+ import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
+ import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
+@@ -452,6 +453,7 @@ async function main() {
        ? createPool({ connectionString: config.ai.database.url })
        : null;
    const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
 +  const agentStore = agentDb ? new AgentStore(agentDb) : undefined;
    // Runs are queued for the agent runner on Redis; with no Redis there is no
    // queue, and the run routes answer 503 instead of creating runs nobody works.
-   const runQueue =
-@@ -507,13 +509,32 @@ async function main() {
+   // The pool may be open for the knowledge layer alone, so check ai.enabled too.
+@@ -565,7 +567,7 @@ async function main() {
      // of a Redis URL stays a soft warning rather than a hard boot failure.
      redis: runStoreRedis ?? undefined,
      resolved,
@@ -7818,12 +7833,13 @@ index da041c2..9a8d3be 100644
      runStore: agentDb ? new RunStore(agentDb) : undefined,
      runQueue,
      runEvents,
-     aiStatus,
+@@ -573,6 +575,25 @@ async function main() {
+     knowledgeStatus,
    });
  
 +  // The built-in Graph assistant backs Ask. Seeded once the database answers
 +  // and a model is configured; until then it retries every minute, quietly.
-+  if (agentStore) {
++  if (agentStore && config.ai.enabled) {
 +    const seed = async (): Promise<boolean> => {
 +      try {
 +        return await ensureBuiltinAgents(agentStore, config.ai, (m) => console.log(m));
@@ -7892,7 +7908,7 @@ Make the runner part of `pnpm start:backend`, document running agents locally, r
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/package.json b/package.json
-index 9792f83..820ae44 100644
+index 6ee3fa4..be3a31a 100644
 --- a/package.json
 +++ b/package.json
 @@ -15,7 +15,7 @@
@@ -7914,16 +7930,16 @@ index 9792f83..820ae44 100644
 <!-- prettier-ignore-start -->
 ````diff
 diff --git a/docs/local-development.md b/docs/local-development.md
-index c03a6ea..e321647 100644
+index b09b0d5..c66f11d 100644
 --- a/docs/local-development.md
 +++ b/docs/local-development.md
-@@ -163,16 +163,16 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
+@@ -163,17 +163,17 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
  
  ### Recommended: scripted starts
  
 -| Script                | What it starts                                                             |
 -| --------------------- | -------------------------------------------------------------------------- |
--| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres, then applies database migrations         |
+-| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates |
 -| `pnpm start:backend`  | Infra + `api-server` + `core-writer` (auto-seeds demo data if graph empty) |
 -| `pnpm start:frontend` | Web UI dev server only                                                     |
 -| `pnpm start:mcp`      | MCP server only (stdio)                                                    |
@@ -7931,9 +7947,10 @@ index c03a6ea..e321647 100644
 -| `pnpm stop`           | Bring all docker-compose services down                                     |
 -| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)               |
 -| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)             |
+-| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first  |
 +| Script                | What it starts                                                                                |
 +| --------------------- | --------------------------------------------------------------------------------------------- |
-+| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres, then applies database migrations                            |
++| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates                    |
 +| `pnpm start:backend`  | Infra + `api-server` + `core-writer` + `agent-runner` (seeds demo data if the graph is empty) |
 +| `pnpm start:frontend` | Web UI dev server only                                                                        |
 +| `pnpm start:mcp`      | MCP server only (stdio)                                                                       |
@@ -7941,10 +7958,11 @@ index c03a6ea..e321647 100644
 +| `pnpm stop`           | Bring all docker-compose services down                                                        |
 +| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)                                  |
 +| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)                                |
++| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first                     |
  
  ### Manual paths
  
-@@ -191,6 +191,9 @@ pnpm --filter @shipit-ai/core-writer dev
+@@ -193,6 +193,9 @@ pnpm --filter @shipit-ai/core-writer dev
  
  # Terminal 4 — web-ui (Next.js dev server)
  pnpm --filter @shipit-ai/web-ui dev
@@ -7954,7 +7972,7 @@ index c03a6ea..e321647 100644
  ```
  
  ### Ports
-@@ -220,9 +223,9 @@ ai:
+@@ -222,9 +225,9 @@ ai:
      url: postgres://shipit:shipit-dev@localhost:5432/shipit
  ```
  
@@ -7967,7 +7985,7 @@ index c03a6ea..e321647 100644
  
  The schema is plain SQL in `db/migrations/`, named `NNNN_description.sql` and
  forward-only: never edit a file that has been applied, add a new one. The app
-@@ -240,6 +243,44 @@ DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
+@@ -253,6 +256,44 @@ DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
  
  Each suite creates and drops its own schema, so it does not touch your data.
  
@@ -8020,7 +8038,7 @@ index c03a6ea..e321647 100644
 <!-- prettier-ignore-start -->
 ```diff
 diff --git a/docs/agent/plans/ai-agents-and-workflows.md b/docs/agent/plans/ai-agents-and-workflows.md
-index b2405f1..d514184 100644
+index b2405f1..5bfe7f1 100644
 --- a/docs/agent/plans/ai-agents-and-workflows.md
 +++ b/docs/agent/plans/ai-agents-and-workflows.md
 @@ -140,6 +140,14 @@ placeholder pages (Agents, Workflows, Tools) until their milestones land.
@@ -8030,7 +8048,7 @@ index b2405f1..d514184 100644
 +**Milestone 1, second half (backend) implemented** per
 +`docs/superpowers/plans/2026-10-03-agent-runner.md`: the `agent-runner` process (BullMQ
 +worker, Vertex model client, graph read tools via `@shipit-ai/mcp-server/tools`, the run
-+loop with leases, limits, cancel, chat turns and crash recovery), migration `0002_runs.sql`,
++loop with leases, limits, cancel, chat turns and crash recovery), migration `0003_runs.sql`,
 +the runs API and live stream in api-server, and the built-in Graph assistant. Approvals
 +(Milestone 3) are not in it: a tool whose grant is `ask` is not offered yet. The UI half
 +(agent editor, test panel, run view, Ask) is the next plan.
@@ -8137,11 +8155,12 @@ asking the built-in Graph assistant a question from AI → Ask (or `POST
 Prerequisites: Docker running; `gcloud auth application-default login`; in `shipit.config.local.yaml`, the `ai.database.url` block (foundation plan) and `frontend.devUser.capabilities: ['*']`.
 
 ```bash
+DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:bootstrap
 DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:migrate
 GOOGLE_CLOUD_PROJECT=ship-it-ai-portal pnpm start:backend
 ```
 
-Expected in the logs: `applied 0002_runs.sql` (first time only), `Created the built-in Graph assistant on model gemini.`, and `Agent runner <host>-<pid> working (concurrency 4, 4 models).`
+Expected in the logs: `applied 0003_runs.sql` (first time only), `Created the built-in Graph assistant on model gemini.`, and `Agent runner <host>-<pid> working (concurrency 4, 4 models).`
 
 ```bash
 curl -s localhost:3001/api/ai/status | jq '{available, failing: [.checks[] | select(.ok | not) | .name]}'
@@ -8196,5 +8215,5 @@ git commit -m "docs: running agents locally, and infra brief 2 for the agent run
   - **Structured output** (`submit_result`) is deferred to the workflows milestone, which is what needs it; a run with `output.schema` returns text and a warning.
   - **Text deltas** are not streamed: the model client makes one non-streaming call per step, and the stream relays whole messages. The deltas channel is not defined until something publishes on it.
   - **Unknown tools** are audited with `service` and `effect` NULL rather than a made-up value.
-- **Found along the way, fixed separately (`8825bd3`):** the mcp-server entry started its server whenever the process script ended in `index.js`, so every api-server process (`node dist/index.js`) also ran an MCP server on port 3002, and `pnpm start:mcp` (`tsx src/index.ts`) ran none. It now compares real paths, and the api-server imports `@shipit-ai/mcp-server/metadata`. Rebase onto it with the K0 work.
+- **Found along the way, fixed separately (`8825bd3`, on the base):** the mcp-server entry started its server whenever the process script ended in `index.js`, so every api-server process (`node dist/index.js`) also ran an MCP server on port 3002, and `pnpm start:mcp` (`tsx src/index.ts`) ran none. It now compares real paths, and the api-server imports `@shipit-ai/mcp-server/metadata`.
 - **Not in this plan:** approvals and write tools (Milestone 3), triggers (Milestone 2), the UI. `seed:reset` does not clear runs yet; the plan that adds run history to the UI adds that, per the pattern `reset-script-must-drain-redis-surfaces`.

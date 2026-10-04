@@ -28,7 +28,7 @@ spike) are on branch `ai-agents-design`, pushed. No pull request yet.
 | Plan: AI nav (Milestone 0)               | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
 | Plan: agents foundation (M1, part 1)     | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
 | Foundation Task 9 (Vertex probe)         | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
-| Plan: agent runner (M1, part 2, backend) | Written, code proven; awaiting review and the K0 rebase (see below).             |
+| Plan: agent runner (M1, part 2, backend) | Rebased onto K0 (`52650e1`) and re-verified; executing natively (see below).     |
 
 ## Waiting on the owner
 
@@ -57,12 +57,14 @@ Graph assistant). Every task was built and tested in a scratch worktree, replaye
 a clean one with each task's checks, and the plan text was then re-applied from scratch and
 compared byte-for-byte with that replay. The UI half of Milestone 1 is the next plan.
 
-**It must be rebased before executing.** The knowledge K0 session (`knowledge-k0-foundations`
-status note) is implementing in this same tree and branch and touches the same shared files.
-Agreed with it: K0 keeps migration `0002`; the runs migration becomes `0003_runs.sql` with
-`EXPECTED_SCHEMA_VERSION` `'0003'`. It will message when its commits (13 tasks; its api-server
-wiring lands in Task 12) are on the branch. Rebase then: apply the plan to `2186875`, merge onto
-the K0 head, resolve the shared files, re-run every task's checks.
+**Rebased onto K0 on 2026-10-03.** The plan's diffs are now against `52650e1` (all 13 K0 tasks
+on the branch). As agreed with the K0 session, the runs migration is `0003_runs.sql` and
+`EXPECTED_SCHEMA_VERSION` is `'0003'`; the moved test harness keeps K0's `public` on the search
+path (pgvector); the api-server shares K0's Postgres pool, which can be open for knowledge alone,
+so the run queue, run-event subscriber and built-in agent seed also check `ai.enabled`. Every
+task's checks were re-run at its rebased commit, and the plan text was re-applied in a clean
+worktree and matched each task's tree. Executing it natively on `ai-agents-design` next,
+committing and pushing per task; then the Milestone 1 UI plan.
 
 Found while building it, fixed in `8825bd3`: the mcp-server entry started its server whenever the
 process script ended in `index.js`, so every api-server process also ran an MCP server on port
