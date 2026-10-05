@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@secretlint/core": "^13.0.4",
+    "@secretlint/profiler": "^13.0.4",
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "@secretlint/types": "^13.0.4",
     "@shipit-ai/agents": "workspace:*",

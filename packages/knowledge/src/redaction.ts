@@ -4,6 +4,7 @@
 // library. The repo's .secretlintrc.json allow-list (local dev database URLs)
 // is deliberately NOT applied here: content is not our source tree.
 import { lintSource } from '@secretlint/core';
+import { secretLintProfiler } from '@secretlint/profiler';
 import { creator as recommendedPreset } from '@secretlint/secretlint-rule-preset-recommend';
 import type { SecretLintCoreConfig } from '@secretlint/types';
 import type { DocumentSegment } from '@shipit-ai/connector-sdk';
@@ -11,6 +12,18 @@ import type { DocumentSegment } from '@shipit-ai/connector-sdk';
 const CONFIG: SecretLintCoreConfig = {
   rules: [{ id: '@secretlint/secretlint-rule-preset-recommend', rule: recommendedPreset }],
 };
+
+// secretlint profiles every run: 62 performance marks per lintSource call. Its
+// profiler is one object for the whole process. It keeps every mark for as
+// long as the process lives, scans all of them each time a mark ends, and
+// Node holds them in its performance timeline as well. A process that redacts
+// all day (the api-server, on its event loop) would get slower with every
+// string and never give the memory back: a few thousand calls already stall
+// it for seconds at a time. Nothing reads the profile here, so the marks are
+// not made. This has to be the same instance @secretlint/core imports, which
+// is why the profiler is a direct dependency at core's version; the redaction
+// tests fail if a mark is ever left behind again.
+secretLintProfiler.mark = () => undefined;
 
 // The preset bundles the filter-comments rule: a `secretlint-disable` comment
 // switches detection off for what follows. That is for source trees; in

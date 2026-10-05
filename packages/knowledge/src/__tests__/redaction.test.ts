@@ -64,4 +64,43 @@ describe('redactSegments', () => {
     expect(out.segments[1]!.text).toBe('clean');
     expect(out.segments[0]!.text).not.toContain(GH_TOKEN);
   });
+
+  // secretlint profiles every run with performance marks: 62 per call. Its
+  // profiler keeps each one for the life of the process and scans them all on
+  // every end mark, and Node keeps them in its performance timeline too. The
+  // api-server redacts on its event loop, for as long as it is up.
+  describe('in a long-lived process', () => {
+    const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+    it('leaves no performance marks or measures behind', async () => {
+      const marks = performance.getEntriesByType('mark').length;
+      const measures = performance.getEntriesByType('measure').length;
+      for (let i = 0; i < 40; i++) await redactText(`deploy step ${i} of the payments api`);
+      await turn();
+      expect(performance.getEntriesByType('mark').length).toBe(marks);
+      expect(performance.getEntriesByType('measure').length).toBe(measures);
+    });
+
+    it('costs the same on the two-thousandth call as on the first, event loop included', async () => {
+      const timed = async (calls: number): Promise<number> => {
+        const started = performance.now();
+        for (let i = 0; i < calls; i++) {
+          await redactText(`deploy step ${i} of the payments api`);
+          await turn(); // the profiler's work ran in a callback, between calls
+        }
+        return (performance.now() - started) / calls;
+      };
+      const early = await timed(200);
+      await timed(1600);
+      const late = await timed(200);
+      expect(late).toBeLessThan(early * 3 + 1);
+    }, 60_000);
+
+    it('still redacts after thousands of calls', async () => {
+      const token = 'ghp_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8';
+      const out = await redactText(`token ${token} here`);
+      expect(out.text).not.toContain(token);
+      expect(out.count).toBe(1);
+    });
+  });
 });
