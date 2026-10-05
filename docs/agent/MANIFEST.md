@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-05 | Total notes: 101
+Last updated: 2026-10-05 | Total notes: 103
 
 ## Investigations
 
@@ -34,9 +34,11 @@ Last updated: 2026-10-05 | Total notes: 101
 
 - [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-05 | knowledge K0 + K1a in PR #119, reviewed and fixed, waiting for the owner's merge; K1b plan next
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend on ai-agents-design, ready to PR; next session executes the agents UI plan on a new branch
+- [harden-raw-cypher](status/harden-raw-cypher.md) | status | active | core | 2026-10-05 | raw Cypher: one read-only check + one executor for the Query Playground and graph_query
 
 ## Decisions
 
+- [raw-cypher-read-only-guard](decisions/raw-cypher-read-only-guard.md) | decision | active | core | 2026-10-05 | caller-written Cypher: one shared text check (allow-lists) + one read-only executor (timeout, row limit)
 - [knowledge-layer-v1-foundations](decisions/knowledge-layer-v1-foundations.md) | decision | active | core | 2026-10-02 | knowledge layer: Postgres+pgvector index, curated visibility, reviewed suggestions, four sources
 - [agent-platform-v1-foundations](decisions/agent-platform-v1-foundations.md) | decision | active | core | 2026-10-01 | agents: Postgres (infra applies schema), own runner, Vertex any-model, all-in first release
 - [kubernetes-connector-v1-design](decisions/kubernetes-connector-v1-design.md) | decision | active | core | 2026-09-16 | K8s connector v1: both access modes, poll, per-type opt-in absence sweep, tiered repo links, LogicalService emission, connector-type factory
