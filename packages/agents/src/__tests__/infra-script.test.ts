@@ -18,7 +18,11 @@ describe('scripts/infra.sh', () => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  /** Runs the script and returns the DATABASE_URL each pnpm command was given. */
+  /**
+   * Runs the script and returns, for each pnpm command, the database it would
+   * use: the CLIs prefer DATABASE_SUPERUSER_URL (bootstrap) and
+   * DATABASE_MIGRATOR_URL (migrate) over DATABASE_URL.
+   */
   function targets(env: Record<string, string>): Array<{ command: string; url: string }> {
     const bin = mkdtempSync(join(tmpdir(), 'shipit-infra-script-'));
     dirs.push(bin);
@@ -30,7 +34,15 @@ describe('scripts/infra.sh', () => {
     );
     writeFileSync(
       join(bin, 'pnpm'),
-      `#!/bin/sh\nprintf '%s\\t%s\\n' "$*" "$DATABASE_URL" >> "${record}"\n`,
+      [
+        '#!/bin/sh',
+        'case "$*" in',
+        '  *db:bootstrap*) url="${DATABASE_SUPERUSER_URL:-$DATABASE_URL}" ;;',
+        '  *) url="${DATABASE_MIGRATOR_URL:-$DATABASE_URL}" ;;',
+        'esac',
+        `printf '%s\\t%s\\n' "$*" "$url" >> "${record}"`,
+        '',
+      ].join('\n'),
     );
     for (const name of ['docker', 'pnpm']) chmodSync(join(bin, name), 0o755);
     execFileSync('bash', [SCRIPT], {
@@ -58,6 +70,16 @@ describe('scripts/infra.sh', () => {
   // database; that is the one it migrates.
   it('does not take the target from a DATABASE_URL that happens to be exported', () => {
     const urls = targets({ DATABASE_URL: 'postgres://db.example.com:5432/billing' });
+    expect(urls.map((t) => t.url)).toEqual([COMPOSE_URL, COMPOSE_URL]);
+  });
+
+  // The names someone exports to point `pnpm db:migrate` or `pnpm db:bootstrap`
+  // at a real environment with a privileged role. The CLIs prefer them.
+  it('does not take the target from an exported migrator or superuser URL either', () => {
+    const urls = targets({
+      DATABASE_MIGRATOR_URL: 'postgres://db.example.com:5432/billing',
+      DATABASE_SUPERUSER_URL: 'postgres://db.example.com:5432/postgres',
+    });
     expect(urls.map((t) => t.url)).toEqual([COMPOSE_URL, COMPOSE_URL]);
   });
 

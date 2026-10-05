@@ -668,12 +668,17 @@ export class RunStore {
 
   /**
    * Writes the audit row for a tool call before it runs. With `owner`, only
-   * the worker holding the run's lease may start a call. A read that already
-   * has a row (it was in flight when a worker died) reuses the row. A write or
-   * delete that already has a row is never started again: whoever wrote that
-   * row ran it, or may have. In both refusals the caller gets RunLeaseLostError
-   * and nothing is written, so a worker that lost the run while it was cut off
-   * cannot repeat a write the new holder already settled.
+   * the worker holding the run's lease may start a call.
+   *
+   * A call that already has a row is started again in two cases only: it was
+   * recorded as `pending` and has not run yet, or it is a read that was in
+   * flight when its worker died. A write or delete in flight is never started
+   * again (whoever wrote that row ran it, or may have), and neither is a call
+   * that already has an outcome: the first outcome stands.
+   *
+   * Every refusal is RunLeaseLostError and writes nothing. The loop reads a
+   * step's calls before it settles them, so it only meets a row it did not
+   * expect when another worker is settling the same step.
    */
   async startToolCall(input: StartToolCallInput, owner?: string): Promise<ToolCallRecord> {
     const { rows } = await this.db.query<ToolCallRow>(
@@ -687,7 +692,8 @@ export class RunStore {
        ON CONFLICT (run_id, call_id) DO UPDATE
           SET status = EXCLUDED.status, started_at = now(), finished_at = EXCLUDED.finished_at,
               error = EXCLUDED.error
-        WHERE tool_calls.effect IS NULL OR tool_calls.effect = 'read'
+        WHERE tool_calls.status = 'pending'
+           OR (tool_calls.status = 'executing' AND tool_calls.effect = 'read')
        RETURNING *`,
       [
         randomUUID(),

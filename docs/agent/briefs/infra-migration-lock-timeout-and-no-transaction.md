@@ -51,19 +51,34 @@ rules below as of this change: `packages/agents/src/migrate.ts`.
    ```sh
    if head -n 1 "$dir/$f" | grep -Eq '^--[[:space:]]*migrate:[[:space:]]*no-transaction[[:space:]]*$'; then
      psql_ -f "$dir/$f"
+     invalid="$(psql_ -tAc "SELECT string_agg(c.relname, ', ') FROM pg_index i
+                              JOIN pg_class c ON c.oid = i.indexrelid
+                              JOIN pg_namespace n ON n.oid = c.relnamespace
+                             WHERE NOT i.indisvalid AND n.nspname = current_schema()")"
+     if [ -n "$invalid" ]; then
+       echo "db-migrate: ERROR: invalid index left by a failed concurrent build: $invalid" >&2
+       echo "db-migrate: drop it (DROP INDEX CONCURRENTLY <name>) and deploy again" >&2
+       exit 1
+     fi
      psql_ -c "INSERT INTO schema_migrations (version) VALUES ('$v')"
    else
      # as in 1.
    fi
    ```
 
-   Such a file holds **one statement**, written so that running it twice is harmless
+   Such a file holds **one statement**, written with `IF NOT EXISTS`
    (`CREATE INDEX CONCURRENTLY IF NOT EXISTS …`): if the recording call fails after the
-   statement succeeded, the next deploy runs the statement again.
+   statement succeeded, the next deploy runs the statement again, harmlessly. One
+   statement because the app's migrator sends the file as a single query, which Postgres
+   runs as one implicit transaction when it holds several, and `psql -f` runs them one at
+   a time: with two statements the two appliers would behave differently.
 
-3. **Runbook.** A concurrent index build that fails half-way leaves an `INVALID` index, and
-   `IF NOT EXISTS` then skips it. Before the retry: `DROP INDEX CONCURRENTLY <name>;`.
-   `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;` lists them.
+3. **The invalid-index check above is part of the contract.** A concurrent index build
+   that fails half-way (a duplicate row under a unique index, a deadlock, a cancelled
+   deploy) leaves an `INVALID` index. `IF NOT EXISTS` skips it on the next run, and
+   without the check the file would be recorded as applied over an index Postgres never
+   uses and, for a unique one, never enforces. With it the deploy fails and names the
+   index. Runbook: `DROP INDEX CONCURRENTLY <name>;`, then deploy again.
 
 ## For the record
 
@@ -79,7 +94,7 @@ start:infra` rebuild it.
 ## Done when
 
 1. `db-migrate.sh` applies the lock timeout to transactional files and handles the marker.
-2. `scripts/test-db.sh` covers both: a file blocked by an open transaction fails within the
+2. `scripts/test-db.sh` covers: a file blocked by an open transaction fails within the
    timeout and is not recorded; a marked file with `CREATE INDEX CONCURRENTLY` applies and
-   is recorded.
+   is recorded; a marked file retried over an invalid index fails and is not recorded.
 3. The runbook has the invalid-index step.

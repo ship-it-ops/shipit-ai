@@ -232,12 +232,9 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'graph_query',
     service: 'graph',
     effect: 'read',
-    // Not for agents. It runs a caller-written string as Cypher, behind a
-    // guard that stops write keywords but not clauses that fetch a URL, with
-    // no timeout and a row cap the query can override. A model acts on the
-    // text it reads, so that reach stays with MCP clients until the tool
-    // shares the Query Playground's guard, allow-lists CALL, runs under a
-    // timeout and enforces its row cap.
+    // Not for agents: it runs a caller-written string as Cypher, and a model
+    // acts on the text it reads. It stays with MCP clients until its guard is
+    // at least as strict as the Query Playground's.
     agents: false,
     params: [
       {

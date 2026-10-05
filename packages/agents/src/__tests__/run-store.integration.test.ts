@@ -353,6 +353,36 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
     expect(stored).toMatchObject({ id: first.id, startedAt: first.startedAt });
   });
 
+  // A write that waits for approval has not run: starting it is the first
+  // time, not a repeat.
+  it('starts a call that was recorded as pending, once', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    const pending = await runs.startToolCall(
+      { ...writeCall(run.id), status: 'pending' },
+      'worker-a',
+    );
+    const started = await runs.startToolCall(writeCall(run.id), 'worker-a');
+    expect(started).toMatchObject({ id: pending.id, status: 'executing' });
+    await expect(runs.startToolCall(writeCall(run.id), 'worker-a')).rejects.toBeInstanceOf(
+      RunLeaseLostError,
+    );
+  });
+
+  it('does not start a call again once it has an outcome, read or write', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    const read = { ...writeCall(run.id), callId: 'call_r', effect: 'read' as const };
+    const row = await runs.startToolCall(read, 'worker-a');
+    await runs.finishToolCall(row.id, { status: 'succeeded', output: { owners: ['team-a'] } });
+
+    await expect(runs.startToolCall(read, 'worker-a')).rejects.toBeInstanceOf(RunLeaseLostError);
+    expect((await runs.listToolCalls(run.id))[0]).toMatchObject({
+      status: 'succeeded',
+      output: { owners: ['team-a'] },
+    });
+  });
+
   it('keeps the first outcome recorded for a tool call', async () => {
     const run = await make();
     await runs.claim(run.id, 'worker-a', 60);

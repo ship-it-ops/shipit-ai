@@ -717,6 +717,37 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
     expect((await runs.listToolCalls(run.id)).map((c) => c.callId)).toEqual(['w1']);
   });
 
+  it('does not even try the next write once the heartbeat has seen the run taken over', async () => {
+    const run = await createRun();
+    const attempted: string[] = [];
+    const counting = Object.create(runs) as RunStore;
+    counting.startToolCall = (input, owner) => {
+      attempted.push(input.callId);
+      return runs.startToolCall(input, owner);
+    };
+    const comment = fakeTool('gh.comment', 'write', {
+      result: async (input) => {
+        if (input.q === 'first') {
+          await database.db.query(`UPDATE runs SET lease_owner = 'worker-other' WHERE id = $1`, [
+            run.id,
+          ]);
+          // Long enough for several heartbeats to see it.
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+        return { ok: true };
+      },
+    });
+    const model = new ScriptedModel([
+      callTools([
+        { callId: 'w1', name: 'gh__comment', input: { q: 'first' } },
+        { callId: 'w2', name: 'gh__comment', input: { q: 'second' } },
+      ]),
+    ]);
+    const { instance } = loop(model, [comment], { runs: counting, renewEveryMs: 20 });
+    expect(await instance.process(run.id)).toBe('lease_lost');
+    expect(attempted).toEqual(['w1']);
+  });
+
   // A lease nobody could renew for its whole length has run out, whatever the
   // reason: the run may be another worker's by now.
   it('gives a run up when its lease could not be renewed for a whole lease', async () => {

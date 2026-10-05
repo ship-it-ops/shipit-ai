@@ -80,30 +80,62 @@ function wrap(target: PgQueryable): SqlClient {
   };
 }
 
-// An error the server sent carries a five-character SQLSTATE and leaves the
-// connection usable. Anything else a query fails with (a reset socket, the
-// client-side query timeout) means the connection cannot be trusted again.
-function failedBelowSql(err: unknown): boolean {
-  const code = (err as { code?: unknown } | null)?.code;
-  return !(typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code));
+// Whether a failed query leaves its connection unusable. An ordinary error
+// from the server (a constraint, a syntax error, a cancelled statement) carries
+// a five-character SQLSTATE and the session lives on. Two kinds do not: an
+// error with no SQLSTATE came from below SQL (a reset socket, the client-side
+// query timeout), and a FATAL one is the server ending the session (a restart,
+// a failover, an idle timeout), which has an SQLSTATE all the same.
+const SESSION_ENDED = /^(08...|57P0[1-5]|25P03)$/;
+function connectionLost(err: unknown): boolean {
+  const e = (err ?? {}) as { code?: unknown; severity?: unknown };
+  if (typeof e.code !== 'string' || !/^[0-9A-Z]{5}$/.test(e.code)) return true;
+  return e.severity === 'FATAL' || e.severity === 'PANIC' || SESSION_ENDED.test(e.code);
 }
 
-/** One checked-out connection, remembering whether a query on it failed below SQL. */
-function dedicated(client: PgQueryable): { sql: SqlClient; broken: () => boolean } {
+// The slice of pg's PoolClient a checked-out connection needs.
+interface PgClient extends PgQueryable {
+  on(event: 'error', listener: (err: Error) => void): unknown;
+  removeListener(event: 'error', listener: (err: Error) => void): unknown;
+  release(destroy?: boolean): void;
+}
+
+/**
+ * One connection checked out of the pool, until `release()`.
+ *
+ * pg-pool takes its own 'error' listener off a client it hands out. A
+ * connection the server ends or the network resets then emits 'error' with
+ * nobody listening, which Node turns into an uncaught exception: the process
+ * dies. The listener here is what keeps it alive; the query in flight, if
+ * any, rejects by itself.
+ *
+ * A connection that failed is handed back to be destroyed. pg-pool keeps a
+ * client unless it is released with a truthy argument, and a broken one would
+ * fail the next caller the same way.
+ */
+function checkOut(client: PgClient): { sql: SqlClient; broken(): boolean; release(): void } {
   const inner = wrap(client);
   let broken = false;
+  const onError = (): void => {
+    broken = true;
+  };
+  client.on('error', onError);
   return {
     sql: {
       async query<R extends object>(text: string, params?: ReadonlyArray<unknown>) {
         try {
           return await inner.query<R>(text, params);
         } catch (err) {
-          if (failedBelowSql(err)) broken = true;
+          if (connectionLost(err)) broken = true;
           throw err;
         }
       },
     },
     broken: () => broken,
+    release() {
+      client.removeListener('error', onError);
+      client.release(broken ? true : undefined);
+    },
   };
 }
 
@@ -112,31 +144,27 @@ export function createDb(pool: Pool): Db {
   return {
     query: (text, params) => root.query(text, params),
     async withClient(fn) {
-      const client = await pool.connect();
-      const scoped = dedicated(client);
+      const held = checkOut(await pool.connect());
       try {
-        return await fn(scoped.sql);
+        return await fn(held.sql);
       } finally {
-        // pg-pool keeps a client unless it is released with an error: a broken
-        // one would be handed to the next caller.
-        client.release(scoped.broken() ? true : undefined);
+        held.release();
       }
     },
     async tx(fn) {
-      const client = await pool.connect();
-      const scoped = dedicated(client);
+      const held = checkOut(await pool.connect());
       try {
-        await scoped.sql.query('BEGIN');
-        const value = await fn(scoped.sql);
-        await scoped.sql.query('COMMIT');
+        await held.sql.query('BEGIN');
+        const value = await fn(held.sql);
+        await held.sql.query('COMMIT');
         return value;
       } catch (err) {
-        // Dropping a broken connection ends its transaction; a ROLLBACK on it
-        // would only wait for the query timeout a second time.
-        if (!scoped.broken()) await scoped.sql.query('ROLLBACK').catch(() => undefined);
+        // Destroying a broken connection ends its transaction; a ROLLBACK on
+        // it would only wait for the query timeout a second time.
+        if (!held.broken()) await held.sql.query('ROLLBACK').catch(() => undefined);
         throw err;
       } finally {
-        client.release(scoped.broken() ? true : undefined);
+        held.release();
       }
     },
   };

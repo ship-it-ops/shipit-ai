@@ -11,6 +11,18 @@ const DOWNSTREAM_EDGE_PATTERN = `${DEPENDENCY_EDGE_PATTERN}|${OWNERSHIP_EDGE_PAT
 
 const UPSTREAM_EDGE_PATTERN = DEPENDENCY_EDGE_PATTERN;
 
+// Nodes whose label starts with an underscore are the application's own
+// bookkeeping (access tokens, linking keys, the idempotency log), not part of
+// the catalog. No structured tool finds, lists, counts or passes through one.
+const notInternal = (alias: string): string =>
+  `NONE(l IN labels(${alias}) WHERE l STARTS WITH '_')`;
+
+/** Every id a caller could have meant: what "did you mean" suggestions are drawn from. */
+export const CATALOG_NODE_IDS_CYPHER = `MATCH (n) WHERE n.id IS NOT NULL AND ${notInternal('n')} RETURN n.id AS id`;
+
+/** Whether `$nodeId` names a catalog node. */
+export const CATALOG_NODE_EXISTS_CYPHER = `MATCH (n {id: $nodeId}) WHERE ${notInternal('n')} RETURN n.id AS id`;
+
 export function generateBlastRadiusCypher(
   node: string,
   depth: number,
@@ -39,7 +51,7 @@ export function generateBlastRadiusCypher(
   const absentFilter = includeAbsent ? '' : `\n      AND n._absent_since IS NULL`;
 
   const query = `
-    MATCH (start {id: $nodeId})
+    MATCH (start {id: $nodeId}) WHERE ${notInternal('start')}
     MATCH path = (start)${dirClause}(n)
     WHERE n <> start${envFilter}${absentFilter}
     WITH DISTINCT n, min(length(path)) AS depth, collect(path)[0] AS sample_path
@@ -59,7 +71,7 @@ export function generateEntityDetailCypher(
   if (!includeNeighbors) {
     return {
       query: `
-        MATCH (n {id: $entityId})
+        MATCH (n {id: $entityId}) WHERE ${notInternal('n')}
         RETURN n AS node, labels(n) AS labels`,
       params: { entityId },
     };
@@ -67,8 +79,8 @@ export function generateEntityDetailCypher(
 
   return {
     query: `
-      MATCH (n {id: $entityId})
-      OPTIONAL MATCH (n)-[r]-(neighbor)${includeAbsent ? '' : ' WHERE neighbor._absent_since IS NULL'}
+      MATCH (n {id: $entityId}) WHERE ${notInternal('n')}
+      OPTIONAL MATCH (n)-[r]-(neighbor) WHERE ${notInternal('neighbor')}${includeAbsent ? '' : ' AND neighbor._absent_since IS NULL'}
       RETURN n AS node, labels(n) AS labels,
              collect(DISTINCT {
                neighbor: neighbor,
@@ -88,9 +100,9 @@ export function generateFindOwnersCypher(
   // The echoed entity is filtered too: the caller asked about a specific id, and
   // a swept entity must not come back looking live unless it was asked for.
   const absent = (alias: string) => (includeAbsent ? '' : ` WHERE ${alias}._absent_since IS NULL`);
-  const entityMatch = includeAbsent
-    ? 'MATCH (entity {id: $entityId})'
-    : 'MATCH (entity {id: $entityId}) WHERE entity._absent_since IS NULL';
+  const entityMatch = `MATCH (entity {id: $entityId}) WHERE ${notInternal('entity')}${
+    includeAbsent ? '' : ' AND entity._absent_since IS NULL'
+  }`;
 
   if (!includeChain) {
     return {
@@ -132,8 +144,11 @@ export function generateDependencyChainCypher(
   return {
     query: `
       MATCH (start {id: $from}), (end {id: $to})
+      WHERE ${notInternal('start')} AND ${notInternal('end')}
       MATCH path = shortestPath((start)-[*1..${maxDepth}]-(end))
-      ${includeAbsent ? '' : 'WHERE none(x IN nodes(path) WHERE x._absent_since IS NOT NULL)'}
+      WHERE none(x IN nodes(path) WHERE any(l IN labels(x) WHERE l STARTS WITH '_'))${
+        includeAbsent ? '' : ' AND none(x IN nodes(path) WHERE x._absent_since IS NOT NULL)'
+      }
       RETURN path,
              length(path) AS path_length,
              [n IN nodes(path) | n] AS path_nodes,
@@ -145,8 +160,8 @@ export function generateDependencyChainCypher(
 // A label or property name is written into the query text, where a parameter
 // cannot go. Only a plain identifier is accepted: a backtick would end the
 // quoted name, and the rest of the value would be read as Cypher. A label may
-// not start with an underscore, which keeps search off the internal nodes
-// (_AccessToken, _LinkingKey, _IdempotencyLog); properties may (_absent_since).
+// not start with an underscore (those are internal nodes, which the query
+// excludes whatever the label); a property may (_absent_since).
 export const LABEL_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 export const PROPERTY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
@@ -197,6 +212,9 @@ export function generateSearchEntitiesCypher(
     }
   }
 
+  // Also with a label: a label filter cannot name an internal node, but the
+  // search with no label at all would otherwise return every one of them.
+  whereClauses.push(notInternal('n'));
   if (!includeAbsent) whereClauses.push('n._absent_since IS NULL');
 
   const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -226,10 +244,10 @@ export function generateSearchEntitiesCypher(
 }
 
 export function generateGraphStatsCypher(includeAbsent = false): CypherQuery {
-  const nodeWhere = includeAbsent ? '' : ' WHERE n._absent_since IS NULL';
-  const edgeWhere = includeAbsent
-    ? ''
-    : ' WHERE a._absent_since IS NULL AND b._absent_since IS NULL';
+  const nodeWhere = ` WHERE ${notInternal('n')}${includeAbsent ? '' : ' AND n._absent_since IS NULL'}`;
+  const edgeWhere = ` WHERE ${notInternal('a')} AND ${notInternal('b')}${
+    includeAbsent ? '' : ' AND a._absent_since IS NULL AND b._absent_since IS NULL'
+  }`;
   const deploymentWhere = includeAbsent ? '' : ' WHERE d._absent_since IS NULL';
   return {
     query: `

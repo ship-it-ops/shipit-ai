@@ -107,11 +107,13 @@ export class AgentLoop implements AgentRuntime {
     // The lease heartbeat doubles as the cancel check: a cancel request or a
     // takeover aborts whatever the run is waiting on.
     const control = new AbortController();
-    let renewedAt = Date.now();
+    // A monotonic clock: a wall-clock jump must neither give a healthy run up
+    // nor keep a lost one.
+    let renewedAt = performance.now();
     const heartbeat = setInterval(() => {
       this.opts.runs.renewLease(runId, holder, this.leaseSeconds).then(
         (lease) => {
-          renewedAt = Date.now();
+          renewedAt = performance.now();
           if (!lease.held) control.abort('lease_lost' satisfies AbortReason);
           else if (lease.cancelRequested) control.abort('cancelled' satisfies AbortReason);
         },
@@ -119,7 +121,7 @@ export class AgentLoop implements AgentRuntime {
           this.log(`run ${runId}: lease renewal failed: ${err.message}`);
           // A lease nobody could renew for its whole length has run out: the
           // run may be another worker's by now, so stop as if it were.
-          if (Date.now() - renewedAt >= this.leaseSeconds * 1000) {
+          if (performance.now() - renewedAt >= this.leaseSeconds * 1000) {
             control.abort('lease_lost' satisfies AbortReason);
           }
         },

@@ -170,6 +170,33 @@ describe.skipIf(!DATABASE_TEST_URL)('runMigrations — Postgres integration', ()
     expect(await appliedVersions(db)).toEqual([]);
   });
 
+  // A concurrent index build that fails leaves the index behind, marked
+  // invalid. `IF NOT EXISTS` then skips it when the migration is run again, and
+  // the file would be recorded as applied over an index Postgres never uses
+  // and, for a unique one, never enforces.
+  it('does not record a no-transaction file while the schema holds an invalid index', async () => {
+    database = await createTestDatabase();
+    const db = database.db;
+    const dir = await tempMigrations({
+      '0001_ok.sql': 'CREATE TABLE busy (id integer); INSERT INTO busy VALUES (1), (1);',
+      '0002_index.sql':
+        '-- migrate: no-transaction\nCREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS busy_id_key ON busy (id);',
+    });
+    // The build fails on the duplicate row and leaves busy_id_key invalid.
+    await expect(runMigrations({ db, dir })).rejects.toThrow(/0002_index\.sql failed/);
+
+    // Running the migration again is the usual remedy for a failed deploy.
+    await expect(runMigrations({ db, dir })).rejects.toThrow(
+      /0002_index\.sql failed: .*busy_id_key.*DROP INDEX CONCURRENTLY/s,
+    );
+    expect(await appliedVersions(db)).toEqual(['0001']);
+
+    await db.query('DROP INDEX busy_id_key');
+    await db.query('DELETE FROM busy WHERE ctid = (SELECT min(ctid) FROM busy)');
+    expect((await runMigrations({ db, dir })).applied).toEqual(['0002_index.sql']);
+    expect(await appliedVersions(db)).toEqual(['0001', '0002']);
+  });
+
   it('logs each applied file', async () => {
     database = await createTestDatabase();
     const lines: string[] = [];

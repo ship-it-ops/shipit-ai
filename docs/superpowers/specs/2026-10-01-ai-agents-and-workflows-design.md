@@ -923,34 +923,59 @@ Where the code that exists differs from the text above. The sections named keep 
 original wording; this list is what holds today.
 
 - **Graph tools (§Tool sources).** Agents are offered seven of the eight graph tools.
-  `graph_query` is withheld: it runs a caller-written string as Cypher behind a guard that
-  stops write keywords but not clauses that fetch a URL, with no timeout and a row cap the
-  query can override, and a model acts on the text it reads. The MCP tool metadata carries
-  an `agents` flag per tool; the runner offers only tools marked `true`, and the agent
-  tool catalog is to filter on the same flag. `graph_query` returns to agents once it
-  shares the Query Playground's guard, allow-lists `CALL`, runs under a timeout and
-  enforces its row cap. External MCP clients see no change.
-- **`search_entities` (§Tool sources).** Its label, sort key and filter keys must be plain
-  identifiers (letters, digits, underscores), and a label may not start with an
-  underscore. This applies to MCP clients too.
+  `graph_query` is withheld: it runs a caller-written string as Cypher, and a model acts
+  on the text it reads. The MCP tool metadata carries an `agents` flag per tool; the runner
+  offers only tools marked `true`, and the agent tool catalog is to filter on the same
+  flag. `graph_query` returns to agents once its guard is at least as strict as the Query
+  Playground's. External MCP clients still have it.
+- **`search_entities` and internal nodes (§Tool sources).** The label, sort key and filter
+  keys of `search_entities` must be plain identifiers (letters, digits, underscores), and
+  a label may not start with an underscore. Nodes whose label starts with an underscore
+  are the application's own bookkeeping; no structured graph tool finds, lists, counts or
+  passes through one. Both rules apply to MCP clients too.
 - **`If-Match` (§API).** Definition updates honour `If-Match` and answer `409
 VERSION_CONFLICT` on a mismatch, but a request without the header is not refused: it
   forces the write, the rule the connector and schema routes already follow.
 - **Streaming (§Run lifecycle).** There is no text-delta channel. The runner publishes
   `{ runId, seq }` and status events on `shipit-run-events`, and `GET /api/runs/:id/stream`
-  relays those: the stream is message-level. Deltas are still planned with the chat UI.
+  relays those: the stream is message-level. Deltas are not planned yet: the chat UI plan
+  shows a message at a time. An open stream also reads its run again on every 15-second
+  keep-alive tick, so it does not depend on an event arriving.
 - **Runtime seam (§Run lifecycle).** `AgentRuntime` has one method, `process(runId)`,
   which claims the run and works on it until it ends, parks or is taken over. Cancel is a
   flag on the run the worker reads, not a call on the runtime.
 - **Cancel (§Run lifecycle).** A cancel that arrives while the last step of a chat turn is
   returning is settled when the run parks: it ends `cancelled` instead of `waiting_input`.
 - **At-most-once writes (decision 13).** The rule is enforced in the store, not only by
-  the loop: a tool call is started only for the worker that holds the run's lease, a
-  write or delete that already has a row is never started again, and the first outcome
-  recorded for a call stands. A worker whose lease could not be renewed for a whole lease
-  gives the run up.
-- **Migrations (§Data model, §Infra).** Each file runs under a 5-second lock timeout, and
-  a file whose first line is `-- migrate: no-transaction` runs outside a transaction.
+  the loop: a tool call is started only for the worker that holds the run's lease; a call
+  that already has a row is started again only if it is still `pending` or is a read
+  that was in flight; and the first outcome recorded for a call stands. A worker whose
+  lease could not be renewed for a whole lease gives the run up.
+- **Migrations (§Data model, §Infra).** The app's migrator runs each file under a 5-second
+  lock timeout. A file whose first line is `-- migrate: no-transaction` runs outside a
+  transaction, without that timeout, and is recorded only while the schema holds no
+  invalid index. The infra repo's deploy script still applies every file in one
+  transaction with no timeout; a brief asks it for the same rules, and no file needs them
+  yet.
+- **Who works a run (§Run lifecycle).** A lease in Postgres decides it, not BullMQ's
+  stalled-job redelivery. A run whose queued job was lost is queued again by the sweep
+  after a minute.
+- **Limits (§Run lifecycle).** On its last allowed step a run asks the model for an answer
+  from what it has found; it fails `STEP_LIMIT` only if the model calls a tool anyway. A
+  chat run's step, token and time limits count per turn, not per conversation. The daily
+  cap counts tokens on the UTC day they are spent (`agent_usage_daily`, migration `0004`),
+  not on the day a run was created.
+- **Not built yet, with a warning on the run where it applies.** A tool granted `ask` is
+  not offered to the model until approvals exist (Milestone 3). Structured output is
+  deferred to the workflows milestone: a run with `output.schema` returns text.
+- **Tool calls (§Tool gateway).** The runner strips the MCP envelope from a graph tool's
+  result itself and keeps `truncated` and `warnings`, instead of asking for `compact:
+true`. A call to a tool that does not exist is audited with `service` and `effect` NULL.
+- **Feature gating (§Feature gating).** Five checks: `enabled`, `database`, `schema`,
+  `models`, `runner`. The `key` check (`SHIPIT_AGENT_PLATFORM_KEY`) is not built; nothing
+  needs the key before connections and graph-write tools.
+- **Open with the owner.** The committed config has `ai.enabled: true`; §Milestones says
+  milestones merge behind `false`.
 
 ## To confirm in review
 

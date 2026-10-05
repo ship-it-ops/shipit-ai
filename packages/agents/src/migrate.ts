@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Db } from './db.js';
+import type { Db, SqlClient } from './db.js';
 
 // Contract shared with the infra repo's deploy-time migration step (see
 // docs/agent/briefs/infra-postgres-and-vertex-for-agents.md): files are named
@@ -14,8 +14,11 @@ import type { Db } from './db.js';
 // - A file whose first line is the marker below runs OUTSIDE a transaction.
 //   That is for CREATE INDEX CONCURRENTLY, which indexes a table without
 //   blocking writes to it and which Postgres refuses inside a transaction.
-//   Such a file holds one statement, written so that running it twice is
-//   harmless (IF NOT EXISTS): it is recorded only after it succeeds.
+//   Such a file holds one statement (several would run as one implicit
+//   transaction), written with IF NOT EXISTS so that a second run after a
+//   failed recording is harmless. It is recorded only after it succeeds and
+//   only while the schema holds no invalid index: a concurrent build that
+//   fails leaves one behind, which IF NOT EXISTS would otherwise wave through.
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
 const NO_TRANSACTION_MARKER = /^--\s*migrate:\s*no-transaction\s*$/;
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
@@ -115,6 +118,29 @@ export interface RunMigrationsOptions {
   lockTimeoutMs?: number;
 }
 
+// A concurrent index build that fails leaves its index behind, marked
+// invalid, and `IF NOT EXISTS` then skips it on the next run. Recording the
+// file as applied over that would leave an index Postgres never uses and, for
+// a unique one, never enforces. So a file that ran outside a transaction is
+// recorded only while the schema holds no invalid index.
+async function refuseInvalidIndexes(client: SqlClient): Promise<void> {
+  const { rows } = await client.query<{ name: string }>(
+    `SELECT c.relname AS name
+       FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indexrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE NOT i.indisvalid AND n.nspname = current_schema()
+      ORDER BY c.relname`,
+  );
+  if (rows.length === 0) return;
+  const names = rows.map((r) => r.name);
+  throw new Error(
+    `the schema holds an invalid index (${names.join(', ')}), left by a concurrent build that ` +
+      `did not finish. Drop it and run the migration again: ` +
+      names.map((name) => `DROP INDEX CONCURRENTLY ${name};`).join(' '),
+  );
+}
+
 export interface RunMigrationsResult {
   applied: string[];
   alreadyApplied: string[];
@@ -151,6 +177,7 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<RunMigr
         if (runsOutsideTransaction(sql)) {
           try {
             await client.query(sql);
+            await refuseInvalidIndexes(client);
             await client.query(record, [version]);
           } catch (err) {
             throw new Error(`Migration ${filename} failed: ${(err as Error).message}`);

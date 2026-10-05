@@ -237,8 +237,11 @@ migration, bump `EXPECTED_SCHEMA_VERSION` in
 `packages/agents/src/schema-version.ts` in the same change.
 
 `pnpm start:infra` (and `start:backend`, `start:all`) always migrates the compose
-database it has just started, whatever `DATABASE_URL` is exported in your shell.
-To point it somewhere else on purpose, set `SHIPIT_DEV_DATABASE_URL`.
+database it has just started, whatever `DATABASE_URL`, `DATABASE_MIGRATOR_URL` or
+`DATABASE_SUPERUSER_URL` is exported in your shell. To point it somewhere else on
+purpose, set `SHIPIT_DEV_DATABASE_URL`. Run by hand, `pnpm db:migrate` uses
+`DATABASE_MIGRATOR_URL` when it is set and `pnpm db:bootstrap` uses
+`DATABASE_SUPERUSER_URL`, each before `DATABASE_URL`.
 
 Two rules keep a migration from stalling a database that is in use. Every file
 runs under a 5-second lock timeout: one that cannot get its lock fails, and is

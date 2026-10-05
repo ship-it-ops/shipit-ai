@@ -68,15 +68,23 @@ describe('createPool', () => {
 function fakePool(answer: (text: string) => Promise<unknown>) {
   const sent: string[] = [];
   const release = vi.fn();
+  const listeners = new Set<(err: Error) => void>();
   const client = {
     query: async (text: string) => {
       sent.push(text);
       return (await answer(text)) ?? { rows: [], rowCount: 0 };
     },
+    on: (_event: 'error', listener: (err: Error) => void) => void listeners.add(listener),
+    removeListener: (_event: 'error', listener: (err: Error) => void) =>
+      void listeners.delete(listener),
     release,
   };
   const pool = { connect: async () => client, query: client.query } as unknown as Pool;
-  return { pool, sent, release };
+  /** What pg does when the server or the network ends the connection. */
+  const emitError = (err: Error): void => {
+    for (const listener of listeners) listener(err);
+  };
+  return { pool, sent, release, listeners, emitError };
 }
 
 const serverError = () => Object.assign(new Error('duplicate key value'), { code: '23505' });
@@ -137,6 +145,49 @@ describe('createDb', () => {
     await expect(
       createDb(pool).withClient((client) => client.query('SELECT pg_sleep(60)')),
     ).rejects.toThrow('Query read timeout');
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  // The server ending a session (a restart, a failover) is reported with an
+  // SQLSTATE too, but the connection is gone.
+  it.each([
+    ['57P01', 'terminating connection due to administrator command'],
+    ['57P02', 'terminating connection due to crash of another server process'],
+    ['08006', 'connection failure'],
+    ['25P03', 'terminating connection due to idle-in-transaction timeout'],
+  ])(
+    'discards a connection the server ended (%s), without rolling back on it',
+    async (code, message) => {
+      const { pool, sent, release } = fakePool(async (text) => {
+        if (text === 'SELECT 1')
+          throw Object.assign(new Error(message), { code, severity: 'FATAL' });
+        return undefined;
+      });
+      await expect(createDb(pool).tx((client) => client.query('SELECT 1'))).rejects.toThrow(
+        message,
+      );
+      expect(sent).toEqual(['BEGIN', 'SELECT 1']);
+      expect(release).toHaveBeenCalledWith(true);
+    },
+  );
+
+  // pg-pool takes its own 'error' listener off a client it hands out. With
+  // none, a connection that drops emits 'error' into nothing and Node ends the
+  // process. Ours is there for exactly as long as the connection is held.
+  it('listens for connection errors while it holds a connection, and no longer', async () => {
+    const { pool, listeners } = fakePool(async () => undefined);
+    const during: number[] = [];
+    await createDb(pool).tx(async () => void during.push(listeners.size));
+    await createDb(pool).withClient(async () => void during.push(listeners.size));
+    expect(during).toEqual([1, 1]);
+    expect(listeners.size).toBe(0);
+  });
+
+  it('discards a connection that dropped while it was held, even when no query failed', async () => {
+    const { pool, release, emitError } = fakePool(async () => undefined);
+    await createDb(pool).withClient(async () => {
+      expect(() => emitError(new Error('read ECONNRESET'))).not.toThrow();
+    });
     expect(release).toHaveBeenCalledWith(true);
   });
 

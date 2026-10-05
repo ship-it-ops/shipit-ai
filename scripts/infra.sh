@@ -27,13 +27,15 @@ while (( ELAPSED < MAX_WAIT )); do
     # pgvector first (needs the superuser, which the compose `shipit` user is),
     # then schema changes. Both are safe to re-run.
     # The target is the compose database this script has just started, not
-    # whatever DATABASE_URL happens to be exported in the shell: that may
-    # belong to another project. SHIPIT_DEV_DATABASE_URL is the deliberate
-    # override.
+    # whatever database URL happens to be exported in the shell: that may
+    # belong to another project or a real environment. All three names the two
+    # commands read are set, because each prefers its privileged one
+    # (DATABASE_SUPERUSER_URL, DATABASE_MIGRATOR_URL) over DATABASE_URL.
+    # SHIPIT_DEV_DATABASE_URL is the deliberate override.
     DEV_DB="${SHIPIT_DEV_DATABASE_URL:-postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@localhost:5432/shipit}"
     echo "Ensuring the pgvector extension and applying database migrations..."
-    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" pnpm --silent db:bootstrap)
-    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" pnpm --silent db:migrate)
+    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_SUPERUSER_URL="$DEV_DB" pnpm --silent db:bootstrap)
+    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_MIGRATOR_URL="$DEV_DB" pnpm --silent db:migrate)
     echo "Infrastructure ready!"
     exit 0
   fi

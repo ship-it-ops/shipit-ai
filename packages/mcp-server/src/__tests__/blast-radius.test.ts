@@ -18,7 +18,7 @@ function createServerAndClient() {
   });
 
   // Node exists check
-  responses.set('MATCH (n {id: $nodeId}) RETURN n.id', {
+  responses.set('MATCH (n {id: $nodeId})', {
     records: [createMockRecord({ id: 'shipit://logical-service/default/config-service' })],
     summary: { resultAvailableAfter: 1 },
   });
@@ -132,7 +132,7 @@ describe('blast_radius tool', () => {
 
   it('should handle NODE_NOT_FOUND with suggestions', async () => {
     const responses = new Map();
-    responses.set('MATCH (n {id: $nodeId}) RETURN n.id', {
+    responses.set('MATCH (n {id: $nodeId})', {
       records: [],
       summary: { resultAvailableAfter: 1 },
     });

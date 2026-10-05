@@ -19,7 +19,11 @@ export function registerSchemaInfo(server: McpServer, neo4j: Neo4jClient): void 
           RETURN collect(relationshipType) AS types
         `);
 
-      const labels = (nodeResult.records[0]?.get('labels') as string[]) ?? [];
+      // Labels that start with an underscore are the application's own
+      // bookkeeping, not part of the catalog.
+      const labels = ((nodeResult.records[0]?.get('labels') as string[]) ?? []).filter(
+        (label) => !label.startsWith('_'),
+      );
       const relTypes = (relResult.records[0]?.get('types') as string[]) ?? [];
 
       const nodeTypes = labels.map((label) => ({
