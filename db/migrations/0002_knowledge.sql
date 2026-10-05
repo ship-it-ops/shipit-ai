@@ -7,14 +7,24 @@
 -- in CI), never by the app at boot. Forward-only.
 
 -- pgvector must already be installed by a superuser (`pnpm db:bootstrap`; on
--- GKE the infra bootstrap step). Fail with the reason, not with
--- "type halfvec does not exist" three statements later.
+-- GKE the infra bootstrap step), in a version that has halfvec (0.7.0 or
+-- later). Fail with the reason, not with "type halfvec does not exist" three
+-- statements later.
 DO $$
+DECLARE
+  installed text;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+  SELECT extversion INTO installed FROM pg_extension WHERE extname = 'vector';
+  IF installed IS NULL THEN
     RAISE EXCEPTION USING
       MESSAGE = 'The "vector" extension (pgvector) is not installed in this database.',
       HINT = 'A superuser must run CREATE EXTENSION vector; (locally: pnpm db:bootstrap). See docs/agent/briefs/infra-pgvector-for-knowledge.md.';
+  END IF;
+  -- Compared number by number: as text, '0.10.0' sorts before '0.7.0'.
+  IF string_to_array(split_part(installed, '-', 1), '.')::int[] < ARRAY[0, 7, 0] THEN
+    RAISE EXCEPTION USING
+      MESSAGE = format('pgvector %s is installed; the knowledge schema needs 0.7.0 or later (the halfvec type).', installed),
+      HINT = 'A superuser must upgrade it: ALTER EXTENSION vector UPDATE; after installing a newer pgvector on the server.';
   END IF;
 END
 $$;
@@ -67,8 +77,8 @@ CREATE TABLE knowledge_principals (
   CONSTRAINT knowledge_principals_match_method CHECK (match_method IS NULL OR match_method IN ('email', 'login', 'manual')),
   CONSTRAINT knowledge_principals_connector_external_key UNIQUE (connector_id, external_id)
 );
-CREATE INDEX knowledge_principals_email_idx ON knowledge_principals (lower(email)) WHERE email IS NOT NULL;
-CREATE INDEX knowledge_principals_person_idx ON knowledge_principals (person_id) WHERE person_id IS NOT NULL;
+-- No index on email or person_id yet: matching principals to people arrives
+-- with a later migration, which adds the indexes its queries need.
 
 CREATE TABLE knowledge_documents (
   id                        uuid PRIMARY KEY,
@@ -112,8 +122,12 @@ CREATE TABLE knowledge_documents (
 CREATE INDEX knowledge_documents_claimable_idx ON knowledge_documents (updated_at)
   WHERE index_status IN ('pending', 'indexing', 'failed');
 CREATE INDEX knowledge_documents_container_updated_idx ON knowledge_documents (container_id, source_updated_at DESC);
-CREATE INDEX knowledge_documents_kind_state_idx ON knowledge_documents (kind, state, source_updated_at DESC);
-CREATE INDEX knowledge_documents_participants_idx ON knowledge_documents USING GIN (participant_principal_ids);
+-- Deleting a principal sets this column to NULL on its documents; without the
+-- index every deleted principal would scan the table.
+CREATE INDEX knowledge_documents_author_idx ON knowledge_documents (author_principal_id)
+  WHERE author_principal_id IS NOT NULL;
+-- No index by kind and state, or on participants, yet: timelines and people
+-- queries arrive with a later migration, which adds the indexes they need.
 
 CREATE TABLE knowledge_chunks (
   id              uuid PRIMARY KEY,
@@ -133,7 +147,6 @@ CREATE TABLE knowledge_chunks (
 );
 CREATE INDEX knowledge_chunks_embedding_idx ON knowledge_chunks USING hnsw (embedding halfvec_cosine_ops);
 CREATE INDEX knowledge_chunks_tsv_idx ON knowledge_chunks USING GIN (tsv);
-CREATE INDEX knowledge_chunks_text_hash_idx ON knowledge_chunks (document_id, text_hash);
 
 CREATE TABLE knowledge_state (
   key        text PRIMARY KEY,

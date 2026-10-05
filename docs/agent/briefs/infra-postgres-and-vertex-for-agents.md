@@ -82,6 +82,9 @@ timestamptz not null default now())`. `version` is the four-digit prefix.
   **fail the deploy** if a file fails.
 - **Tolerate an absent or empty `db/migrations/`** as a no-op. The first migration files land
   with the app change, after this brief.
+- **Amended 2026-10-04** by `infra-migration-lock-timeout-and-no-transaction.md`: every file
+  runs under a lock timeout, and a file whose first line is `-- migrate: no-transaction`
+  runs outside a transaction (for `CREATE INDEX CONCURRENTLY`).
 - Tool choice is yours (plain `psql` in a Job, dbmate, or similar), as long as the contract
   above holds. The app checks `schema_migrations` at boot and disables agent features, without
   crashing, if the schema is older than it expects.

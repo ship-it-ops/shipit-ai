@@ -6,7 +6,24 @@ import type { Db } from './db.js';
 // docs/agent/briefs/infra-postgres-and-vertex-for-agents.md): files are named
 // NNNN_description.sql, applied in order, each in its own transaction, and
 // recorded in schema_migrations by their four-digit prefix.
+//
+// Two rules keep a migration from stalling a database that is in use:
+// - Every file runs under a lock timeout. DDL that waits for a lock makes all
+//   later queries on that table wait behind it, so a file that cannot get its
+//   lock fails, and the deploy is tried again, instead.
+// - A file whose first line is the marker below runs OUTSIDE a transaction.
+//   That is for CREATE INDEX CONCURRENTLY, which indexes a table without
+//   blocking writes to it and which Postgres refuses inside a transaction.
+//   Such a file holds one statement, written so that running it twice is
+//   harmless (IF NOT EXISTS): it is recorded only after it succeeds.
 const FILE_PATTERN = /^(\d{4})_([a-z0-9_]+)\.sql$/;
+const NO_TRANSACTION_MARKER = /^--\s*migrate:\s*no-transaction\s*$/;
+const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
+
+/** Whether a migration file asks, on its first line, to run outside a transaction. */
+export function runsOutsideTransaction(sql: string): boolean {
+  return NO_TRANSACTION_MARKER.test(sql.split(/\r?\n/, 1)[0] ?? '');
+}
 
 // Arbitrary constant; every migrator takes this advisory lock so two of them
 // cannot interleave.
@@ -89,6 +106,13 @@ export interface RunMigrationsOptions {
   db: Db;
   dir: string;
   log?: (line: string) => void;
+  /**
+   * How long a statement in a migration may wait for a lock before the file
+   * fails. Default 5 s. Not applied to files that run outside a transaction:
+   * a concurrent index build waits for older transactions without blocking
+   * anyone, and cutting that wait short leaves an invalid index behind.
+   */
+  lockTimeoutMs?: number;
 }
 
 export interface RunMigrationsResult {
@@ -98,6 +122,7 @@ export interface RunMigrationsResult {
 
 export async function runMigrations(opts: RunMigrationsOptions): Promise<RunMigrationsResult> {
   const log = opts.log ?? (() => undefined);
+  const lockTimeoutMs = Math.max(0, Math.floor(opts.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS));
   const filenames = await listMigrationFiles(opts.dir);
 
   return opts.db.withClient(async (client) => {
@@ -122,10 +147,24 @@ export async function runMigrations(opts: RunMigrationsOptions): Promise<RunMigr
       for (const filename of plan.pending) {
         const sql = await readFile(join(opts.dir, filename), 'utf8');
         const { version } = parseMigrationFilename(filename)!;
+        const record = 'INSERT INTO schema_migrations (version) VALUES ($1)';
+        if (runsOutsideTransaction(sql)) {
+          try {
+            await client.query(sql);
+            await client.query(record, [version]);
+          } catch (err) {
+            throw new Error(`Migration ${filename} failed: ${(err as Error).message}`);
+          }
+          applied.push(filename);
+          log(`applied ${filename} (outside a transaction)`);
+          continue;
+        }
         await client.query('BEGIN');
         try {
+          // SET takes no parameters; the value is a number of our own making.
+          await client.query(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`);
           await client.query(sql);
-          await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [version]);
+          await client.query(record, [version]);
           await client.query('COMMIT');
         } catch (err) {
           await client.query('ROLLBACK').catch(() => undefined);

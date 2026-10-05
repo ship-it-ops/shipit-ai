@@ -43,6 +43,17 @@ describe.skipIf(!DATABASE_TEST_URL)('0002_knowledge on a real pgvector Postgres'
     expect(idx.rows[0]?.indexdef).toContain('USING hnsw');
   });
 
+  // Deleting a principal sets author_principal_id to NULL on its documents.
+  // Without this index each deleted principal scans the whole table, and the
+  // purge of a connector's people would not finish inside its statement timeout.
+  it('indexes the column the principal purge looks documents up by', async () => {
+    const idx = await database.db.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE schemaname = $1 AND indexname = 'knowledge_documents_author_idx'`,
+      [database.schema],
+    );
+    expect(idx.rows[0]?.indexdef).toContain('(author_principal_id)');
+  });
+
   it('resolves the cosine operator from the private schema', async () => {
     const { rows } = await database.db.query<{ distance: number }>(
       `SELECT '[1,0,0]'::halfvec(3) <=> '[0,1,0]'::halfvec(3) AS distance`,

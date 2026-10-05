@@ -172,6 +172,11 @@ services:
     environment:
       NEO4J_URI: bolt://neo4j:7687
       REDIS_URL: redis://redis:6379
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them, though the runner serves no HTTP.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
       DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}

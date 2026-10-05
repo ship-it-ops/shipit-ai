@@ -48,8 +48,9 @@ CREATE TABLE runs (
 
 CREATE INDEX runs_status_idx ON runs (status);
 CREATE INDEX runs_agent_created_idx ON runs (agent_id, created_at DESC);
-CREATE INDEX runs_root_idx ON runs (root_run_id);
 CREATE INDEX runs_created_idx ON runs (created_at DESC);
+-- No index on root_run_id or parent_run_id yet: nothing reads a run's tree.
+-- The migration that adds child runs or run retention adds them.
 
 -- The transcript exactly as the model layer consumes it (each row is one
 -- message object, provider metadata included). Append-only.
@@ -95,5 +96,5 @@ CREATE TABLE tool_calls (
     ('pending', 'executing', 'succeeded', 'failed', 'denied', 'expired', 'outcome_unknown'))
 );
 
-CREATE INDEX tool_calls_run_idx ON tool_calls (run_id);
-CREATE INDEX tool_calls_service_effect_idx ON tool_calls (service, effect, started_at);
+-- Calls are read by run, which the unique (run_id, call_id) index serves. An
+-- index by service and effect arrives with the first query that filters on them.

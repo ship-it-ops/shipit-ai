@@ -7,6 +7,7 @@ import {
   listMigrationFiles,
   parseMigrationFilename,
   planMigrations,
+  runsOutsideTransaction,
 } from '../migrate.js';
 import { EXPECTED_SCHEMA_VERSION } from '../schema-version.js';
 
@@ -88,5 +89,34 @@ describe('db/migrations', () => {
     const plan = planMigrations(readdirSync(MIGRATIONS_DIR), []);
     const last = parseMigrationFilename(plan.pending.at(-1)!)!.version;
     expect(last).toBe(EXPECTED_SCHEMA_VERSION);
+  });
+});
+
+describe('runsOutsideTransaction', () => {
+  it('is true only when the marker is the first line of the file', () => {
+    expect(
+      runsOutsideTransaction('-- migrate: no-transaction\nCREATE INDEX CONCURRENTLY i ON t (a);'),
+    ).toBe(true);
+    expect(
+      runsOutsideTransaction('-- migrate: no-transaction\r\nCREATE INDEX CONCURRENTLY i ON t (a);'),
+    ).toBe(true);
+    expect(runsOutsideTransaction('--   migrate:   no-transaction  \nSELECT 1;')).toBe(true);
+    expect(runsOutsideTransaction('-- Adds an index.\n-- migrate: no-transaction\nSELECT 1;')).toBe(
+      false,
+    );
+    expect(runsOutsideTransaction('CREATE TABLE t (a int); -- migrate: no-transaction')).toBe(
+      false,
+    );
+    expect(runsOutsideTransaction('')).toBe(false);
+  });
+
+  // The rule is easy to break by accident: every file in the repo that is
+  // meant to run in a transaction must not start with the marker.
+  it('no migration in db/migrations runs outside a transaction today', async () => {
+    const { readFileSync } = await import('node:fs');
+    const marked = readdirSync(MIGRATIONS_DIR)
+      .filter((f) => f.endsWith('.sql'))
+      .filter((f) => runsOutsideTransaction(readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8')));
+    expect(marked).toEqual([]);
   });
 });

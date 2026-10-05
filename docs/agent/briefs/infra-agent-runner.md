@@ -34,13 +34,20 @@ tagging, scanning and pinning. The app repo's CI builds it in its docker matrix 
 - Config: mount `shipit.config.yaml` at `/app/shipit.config.yaml` like the other workers.
 - Environment, the same names the other services use where they overlap:
 
-  | Variable                                                     | Value                                                     |
-  | ------------------------------------------------------------ | --------------------------------------------------------- |
-  | `DATABASE_URL`                                               | from the ExternalSecret `shipit-agent-secrets` (app role) |
-  | `REDIS_URL`                                                  | the in-cluster Redis                                      |
-  | `NEO4J_URI`, `NEO4J_PASSWORD` (and user, as core-writer has) | the graph                                                 |
-  | `GOOGLE_CLOUD_PROJECT`                                       | `ship-it-ai-portal`                                       |
-  | `GOOGLE_CLOUD_LOCATION`                                      | `global`                                                  |
+  | Variable                                    | Value                                                     |
+  | ------------------------------------------- | --------------------------------------------------------- |
+  | `DATABASE_URL`                              | from the ExternalSecret `shipit-agent-secrets` (app role) |
+  | `REDIS_URL`                                 | the in-cluster Redis                                      |
+  | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` | the graph, as `core-writer` gets them                     |
+  | `SHIPIT_API_URL`, `SHIPIT_WEB_ORIGIN`       | as `core-writer` gets them (see below)                    |
+  | `GOOGLE_CLOUD_PROJECT`                      | `ship-it-ai-portal`                                       |
+  | `GOOGLE_CLOUD_LOCATION`                     | `global`                                                  |
+
+  The runner serves no HTTP, but it reads the same mounted `shipit.config.yaml` as every
+  other backend service, and the loader refuses to start while any placeholder without a
+  fallback is unset: `NEO4J_USER`, `SHIPIT_API_URL` and `SHIPIT_WEB_ORIGIN` among them. A
+  pod without them exits at boot with `Config error at …: references env var … which is not
+set`.
 
   It does **not** need `SHIPIT_AGENT_PLATFORM_KEY` yet (graph-write tools and connection
   secrets arrive with Milestone 3; a later brief will say so). Do not route `envFrom` the
@@ -48,8 +55,12 @@ tagging, scanning and pinning. The app repo's CI builds it in its docker matrix 
 
 - Resources: infra decides. It is I/O-bound (waiting on Vertex and Postgres); requests
   around `100m / 256Mi` and a `512Mi` limit should be ample at `ai.runner.concurrency: 4`.
-- Probes: none needed. A crash restarts the pod; a hung process is caught by the app (runs
-  without progress are failed by the sweeper, and `/ai/status` shows the runner as down).
+- Probes: no readiness probe. A crash restarts the pod. A hung process is **not** recovered
+  by the app: the sweeper that fails runs without progress and re-queues expired leases
+  lives inside the runner, so with one replica a wedged runner leaves its runs `running`
+  and nothing restarts it. `/ai/status` does show the runner as down (its Redis heartbeat,
+  `shipit-agent-runner-heartbeat`, expires), so either alert on that check or give the pod
+  an exec liveness probe; the app does not ship one yet.
 - `terminationGracePeriodSeconds: 60`. On SIGTERM the runner stops taking jobs and waits
   for runs in progress; a run cut off by the kill resumes on the next pod within about a
   minute (its lease expires and the sweeper re-queues it). A write that was in flight is
