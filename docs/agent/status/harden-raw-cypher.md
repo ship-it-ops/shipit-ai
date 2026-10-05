@@ -26,10 +26,12 @@ in commits and the pull request, and keep anything more specific for the owner i
 - New: `packages/shared/src/cypher/read-only-guard.ts` (the check, pure text),
   `packages/mcp-server/src/cypher/read-only-query.ts` (the executor), their tests.
 - Changed: `packages/mcp-server/src/tools/graph-query.ts`, `neo4j-client.ts`, `tools/registry.ts`,
-  `tools/metadata.ts`, `package.json` (a `./cypher` export);
+  `tools/metadata.ts`, `errors.ts` (a `SERVER_BUSY` code), `package.json` (a `./cypher` export);
   `packages/api-server/src/routes/query.ts`, `services/cypher-query-service.ts`,
   `vitest.config.ts`; `packages/agent-runner/src/__tests__/graph-tools.test.ts`;
-  `docs/mcp-tools.md`, `plugin/skills/shipit-cypher/SKILL.md`.
+  `packages/shared/src/types/query-api.ts`; `packages/web-ui/src/components/query/result-grid.tsx`,
+  `packages/web-ui/src/lib/api.ts`; `docs/mcp-tools.md`, `plugin/skills/shipit-cypher/SKILL.md`,
+  `plugin/skills/shipit-debugging/SKILL.md`.
 - Removed: `packages/api-server/src/services/cypher-safety.ts` (replaced by the shared check).
 - Not touched: `packages/api-server/src/{server,index}.ts`, the lockfile, migrations.
 
