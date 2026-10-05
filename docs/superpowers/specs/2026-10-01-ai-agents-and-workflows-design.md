@@ -931,8 +931,9 @@ original wording; this list is what holds today.
 - **`search_entities` and internal nodes (§Tool sources).** The label, sort key and filter
   keys of `search_entities` must be plain identifiers (letters, digits, underscores), and
   a label may not start with an underscore. Nodes whose label starts with an underscore
-  are the application's own bookkeeping; no structured graph tool finds, lists, counts or
-  passes through one. Both rules apply to MCP clients too.
+  are the application's own bookkeeping; no structured graph tool starts from one, lists
+  one or counts one (they carry no relationships, so a traversal has none to reach).
+  Both rules apply to MCP clients too.
 - **`If-Match` (§API).** Definition updates honour `If-Match` and answer `409
 VERSION_CONFLICT` on a mismatch, but a request without the header is not refused: it
   forces the write, the rule the connector and schema routes already follow.

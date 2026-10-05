@@ -223,9 +223,11 @@ starting with a digit, at most 64 characters. A label must start with a letter. 
 else is refused before a query runs.
 
 Nodes whose label starts with an underscore are the application's own bookkeeping and
-not part of the catalog. No structured tool (`search_entities`, `entity_detail`,
-`find_owners`, `blast_radius`, `dependency_chain`, `graph_stats`, `schema_info`) finds,
-lists, counts or passes through one.
+not part of the catalog. No structured tool starts from one, lists one or counts one:
+`search_entities`, `graph_stats` and `schema_info` leave them out, and `entity_detail`,
+`find_owners`, `blast_radius` and `dependency_chain` answer "not found" for the id of
+one. They carry no relationships, so a traversal has none to reach; the neighbors of
+`entity_detail` and the paths of `dependency_chain` exclude them all the same.
 
 **Response:**
 
