@@ -143,6 +143,10 @@ export {
 } from './auth/token-crypto.js';
 export { verifyGitHubWebhookSignature } from './auth/github-webhook.js';
 
+// The read-only check for caller-written Cypher (Query Playground, graph_query)
+export { checkReadOnlyCypher, isInternalLabel } from './cypher/read-only-guard.js';
+export type { ReadOnlyCypherVerdict, ReadOnlyCypherRefusal } from './cypher/read-only-guard.js';
+
 // Config
 export {
   loadConfig,
