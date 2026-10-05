@@ -347,17 +347,19 @@ export class KnowledgeStore {
   }
 
   /**
-   * The connector was deleted: nothing of it is selected any more, and
-   * everything it holds is to be purged. Returns how many containers that was.
+   * The connector was deleted. Nothing lists its containers any more, so every
+   * one of them, selected or not, is deselected, marked gone and marked for
+   * purging: the worker deletes what they hold and then the rows themselves,
+   * which carry the names of repositories and channels. Returns how many
+   * containers that was.
    */
   async deselectConnector(connectorId: string, by: string): Promise<number> {
     const { rowCount } = await this.db.query(
-      `UPDATE knowledge_containers c
+      `UPDATE knowledge_containers
           SET selected = false, selected_by = $2, selected_at = now(),
-              visibility_acknowledged_by = NULL, purge_requested_at = now(), updated_at = now()
-        WHERE c.connector_id = $1
-          AND (c.selected
-               OR EXISTS (SELECT 1 FROM knowledge_documents d WHERE d.container_id = c.id))`,
+              visibility_acknowledged_by = NULL, purge_requested_at = now(),
+              gone_at = COALESCE(gone_at, now()), updated_at = now()
+        WHERE connector_id = $1`,
       [connectorId, by],
     );
     return rowCount ?? 0;
@@ -376,9 +378,11 @@ export class KnowledgeStore {
   /**
    * Deletes what deselected containers hold (chunks go by cascade) and resets
    * their sync state, so selecting one again starts a fresh backfill. A
-   * connector left with nothing selected, nothing stored and no purge pending
-   * loses its principals as well: names, emails and logins are held only while
-   * something refers to them. Returns the number of documents deleted.
+   * container the source no longer has (or whose connector was deleted) loses
+   * its row too. A connector left with nothing selected, nothing stored and no
+   * purge pending loses its principals as well: names, emails and logins are
+   * held only while something refers to them. Returns the number of documents
+   * deleted.
    */
   async purgeRequested(limit = 20): Promise<number> {
     return this.db.tx(async (tx) => {
@@ -401,6 +405,14 @@ export class KnowledgeStore {
             SET purge_requested_at = NULL, checkpoint = NULL, last_polled_at = NULL,
                 last_reconciled_at = NULL, updated_at = now()
           WHERE id = ANY($1::uuid[])`,
+        [ids],
+      );
+      // Purged, deselected and no longer at the source: nothing would ever
+      // show or use the row again. If the source lists the container again,
+      // the next listing brings it back.
+      await tx.query(
+        `DELETE FROM knowledge_containers
+          WHERE id = ANY($1::uuid[]) AND gone_at IS NOT NULL AND NOT selected`,
         [ids],
       );
       await tx.query(

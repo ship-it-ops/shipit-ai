@@ -217,6 +217,11 @@ Search and filter entities in the knowledge graph by label and property values.
 | `include_absent`   | boolean | no       | false    | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
 | `compact`          | boolean | no       | false    | Strip `_meta` envelope                                                                 |
 
+`label`, `sort_by` and the keys of `property_filters` are written into the query as
+identifiers, so each must be a plain identifier: letters, digits and underscores, at most
+64 characters. A label may not start with an underscore (those are internal nodes).
+Anything else is refused with `INVALID_PARAMETER` before a query runs.
+
 **Response:**
 
 ```json

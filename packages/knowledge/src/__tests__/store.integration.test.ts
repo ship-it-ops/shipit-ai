@@ -817,13 +817,16 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
 
       expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
       expect(await sink.selectedContainers()).toEqual([]);
+      const pending = await database.db.query<{ selected: boolean; acked: string | null }>(
+        `SELECT selected, visibility_acknowledged_by AS acked FROM knowledge_containers
+          WHERE connector_id = 'slack-1'`,
+      );
+      expect(pending.rows).toEqual([
+        { selected: false, acked: null },
+        { selected: false, acked: null },
+      ]);
       expect(await store.purgeRequested()).toBe(2);
       expect(await documents()).toEqual([]);
-      const rows = await store.containersWithCounts('slack-1');
-      expect(rows.map((r) => [r.selected, r.visibilityAcknowledgedBy])).toEqual([
-        [false, null],
-        [false, null],
-      ]);
       // Another connector's containers are untouched.
       expect(await store.deselectConnector('other', 'ada')).toBe(0);
     });
@@ -1101,6 +1104,70 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
         `SELECT index_status FROM knowledge_documents WHERE external_id = 'd1'`,
       );
       expect(after.rows[0]!.index_status).toBe('failed');
+    });
+
+    const containerIds = async (connectorId: string) =>
+      (
+        await database.db.query<{ external_id: string }>(
+          `SELECT external_id FROM knowledge_containers WHERE connector_id = $1 ORDER BY external_id`,
+          [connectorId],
+        )
+      ).rows.map((r) => r.external_id);
+
+    // Spec §API: the worker deletes the content and then the rows. A container
+    // row carries the name of a repository or channel, private ones included.
+    it('removes every container row of a deleted connector, selected or not', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      // C2 was never selected and holds nothing: it goes too.
+      expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
+      await store.purgeRequested();
+      expect(await containerIds('slack-1')).toEqual([]);
+      expect((await database.db.query('SELECT 1 FROM knowledge_documents')).rows).toEqual([]);
+    });
+
+    it('removes a container the source no longer has once it is deselected and purged', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await sink.upsertContainers([C2]); // C1 is gone at the source, still selected
+      expect(await containerIds('slack-1')).toEqual(['C1', 'C2']);
+      await store.selectContainer('slack-1', (await rowFor('C1')).id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      await store.purgeRequested();
+      expect(await containerIds('slack-1')).toEqual(['C2']);
+    });
+
+    it('keeps the row of a deselected container the source still lists', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await store.selectContainer('slack-1', (await rowFor('C1')).id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      await store.purgeRequested();
+      expect(await containerIds('slack-1')).toEqual(['C1', 'C2']);
+    });
+
+    // An id is reused: what the deleted connector left is on its way out, and
+    // the new connector's first listing brings its containers back, unselected.
+    it('lets a new connector with the same id list its containers afresh', async () => {
+      await selectAcknowledged('C2');
+      await store.deselectConnector('slack-1', 'ada');
+      await sink.upsertContainers([C1, C2]);
+      await store.purgeRequested();
+      const rows = await database.db.query<{
+        external_id: string;
+        selected: boolean;
+        acked: string | null;
+      }>(
+        `SELECT external_id, selected, visibility_acknowledged_by AS acked FROM knowledge_containers
+          WHERE connector_id = 'slack-1' ORDER BY external_id`,
+      );
+      expect(rows.rows).toEqual([
+        { external_id: 'C1', selected: false, acked: null },
+        { external_id: 'C2', selected: false, acked: null },
+      ]);
     });
 
     it('says whether a connector has anything selected', async () => {

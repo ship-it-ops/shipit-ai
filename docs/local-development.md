@@ -236,6 +236,18 @@ GKE the infra repo's deploy step applies the same files. When you add a
 migration, bump `EXPECTED_SCHEMA_VERSION` in
 `packages/agents/src/schema-version.ts` in the same change.
 
+`pnpm start:infra` (and `start:backend`, `start:all`) always migrates the compose
+database it has just started, whatever `DATABASE_URL` is exported in your shell.
+To point it somewhere else on purpose, set `SHIPIT_DEV_DATABASE_URL`.
+
+Two rules keep a migration from stalling a database that is in use. Every file
+runs under a 5-second lock timeout: one that cannot get its lock fails, and is
+tried again later, instead of making every other query on the table wait
+behind it. And a file whose first line is `-- migrate: no-transaction` runs
+outside a transaction, which is what `CREATE INDEX CONCURRENTLY` needs to index
+a table without blocking writes to it. Such a file holds one statement, written
+so that running it twice is harmless (`IF NOT EXISTS`).
+
 The knowledge layer (`packages/knowledge`, `packages/knowledge-worker`) stores
 documents and embeddings in the same database and needs the pgvector extension.
 pgvector is not a trusted extension, so a superuser creates it once:
@@ -277,13 +289,17 @@ The `PATCH` replaces the whole `knowledge` block, so send every setting you chan
 its default, not only the one you are changing now. A change to `docs.paths`,
 `docs.maxFileBytes` or `historyDays` takes effect at the next poll. Deselecting a repository
 (`{"selected":false}`) deletes what was indexed for it, within about a minute, and so does
-deleting the connector. Selecting a repository without `acknowledgeVisibility` lists the
-organisation's repositories again first, to make sure it is still public.
+deleting the connector. Selecting a repository without `acknowledgeVisibility` asks GitHub
+about that repository first, to make sure it is still public. A `429 RATE_LIMITED` from
+the refresh or the select means GitHub asked to wait; try again in a few minutes.
+
+Knowledge runs have their own history: `GET $API` returns them as `lastKnowledgeRuns`,
+with their notes, beside `lastRuns`, which is the graph sync alone.
 
 Pull requests and docs need nothing new from the GitHub App. Issues need the App's
 **Issues: read** permission: the App's owner adds it under the App's settings, Permissions
 & events, and an owner of the organisation approves the request GitHub emails. Until then
-runs succeed with the note `issues_permission_missing` in the connector's run history.
+runs succeed with the note `issues_permission_missing` in `lastKnowledgeRuns`.
 
 If your `postgres_data` volume was created by the earlier `postgres:17-alpine` image, the
 pgvector image (Debian) sorts text with a different collation library, and indexes on text
@@ -302,7 +318,9 @@ Each suite creates and drops its own schema, so it does not touch your data.
 ### Running agents locally
 
 Runs are worked by the `agent-runner` process, which calls models on Vertex AI
-and runs the graph tools against your local Neo4j. It needs:
+and runs the graph tools against your local Neo4j. Agents are offered seven of
+the MCP server's eight tools: `graph_query`, which runs raw Cypher, stays with
+MCP clients (the tool metadata marks it `agents: false`). The runner needs:
 
 - **Application Default Credentials:** `gcloud auth application-default login`.
 - **A Vertex project:** `GOOGLE_CLOUD_PROJECT` in the runner's environment (or

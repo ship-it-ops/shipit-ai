@@ -917,6 +917,41 @@ broken-down plan.
 Nothing is user-visible until the release, except Milestone 0, which can merge on its own.
 Milestones 1 to 5 merge to `main` behind `ai.enabled: false` in the committed config.
 
+## As built in Milestone 1 (backend, 2026-10-04)
+
+Where the code that exists differs from the text above. The sections named keep their
+original wording; this list is what holds today.
+
+- **Graph tools (§Tool sources).** Agents are offered seven of the eight graph tools.
+  `graph_query` is withheld: it runs a caller-written string as Cypher behind a guard that
+  stops write keywords but not clauses that fetch a URL, with no timeout and a row cap the
+  query can override, and a model acts on the text it reads. The MCP tool metadata carries
+  an `agents` flag per tool; the runner offers only tools marked `true`, and the agent
+  tool catalog is to filter on the same flag. `graph_query` returns to agents once it
+  shares the Query Playground's guard, allow-lists `CALL`, runs under a timeout and
+  enforces its row cap. External MCP clients see no change.
+- **`search_entities` (§Tool sources).** Its label, sort key and filter keys must be plain
+  identifiers (letters, digits, underscores), and a label may not start with an
+  underscore. This applies to MCP clients too.
+- **`If-Match` (§API).** Definition updates honour `If-Match` and answer `409
+VERSION_CONFLICT` on a mismatch, but a request without the header is not refused: it
+  forces the write, the rule the connector and schema routes already follow.
+- **Streaming (§Run lifecycle).** There is no text-delta channel. The runner publishes
+  `{ runId, seq }` and status events on `shipit-run-events`, and `GET /api/runs/:id/stream`
+  relays those: the stream is message-level. Deltas are still planned with the chat UI.
+- **Runtime seam (§Run lifecycle).** `AgentRuntime` has one method, `process(runId)`,
+  which claims the run and works on it until it ends, parks or is taken over. Cancel is a
+  flag on the run the worker reads, not a call on the runtime.
+- **Cancel (§Run lifecycle).** A cancel that arrives while the last step of a chat turn is
+  returning is settled when the run parks: it ends `cancelled` instead of `waiting_input`.
+- **At-most-once writes (decision 13).** The rule is enforced in the store, not only by
+  the loop: a tool call is started only for the worker that holds the run's lease, a
+  write or delete that already has a row is never started again, and the first outcome
+  recorded for a call stands. A worker whose lease could not be renewed for a whole lease
+  gives the run up.
+- **Migrations (§Data model, §Infra).** Each file runs under a 5-second lock timeout, and
+  a file whose first line is `-- migrate: no-transaction` runs outside a transaction.
+
 ## To confirm in review
 
 Choices made in this document that the owner has not explicitly seen:
