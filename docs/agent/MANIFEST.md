@@ -32,7 +32,7 @@ Last updated: 2026-10-05 | Total notes: 101
 
 <!-- always-read at session start -->
 
-- [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-05 | knowledge K0 + K1a in PR #119, reviewed and fixed, waiting for the owner's merge; K1b plan next
+- [knowledge-k1b](status/knowledge-k1b.md) | status | active | core | 2026-10-05 | knowledge K1b on knowledge-k1b: plan being written; K0 + K1a merged in PR #119
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend on ai-agents-design, ready to PR; next session executes the agents UI plan on a new branch
 
 ## Decisions
@@ -81,7 +81,7 @@ Last updated: 2026-10-05 | Total notes: 101
 
 ## Plans
 
-- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-05 | knowledge connectors: K0 + K1a in PR #119, review findings fixed; live embedding waits on credentials
+- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-05 | knowledge connectors: K0 + K1a merged (PR #119); K1b plan next; live embedding waits on credentials
 - [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-04 | AI nav + agent builder; M0 nav and M1 backend (foundation, runner) implemented; M1 UI plan written, not executed
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained

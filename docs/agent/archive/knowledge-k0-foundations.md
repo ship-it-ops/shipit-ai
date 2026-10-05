@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-10-03
 updated: 2026-10-05
 author: claude-session-2026-10-01-knowledge-connectors
@@ -10,7 +10,11 @@ tags: [knowledge, connectors, postgres, pgvector, worker]
 importance: core
 ---
 
-# Knowledge layer on `ai-agents-design`: K0 and K1a are in pull request #119, reviewed and fixed, waiting for the owner to merge; K1b plan next
+# Knowledge layer on `ai-agents-design`: K0 and K1a, merged to `main` in pull request #119
+
+**Completed 2026-10-05:** #119 was squash-merged to `main` as `d966fa2`. The work continues
+on `knowledge-k1b`: see [knowledge-k1b](../status/knowledge-k1b.md). What follows is the note
+as it stood before the merge.
 
 The branch is up as [#119](https://github.com/ship-it-ops/shipit-ai/pull/119). A review of the
 whole pull request and fresh reviews of each batch of its fixes are done and their findings

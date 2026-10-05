@@ -488,6 +488,9 @@ Of the K1a review's deferred minors above, two are now fixed: a sleep that ignor
 aborted before it began, and the container `PUT` selecting a `gone` container. The others
 stand.
 
+**Merged (2026-10-05):** #119 was squash-merged to `main` as `d966fa2`, its tree identical to
+the reviewed head `5d7fd9f`. The work continues on `knowledge-k1b`.
+
 **Next:** refresh the credentials and run the live embedding; then the K1b plan (alias
 dictionary, deterministic linking, references, people matching, their migration at `0005` or
 later, the timeline and document routes), written against this code.
