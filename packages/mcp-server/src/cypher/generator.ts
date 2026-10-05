@@ -142,20 +142,50 @@ export function generateDependencyChainCypher(
   };
 }
 
+// A label or property name is written into the query text, where a parameter
+// cannot go. Only a plain identifier is accepted: a backtick would end the
+// quoted name, and the rest of the value would be read as Cypher. A label may
+// not start with an underscore, which keeps search off the internal nodes
+// (_AccessToken, _LinkingKey, _IdempotencyLog); properties may (_absent_since).
+export const LABEL_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+export const PROPERTY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/** A label or property name that cannot be written into a query. */
+export class CypherIdentifierError extends Error {
+  constructor(field: string, expected: string) {
+    super(`${field} must be ${expected}: letters, digits and underscores only.`);
+    this.name = 'CypherIdentifierError';
+  }
+}
+
+function labelIdentifier(value: string): string {
+  if (!LABEL_PATTERN.test(value)) {
+    throw new CypherIdentifierError('label', 'a node label that starts with a letter');
+  }
+  return value;
+}
+
+function propertyIdentifier(field: string, value: string): string {
+  if (!PROPERTY_PATTERN.test(value)) throw new CypherIdentifierError(field, 'a property name');
+  return value;
+}
+
 export function generateSearchEntitiesCypher(
-  label?: string,
+  labelFilter?: string,
   propertyFilters?: Record<string, unknown>,
   limit: number = 25,
   sortBy: string = 'name',
   includeAbsent = false,
 ): CypherQuery {
   const params: Record<string, unknown> = { limit };
-  let matchClause = label ? `MATCH (n:\`${label}\`)` : 'MATCH (n)';
+  const matchClause = labelFilter ? `MATCH (n:\`${labelIdentifier(labelFilter)}\`)` : 'MATCH (n)';
+  const sortKey = propertyIdentifier('sort_by', sortBy);
   const whereClauses: string[] = [];
 
   if (propertyFilters) {
     let filterIdx = 0;
-    for (const [key, value] of Object.entries(propertyFilters)) {
+    for (const [rawKey, value] of Object.entries(propertyFilters)) {
+      const key = propertyIdentifier('property_filters keys', rawKey);
       const paramName = `filter_${filterIdx}`;
       if (value === null) {
         whereClauses.push(`n.\`${key}\` IS NULL`);
@@ -175,7 +205,7 @@ export function generateSearchEntitiesCypher(
     ${matchClause}
     ${whereStr}
     WITH n, labels(n) AS labels
-    ORDER BY n.\`${sortBy}\` ASC
+    ORDER BY n.\`${sortKey}\` ASC
     WITH count(n) AS total, collect(n)[0..toInteger($limit)] AS entities,
          collect(labels(n))[0..toInteger($limit)] AS all_labels
     RETURN total, entities, all_labels`;
@@ -188,7 +218,7 @@ export function generateSearchEntitiesCypher(
     ${matchClause}
     ${whereStr}
     WITH total, n, labels(n) AS lbl
-    ORDER BY n.\`${sortBy}\` ASC
+    ORDER BY n.\`${sortKey}\` ASC
     LIMIT toInteger($limit)
     RETURN total, collect({node: n, labels: lbl}) AS entities`;
 

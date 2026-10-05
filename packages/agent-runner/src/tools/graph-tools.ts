@@ -4,47 +4,58 @@
 import { z } from 'zod';
 import {
   graphReadTools,
+  type GraphReadTool,
   type GraphToolConfig,
   type Neo4jClient,
 } from '@shipit-ai/mcp-server/tools';
 import type { RunnerTool } from './runner-tool.js';
 
+/**
+ * The graph tools a model may be offered: those the MCP metadata marks
+ * `agents: true`. graph_query is not among them (it runs a caller-written
+ * string as Cypher; the metadata says what has to change first).
+ */
 export function graphTools(neo4j: Neo4jClient, config: GraphToolConfig): RunnerTool[] {
-  return graphReadTools(neo4j, config).map((tool) => {
-    // The runner unwraps the MCP envelope itself (see unwrap below), so the
-    // `compact` flag means nothing here and is hidden from the model.
-    const modelSchema =
-      'compact' in tool.inputSchema.shape
-        ? tool.inputSchema.omit({ compact: true } as never)
-        : tool.inputSchema;
-    const { $schema: _ignored, ...inputSchema } = z.toJSONSchema(modelSchema, {
-      io: 'input',
-      unrepresentable: 'any',
-    }) as Record<string, unknown>;
-    return {
-      descriptor: {
-        id: `graph.${tool.name}`,
-        service: 'graph',
-        effect: tool.effect,
-        description: tool.description,
-        inputSchema,
-        source: 'builtin',
-        effectConfirmed: true,
-        enabled: true,
-      },
-      parse(input) {
-        const result = modelSchema.safeParse(input ?? {});
-        if (result.success) return { ok: true, value: result.data as Record<string, unknown> };
-        return {
-          ok: false,
-          message: result.error.issues
-            .map((i) => `${i.path.join('.') || 'input'}: ${i.message}`)
-            .join('; '),
-        };
-      },
-      execute: async (input) => unwrap(await tool.run(input)),
-    };
-  });
+  return graphReadTools(neo4j, config)
+    .filter((tool) => tool.agents)
+    .map(toRunnerTool);
+}
+
+/** One MCP graph tool, in the shape the run loop calls. */
+export function toRunnerTool(tool: GraphReadTool): RunnerTool {
+  // The runner unwraps the MCP envelope itself (see unwrap below), so the
+  // `compact` flag means nothing here and is hidden from the model.
+  const modelSchema =
+    'compact' in tool.inputSchema.shape
+      ? tool.inputSchema.omit({ compact: true } as never)
+      : tool.inputSchema;
+  const { $schema: _ignored, ...inputSchema } = z.toJSONSchema(modelSchema, {
+    io: 'input',
+    unrepresentable: 'any',
+  }) as Record<string, unknown>;
+  return {
+    descriptor: {
+      id: `graph.${tool.name}`,
+      service: 'graph',
+      effect: tool.effect,
+      description: tool.description,
+      inputSchema,
+      source: 'builtin',
+      effectConfirmed: true,
+      enabled: true,
+    },
+    parse(input) {
+      const result = modelSchema.safeParse(input ?? {});
+      if (result.success) return { ok: true, value: result.data as Record<string, unknown> };
+      return {
+        ok: false,
+        message: result.error.issues
+          .map((i) => `${i.path.join('.') || 'input'}: ${i.message}`)
+          .join('; '),
+      };
+    },
+    execute: async (input) => unwrap(await tool.run(input)),
+  };
 }
 
 /**

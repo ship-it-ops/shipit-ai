@@ -20,6 +20,12 @@ export interface McpToolMetadata {
   service: 'graph';
   /** What the tool does to the service; the agent gateway grants by effect. */
   effect: 'read' | 'write' | 'delete';
+  /**
+   * Whether our own agents may be offered this tool. The agent runner and the
+   * agent tool catalog both read it, so a tool is never listed for an agent
+   * that no run can be given. `false` leaves the tool to MCP clients.
+   */
+  agents: boolean;
   /** Anchor on docs/mcp-tools.md (the tool name itself, slugified). */
   docAnchor: string;
   params: readonly McpToolParamSpec[];
@@ -50,6 +56,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'blast_radius',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [
       {
         name: 'node',
@@ -97,6 +104,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'entity_detail',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [
       { name: 'entity', type: 'string', required: true, description: 'Entity canonical ID.' },
       {
@@ -124,6 +132,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'schema_info',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [],
   },
   {
@@ -133,6 +142,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'find_owners',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [
       { name: 'entity', type: 'string', required: true, description: 'Entity canonical ID.' },
       {
@@ -152,6 +162,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'dependency_chain',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [
       { name: 'from', type: 'string', required: true, description: 'Source node canonical ID.' },
       { name: 'to', type: 'string', required: true, description: 'Target node canonical ID.' },
@@ -173,6 +184,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'graph_stats',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [INCLUDE_ABSENT_PARAM],
   },
   {
@@ -181,6 +193,7 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'search_entities',
     service: 'graph',
     effect: 'read',
+    agents: true,
     params: [
       {
         name: 'label',
@@ -219,6 +232,13 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     docAnchor: 'graph_query',
     service: 'graph',
     effect: 'read',
+    // Not for agents. It runs a caller-written string as Cypher, behind a
+    // guard that stops write keywords but not clauses that fetch a URL, with
+    // no timeout and a row cap the query can override. A model acts on the
+    // text it reads, so that reach stays with MCP clients until the tool
+    // shares the Query Playground's guard, allow-lists CALL, runs under a
+    // timeout and enforces its row cap.
+    agents: false,
     params: [
       {
         name: 'query',

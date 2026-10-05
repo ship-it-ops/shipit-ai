@@ -31,6 +31,8 @@ export interface GraphReadTool {
   description: string;
   /** From the tool's metadata. Every graph tool today only reads. */
   effect: McpToolMetadata['effect'];
+  /** From the tool's metadata: false means an agent must not be offered it. */
+  agents: boolean;
   /** Validates and fills defaults. Parse with it before calling `run`. */
   inputSchema: z.ZodObject<z.ZodRawShape>;
   /**
@@ -59,6 +61,7 @@ export function graphReadTools(neo4j: Neo4jClient, config: GraphToolConfig): Gra
         name,
         description,
         effect: MCP_TOOL_BY_NAME[name]!.effect,
+        agents: MCP_TOOL_BY_NAME[name]!.agents,
         inputSchema: z.object(shape),
         run: async (params) => JSON.parse((await handler(params)).content[0]!.text) as unknown,
       });

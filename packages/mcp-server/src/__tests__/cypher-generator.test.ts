@@ -148,6 +148,45 @@ describe('Cypher Generator', () => {
       const result = generateSearchEntitiesCypher(undefined, undefined, 50);
       expect(result.params.limit).toBe(50);
     });
+
+    // The label, the filter keys and the sort key are written into the query
+    // as identifiers, so anything that is not a plain identifier is refused:
+    // a backtick would end the identifier and the rest would run as Cypher.
+    it('refuses a label that is not a plain identifier', () => {
+      expect(() => generateSearchEntitiesCypher('Repository`) MATCH (m')).toThrow(/label/);
+      expect(() => generateSearchEntitiesCypher('Logical Service')).toThrow(/label/);
+      expect(() => generateSearchEntitiesCypher('Repository\\u0060')).toThrow(/label/);
+    });
+
+    it('refuses an internal label', () => {
+      expect(() => generateSearchEntitiesCypher('_AccessToken')).toThrow(/label/);
+    });
+
+    it('refuses a filter key that is not a plain identifier', () => {
+      expect(() =>
+        generateSearchEntitiesCypher('Repository', { 'name` IS NOT NULL OR n.`x': 1 }),
+      ).toThrow(/property_filters/);
+      expect(() => generateSearchEntitiesCypher('Repository', { '': null })).toThrow(
+        /property_filters/,
+      );
+    });
+
+    it('refuses a sort key that is not a plain identifier', () => {
+      expect(() =>
+        generateSearchEntitiesCypher('Repository', undefined, 25, 'name` DESC //'),
+      ).toThrow(/sort_by/);
+    });
+
+    it('accepts property names that start with an underscore', () => {
+      const result = generateSearchEntitiesCypher(
+        'Repository',
+        { _event_version: 3 },
+        25,
+        '_absent_since',
+      );
+      expect(result.query).toContain('n.`_event_version` = $filter_0');
+      expect(result.query).toContain('ORDER BY n.`_absent_since` ASC');
+    });
   });
 
   describe('generateGraphStatsCypher', () => {

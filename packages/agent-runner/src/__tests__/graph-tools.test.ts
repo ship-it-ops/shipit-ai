@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Neo4jClient } from '@shipit-ai/mcp-server/tools';
-import { graphTools } from '../tools/graph-tools.js';
+import { graphReadTools, type Neo4jClient } from '@shipit-ai/mcp-server/tools';
+import { graphTools, toRunnerTool } from '../tools/graph-tools.js';
 
 // A Neo4j stand-in: every query returns no rows, and calls are recorded.
 function emptyGraph() {
@@ -13,7 +13,7 @@ function emptyGraph() {
 const LIMITS = { rateLimits: { rowLimit: 100, hopLimit: 6 } };
 
 describe('graphTools', () => {
-  it('describes the eight graph tools as built-in graph reads', () => {
+  it('describes the graph tools an agent may be offered as built-in graph reads', () => {
     const tools = graphTools(emptyGraph(), LIMITS);
     expect(tools.map((t) => t.descriptor.id)).toEqual([
       'graph.blast_radius',
@@ -23,7 +23,6 @@ describe('graphTools', () => {
       'graph.dependency_chain',
       'graph.graph_stats',
       'graph.search_entities',
-      'graph.graph_query',
     ]);
     for (const { descriptor } of tools) {
       expect(descriptor).toMatchObject({
@@ -35,6 +34,33 @@ describe('graphTools', () => {
       });
       expect(descriptor.description.length).toBeGreaterThan(10);
     }
+  });
+
+  // graph_query runs a caller-written string as Cypher. A model is steered by
+  // the text it reads, and the tool's guard lets through clauses that fetch a
+  // URL, so the runner never hands it over (mcp-server metadata: agents: false).
+  it('does not offer raw Cypher to a model', () => {
+    const ids = graphTools(emptyGraph(), LIMITS).map((t) => t.descriptor.id);
+    expect(ids).not.toContain('graph.graph_query');
+  });
+
+  it('refuses search input that is not a plain identifier, before any query runs', () => {
+    const graph = emptyGraph();
+    const search = graphTools(graph, LIMITS).find(
+      (t) => t.descriptor.id === 'graph.search_entities',
+    )!;
+    expect(search.parse({ label: 'Repository`) MATCH (m' })).toEqual({
+      ok: false,
+      message: expect.stringContaining('label'),
+    });
+    expect(search.parse({ sort_by: 'name` DESC //' })).toMatchObject({ ok: false });
+    expect(search.parse({ property_filters: { 'name` OR n.`x': 1 } })).toMatchObject({
+      ok: false,
+    });
+    expect(
+      search.parse({ label: 'Repository', property_filters: { tier_effective: 1 } }),
+    ).toMatchObject({ ok: true });
+    expect(graph.runCypher).not.toHaveBeenCalled();
   });
 
   it('hides the compact flag from the model, and sends plain JSON Schema', () => {
@@ -83,9 +109,13 @@ describe('graphTools', () => {
       records: [row, row],
       summary: { resultAvailableAfter: 0 },
     } as never);
-    const query = graphTools(graph, { rateLimits: { rowLimit: 2, hopLimit: 6 } }).find(
-      (t) => t.descriptor.id === 'graph.graph_query',
-    )!;
+    // graph_query is the one tool that truncates today. It is not offered to
+    // agents, so the adapter is exercised on it directly.
+    const query = toRunnerTool(
+      graphReadTools(graph, { rateLimits: { rowLimit: 2, hopLimit: 6 } }).find(
+        (t) => t.name === 'graph_query',
+      )!,
+    );
     const parsed = query.parse({ query: 'MATCH (n) RETURN n' });
     if (!parsed.ok) throw new Error(parsed.message);
     expect(await query.execute(parsed.value)).toEqual({
@@ -96,13 +126,13 @@ describe('graphTools', () => {
   });
 
   it('returns a tool-level failure as data, not as a thrown error', async () => {
-    const query = graphTools(emptyGraph(), LIMITS).find(
-      (t) => t.descriptor.id === 'graph.graph_query',
+    const detail = graphTools(emptyGraph(), LIMITS).find(
+      (t) => t.descriptor.id === 'graph.entity_detail',
     )!;
-    const parsed = query.parse({ query: 'MATCH (n) DETACH DELETE n' });
+    const parsed = detail.parse({ entity: 'shipit://repository/default/acme/nowhere' });
     if (!parsed.ok) throw new Error(parsed.message);
-    expect(await query.execute(parsed.value)).toEqual({
-      error: expect.objectContaining({ code: 'INVALID_PARAMETER' }),
+    expect(await detail.execute(parsed.value)).toEqual({
+      error: expect.objectContaining({ code: 'NODE_NOT_FOUND' }),
     });
   });
 });

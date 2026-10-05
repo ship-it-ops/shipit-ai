@@ -34,6 +34,7 @@ describe('graphReadTools', () => {
       const meta = MCP_TOOLS.find((m) => m.name === tool.name)!;
       expect(tool.description).toBe(meta.description);
       expect(tool.effect).toBe(meta.effect);
+      expect(tool.agents).toBe(meta.agents);
     }
   });
 
@@ -88,6 +89,24 @@ describe('graphReadTools', () => {
       tool.inputSchema.parse({ query: 'MATCH (a)-[*..5]->(b) RETURN b' }),
     )) as { error: { code: string } };
     expect(result.error.code).toBe('HOP_LIMIT_EXCEEDED');
+  });
+
+  it('refuses a search label, sort key or filter key that is not a plain identifier', () => {
+    const neo4j = createMockNeo4jClient();
+    const tool = graphReadTools(neo4j, RATE_LIMITS).find((t) => t.name === 'search_entities')!;
+    const refused = (input: unknown) => tool.inputSchema.safeParse(input).success === false;
+    expect(refused({ label: 'Repository`) MATCH (m' })).toBe(true);
+    expect(refused({ label: '_AccessToken' })).toBe(true);
+    expect(refused({ sort_by: 'name` DESC //' })).toBe(true);
+    expect(refused({ property_filters: { 'name` IS NOT NULL OR n.`x': 1 } })).toBe(true);
+    expect(
+      tool.inputSchema.safeParse({
+        label: 'LogicalService',
+        property_filters: { tier_effective: 1, _absent_since: null },
+        sort_by: 'name',
+      }).success,
+    ).toBe(true);
+    expect(neo4j.runCypher).not.toHaveBeenCalled();
   });
 
   it('rejects input the schema does not allow before any query runs', () => {

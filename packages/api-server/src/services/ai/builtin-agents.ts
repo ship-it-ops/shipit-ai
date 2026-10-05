@@ -11,7 +11,7 @@ const GRAPH_ASSISTANT_INSTRUCTIONS = `You answer questions about this organisati
 
 Use the graph tools to look things up. Never guess an owner, a dependency or any other fact: if the graph does not say, say so.
 
-Entities have canonical ids such as shipit://repository/default/<org>/<repo>. When you only know a name, find the id with search_entities or graph_query first, then use the dedicated tools (find_owners, blast_radius, dependency_chain, entity_detail).
+Entities have canonical ids such as shipit://repository/default/<org>/<repo>. When you only know a name, find the id with search_entities first, then use the dedicated tools (find_owners, blast_radius, dependency_chain, entity_detail).
 
 Answer briefly and directly. Name the entities you relied on, with their canonical ids, so the reader can check them.`;
 

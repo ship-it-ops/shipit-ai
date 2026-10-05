@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Neo4jClient } from '../neo4j-client.js';
-import { generateSearchEntitiesCypher } from '../cypher/generator.js';
+import {
+  CypherIdentifierError,
+  LABEL_PATTERN,
+  PROPERTY_PATTERN,
+  generateSearchEntitiesCypher,
+} from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError } from '../errors.js';
 import { MCP_TOOL_BY_NAME } from './metadata.js';
@@ -11,9 +16,20 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
     'search_entities',
     MCP_TOOL_BY_NAME.search_entities.description,
     {
-      label: z.string().optional().describe('Filter by node label (e.g., "LogicalService")'),
+      // The label, the filter keys and the sort key become identifiers in the
+      // query text, so each must be a plain identifier (see the generator).
+      label: z
+        .string()
+        .regex(LABEL_PATTERN, 'label must be a node label: letters, digits and underscores')
+        .optional()
+        .describe('Filter by node label (e.g., "LogicalService")'),
       property_filters: z
-        .record(z.string(), z.unknown())
+        .record(
+          z
+            .string()
+            .regex(PROPERTY_PATTERN, 'a property name: letters, digits and underscores only'),
+          z.unknown(),
+        )
         .optional()
         .describe('Filter by property values (e.g., {"tier_effective": 1})'),
       limit: z
@@ -23,7 +39,11 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
         .max(100)
         .default(25)
         .describe('Max results (1-100, default 25)'),
-      sort_by: z.string().default('name').describe('Property to sort by'),
+      sort_by: z
+        .string()
+        .regex(PROPERTY_PATTERN, 'sort_by must be a property name: letters, digits and underscores')
+        .default('name')
+        .describe('Property to sort by'),
       include_absent: z
         .boolean()
         .default(false)
@@ -89,10 +109,13 @@ export function registerSearchEntities(server: McpServer, neo4j: Neo4jClient): v
 
         return { content: [{ type: 'text' as const, text: JSON.stringify(response) }] };
       } catch (err) {
-        const error = createError(
-          McpErrorCode.INTERNAL_ERROR,
-          `search_entities query failed: ${(err as Error).message}`,
-        );
+        const error =
+          err instanceof CypherIdentifierError
+            ? createError(McpErrorCode.INVALID_PARAMETER, err.message)
+            : createError(
+                McpErrorCode.INTERNAL_ERROR,
+                `search_entities query failed: ${(err as Error).message}`,
+              );
         return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
       }
     },
