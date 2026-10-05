@@ -17,6 +17,10 @@
     "./tools": {
       "import": "./dist/tools/registry.js",
       "types": "./dist/tools/registry.d.ts"
+    },
+    "./cypher": {
+      "import": "./dist/cypher/read-only-query.js",
+      "types": "./dist/cypher/read-only-query.d.ts"
     }
   },
   "scripts": {

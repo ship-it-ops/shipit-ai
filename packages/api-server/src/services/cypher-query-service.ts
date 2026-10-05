@@ -1,4 +1,5 @@
 import neo4j, { type Driver, type Integer, type Node, type Relationship } from 'neo4j-driver';
+import { runReadOnlyQuery } from '@shipit-ai/mcp-server/cypher';
 
 export interface CypherQueryLimits {
   timeoutMs: number;
@@ -53,6 +54,8 @@ export interface CypherExecResult {
   executionTimeMs: number;
   truncated: boolean;
   rowLimit: number;
+  /** How many values came back as null because they were internal nodes. */
+  withheld: number;
 }
 
 export class CypherQueryService {
@@ -61,52 +64,23 @@ export class CypherQueryService {
     private limits: CypherQueryLimits,
   ) {}
 
+  /**
+   * Runs a caller-written query for reading only, within the limits. How it is
+   * run, and what that guarantees, is runReadOnlyQuery's: the graph_query MCP
+   * tool goes through the same function.
+   *
+   * @throws ReadOnlyQueryError on every failure.
+   */
   async execute(cypher: string, params: Record<string, unknown> = {}): Promise<CypherExecResult> {
-    const { timeoutMs, rowLimit } = this.limits;
-    const session = this.driver.session({ defaultAccessMode: neo4j.session.READ });
     const started = Date.now();
-    try {
-      // Server-side timeout via tx config. The driver will abort the transaction
-      // when the timeout elapses; we still race against a client-side timeout
-      // to make sure the request can't hang forever if the driver is wedged.
-      const tx = session.beginTransaction({ timeout: timeoutMs });
-      const queryPromise = tx.run(cypher, params);
-
-      let timeoutHandle: NodeJS.Timeout | undefined;
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          reject(new Error(`Query exceeded ${timeoutMs}ms timeout`));
-        }, timeoutMs + 500);
-      });
-
-      let result;
-      try {
-        result = await Promise.race([queryPromise, timeoutPromise]);
-      } finally {
-        if (timeoutHandle) clearTimeout(timeoutHandle);
-      }
-
-      await tx.commit();
-
-      const columns = result.records[0]?.keys ?? [];
-      const sliced = result.records.slice(0, rowLimit);
-      const rows = sliced.map((rec) => {
-        const obj: Record<string, unknown> = {};
-        for (const key of columns) {
-          obj[String(key)] = toPlain(rec.get(String(key)));
-        }
-        return obj;
-      });
-
-      return {
-        columns: columns.map(String),
-        rows,
-        executionTimeMs: Date.now() - started,
-        truncated: result.records.length > rowLimit,
-        rowLimit,
-      };
-    } finally {
-      await session.close();
-    }
+    const result = await runReadOnlyQuery(this.driver, cypher, params, this.limits);
+    return {
+      columns: result.columns,
+      rows: result.rows.map((row) => toPlain(row) as Record<string, unknown>),
+      executionTimeMs: Date.now() - started,
+      truncated: result.truncated,
+      rowLimit: this.limits.rowLimit,
+      withheld: result.withheld,
+    };
   }
 }

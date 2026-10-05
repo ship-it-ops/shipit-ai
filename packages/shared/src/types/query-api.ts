@@ -9,6 +9,8 @@ export interface CypherQueryResponse {
   executionTimeMs: number;
   truncated: boolean;
   rowLimit: number;
+  /** How many values came back as null because they were internal nodes. */
+  withheld: number;
 }
 
 export interface CypherQueryError {

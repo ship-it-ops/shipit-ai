@@ -30,6 +30,7 @@ export default defineConfig({
       '@shipit-ai/connector-kubernetes': r('connectors/kubernetes/src/index.ts'),
       '@shipit-ai/core-writer': r('core-writer/src/index.ts'),
       '@shipit-ai/mcp-server/metadata': r('mcp-server/src/tools/metadata.ts'),
+      '@shipit-ai/mcp-server/cypher': r('mcp-server/src/cypher/read-only-query.ts'),
       '@shipit-ai/mcp-server': r('mcp-server/src/index.ts'),
     },
   },

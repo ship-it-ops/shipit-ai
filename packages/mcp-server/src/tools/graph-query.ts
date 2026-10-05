@@ -1,13 +1,28 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { checkReadOnlyCypher } from '@shipit-ai/shared';
 import type { Neo4jClient } from '../neo4j-client.js';
+import { ReadOnlyQueryError } from '../cypher/read-only-query.js';
 import { wrapResponse } from '../envelope.js';
-import { McpErrorCode, createError } from '../errors.js';
+import { McpErrorCode, createError, type McpError } from '../errors.js';
 import type { McpServerConfig } from '../config.js';
 import { MCP_TOOL_BY_NAME } from './metadata.js';
 
-const WRITE_KEYWORDS = /\b(MERGE|CREATE|DELETE|DETACH|SET|REMOVE|DROP|CALL\s*\{)\b/i;
 const HOP_PATTERN = /\*\d*\.\.(\d+)/g;
+
+const asText = (payload: unknown) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
+});
+
+function failure(err: unknown): McpError {
+  if (err instanceof ReadOnlyQueryError) {
+    if (err.kind === 'timeout') return createError(McpErrorCode.QUERY_TIMEOUT, err.message);
+    if (err.kind === 'write_refused') {
+      return createError(McpErrorCode.INVALID_PARAMETER, err.message);
+    }
+  }
+  return createError(McpErrorCode.INTERNAL_ERROR, `graph_query failed: ${(err as Error).message}`);
+}
 
 export function registerGraphQuery(
   server: McpServer,
@@ -24,69 +39,60 @@ export function registerGraphQuery(
     },
     async (toolParams) => {
       const { query, params: queryParams, compact } = toolParams;
+      const { rowLimit, hopLimit, queryTimeoutMs } = config.rateLimits;
       const startTime = Date.now();
 
-      // Guardrail: reject write operations
-      if (WRITE_KEYWORDS.test(query)) {
-        const error = createError(
-          McpErrorCode.INVALID_PARAMETER,
-          'Write operations are not allowed. graph_query is read-only. Detected forbidden keyword in query.',
-        );
-        return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
+      // Guardrail: the read-only check every caller-written query passes, the
+      // same one the Query Playground applies.
+      const verdict = checkReadOnlyCypher(query);
+      if (!verdict.ok) {
+        return asText(createError(McpErrorCode.INVALID_PARAMETER, verdict.message));
       }
 
       // Guardrail: enforce hop limit on variable-length patterns
-      const hopMatches = [...query.matchAll(HOP_PATTERN)];
-      for (const match of hopMatches) {
+      for (const match of query.matchAll(HOP_PATTERN)) {
         const maxHops = parseInt(match[1], 10);
-        if (maxHops > config.rateLimits.hopLimit) {
-          const error = createError(
-            McpErrorCode.HOP_LIMIT_EXCEEDED,
-            `Variable-length pattern exceeds hop limit of ${config.rateLimits.hopLimit}. Found *..${maxHops}. Use a structured tool like blast_radius instead.`,
+        if (maxHops > hopLimit) {
+          return asText(
+            createError(
+              McpErrorCode.HOP_LIMIT_EXCEEDED,
+              `Variable-length pattern exceeds hop limit of ${hopLimit}. Found *..${maxHops}. Use a structured tool like blast_radius instead.`,
+            ),
           );
-          return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
         }
       }
 
-      // Add LIMIT if not present
-      const limitedQuery = /\bLIMIT\b/i.test(query)
-        ? query
-        : `${query}\nLIMIT ${config.rateLimits.rowLimit}`;
-
       try {
-        const result = await neo4j.runCypher(limitedQuery, queryParams ?? {});
-
-        if (result.records.length >= config.rateLimits.rowLimit) {
-          const rows = result.records.map((r) => r.toObject());
-          const data = { rows, row_count: rows.length };
-          const response = wrapResponse('graph_query', data, {
-            compact,
-            queryTimeMs: Date.now() - startTime,
-            nodeCount: rows.length,
-            truncated: true,
-            warnings: [`Results truncated to ${config.rateLimits.rowLimit} rows`],
-          });
-          return { content: [{ type: 'text' as const, text: JSON.stringify(response) }] };
-        }
-
-        const rows = result.records.map((r) => r.toObject());
-        const data = { rows, row_count: rows.length };
-
-        const response = wrapResponse('graph_query', data, {
-          compact,
-          queryTimeMs: Date.now() - startTime,
-          nodeCount: rows.length,
+        // The row limit and the timeout are enforced where the query runs, not
+        // by editing its text: a LIMIT of the caller's own cannot raise them.
+        const result = await neo4j.runReadOnlyQuery(query, queryParams ?? {}, {
+          timeoutMs: queryTimeoutMs,
+          rowLimit,
         });
 
-        return { content: [{ type: 'text' as const, text: JSON.stringify(response) }] };
-      } catch (err) {
-        const message = (err as Error).message;
-        if (message.includes('timeout') || message.includes('Timeout')) {
-          const error = createError(McpErrorCode.QUERY_TIMEOUT, 'Query exceeded timeout limit.');
-          return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
+        const warnings: string[] = [];
+        if (result.truncated) warnings.push(`Results truncated to ${rowLimit} rows`);
+        if (result.withheld > 0) {
+          warnings.push(
+            `${result.withheld} ${result.withheld === 1 ? 'value' : 'values'} withheld: internal nodes are not available to graph_query`,
+          );
         }
-        const error = createError(McpErrorCode.INTERNAL_ERROR, `graph_query failed: ${message}`);
-        return { content: [{ type: 'text' as const, text: JSON.stringify(error) }] };
+
+        return asText(
+          wrapResponse(
+            'graph_query',
+            { rows: result.rows, row_count: result.rows.length },
+            {
+              compact,
+              queryTimeMs: Date.now() - startTime,
+              nodeCount: result.rows.length,
+              truncated: result.truncated,
+              warnings,
+            },
+          ),
+        );
+      } catch (err) {
+        return asText(failure(err));
       }
     },
   );

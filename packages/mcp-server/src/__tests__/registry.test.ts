@@ -6,7 +6,7 @@ import { registerFindOwners } from '../tools/find-owners.js';
 import { graphReadTools } from '../tools/registry.js';
 import { MCP_TOOLS } from '../tools/metadata.js';
 
-const RATE_LIMITS = { rateLimits: { rowLimit: 100, hopLimit: 6 } };
+const RATE_LIMITS = { rateLimits: { rowLimit: 100, hopLimit: 6, queryTimeoutMs: 10_000 } };
 
 function ownersResponses() {
   const responses = new Map();
@@ -81,14 +81,27 @@ describe('graphReadTools', () => {
     expect(direct).toEqual(viaMcp);
   });
 
-  it('passes the row and hop limits through to graph_query', async () => {
+  it('passes the hop limit through to graph_query', async () => {
     const tool = graphReadTools(createMockNeo4jClient(), {
-      rateLimits: { rowLimit: 100, hopLimit: 2 },
+      rateLimits: { rowLimit: 100, hopLimit: 2, queryTimeoutMs: 10_000 },
     }).find((t) => t.name === 'graph_query')!;
     const result = (await tool.run(
       tool.inputSchema.parse({ query: 'MATCH (a)-[*..5]->(b) RETURN b' }),
     )) as { error: { code: string } };
     expect(result.error.code).toBe('HOP_LIMIT_EXCEEDED');
+  });
+
+  it('passes the row limit and the timeout through to graph_query', async () => {
+    const neo4j = createMockNeo4jClient();
+    const tool = graphReadTools(neo4j, {
+      rateLimits: { rowLimit: 7, hopLimit: 6, queryTimeoutMs: 1_500 },
+    }).find((t) => t.name === 'graph_query')!;
+    await tool.run(tool.inputSchema.parse({ query: 'MATCH (n) RETURN n' }));
+    expect(neo4j.runReadOnlyQuery).toHaveBeenCalledWith(
+      'MATCH (n) RETURN n',
+      {},
+      { timeoutMs: 1_500, rowLimit: 7 },
+    );
   });
 
   it('refuses a search label, sort key or filter key that is not a plain identifier', () => {

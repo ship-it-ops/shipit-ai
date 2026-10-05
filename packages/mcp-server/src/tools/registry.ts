@@ -45,7 +45,7 @@ export interface GraphReadTool {
 
 /** The slice of the MCP server config the tools read (graph_query's guardrails). */
 export interface GraphToolConfig {
-  rateLimits: Pick<McpServerConfig['rateLimits'], 'rowLimit' | 'hopLimit'>;
+  rateLimits: Pick<McpServerConfig['rateLimits'], 'rowLimit' | 'hopLimit' | 'queryTimeoutMs'>;
 }
 
 type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
