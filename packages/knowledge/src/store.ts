@@ -401,13 +401,18 @@ export class KnowledgeStore {
    * is recorded only for a container that is not open at that moment: sent for
    * an open one there is nothing to accept, and it must not count as consent
    * if the container is restricted later.
+   *
+   * False when nothing was changed: there is no such container, or it was to
+   * be selected and the source no longer has it. The caller read the row
+   * before it asked, and a listing or a delete of the connector may have
+   * landed since.
    */
   async selectContainer(
     connectorId: string,
     id: string,
     input: { selected: boolean; by: string; acknowledged: boolean },
-  ): Promise<void> {
-    await this.db.query(
+  ): Promise<boolean> {
+    const { rowCount } = await this.db.query(
       `UPDATE knowledge_containers
           SET selected = $3, selected_by = $4, selected_at = now(),
               visibility_acknowledged_by = CASE
@@ -416,9 +421,14 @@ export class KnowledgeStore {
                 ELSE NULL END,
               purge_requested_at = CASE WHEN $3 THEN NULL ELSE now() END,
               updated_at = now()
-        WHERE connector_id = $1 AND id = $2`,
+        WHERE connector_id = $1 AND id = $2
+          -- A container that is gone, or on its way out with a deleted
+          -- connector, is not selected: there is nothing to index, and it
+          -- would cancel the purge of what it holds. It can be deselected.
+          AND (NOT $3 OR gone_at IS NULL)`,
       [connectorId, id, input.selected, input.by, input.acknowledged],
     );
+    return (rowCount ?? 0) > 0;
   }
 
   /**
@@ -435,15 +445,20 @@ export class KnowledgeStore {
   }
 
   /**
-   * Called before a connector's first knowledge activity, with the time the
-   * connector was created. Connector ids are chosen by the caller and can be
-   * used again, and a connector deleted while this layer was off left its rows
-   * behind: when `bornAt` is not the one recorded for the id, whatever the id
-   * holds belongs to an earlier connector and is cleared, the way a delete
-   * clears it. True when a new life began; false, and nothing touched, for a
-   * connector already known.
+   * Called before anything is fetched, shown or changed for a connector, with
+   * the time the connector was created. Connector ids are chosen by the
+   * caller and can be used again, and a connector deleted while this layer
+   * was off left its rows behind: when `bornAt` is not the one recorded for
+   * the id, whatever the id holds belongs to an earlier connector and is
+   * cleared, the way a delete clears it. Returns how many rows that removed
+   * or marked (zero for an id that held nothing), and null, with nothing
+   * touched, for a connector already known.
    */
-  async beginConnectorLife(connectorId: string, bornAt: string, by: string): Promise<boolean> {
+  async beginConnectorLife(
+    connectorId: string,
+    bornAt: string,
+    by: string,
+  ): Promise<number | null> {
     return this.db.tx(async (tx) => {
       const key = lifeKey(connectorId);
       // Serialises two first calls for the same id.
@@ -452,14 +467,14 @@ export class KnowledgeStore {
         'SELECT value FROM knowledge_state WHERE key = $1',
         [key],
       );
-      if (known.rows[0]?.value === bornAt) return false;
-      await clearConnector(tx, connectorId, by);
+      if (known.rows[0]?.value === bornAt) return null;
+      const cleared = await clearConnector(tx, connectorId, by);
       await tx.query(
         `INSERT INTO knowledge_state (key, value) VALUES ($1, $2::jsonb)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
         [key, JSON.stringify(bornAt)],
       );
-      return true;
+      return cleared;
     });
   }
 
@@ -930,6 +945,23 @@ export class KnowledgeStore {
         await tx.query(`DELETE FROM knowledge_chunks WHERE document_id = $1`, [documentId]);
       }
     });
+  }
+
+  /**
+   * A claimed document is still being worked on: its claim is renewed, so
+   * that a document long enough to outlast the stale window is not handed to a
+   * second worker halfway. False when the row is no longer the claim the
+   * worker took (the same test `replaceChunks` makes): the sink changed or
+   * removed the document, and what is left of the work would be thrown away.
+   */
+  async keepClaim(documentId: string, contentHash: string): Promise<boolean> {
+    const { rowCount } = await this.db.query(
+      `UPDATE knowledge_documents SET index_claimed_at = now()
+        WHERE id = $1 AND index_status = 'indexing' AND content_hash = $2
+          AND deleted_at IS NULL AND NOT restricted`,
+      [documentId, contentHash],
+    );
+    return (rowCount ?? 0) > 0;
   }
 
   /**

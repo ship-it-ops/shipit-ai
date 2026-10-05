@@ -508,15 +508,19 @@ depends on the answer.
   no longer has it, `429 RATE_LIMITED` when the source asks to wait, `504 SOURCE_TIMEOUT`
   when it does not answer. An acknowledgement is recorded only for a container that is not
   open at that moment; a selected container that stops being open is not synced until
-  someone acknowledges it. A container the source no longer lists cannot be selected.
+  someone acknowledges it. A container the source no longer lists cannot be selected,
+  and the write itself refuses one that went, or whose connector was deleted, after the
+  request read it (`409 CONTAINER_GONE`; `404` for a deselect of a row no longer there).
 - Deselecting deletes the content through the worker. A batch for a container that was
   deselected, purged and selected again, or removed since the run read it is refused and
   the container skipped; the people a batch names are written in the batch's own
   transaction, so a refused batch leaves no names behind. A container the source no longer
   lists is shown, flagged `gone`, while it is selected or still holds content; it is not
   purged automatically, but once it is deselected and purged its row is removed.
-- Deleting a connector, in order: its knowledge run in flight is stopped and no new one
-  starts; everything it holds is cleared (below); the connector is removed. When the
+- Deleting a connector, in order: its knowledge run and any container refresh in flight
+  are stopped and waited for, and no new one starts (a refresh answers
+  `409 CONNECTOR_BEING_DELETED`); everything it holds is cleared (below); the connector
+  is removed. When the
   clearing cannot be recorded the request answers `503 KNOWLEDGE_PURGE_FAILED` and the
   connector stays, so the delete can be tried again; a knowledge schema that does not
   exist yet is nothing to clear and does not block the delete. A delete and an update of
@@ -525,23 +529,32 @@ depends on the answer.
 - Clearing a connector removes at once every container that holds no documents, and its
   people when nothing else is left; a container that holds documents is deselected, marked
   `gone` and purged by the worker, which deletes the documents, then the row, then the
-  people. A listing that commits meanwhile does not bring such a row back. The worker
-  purges batch after batch within a tick, and sweeps people nothing refers to on every
-  tick.
+  people. Nothing lists the connector's containers once its delete has begun (the run and
+  the refreshes were stopped first), and a row waiting to be purged stays `gone` if a
+  listing reaches it all the same. The worker purges batch after batch within a tick, and
+  sweeps people nothing refers to on every tick.
 - A connector id can be used again. Connectors carry the time they were created
-  (`createdAt`), and before a connector's first knowledge activity the store compares it
-  with the one it has on record for the id: when they differ, what the id holds belongs to
-  an earlier connector and is cleared. Creating a connector does not touch the knowledge
-  database.
+  (`createdAt`), and before anything is fetched, listed or selected for a connector the
+  store compares it with the one it has on record for the id: when they differ, what the
+  id holds belongs to an earlier connector and is cleared, and the api-server logs how
+  many rows that was. The comparison is made once per process and connector, and again
+  after a delete of the connector was attempted. While it cannot be made the container
+  routes answer `503 KNOWLEDGE_UNAVAILABLE`. Creating a connector does not touch the
+  knowledge database.
 - A container refresh made from the API bounds a wait the source asks for to 20 seconds
-  (`429 RATE_LIMITED`) and the whole refresh to 60 (`504 SOURCE_TIMEOUT`).
+  (`429 RATE_LIMITED`) and the whole refresh, authentication included, to 60
+  (`504 SOURCE_TIMEOUT`). The request is answered at that point whether or not the call
+  to the source has returned.
 - Knowledge runs are kept in a history of their own and returned as `lastKnowledgeRuns` on
   the connector list, detail and update responses. `lastRuns` is the graph sync alone,
   which is what the Connector Hub reads its status, last sync and entity count from.
 - The worker embeds a document a hundred chunks at a time and gives each call a deadline
-  (a minute plus three seconds per chunk). On shutdown it aborts the calls in flight and
-  hands the documents it had claimed back as `pending` without counting an attempt. Its
-  heartbeat is written only while the index loop is alive.
+  (a minute plus three seconds per chunk). A call that fails is tried again by itself.
+  Between calls the document's claim is renewed and the call counts as progress, so a
+  long document is neither reclaimed as stale nor taken for a stall; one the sink changed
+  or removed meanwhile is dropped there. On shutdown the worker aborts the calls in
+  flight and hands the documents it had claimed back as `pending` without counting an
+  attempt. Its heartbeat is written only while the index loop is alive.
 - Redaction runs on the api-server's event loop, one scan per string. secretlint's
   profiler is switched off there: left on, it kept every scan's performance marks for the
   life of the process and each scan got slower than the one before.

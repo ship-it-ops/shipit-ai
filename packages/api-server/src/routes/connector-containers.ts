@@ -19,7 +19,7 @@ declare module 'fastify' {
     >;
     knowledgeScheduler?: Pick<
       KnowledgeSyncScheduler,
-      'refreshContainers' | 'refreshContainer' | 'retire' | 'unretire'
+      'refreshContainers' | 'refreshContainer' | 'checkLife' | 'retire' | 'unretire'
     >;
   }
 }
@@ -63,7 +63,7 @@ const notWired = (reply: FastifyReply): FastifyReply =>
     },
   });
 
-/** The status a refused container refresh answers with. */
+/** The status a refused container refresh, or a refused check of the connector, answers with. */
 const refreshStatus = (err: KnowledgeRefreshError): number => {
   if (err.code === 'KNOWLEDGE_NOT_ENABLED' || err.code === 'CONNECTOR_BEING_DELETED') return 409;
   if (err.code === 'AUTH_FAILED') return 502;
@@ -84,6 +84,24 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
       return false;
     }
   };
+  const refused = (reply: FastifyReply, err: KnowledgeRefreshError): FastifyReply =>
+    reply.status(refreshStatus(err)).send({ error: { code: err.code, message: err.message } });
+  // A connector id can be used again, and the rows the store holds under it
+  // may be an earlier connector's. The scheduler clears those before a run or
+  // a refresh; the routes below read and change rows without either, so they
+  // ask first. True when the check could not be made and the refusal was
+  // sent. (A boolean, not the reply: a reply is thenable, and an async
+  // function that returns one resolves to nothing.)
+  const rowsUnchecked = async (id: string, reply: FastifyReply): Promise<boolean> => {
+    try {
+      await server.knowledgeScheduler?.checkLife(id);
+      return false;
+    } catch (err) {
+      if (!(err instanceof KnowledgeRefreshError)) throw err;
+      refused(reply, err);
+      return true;
+    }
+  };
 
   server.get<{ Params: { id: string }; Querystring: { q?: string } }>(
     '/:id/containers',
@@ -91,6 +109,7 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
     async (request, reply) => {
       if (!connectorExists(request.params.id)) return notFound(reply, 'No such connector.');
       if (!server.knowledgeStore) return notWired(reply);
+      if (await rowsUnchecked(request.params.id, reply)) return reply;
       const rows = await server.knowledgeStore.containersWithCounts(
         request.params.id,
         typeof request.query.q === 'string' ? request.query.q.slice(0, 200) : undefined,
@@ -109,9 +128,7 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
         return { containers: await server.knowledgeScheduler.refreshContainers(request.params.id) };
       } catch (err) {
         if (!(err instanceof KnowledgeRefreshError)) throw err;
-        return reply
-          .status(refreshStatus(err))
-          .send({ error: { code: err.code, message: err.message } });
+        return refused(reply, err);
       }
     },
   );
@@ -133,6 +150,7 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
           error: { code: 'VALIDATION_ERROR', message: '`selected` must be true or false.' },
         });
       }
+      if (await rowsUnchecked(id, reply)) return reply;
       const find = async () =>
         UUID.test(containerId) ? store.getContainer(id, containerId) : null;
       let container = await find();
@@ -171,9 +189,7 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
             if (!(await server.knowledgeScheduler.refreshContainer(id, container))) return gone();
           } catch (err) {
             if (!(err instanceof KnowledgeRefreshError)) throw err;
-            return reply
-              .status(refreshStatus(err))
-              .send({ error: { code: err.code, message: err.message } });
+            return refused(reply, err);
           }
           container = await find();
           if (!container) return notFound(reply, 'No such container.');
@@ -181,11 +197,14 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
         }
         if (container.visibility !== 'open' && !acknowledged) return refuse();
       }
-      await store.selectContainer(id, containerId, {
+      const changed = await store.selectContainer(id, containerId, {
         selected,
         by: request.ctx.user.email ?? request.ctx.user.id,
         acknowledged,
       });
+      // The row was read above and written here. A listing, or a delete of the
+      // connector, landed in between: it is gone, or no longer there at all.
+      if (!changed) return selected ? gone() : notFound(reply, 'No such container.');
       return { ok: true };
     },
   );

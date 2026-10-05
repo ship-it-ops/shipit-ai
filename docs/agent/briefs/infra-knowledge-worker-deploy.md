@@ -33,8 +33,9 @@ You are working in the infra repo. Read its `docs/agent/MANIFEST.md`, `status/` 
 - No readiness probe is needed; liveness can be a process check. The app's
   `/api/knowledge/status` reports a `worker` check from a Redis heartbeat
   (`shipit-knowledge-worker-heartbeat`, written every 15 s, 60 s TTL). The heartbeat is
-  written only while the index loop is alive: waiting for work, or having claimed or
-  finished a document in the last 15 minutes. A wedged worker therefore shows as
+  written only while the index loop is alive: waiting for work, or having claimed a
+  batch, finished a document or had an embedding call come back in the last 15 minutes.
+  A wedged worker therefore shows as
   `worker: not ok` within about 16 minutes; nothing restarts it by itself, so alert on that
   check if the pod should be restarted.
 - `terminationGracePeriodSeconds: 30` (the Kubernetes default) is enough. On SIGTERM the
@@ -44,7 +45,9 @@ You are working in the infra repo. Read its `docs/agent/MANIFEST.md`, `status/` 
 - A document is embedded a hundred chunks at a time, and each call has a deadline (one
   minute plus three seconds per chunk, six minutes for a full hundred). A call that
   outlives it fails that document for this attempt; the worker logs `index failed for …
-took longer than …` and moves on.
+took longer than …` and moves on. A document long enough to need several calls
+  renews its claim between them, so it is not reclaimed after 10 minutes while it is
+  still being embedded.
 - Logs worth keeping: one `batch: N claimed, …` line per batch that had work.
 - Start order does not matter: with the schema or the extension missing, `DATABASE_URL` or
   `GOOGLE_CLOUD_PROJECT` empty, or `knowledge.embedding.dimensions` not 768, the pod exits

@@ -90,6 +90,9 @@ describe('KnowledgeSyncScheduler', () => {
   let upsertedOne: unknown[];
   let lives: Array<[string, string]>;
   let lifeError: Error | null;
+  // What beginConnectorLife answers: the rows an earlier connector left.
+  let lifeCleared: number | null;
+  let logged: string[];
 
   const registry = {
     get: (id: string) => {
@@ -109,7 +112,7 @@ describe('KnowledgeSyncScheduler', () => {
     beginConnectorLife: async (id: string, bornAt: string) => {
       if (lifeError) throw lifeError;
       lives.push([id, bornAt]);
-      return true;
+      return lifeCleared;
     },
     upsertPrincipals: async (_c: string, list: unknown[]) => void (principals += list.length),
     storeBatch: async (_c: string, _container: unknown, batch: { documents: unknown[] }) => {
@@ -131,6 +134,7 @@ describe('KnowledgeSyncScheduler', () => {
       isAvailable: async () => available,
       resolveType: () => type,
       queueFactory: () => queue as never,
+      log: (line) => void logged.push(line),
       ...overrides,
     });
   }
@@ -147,6 +151,8 @@ describe('KnowledgeSyncScheduler', () => {
     upsertedOne = [];
     lives = [];
     lifeError = null;
+    lifeCleared = 0;
+    logged = [];
   });
 
   it('schedules a poll and a reconcile job per enabled knowledge connector, and removes both on stop', async () => {
@@ -241,6 +247,56 @@ describe('KnowledgeSyncScheduler', () => {
       expect(lives).toEqual([['fx-1', '2026-10-05T00:00:00.000Z']]);
     });
 
+    // The picker reads and changes the connector's rows without a run or a
+    // call to the source: it asks for the check itself.
+    it('is checked for a route about to show or change the connector’s containers', async () => {
+      const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await s.checkLife('fx-1');
+      await s.checkLife('fx-1');
+      await s.runJob('fx-1', 'poll');
+      expect(lives).toEqual([['fx-1', '2026-10-05T00:00:00.000Z']]);
+
+      lifeError = new Error('connection refused');
+      const down = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await expect(down.checkLife('fx-1')).rejects.toMatchObject({ code: 'KNOWLEDGE_UNAVAILABLE' });
+    });
+
+    it('says in the log when it cleared what an earlier connector left', async () => {
+      lifeCleared = 3;
+      const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await s.checkLife('fx-1');
+      expect(logged.filter((line) => line.includes('fx-1'))).toEqual([
+        expect.stringMatching(/cleared 3 rows/),
+      ]);
+
+      logged = [];
+      lifeCleared = 0; // a new id, or one whose rows went with the delete
+      await scheduler(fixtureType(fixture()), { registry: bornRegistry }).checkLife('fx-1');
+      lifeCleared = null; // a connector the store already knows
+      await scheduler(fixtureType(fixture()), { registry: bornRegistry }).checkLife('fx-1');
+      expect(logged).toEqual([]);
+    });
+
+    // A delete clears the connector's rows and the record of its life. One
+    // that then failed leaves a connector the store no longer knows: it is
+    // checked again, which records it again, instead of the first run after a
+    // restart finding no record and clearing what was selected since.
+    it('is checked again once a delete of the connector was attempted', async () => {
+      const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await s.runJob('fx-1', 'poll');
+      await s.retire('fx-1');
+      s.unretire('fx-1');
+      await s.runJob('fx-1', 'poll');
+      expect(lives).toHaveLength(2);
+    });
+
+    it('is not checked while the connector is being deleted', async () => {
+      const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await s.retire('fx-1');
+      await s.checkLife('fx-1');
+      expect(lives).toEqual([]);
+    });
+
     it('is not checked for a connector that has no creation time on record', async () => {
       await scheduler(fixtureType(fixture())).runJob('fx-1', 'poll');
       expect(lives).toEqual([]);
@@ -317,9 +373,165 @@ describe('KnowledgeSyncScheduler', () => {
     });
   });
 
-  // A refresh made from the API is not a run, so retiring the connector does
-  // not wait for it. Its answer must not be stored once the delete has begun:
-  // that would bring the connector's rows back after they were cleared.
+  // Between the moment a run is let through and the moment it fetches there
+  // is a question to the status gate. A delete that begins then must still
+  // find the run: one it could not stop would fetch for the whole time budget
+  // while the delete, and every later change to the connector, waited.
+  it('does not let a run fetch whose connector’s delete began while it was starting', async () => {
+    const connector = createFixtureKnowledgeConnector({
+      containers: [C1],
+      documents: { C1: [docAt('2026-01-01T00:00:00Z')] },
+    });
+    let asked: () => void = () => undefined;
+    const reached = new Promise<void>((resolve) => (asked = resolve));
+    let open: (ok: boolean) => void = () => undefined;
+    const gate = new Promise<boolean>((resolve) => (open = resolve));
+    const s = scheduler(fixtureType(connector), {
+      isAvailable: () => {
+        asked();
+        return gate;
+      },
+    });
+    const run = s.runJob('fx-1', 'poll');
+    await reached;
+
+    const retired = s.retire('fx-1');
+    open(true);
+    await retired;
+    await run;
+    expect(connector.calls.fetchChanges).toEqual([]);
+    expect(stored).toBe(0);
+    expect(runs).toEqual([]);
+  });
+
+  // A refresh made from the API is not a run. It is tracked while it lasts, so
+  // that a delete stops it and waits for it: one left to itself would store
+  // what the source answered after the delete had cleared the connector and
+  // let its id go, under an id no route can reach.
+  describe('a refresh in flight when the connector’s delete begins', () => {
+    // A source that takes no notice of the signal it is given, and answers
+    // only when `answer` is called.
+    function slowSource() {
+      let reached: () => void = () => undefined;
+      const started = new Promise<void>((resolve) => (reached = resolve));
+      let answer: () => void = () => undefined;
+      const released = new Promise<void>((resolve) => (answer = resolve));
+      const wait = async (): Promise<void> => {
+        reached();
+        await released;
+      };
+      return { started, wait, answer: () => answer() };
+    }
+    const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+    it('is stopped: the source is told, and the delete does not wait for a slow answer', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      let listing: () => void = () => undefined;
+      const started = new Promise<void>((resolve) => (listing = resolve));
+      let told = false;
+      connector.listContainers = (options) => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () =>
+            new Promise((_resolve, reject) => {
+              listing();
+              options?.signal?.addEventListener('abort', () => {
+                told = true;
+                reject(new Error('This operation was aborted'));
+              });
+            }),
+        }),
+      });
+      const s = scheduler(fixtureType(connector));
+      const refresh = s.refreshContainers('fx-1').catch((err: unknown) => err);
+      await started;
+
+      await s.retire('fx-1');
+      expect(told).toBe(true);
+      expect(await refresh).toMatchObject({ code: 'CONNECTOR_BEING_DELETED' });
+      expect(upserted).toBe(0);
+    });
+
+    it('stores no list, even when the source answers once the delete is over', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const source = slowSource();
+      connector.listContainers = async function* () {
+        await source.wait();
+        yield C1;
+      };
+      const s = scheduler(fixtureType(connector));
+      const refresh = s.refreshContainers('fx-1').catch((err: unknown) => err);
+      await source.started;
+
+      await s.retire('fx-1'); // the delete begins,
+      s.unretire('fx-1'); // and is over
+      source.answer();
+      expect(await refresh).toMatchObject({ code: 'CONNECTOR_BEING_DELETED' });
+      await settle();
+      expect(upserted).toBe(0);
+    });
+
+    it('stores no single container either', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const source = slowSource();
+      connector.getContainer = async () => {
+        await source.wait();
+        return { ...C1 };
+      };
+      const s = scheduler(fixtureType(connector));
+      const refresh = s
+        .refreshContainer('fx-1', { externalId: 'C1', name: 'general' })
+        .catch((err: unknown) => err);
+      await source.started;
+
+      await s.retire('fx-1');
+      s.unretire('fx-1');
+      source.answer();
+      expect(await refresh).toMatchObject({ code: 'CONNECTOR_BEING_DELETED' });
+      await settle();
+      expect(upsertedOne).toEqual([]);
+    });
+
+    // The list was stored before the delete began, and the delete clears it.
+    // The people still being listed are not stored after it.
+    it('stores no people either', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const source = slowSource();
+      connector.listPrincipals = async function* () {
+        await source.wait();
+        yield { externalId: 'U1', kind: 'user', displayName: 'Ada', active: true };
+      };
+      const s = scheduler(fixtureType(connector));
+      const refresh = s.refreshContainers('fx-1');
+      await source.started;
+
+      await s.retire('fx-1');
+      s.unretire('fx-1');
+      source.answer();
+      expect(await refresh).toBe(1);
+      await settle();
+      expect(principals).toBe(0);
+    });
+
+    it('leaves the refreshes of other connectors alone', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const source = slowSource();
+      connector.listContainers = async function* () {
+        await source.wait();
+        yield C1;
+      };
+      const s = scheduler(fixtureType(connector));
+      const refresh = s.refreshContainers('fx-1');
+      await source.started;
+
+      await s.retire('another');
+      source.answer();
+      expect(await refresh).toBe(1);
+      expect(upserted).toBe(1);
+    });
+  });
+
+  // A refresh is refused at its start, and again before it stores what the
+  // source answered: the delete may have begun while the source was asked.
   it('does not store what a source answered after the connector’s delete began', async () => {
     const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
     const holder: { scheduler?: KnowledgeSyncScheduler } = {};
@@ -606,6 +818,20 @@ describe('KnowledgeSyncScheduler', () => {
     await expect(s.refreshContainers('fx-1')).rejects.toMatchObject({ code: 'SOURCE_TIMEOUT' });
     expect(upserted).toBe(0);
   });
+
+  // The time allowed is for the whole refresh. A source that does not answer
+  // when asked who is calling holds the request as surely as a listing does.
+  it(
+    'refreshContainers gives up on a source that does not answer while authenticating',
+    { timeout: 2_000 },
+    async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      connector.authenticate = () => new Promise(() => undefined);
+      const s = scheduler(fixtureType(connector), { refreshTimeoutMs: 30 });
+      await expect(s.refreshContainers('fx-1')).rejects.toMatchObject({ code: 'SOURCE_TIMEOUT' });
+      expect(upserted).toBe(0);
+    },
+  );
 
   describe('refreshContainer', () => {
     const row = { externalId: 'C1', name: 'general' };

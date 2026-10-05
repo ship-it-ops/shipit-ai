@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { FakeEmbedder, type Embedder } from '../embedder.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { FakeEmbedder, TEXTS_PER_EMBEDDING_CALL, type Embedder } from '../embedder.js';
 import { IndexLoop } from '../index-loop.js';
 import type { DocumentRow, KnowledgeStore } from '../store.js';
 
@@ -227,6 +227,78 @@ describe('IndexLoop', () => {
     expect(count).toBeLessThanOrEqual(5);
     await new Promise((r) => setTimeout(r, 60));
     expect(beats.length).toBe(count);
+  });
+
+  // A long document is embedded a call at a time. Each call that comes back
+  // is progress: without that, a worker halfway through a large file would
+  // look wedged, and be restarted, on every attempt.
+  describe('with a document that takes several embedding calls', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('goes on writing the heartbeat as each call comes back', async () => {
+      vi.useFakeTimers();
+      const beats: number[] = [];
+      // Each embedding call answers only when the test lets it.
+      const pending: Array<() => void> = [];
+      const fake = new FakeEmbedder(8);
+      const embedder: Embedder = {
+        model: fake.model,
+        dimensions: 8,
+        embedDocuments: (texts) =>
+          new Promise((resolve) => pending.push(() => resolve(fake.embedDocuments(texts)))),
+        embedQuery: (text) => fake.embedQuery(text),
+      };
+      const long = {
+        ...document('d1'),
+        kind: 'confluence_page',
+        segments: Array.from({ length: 2 * TEXTS_PER_EMBEDDING_CALL }, (_, i) => ({
+          key: `s${i}`,
+          headingPath: [`Section ${i}`],
+          text: `what section ${i} says`,
+        })),
+      } as DocumentRow;
+      let claims = 0;
+      const store = {
+        claimPending: async () => (claims++ === 0 ? [long] : []),
+        existingChunkEmbeddings: async () => new Map(),
+        keepClaim: async () => true,
+        replaceChunks: async () => true,
+      } as unknown as KnowledgeStore;
+      const loop = loopOver(store, {
+        pipeline: {
+          store,
+          embedder,
+          chunking: { chunkTokens: 600, maxChunkTokens: 800 },
+          indexVersion: 1,
+          containerNameOf: async () => 'general',
+        },
+        heartbeat: {
+          sink: { set: async () => void beats.push(Date.now()) },
+          key: 'hb',
+          ttlSeconds: 60,
+          everyMs: 10,
+          stallAfterMs: 30,
+        },
+      });
+      loop.start();
+      // The first call does not answer for longer than the stall threshold.
+      await vi.advanceTimersByTimeAsync(100);
+      const whileStalled = beats.length;
+      await vi.advanceTimersByTimeAsync(50);
+      expect(beats.length).toBe(whileStalled);
+
+      // It answers; the document is not finished, and that is progress.
+      expect(pending).toHaveLength(1);
+      pending.shift()!();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(beats.length).toBeGreaterThan(whileStalled);
+
+      pending.shift()!();
+      await vi.advanceTimersByTimeAsync(20);
+      await loop.stop();
+    });
   });
 
   it('keeps the heartbeat while it waits for work, however long that is', async () => {

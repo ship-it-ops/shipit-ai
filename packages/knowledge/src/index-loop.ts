@@ -23,9 +23,10 @@ export interface IndexLoopOptions {
     ttlSeconds: number;
     everyMs: number;
     /**
-     * No heartbeat is written once the loop has neither claimed nor finished
-     * anything for this long while it had work. Default 15 minutes, which is
-     * longer than the longest single step (an embedding call's deadline).
+     * No heartbeat is written once the loop has made no progress for this
+     * long while it had work: no batch claimed, no document finished, no
+     * embedding call of a long document come back. Default 15 minutes, which
+     * is longer than the longest single step (an embedding call's deadline).
      */
     stallAfterMs?: number;
   };
@@ -47,7 +48,8 @@ export class IndexLoop {
   private running = false;
   // Aborted by stop(): embedding calls in flight end, and no document is started.
   private stopping = new AbortController();
-  // When the loop last claimed a batch or finished a document.
+  // When the loop last claimed a batch, finished a document, or had an
+  // embedding call of a long document come back.
   private lastProgressAt = Date.now();
   // True while the loop waits for work: idle, not stalled.
   private waiting = false;
@@ -84,7 +86,10 @@ export class IndexLoop {
     await mapWithConcurrency(docs, this.opts.concurrency, async (doc) => {
       if (signal.aborted) return handBack(doc);
       try {
-        const outcome = await indexDocument(this.opts.pipeline, doc, signal);
+        const outcome = await indexDocument(this.opts.pipeline, doc, signal, () => {
+          // One embedding call of a long document came back.
+          this.lastProgressAt = Date.now();
+        });
         stats[outcome] += 1;
         this.lastProgressAt = Date.now();
       } catch (err) {

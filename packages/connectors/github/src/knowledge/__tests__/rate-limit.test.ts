@@ -140,6 +140,39 @@ describe('withRateLimit', () => {
     expect(slept).toEqual([2_000]);
   });
 
+  // A run or a refresh that was stopped while the request was in flight: the
+  // wait GitHub then asks for must not be sat out. An abort listener added
+  // afterwards never fires, so the sleep has to look before it starts.
+  it('does not sit out a wait when it has already been stopped', { timeout: 2_000 }, async () => {
+    const stop = new AbortController();
+    let calls = 0;
+    const started = Date.now();
+    await expect(
+      withRateLimit(
+        async () => {
+          calls += 1;
+          stop.abort();
+          throw limited({ 'retry-after': '30' }, 429);
+        },
+        { signal: stop.signal },
+      ),
+    ).rejects.toThrow(/aborted/);
+    expect(calls).toBe(1);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('ends a wait in progress when it is stopped', async () => {
+    const stop = new AbortController();
+    const waiting = withRateLimit(
+      async () => {
+        throw limited({ 'retry-after': '30' }, 429);
+      },
+      { signal: stop.signal },
+    );
+    setTimeout(() => stop.abort(), 10);
+    await expect(waiting).rejects.toThrow(/aborted/);
+  });
+
   it('passes other errors straight through', async () => {
     await expect(
       withRateLimit(async () => {

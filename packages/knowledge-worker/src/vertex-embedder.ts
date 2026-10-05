@@ -7,7 +7,7 @@
 // under the `vertex` key.
 import { createVertex } from '@ai-sdk/google-vertex';
 import { embedMany } from 'ai';
-import { assertDimensions, type Embedder } from '@shipit-ai/knowledge';
+import { TEXTS_PER_EMBEDDING_CALL, assertDimensions, type Embedder } from '@shipit-ai/knowledge';
 
 export type EmbeddingTaskType = 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY';
 
@@ -39,18 +39,11 @@ export interface VertexEmbedderOptions {
 export const DEFAULT_MAX_PARALLEL_CALLS = 4;
 
 /**
- * How many texts one call embeds. A document's chunks are embedded a slice at
- * a time, each with its own deadline: one deadline for the whole document
- * would cap how many chunks a document may have, and a file of a few thousand
- * short sections would fail on every attempt.
- */
-export const TEXTS_PER_CALL = 100;
-
-/**
  * A call makes one request per text, a few at a time. A minute plus three
  * seconds a text is far more than a model that is answering needs, and it ends
- * a request that has stopped answering. For a full slice that is six minutes,
- * well under the index loop's stall threshold.
+ * a request that has stopped answering. For a full call (a hundred texts, see
+ * TEXTS_PER_EMBEDDING_CALL) that is six minutes: under the ten minutes after
+ * which a claim counts as stale, and under the index loop's stall threshold.
  */
 export const defaultTimeoutMs = (texts: number): number => 60_000 + 3_000 * texts;
 
@@ -73,12 +66,14 @@ export class VertexEmbedder implements Embedder {
     texts: string[],
     options?: { title?: string; signal?: AbortSignal },
   ): Promise<number[][]> {
+    // The index pipeline hands over a call's worth at a time. Sliced here as
+    // well, so that the deadline holds for a caller that hands over more.
     const vectors: number[][] = [];
-    for (let from = 0; from < texts.length; from += TEXTS_PER_CALL) {
+    for (let from = 0; from < texts.length; from += TEXTS_PER_EMBEDDING_CALL) {
       const slice = await this.call(
         {
           model: this.model,
-          values: texts.slice(from, from + TEXTS_PER_CALL),
+          values: texts.slice(from, from + TEXTS_PER_EMBEDDING_CALL),
           taskType: 'RETRIEVAL_DOCUMENT',
           outputDimensionality: this.dimensions,
           title: options?.title,

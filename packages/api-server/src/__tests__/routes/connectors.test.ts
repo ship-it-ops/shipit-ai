@@ -1435,6 +1435,25 @@ current-context: demo
     expect(readFileSync(ok.json().kubeconfigPath, 'utf-8')).toBe(kubeconfig);
   });
 
+  // The wizard sends `k8s-<cluster name>`, and a cluster name may be 63 characters long.
+  it('POST /kubernetes/credentials takes the id built for the longest cluster name', async () => {
+    const connectorId = `k8s-${'a'.repeat(63)}`;
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId, mode: 'kubeconfig', kubeconfig },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().kubeconfigPath).toBe(join(keyDir, `kubeconfig-${connectorId}.yaml`));
+
+    const tooLong = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'a'.repeat(101), mode: 'kubeconfig', kubeconfig },
+    });
+    expect(tooLong.statusCode).toBe(400);
+  });
+
   it('POST /kubernetes/credentials stores a token and PEM CA for mode token', async () => {
     const res = await server.inject({
       method: 'POST',

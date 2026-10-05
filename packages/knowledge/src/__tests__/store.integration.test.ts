@@ -285,6 +285,33 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       expect(await store.claimPending(10)).toEqual([]);
     });
 
+    // A long document is embedded a call at a time, and the calls together can
+    // outlast the stale window. Each one that comes back renews the claim.
+    it('keeps a claim that is still being worked on from going stale', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [d] = await store.claimPending(1);
+      await database.db.query(
+        `UPDATE knowledge_documents SET index_claimed_at = now() - interval '11 minutes' WHERE id = $1`,
+        [d!.id],
+      );
+      expect(await store.keepClaim(d!.id, d!.contentHash!)).toBe(true);
+      expect(await store.claimPending(10)).toEqual([]);
+    });
+
+    it('does not keep a claim on a document the sink has changed or removed since', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      const claimed = await store.claimPending(10);
+      const d1 = claimed.find((d) => d.externalId === 'd1')!;
+      const d2 = claimed.find((d) => d.externalId === 'd2')!;
+      // d1 is edited: its row is pending again, with another content hash.
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a, edited')], [], 'cp2'));
+      expect(await store.keepClaim(d1.id, d1.contentHash!)).toBe(false);
+      // d2 is deleted at the source.
+      await sink.storeBatch(await selectedC1(), batch([], ['d2'], 'cp3'));
+      expect(await store.keepClaim(d2.id, d2.contentHash!)).toBe(false);
+      expect(await store.keepClaim('99999999-9999-4999-8999-999999999999', 'h')).toBe(false);
+    });
+
     it('stops retrying after five failures and backs off before that', async () => {
       await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
       for (let attempt = 1; attempt <= 5; attempt++) {
@@ -1243,7 +1270,8 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
 
       it('clears what an earlier connector left, when the new one first appears', async () => {
         await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
-        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        // C1 marked for purging, and C2, which holds nothing, removed.
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(2);
         expect(await sink.selectedContainers()).toEqual([]);
         await store.purgeRequested();
         expect(await containerIds('slack-1')).toEqual([]);
@@ -1251,27 +1279,67 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       });
 
       it('leaves a connector’s own content alone from then on', async () => {
-        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBeGreaterThan(0);
         await sink.upsertContainers([C1, C2]);
         await store.setSelected('slack-1', 'C1', true, 'ada');
         await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
 
-        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(false);
+        // Null: a connector the store already knows. Nothing was looked at.
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBeNull();
         expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
         expect((await database.db.query('SELECT 1 FROM knowledge_documents')).rows).toHaveLength(1);
       });
 
       it('starts over for a later connector with the same id, and after a delete', async () => {
-        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).not.toBeNull();
+        // A new life for an id that holds nothing by now: zero rows, not null.
         expect(
           await store.beginConnectorLife('slack-1', '2026-11-01T00:00:00.000Z', 'system'),
-        ).toBe(true);
+        ).toBe(0);
         await store.deselectConnector('slack-1', 'ada');
         // The deleted connector's record is gone with it.
         expect(
           await store.beginConnectorLife('slack-1', '2026-11-01T00:00:00.000Z', 'system'),
-        ).toBe(true);
+        ).toBe(0);
       });
+    });
+
+    // The picker reads a container's row and then writes to it. A delete of
+    // the connector, or a listing that no longer has the container, can land
+    // in between: selecting the row then would keep what was being removed.
+    it('does not select a container that is on its way out with its connector', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const c1 = await rowFor('C1');
+      await store.deselectConnector('slack-1', 'ada');
+
+      expect(
+        await store.selectContainer('slack-1', c1.id, {
+          selected: true,
+          by: 'ada',
+          acknowledged: true,
+        }),
+      ).toBe(false);
+      expect(await rowFor('C1')).toMatchObject({ selected: false });
+      expect((await rowFor('C1')).purgeRequestedAt).not.toBeNull();
+      expect(await store.purgeRequested()).toBe(1);
+      expect(await containerIds('slack-1')).toEqual([]);
+    });
+
+    it('says whether there was a container to select or deselect', async () => {
+      const c2 = await rowFor('C2');
+      const change = (id: string, selected: boolean) =>
+        store.selectContainer('slack-1', id, { selected, by: 'ada', acknowledged: true });
+      expect(await change(c2.id, true)).toBe(true);
+      expect(await change(c2.id, false)).toBe(true);
+      expect(await change('99999999-9999-4999-8999-999999999999', true)).toBe(false);
+      expect(await change('99999999-9999-4999-8999-999999999999', false)).toBe(false);
+
+      // Gone at the source: it can be deselected, which is how what it holds
+      // is removed, and not selected.
+      await change(c2.id, true);
+      await sink.upsertContainers([C1]);
+      expect(await change(c2.id, true)).toBe(false);
+      expect(await change(c2.id, false)).toBe(true);
     });
 
     it('removes a container the source no longer has once it is deselected and purged', async () => {

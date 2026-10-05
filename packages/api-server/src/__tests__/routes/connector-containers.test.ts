@@ -65,6 +65,11 @@ describe('connector container routes', () => {
   let registeredAtDeselect: boolean[];
   // What the routes told the scheduler about a delete, in order.
   let lifecycle: string[];
+  // What selectContainer answers: whether there was a row to change.
+  let changed: boolean;
+  // The check of whose rows a connector id holds, and what was read after it.
+  let checkLife: (connectorId: string) => Promise<void>;
+  let reads: string[];
   let registry: ConnectorRegistry;
   let tmpDir: string;
 
@@ -79,6 +84,9 @@ describe('connector container routes', () => {
     deselect = async () => 1;
     registeredAtDeselect = [];
     lifecycle = [];
+    changed = true;
+    checkLife = async () => undefined;
+    reads = [];
     tmpDir = mkdtempSync(join(tmpdir(), 'shipit-containers-routes-'));
   });
   afterEach(() => {
@@ -104,11 +112,18 @@ describe('connector container routes', () => {
       connectorRegistry,
       knowledgeStatus,
       knowledgeStore: {
-        containersWithCounts: async (_c: string, q?: string) =>
-          rows.filter((r) => !q || r.name.includes(q)),
-        getContainer: async (_c: string, id: string) => rows.find((r) => r.id === id) ?? null,
-        selectContainer: async (_c: string, id: string, input: Record<string, unknown>) =>
-          void selections.push({ id, ...input }),
+        containersWithCounts: async (_c: string, q?: string) => {
+          reads.push('list');
+          return rows.filter((r) => !q || r.name.includes(q));
+        },
+        getContainer: async (_c: string, id: string) => {
+          reads.push('get');
+          return rows.find((r) => r.id === id) ?? null;
+        },
+        selectContainer: async (_c: string, id: string, input: Record<string, unknown>) => {
+          selections.push({ id, ...input });
+          return changed;
+        },
         deselectConnector: async (connectorId: string, by: string) => {
           registeredAtDeselect.push(connectorRegistry.list().some((c) => c.id === connectorId));
           lifecycle.push(`purge ${connectorId}`);
@@ -128,6 +143,10 @@ describe('connector container routes', () => {
         },
         retire: async (connectorId: string) => void lifecycle.push(`retire ${connectorId}`),
         unretire: (connectorId: string) => void lifecycle.push(`unretire ${connectorId}`),
+        checkLife: async (connectorId: string) => {
+          reads.push(`check ${connectorId}`);
+          await checkLife(connectorId);
+        },
       } as never,
     });
     await s.ready();
@@ -437,8 +456,23 @@ describe('connector container routes', () => {
     await s.close();
   });
 
+  // The Kubernetes wizard builds the id from the cluster name, which may be 63
+  // characters long: the longest id it sends must fit the rule.
+  it('accepts the id built for the longest cluster name', async () => {
+    const s = await server();
+    const id = `k8s-${'a'.repeat(63)}`;
+    const res = await s.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      payload: { id, type: 'github', name: 'acme', installationId: '2', org: 'acme' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(registry.list().map((c) => c.id)).toContain(id);
+    await s.close();
+  });
+
   // The id becomes part of Redis keys and of URLs.
-  it.each([['x:knowledge'], ['has space'], [123], ['a'.repeat(65)]])(
+  it.each([['x:knowledge'], ['has space'], [123], ['a'.repeat(101)]])(
     'refuses %j as a connector id',
     async (id) => {
       const s = await server();
@@ -558,6 +592,67 @@ describe('connector container routes', () => {
     });
     expect(res.statusCode).toBe(409);
     expect(deselected).toEqual([]);
+    await s.close();
+  });
+
+  // The route reads the row and then writes to it. A delete of the connector
+  // or a new listing can land in between; the store says when it changed nothing.
+  it('says so when the container went while it was being selected or deselected', async () => {
+    changed = false;
+    const s = await server();
+    const on = await s.inject({
+      method: 'PUT',
+      url: `/api/connectors/gh-1/containers/${ID}`,
+      payload: { selected: true, acknowledgeVisibility: true },
+    });
+    expect(on.statusCode).toBe(409);
+    expect(on.json().error.code).toBe('CONTAINER_GONE');
+    const off = await s.inject({
+      method: 'PUT',
+      url: `/api/connectors/gh-1/containers/${ID}`,
+      payload: { selected: false },
+    });
+    expect(off.statusCode).toBe(404);
+    await s.close();
+  });
+
+  // A connector id can be used again. The rows it holds may be an earlier
+  // connector's until the scheduler has checked; the picker must not show
+  // them, and a selection must not be made among them.
+  it('checks whose rows the connector id holds before it shows or changes any', async () => {
+    const s = await server();
+    await s.inject({ method: 'GET', url: '/api/connectors/gh-1/containers' });
+    expect(reads).toEqual(['check gh-1', 'list']);
+
+    reads = [];
+    await s.inject({
+      method: 'PUT',
+      url: `/api/connectors/gh-1/containers/${ID}`,
+      payload: { selected: false },
+    });
+    expect(reads).toEqual(['check gh-1', 'get']);
+    await s.close();
+  });
+
+  it('answers 503 when that check cannot be made, and shows and changes nothing', async () => {
+    checkLife = async () => {
+      throw new KnowledgeRefreshError(
+        'KNOWLEDGE_UNAVAILABLE',
+        'The database could not be reached.',
+      );
+    };
+    const s = await server();
+    const list = await s.inject({ method: 'GET', url: '/api/connectors/gh-1/containers' });
+    expect(list.statusCode).toBe(503);
+    expect(list.json().error.code).toBe('KNOWLEDGE_UNAVAILABLE');
+    const select = await s.inject({
+      method: 'PUT',
+      url: `/api/connectors/gh-1/containers/${ID}`,
+      payload: { selected: true, acknowledgeVisibility: true },
+    });
+    expect(select.statusCode).toBe(503);
+    expect(reads).toEqual(['check gh-1', 'check gh-1']);
+    expect(selections).toEqual([]);
     await s.close();
   });
 

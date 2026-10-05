@@ -66,15 +66,20 @@ export interface RateLimitState {
 
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new Error('aborted'));
-      },
-      { once: true },
-    );
+    // Stopped before the wait began: a listener added now would never be called.
+    if (signal?.aborted) {
+      reject(new Error('aborted'));
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new Error('aborted'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 

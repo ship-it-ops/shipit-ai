@@ -15,6 +15,7 @@ export type { PostgresKnowledgeSinkOptions } from './sink.js';
 export {
   EmbeddingDimensionError,
   FakeEmbedder,
+  TEXTS_PER_EMBEDDING_CALL,
   assertDimensions,
   isRetryableEmbeddingError,
   withRetry,

@@ -3,6 +3,14 @@
 // so the AI SDK never enters api-server's dependency closure.
 import { createHash } from 'node:crypto';
 
+/**
+ * How many texts one embedding call is given. A document's chunks are embedded
+ * this many at a time, each call with its own deadline and its own retries: a
+ * single call for the whole document would cap how many chunks a document may
+ * have, and a file of a few thousand short sections would fail on every attempt.
+ */
+export const TEXTS_PER_EMBEDDING_CALL = 100;
+
 export interface Embedder {
   readonly model: string;
   readonly dimensions: number;

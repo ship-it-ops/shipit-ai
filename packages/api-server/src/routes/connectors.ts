@@ -137,7 +137,9 @@ function removeUnreferencedCredentials(
   }
 }
 
-const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+// Up to 100 characters: the Kubernetes wizard sends `k8s-<cluster name>`, and
+// a cluster name may be 63 characters long.
+const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 /** Postgres: the table a statement names does not exist. */
 const UNDEFINED_TABLE = '42P01';
 
@@ -891,7 +893,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         error: {
           code: 'VALIDATION_ERROR',
           message:
-            'id must be 1 to 64 characters: letters, digits, "_" and "-", starting with a letter or digit',
+            'id must be 1 to 100 characters: letters, digits, "_" and "-", starting with a letter or digit',
         },
       });
     }
@@ -1316,7 +1318,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         return reply.status(400).send({
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'connectorId is required ([A-Za-z0-9_-], max 64 chars)',
+            message: 'connectorId is required ([A-Za-z0-9_-], max 100 chars)',
           },
         });
       }

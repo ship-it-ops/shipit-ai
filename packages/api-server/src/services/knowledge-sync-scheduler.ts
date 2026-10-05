@@ -90,18 +90,53 @@ const REFRESH_TIMEOUT_MS = 60_000;
 
 /** One refresh: the limits the connector is given, and whether its time ran out. */
 interface RefreshLimits {
-  run: RunLimits;
+  run: RunLimits & { signal: AbortSignal };
   timedOut(): boolean;
 }
 
 /**
- * Runs a call to the source for a refresh. A wait the source asked for past
- * the deadline becomes RATE_LIMITED; a source that did not answer in time
- * becomes SOURCE_TIMEOUT.
+ * `work`, or a rejection with the signal's reason the moment it aborts,
+ * whichever comes first. The work is not stopped by this (the signal it was
+ * given does that, if it listens); its answer is simply no longer waited for.
+ */
+function orAborted<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
+
+/** `source`, ended with the signal's reason the moment it aborts. */
+async function* untilAborted<T>(signal: AbortSignal, source: AsyncIterable<T>): AsyncGenerator<T> {
+  const iterator = source[Symbol.asyncIterator]();
+  let ended = false;
+  try {
+    for (;;) {
+      const step = await orAborted(signal, iterator.next());
+      if (step.done) {
+        ended = true;
+        return;
+      }
+      yield step.value;
+    }
+  } finally {
+    // Not waited for: a source that took no notice of the signal may never answer.
+    if (!ended) void Promise.resolve(iterator.return?.()).catch(() => undefined);
+  }
+}
+
+/**
+ * Runs a call to the source for a refresh, for no longer than the refresh
+ * lasts: the call is given up on when the refresh's signal aborts, whether or
+ * not the connector takes notice of it. A wait the source asked for past the
+ * deadline becomes RATE_LIMITED; a source that did not answer in time becomes
+ * SOURCE_TIMEOUT.
  */
 async function sourceCall<T>(limits: RefreshLimits, call: () => Promise<T>): Promise<T> {
   try {
-    return await call();
+    return await orAborted(limits.run.signal, call());
   } catch (err) {
     if (isRunCutShort(err)) {
       throw new KnowledgeRefreshError(
@@ -130,6 +165,9 @@ export class KnowledgeRefreshError extends Error {
   }
 }
 
+const beingDeleted = (): KnowledgeRefreshError =>
+  new KnowledgeRefreshError('CONNECTOR_BEING_DELETED', 'This connector is being deleted.');
+
 export class KnowledgeSyncScheduler {
   private readonly queue: KnowledgeQueueLike;
   private readonly worker: Worker | null;
@@ -143,6 +181,12 @@ export class KnowledgeSyncScheduler {
   // One per run in flight, so that the run of a connector being deleted can
   // be stopped without stopping the others.
   private readonly inFlight = new Map<string, AbortController>();
+  // The refreshes made from the API that are in flight, per connector: a
+  // delete stops them and waits for them, as it does for the run.
+  private readonly refreshes = new Map<
+    string,
+    Set<{ stop: AbortController; over: Promise<void> }>
+  >();
   // Connectors whose delete is in progress: no run, and no refresh, for them.
   private readonly retiring = new Set<string>();
   // connector id → the creation time its store rows are known to belong to.
@@ -252,33 +296,39 @@ export class KnowledgeSyncScheduler {
    * the source has.
    */
   async refreshContainers(connectorId: string): Promise<number> {
-    const connector = await this.connect(connectorId);
-    const limits = this.refreshLimits();
-    const listed = await this.listAndStoreContainers(connectorId, connector, limits);
-    // The people too, so the first documents of a backfill find their authors;
-    // the principal listing otherwise runs only at the nightly reconcile. Only
-    // for a connector that has something selected: names, emails and logins
-    // are not held for one that indexes nothing. The containers are what was
-    // asked for, so a failure here is logged.
-    if (await this.opts.store.hasSelection(connectorId)) {
-      const sink = new PostgresKnowledgeSink({ connectorId, store: this.opts.store });
-      try {
-        let page: SourcePrincipal[] = [];
-        for await (const principal of connector.listPrincipals(limits.run)) {
-          page.push(principal);
-          if (page.length >= 500) {
-            await sink.upsertPrincipals(page);
-            page = [];
+    return this.asRefresh(connectorId, async (limits) => {
+      const connector = await this.connect(connectorId, limits);
+      const listed = await this.listAndStoreContainers(connectorId, connector, limits);
+      // The people too, so the first documents of a backfill find their
+      // authors; the principal listing otherwise runs only at the nightly
+      // reconcile. Only for a connector that has something selected: names,
+      // emails and logins are not held for one that indexes nothing. The
+      // containers are what was asked for, so a failure here is logged.
+      if (await this.opts.store.hasSelection(connectorId)) {
+        const sink = new PostgresKnowledgeSink({ connectorId, store: this.opts.store });
+        const storePage = async (page: SourcePrincipal[]): Promise<void> => {
+          this.refuseIfRetiring(connectorId);
+          await sink.upsertPrincipals(page);
+        };
+        try {
+          let page: SourcePrincipal[] = [];
+          const people = untilAborted(limits.run.signal, connector.listPrincipals(limits.run));
+          for await (const principal of people) {
+            page.push(principal);
+            if (page.length >= 500) {
+              await storePage(page);
+              page = [];
+            }
           }
+          if (page.length > 0) await storePage(page);
+        } catch (err) {
+          this.log(
+            `knowledge: could not list principals for ${connectorId} during a container refresh: ${(err as Error).message}`,
+          );
         }
-        if (page.length > 0) await sink.upsertPrincipals(page);
-      } catch (err) {
-        this.log(
-          `knowledge: could not list principals for ${connectorId} during a container refresh: ${(err as Error).message}`,
-        );
       }
-    }
-    return listed.length;
+      return listed.length;
+    });
   }
 
   /**
@@ -291,40 +341,94 @@ export class KnowledgeSyncScheduler {
     connectorId: string,
     container: Pick<SourceContainer, 'externalId' | 'name'>,
   ): Promise<boolean> {
-    const connector = await this.connect(connectorId);
-    const limits = this.refreshLimits();
-    if (!connector.getContainer) {
-      const listed = await this.listAndStoreContainers(connectorId, connector, limits);
-      return listed.some((c) => c.externalId === container.externalId);
-    }
-    const lookup = connector.getContainer.bind(connector);
-    const fresh = await sourceCall(limits, () =>
-      lookup({ externalId: container.externalId, name: container.name }, limits.run),
-    );
-    if (!fresh) return false;
-    this.refuseIfRetiring(connectorId);
-    await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainer(fresh);
-    return true;
+    return this.asRefresh(connectorId, async (limits) => {
+      const connector = await this.connect(connectorId, limits);
+      if (!connector.getContainer) {
+        const listed = await this.listAndStoreContainers(connectorId, connector, limits);
+        return listed.some((c) => c.externalId === container.externalId);
+      }
+      const lookup = connector.getContainer.bind(connector);
+      const fresh = await sourceCall(limits, () =>
+        lookup({ externalId: container.externalId, name: container.name }, limits.run),
+      );
+      if (!fresh) return false;
+      this.refuseIfRetiring(connectorId);
+      await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainer(
+        fresh,
+      );
+      return true;
+    });
   }
 
   /**
-   * A delete of the connector is starting: its run in flight is stopped and
-   * waited for, and until `unretire` (the delete failed) no run and no refresh
-   * is made for it. A run still fetching would write to the store after the
-   * purge of what the connector indexed had been recorded.
+   * Makes sure the rows the store holds under the connector's id are this
+   * connector's (see `ensureLife`). For a route about to show or change the
+   * connector's containers; a run and a refresh check by themselves.
+   */
+  async checkLife(connectorId: string): Promise<void> {
+    const cfg = this.opts.registry.get(connectorId); // throws 404 for an unknown id
+    // Being deleted: its rows are on their way out, whoever they belonged to.
+    if (this.retiring.has(connectorId)) return;
+    await this.ownRows(cfg);
+  }
+
+  /**
+   * A delete of the connector is starting: its run and its refreshes in flight
+   * are stopped and waited for, and until `unretire` no run and no refresh is
+   * made for it. One still fetching would write to the store after the purge
+   * of what the connector indexed had been recorded.
    */
   async retire(connectorId: string): Promise<void> {
     this.retiring.add(connectorId);
     this.inFlight.get(connectorId)?.abort();
-    await (this.running.get(connectorId) ?? Promise.resolve()).catch(() => undefined);
+    const refreshes = [...(this.refreshes.get(connectorId) ?? [])];
+    for (const refresh of refreshes) refresh.stop.abort();
+    await Promise.all([
+      (this.running.get(connectorId) ?? Promise.resolve()).catch(() => undefined),
+      ...refreshes.map((refresh) => refresh.over),
+    ]);
   }
 
+  /**
+   * The delete is over. If it went through, the id is free to be used again;
+   * if it did not, the connector may run again. Either way the store is asked
+   * afresh whose rows the id holds: a delete that cleared them and then
+   * failed took the record of the connector's life with them.
+   */
   unretire(connectorId: string): void {
     this.retiring.delete(connectorId);
+    this.lives.delete(connectorId);
+  }
+
+  // A refresh made from the API: tracked while it lasts, with a signal of its
+  // own that the connector's delete aborts (see `retire`). Its limits start
+  // here, so that the time allowed covers authentication too.
+  private async asRefresh<T>(
+    connectorId: string,
+    work: (limits: RefreshLimits) => Promise<T>,
+  ): Promise<T> {
+    const stop = new AbortController();
+    let end: () => void = () => undefined;
+    const refresh = { stop, over: new Promise<void>((resolve) => (end = resolve)) };
+    const mine = this.refreshes.get(connectorId) ?? new Set();
+    this.refreshes.set(connectorId, mine.add(refresh));
+    try {
+      return await work(this.refreshLimits(stop.signal));
+    } catch (err) {
+      // Stopped by the delete, whatever the call it interrupted made of that.
+      if (stop.signal.aborted) throw beingDeleted();
+      throw err;
+    } finally {
+      mine.delete(refresh);
+      if (mine.size === 0 && this.refreshes.get(connectorId) === mine) {
+        this.refreshes.delete(connectorId);
+      }
+      end();
+    }
   }
 
   /** The connector of a knowledge instance, authenticated, for a call made outside a run. */
-  private async connect(connectorId: string): Promise<KnowledgeConnector> {
+  private async connect(connectorId: string, limits: RefreshLimits): Promise<KnowledgeConnector> {
     const cfg = this.opts.registry.get(connectorId); // throws 404 for an unknown id
     this.refuseIfRetiring(connectorId);
     const type = this.resolveType(cfg.type);
@@ -334,51 +438,61 @@ export class KnowledgeSyncScheduler {
         'Knowledge is not switched on for this connector.',
       );
     }
-    try {
-      await this.ensureLife(cfg);
-    } catch (err) {
-      this.log(
-        `knowledge: could not check ${connectorId} against the store: ${(err as Error).message}`,
-      );
-      throw new KnowledgeRefreshError(
-        'KNOWLEDGE_UNAVAILABLE',
-        'The knowledge database could not be reached. Try again.',
-      );
-    }
+    await this.ownRows(cfg);
     const built = await type.buildKnowledge(cfg, this.opts.buildContext);
     if (!built.ok) throw new KnowledgeRefreshError(built.code, built.message);
-    const auth = await built.connector.authenticate(built.sdkConfig);
+    const auth = await sourceCall(limits, () => built.connector.authenticate(built.sdkConfig));
     if (!auth.success) {
       throw new KnowledgeRefreshError('AUTH_FAILED', auth.error ?? 'Authentication failed');
     }
     return built.connector;
   }
 
+  /** `ensureLife` for a caller that answers an HTTP request: a store that is down has a code. */
+  private async ownRows(cfg: ConnectorInstanceConfig): Promise<void> {
+    try {
+      await this.ensureLife(cfg);
+    } catch (err) {
+      this.log(`knowledge: could not check ${cfg.id} against the store: ${(err as Error).message}`);
+      throw new KnowledgeRefreshError(
+        'KNOWLEDGE_UNAVAILABLE',
+        'The knowledge database could not be reached. Try again.',
+      );
+    }
+  }
+
   /**
-   * Before a connector touches the store for the first time: whatever an
-   * earlier connector with the same id left there is cleared. Ids are chosen
-   * by the caller and can be used again, and a connector deleted while the
-   * knowledge layer was off left its rows behind. The store tells the two
+   * Before anything is fetched, shown or changed for a connector: whatever an
+   * earlier connector with the same id left in the store is cleared. Ids are
+   * chosen by the caller and can be used again, and a connector deleted while
+   * the knowledge layer was off left its rows behind. The store tells the two
    * apart by the connector's creation time, and remembers it. A connector
    * that predates the field is left alone.
    */
   private async ensureLife(cfg: ConnectorInstanceConfig): Promise<void> {
     const bornAt = cfg.createdAt;
     if (!bornAt || this.lives.get(cfg.id) === bornAt) return;
-    await this.opts.store.beginConnectorLife(cfg.id, bornAt, 'system');
+    const cleared = await this.opts.store.beginConnectorLife(cfg.id, bornAt, 'system');
     this.lives.set(cfg.id, bornAt);
+    if (cleared) {
+      this.log(
+        `knowledge: ${cfg.id} is a new connector under an id used before; cleared ${cleared} ` +
+          `${cleared === 1 ? 'row' : 'rows'} the earlier one left`,
+      );
+    }
   }
 
   // These calls are made inside an HTTP request. Two bounds: a wait the source
   // asks for (a rate limit) longer than the deadline ends the call, where the
   // connector would otherwise sleep for up to an hour; and a source that does
-  // not answer at all is cut off when the time for the whole refresh is up.
-  private refreshLimits(): RefreshLimits {
+  // not answer at all is given up on when the time for the whole refresh is
+  // up. `stop` is the refresh's own signal, aborted by the connector's delete.
+  private refreshLimits(stop: AbortSignal): RefreshLimits {
     const timeout = AbortSignal.timeout(this.opts.refreshTimeoutMs ?? REFRESH_TIMEOUT_MS);
     return {
       run: {
         deadline: Date.now() + REFRESH_BUDGET_MS,
-        signal: AbortSignal.any([this.shutdown.signal, timeout]),
+        signal: AbortSignal.any([this.shutdown.signal, stop, timeout]),
       },
       timedOut: () => timeout.aborted,
     };
@@ -399,17 +513,12 @@ export class KnowledgeSyncScheduler {
     return all;
   }
 
-  // A refresh made from the API is not a run, so `retire` does not wait for
-  // it. It is refused at its start, and again before it stores what the source
-  // answered: stored after the delete cleared the connector, its list would
-  // bring the rows back under an id no route can reach.
+  // A refresh is refused at its start, and again before each thing it stores:
+  // the delete may have begun while the source was being asked. `retire`
+  // waits for the refresh, so a write it lets through here is over before the
+  // delete clears the connector.
   private refuseIfRetiring(connectorId: string): void {
-    if (this.retiring.has(connectorId)) {
-      throw new KnowledgeRefreshError(
-        'CONNECTOR_BEING_DELETED',
-        'This connector is being deleted.',
-      );
-    }
+    if (this.retiring.has(connectorId)) throw beingDeleted();
   }
 
   /** The job body. Public so tests (and a future admin "run now") can call it without BullMQ. */
@@ -437,51 +546,57 @@ export class KnowledgeSyncScheduler {
     if (!this.handles(cfg)) return;
     // Its delete is in progress: nothing more is fetched for it.
     if (this.retiring.has(connectorId)) return;
-    if (!(await this.opts.isAvailable())) {
-      this.log(`knowledge sync for ${connectorId} skipped: the knowledge layer is unavailable`);
-      return;
-    }
-    this.statuses.set(connectorId, { connectorId, state: 'running', startedAt });
-
-    const type = this.resolveType(cfg.type);
-    if (!type?.buildKnowledge) {
-      await this.failRun(
-        connectorId,
-        startedAt,
-        startTime,
-        `Connector type "${cfg.type}" has no knowledge facet.`,
-      );
-      return;
-    }
-    // Anything that throws from here on is still a run an admin must be able
-    // to see: record it as failed instead of leaving the history silent.
-    let result: KnowledgeRunResult;
+    // Registered before the first wait below, so that a delete beginning
+    // during any of them finds this run and stops it.
     const stop = new AbortController();
     this.inFlight.set(connectorId, stop);
+    let result: KnowledgeRunResult;
     try {
-      await this.ensureLife(cfg);
-      const built = await type.buildKnowledge(cfg, this.opts.buildContext);
-      if (!built.ok) {
-        await this.failRun(connectorId, startedAt, startTime, built.message);
+      if (!(await this.opts.isAvailable())) {
+        this.log(`knowledge sync for ${connectorId} skipped: the knowledge layer is unavailable`);
         return;
       }
-      const sink = new PostgresKnowledgeSink({
-        connectorId,
-        store: this.opts.store,
-        wake: this.opts.wake,
-        log: this.log,
-      });
-      const harness = new KnowledgeHarness(built.connector, sink, built.sdkConfig, {
-        historyDays: type.knowledgeHistoryDays?.(cfg) ?? 365,
-        budgetMs: this.opts.budgetMs,
-        // Shutdown, or the delete of this connector.
-        signal: AbortSignal.any([this.shutdown.signal, stop.signal]),
-      });
-      result = await harness.run(mode);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await this.failRun(connectorId, startedAt, startTime, message);
-      return;
+      // Its delete began while the gate was being asked.
+      if (stop.signal.aborted) return;
+      this.statuses.set(connectorId, { connectorId, state: 'running', startedAt });
+
+      const type = this.resolveType(cfg.type);
+      if (!type?.buildKnowledge) {
+        await this.failRun(
+          connectorId,
+          startedAt,
+          startTime,
+          `Connector type "${cfg.type}" has no knowledge facet.`,
+        );
+        return;
+      }
+      // Anything that throws from here on is still a run an admin must be
+      // able to see: record it as failed instead of leaving the history silent.
+      try {
+        await this.ensureLife(cfg);
+        const built = await type.buildKnowledge(cfg, this.opts.buildContext);
+        if (!built.ok) {
+          await this.failRun(connectorId, startedAt, startTime, built.message);
+          return;
+        }
+        const sink = new PostgresKnowledgeSink({
+          connectorId,
+          store: this.opts.store,
+          wake: this.opts.wake,
+          log: this.log,
+        });
+        const harness = new KnowledgeHarness(built.connector, sink, built.sdkConfig, {
+          historyDays: type.knowledgeHistoryDays?.(cfg) ?? 365,
+          budgetMs: this.opts.budgetMs,
+          // Shutdown, or the delete of this connector.
+          signal: AbortSignal.any([this.shutdown.signal, stop.signal]),
+        });
+        result = await harness.run(mode);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.failRun(connectorId, startedAt, startTime, message);
+        return;
+      }
     } finally {
       if (this.inFlight.get(connectorId) === stop) this.inFlight.delete(connectorId);
     }

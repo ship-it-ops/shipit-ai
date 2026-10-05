@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { FakeEmbedder, type Embedder } from '../embedder.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { FakeEmbedder, TEXTS_PER_EMBEDDING_CALL, type Embedder } from '../embedder.js';
 import { indexDocument, type IndexStore } from '../index-pipeline.js';
 import type { DocumentRow, StoredChunkInput } from '../store.js';
 
@@ -12,6 +12,9 @@ class MemoryIndexStore implements IndexStore {
   }> = [];
   unchanged: string[] = [];
   skipped: string[] = [];
+  /** Every keepClaim call, and what the next ones answer. */
+  kept: Array<{ documentId: string; contentHash: string }> = [];
+  stillClaimed = true;
 
   async existingChunkEmbeddings(documentId: string, _model: string) {
     return new Map(this.existing.get(documentId) ?? []);
@@ -29,6 +32,10 @@ class MemoryIndexStore implements IndexStore {
   }
   async markSkipped(documentId: string) {
     this.skipped.push(documentId);
+  }
+  async keepClaim(documentId: string, contentHash: string) {
+    this.kept.push({ documentId, contentHash });
+    return this.stillClaimed;
   }
 }
 
@@ -231,5 +238,117 @@ describe('indexDocument', () => {
     const controller = new AbortController();
     await indexDocument(deps(new MemoryIndexStore(), embedder), row(), controller.signal);
     expect(seen).toEqual([{ title: 'T', signal: controller.signal }]);
+  });
+
+  // One embedding call takes a hundred texts and has its own deadline, so how
+  // long a document takes grows with its length. What is sized for one call
+  // (the reclaim of a stale claim, the worker's stall check, a retry) must
+  // then work a call at a time too.
+  describe('a document with more chunks than one embedding call takes', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // One chunk per heading.
+    const long = (sections: number): DocumentRow =>
+      row({
+        kind: 'confluence_page',
+        segments: Array.from({ length: sections }, (_, i) => ({
+          key: `s${i}`,
+          headingPath: [`Section ${i}`],
+          text: `what section ${i} says`,
+        })),
+      });
+
+    /** Records the size of every call; `failing` makes the nth call (from 1) fail once. */
+    function counting(failing?: { call: number; error: unknown }) {
+      const fake = new FakeEmbedder(8);
+      const sizes: number[] = [];
+      const embedder: Embedder = {
+        model: fake.model,
+        dimensions: 8,
+        async embedDocuments(texts) {
+          sizes.push(texts.length);
+          if (failing && sizes.length === failing.call) throw failing.error;
+          return fake.embedDocuments(texts);
+        },
+        embedQuery: (text) => fake.embedQuery(text),
+      };
+      return { embedder, sizes, fake };
+    }
+
+    it('is embedded a call at a time, every chunk with its own vector', async () => {
+      const store = new MemoryIndexStore();
+      const { embedder, sizes, fake } = counting();
+      const sections = 2 * TEXTS_PER_EMBEDDING_CALL + 50;
+      expect(await indexDocument(deps(store, embedder), long(sections))).toBe('indexed');
+      expect(sizes).toEqual([TEXTS_PER_EMBEDDING_CALL, TEXTS_PER_EMBEDDING_CALL, 50]);
+
+      const { chunks } = store.replaced[0]!;
+      expect(chunks).toHaveLength(sections);
+      // The vectors of the second and third call landed on their own chunks.
+      for (const at of [0, TEXTS_PER_EMBEDDING_CALL, sections - 1]) {
+        const [vector] = await fake.embedDocuments([`${chunks[at]!.prefix}\n${chunks[at]!.text}`]);
+        expect(chunks[at]!.embedding).toBe(`[${vector!.join(',')}]`);
+      }
+    });
+
+    it('says between calls that it is still being worked on', async () => {
+      const store = new MemoryIndexStore();
+      const { embedder } = counting();
+      let progress = 0;
+      await indexDocument(
+        deps(store, embedder),
+        long(2 * TEXTS_PER_EMBEDDING_CALL + 1),
+        undefined,
+        () => void (progress += 1),
+      );
+      expect(store.kept).toEqual([
+        { documentId: 'doc-1', contentHash: 'h1' },
+        { documentId: 'doc-1', contentHash: 'h1' },
+      ]);
+      expect(progress).toBe(2);
+    });
+
+    it('says nothing of the kind for a document one call embeds', async () => {
+      const store = new MemoryIndexStore();
+      let progress = 0;
+      await indexDocument(
+        deps(store, counting().embedder),
+        long(TEXTS_PER_EMBEDDING_CALL),
+        undefined,
+        () => void (progress += 1),
+      );
+      expect(store.kept).toEqual([]);
+      expect(progress).toBe(0);
+    });
+
+    it('tries a call that failed again by itself, not the ones before it', async () => {
+      vi.useFakeTimers();
+      const store = new MemoryIndexStore();
+      const { embedder, sizes } = counting({
+        call: 2,
+        error: Object.assign(new Error('unavailable'), { status: 503 }),
+      });
+      const indexing = indexDocument(deps(store, embedder), long(TEXTS_PER_EMBEDDING_CALL + 7));
+      await vi.runAllTimersAsync();
+      expect(await indexing).toBe('indexed');
+      // The first hundred once; the last seven twice.
+      expect(sizes).toEqual([TEXTS_PER_EMBEDDING_CALL, 7, 7]);
+      expect(store.replaced[0]!.chunks).toHaveLength(TEXTS_PER_EMBEDDING_CALL + 7);
+    });
+
+    // The sink changed or removed the document while it was being embedded:
+    // what is left of it would be thrown away at the end.
+    it('stops when the document is no longer the claim it took', async () => {
+      const store = new MemoryIndexStore();
+      store.stillClaimed = false;
+      const { embedder, sizes } = counting();
+      expect(await indexDocument(deps(store, embedder), long(3 * TEXTS_PER_EMBEDDING_CALL))).toBe(
+        'superseded',
+      );
+      expect(sizes).toEqual([TEXTS_PER_EMBEDDING_CALL]);
+      expect(store.replaced).toEqual([]);
+    });
   });
 });
