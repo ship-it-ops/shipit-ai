@@ -23,7 +23,9 @@ describe('scripts/infra.sh', () => {
    * use: the CLIs prefer DATABASE_SUPERUSER_URL (bootstrap) and
    * DATABASE_MIGRATOR_URL (migrate) over DATABASE_URL.
    */
-  function targets(env: Record<string, string>): Array<{ command: string; url: string }> {
+  function targets(
+    env: Record<string, string>,
+  ): Array<{ command: string; url: string; migrations: string }> {
     const bin = mkdtempSync(join(tmpdir(), 'shipit-infra-script-'));
     dirs.push(bin);
     const record = join(bin, 'pnpm-calls');
@@ -40,7 +42,7 @@ describe('scripts/infra.sh', () => {
         '  *db:bootstrap*) url="${DATABASE_SUPERUSER_URL:-$DATABASE_URL}" ;;',
         '  *) url="${DATABASE_MIGRATOR_URL:-$DATABASE_URL}" ;;',
         'esac',
-        `printf '%s\\t%s\\n' "$*" "$url" >> "${record}"`,
+        `printf '%s\\t%s\\t%s\\n' "$*" "$url" "$MIGRATIONS_DIR" >> "${record}"`,
         '',
       ].join('\n'),
     );
@@ -53,13 +55,13 @@ describe('scripts/infra.sh', () => {
       .trim()
       .split('\n')
       .map((line) => {
-        const [args, url] = line.split('\t');
-        return { command: args!.replace('--silent ', ''), url: url! };
+        const [args, url, migrations] = line.split('\t');
+        return { command: args!.replace('--silent ', ''), url: url!, migrations: migrations ?? '' };
       });
   }
 
   it('applies the schema to the compose database', () => {
-    expect(targets({})).toEqual([
+    expect(targets({}).map(({ command, url }) => ({ command, url }))).toEqual([
       { command: 'db:bootstrap', url: COMPOSE_URL },
       { command: 'db:migrate', url: COMPOSE_URL },
     ]);
@@ -81,6 +83,16 @@ describe('scripts/infra.sh', () => {
       DATABASE_SUPERUSER_URL: 'postgres://db.example.com:5432/postgres',
     });
     expect(urls.map((t) => t.url)).toEqual([COMPOSE_URL, COMPOSE_URL]);
+  });
+
+  // The migrate command reads MIGRATIONS_DIR. One exported in the shell for
+  // another checkout would apply that checkout's files to this database.
+  it('applies this repository’s migrations, whatever MIGRATIONS_DIR is exported', () => {
+    const own = resolve(here, '../../../../db/migrations');
+    const migrate = (env: Record<string, string>) =>
+      targets(env).find((t) => t.command === 'db:migrate')!.migrations;
+    expect(migrate({})).toBe(own);
+    expect(migrate({ MIGRATIONS_DIR: '/srv/another-project/migrations' })).toBe(own);
   });
 
   it('follows the compose password when one is set', () => {

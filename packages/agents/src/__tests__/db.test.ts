@@ -171,6 +171,56 @@ describe('createDb', () => {
     },
   );
 
+  // The driver reports the severity in the server's own language
+  // (`lc_messages`), so the SQLSTATE is what tells a session that ended...
+  it('goes by the SQLSTATE when the severity is not in English', async () => {
+    const { pool, sent, release } = fakePool(async (text) => {
+      if (text === 'SELECT 1') {
+        throw Object.assign(new Error('завершение подключения по команде администратора'), {
+          code: '57P01',
+          severity: 'ВАЖНО',
+        });
+      }
+      return undefined;
+    });
+    await expect(createDb(pool).tx((client) => client.query('SELECT 1'))).rejects.toThrow();
+    expect(sent).toEqual(['BEGIN', 'SELECT 1']);
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  // ...and FATAL, where it can be read, covers the codes not listed.
+  it('discards a connection on a FATAL error whatever its SQLSTATE', async () => {
+    const { pool, sent, release } = fakePool(async (text) => {
+      if (text === 'SELECT 1') {
+        throw Object.assign(new Error('out of memory'), { code: '53200', severity: 'FATAL' });
+      }
+      return undefined;
+    });
+    await expect(createDb(pool).tx((client) => client.query('SELECT 1'))).rejects.toThrow();
+    expect(sent).toEqual(['BEGIN', 'SELECT 1']);
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  // 08P01 is in the class of connection errors, but the server raises it as an
+  // ordinary error (a bind with the wrong number of parameters) and the
+  // session goes on: the transaction is rolled back and the connection kept.
+  it('keeps the connection after a protocol violation the session survives', async () => {
+    const { pool, sent, release } = fakePool(async (text) => {
+      if (text === 'SELECT $1') {
+        throw Object.assign(
+          new Error('bind message supplies 0 parameters, but prepared statement "" requires 1'),
+          { code: '08P01', severity: 'ERROR' },
+        );
+      }
+      return undefined;
+    });
+    await expect(createDb(pool).tx((client) => client.query('SELECT $1'))).rejects.toThrow(
+      /bind message/,
+    );
+    expect(sent).toEqual(['BEGIN', 'SELECT $1', 'ROLLBACK']);
+    expect(release.mock.calls[0]![0]).toBeFalsy();
+  });
+
   // pg-pool takes its own 'error' listener off a client it hands out. With
   // none, a connection that drops emits 'error' into nothing and Node ends the
   // process. Ours is there for exactly as long as the connection is held.

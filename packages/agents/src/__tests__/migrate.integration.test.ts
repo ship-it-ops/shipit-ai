@@ -197,6 +197,23 @@ describe.skipIf(!DATABASE_TEST_URL)('runMigrations — Postgres integration', ()
     expect(await appliedVersions(db)).toEqual(['0001', '0002']);
   });
 
+  // The message is the remedy an operator pastes into psql, from a session
+  // whose search path is not the migrator's.
+  it('names an invalid index with its schema, quoted where it has to be', async () => {
+    database = await createTestDatabase();
+    const db = database.db;
+    const dir = await tempMigrations({
+      '0001_ok.sql': 'CREATE TABLE busy (id integer); INSERT INTO busy VALUES (1), (1);',
+      '0002_index.sql':
+        '-- migrate: no-transaction\nCREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "Busy Id Key" ON busy (id);',
+    });
+    await expect(runMigrations({ db, dir })).rejects.toThrow(/0002_index\.sql failed/);
+    const schema = (await db.query<{ s: string }>('SELECT current_schema() AS s')).rows[0]!.s;
+    await expect(runMigrations({ db, dir })).rejects.toThrow(
+      `DROP INDEX CONCURRENTLY ${schema}."Busy Id Key";`,
+    );
+  });
+
   it('logs each applied file', async () => {
     database = await createTestDatabase();
     const lines: string[] = [];

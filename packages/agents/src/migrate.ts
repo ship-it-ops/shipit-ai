@@ -123,9 +123,17 @@ export interface RunMigrationsOptions {
 // file as applied over that would leave an index Postgres never uses and, for
 // a unique one, never enforces. So a file that ran outside a transaction is
 // recorded only while the schema holds no invalid index.
+//
+// Any invalid index in the schema refuses, not only one the file names: which
+// those are cannot be told without reading SQL, and getting it wrong is the
+// silent failure this check exists to prevent. The cost is that an invalid
+// index left by something else (a `REINDEX CONCURRENTLY` that failed, a build
+// someone else has running) holds the file up until it is dropped or done.
 async function refuseInvalidIndexes(client: SqlClient): Promise<void> {
+  // Schema-qualified and quoted: the message is pasted into a session whose
+  // search path is not this one.
   const { rows } = await client.query<{ name: string }>(
-    `SELECT c.relname AS name
+    `SELECT format('%I.%I', n.nspname, c.relname) AS name
        FROM pg_index i
        JOIN pg_class c ON c.oid = i.indexrelid
        JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -135,8 +143,9 @@ async function refuseInvalidIndexes(client: SqlClient): Promise<void> {
   if (rows.length === 0) return;
   const names = rows.map((r) => r.name);
   throw new Error(
-    `the schema holds an invalid index (${names.join(', ')}), left by a concurrent build that ` +
-      `did not finish. Drop it and run the migration again: ` +
+    `the schema holds an invalid index (${names.join(', ')}). A concurrent build that did not ` +
+      `finish leaves one behind, and IF NOT EXISTS then skips it. Unless a build of it is ` +
+      `still running, drop it and run the migration again: ` +
       names.map((name) => `DROP INDEX CONCURRENTLY ${name};`).join(' '),
   );
 }

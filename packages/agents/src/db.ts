@@ -84,13 +84,20 @@ function wrap(target: PgQueryable): SqlClient {
 // from the server (a constraint, a syntax error, a cancelled statement) carries
 // a five-character SQLSTATE and the session lives on. Two kinds do not: an
 // error with no SQLSTATE came from below SQL (a reset socket, the client-side
-// query timeout), and a FATAL one is the server ending the session (a restart,
+// query timeout), and one with which the server ended the session (a restart,
 // a failover, an idle timeout), which has an SQLSTATE all the same.
-const SESSION_ENDED = /^(08...|57P0[1-5]|25P03)$/;
+//
+// The second kind is told by its SQLSTATE: the connection errors of class 08,
+// the shutdowns and timeouts of 57P01 to 57P05, and 25P03. Not 08P01, which
+// the server raises as an ordinary error (a bind with the wrong number of
+// parameters). The severity covers what the list leaves out, where it can be
+// read: the driver hands over the server's localized word, so FATAL is FATAL
+// only while `lc_messages` is English.
+const SESSION_ENDED = /^(08(?!P01)...|57P0[1-5]|25P03)$/;
 function connectionLost(err: unknown): boolean {
   const e = (err ?? {}) as { code?: unknown; severity?: unknown };
   if (typeof e.code !== 'string' || !/^[0-9A-Z]{5}$/.test(e.code)) return true;
-  return e.severity === 'FATAL' || e.severity === 'PANIC' || SESSION_ENDED.test(e.code);
+  return SESSION_ENDED.test(e.code) || e.severity === 'FATAL' || e.severity === 'PANIC';
 }
 
 // The slice of pg's PoolClient a checked-out connection needs.

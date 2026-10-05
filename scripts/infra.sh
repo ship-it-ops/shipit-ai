@@ -31,11 +31,12 @@ while (( ELAPSED < MAX_WAIT )); do
     # belong to another project or a real environment. All three names the two
     # commands read are set, because each prefers its privileged one
     # (DATABASE_SUPERUSER_URL, DATABASE_MIGRATOR_URL) over DATABASE_URL.
-    # SHIPIT_DEV_DATABASE_URL is the deliberate override.
+    # SHIPIT_DEV_DATABASE_URL is the deliberate override. The files applied
+    # are this checkout's, for the same reason: MIGRATIONS_DIR is set here.
     DEV_DB="${SHIPIT_DEV_DATABASE_URL:-postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@localhost:5432/shipit}"
     echo "Ensuring the pgvector extension and applying database migrations..."
     (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_SUPERUSER_URL="$DEV_DB" pnpm --silent db:bootstrap)
-    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_MIGRATOR_URL="$DEV_DB" pnpm --silent db:migrate)
+    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_MIGRATOR_URL="$DEV_DB" MIGRATIONS_DIR="$ROOT_DIR/db/migrations" pnpm --silent db:migrate)
     echo "Infrastructure ready!"
     exit 0
   fi

@@ -51,13 +51,14 @@ rules below as of this change: `packages/agents/src/migrate.ts`.
    ```sh
    if head -n 1 "$dir/$f" | grep -Eq '^--[[:space:]]*migrate:[[:space:]]*no-transaction[[:space:]]*$'; then
      psql_ -f "$dir/$f"
-     invalid="$(psql_ -tAc "SELECT string_agg(c.relname, ', ') FROM pg_index i
-                              JOIN pg_class c ON c.oid = i.indexrelid
-                              JOIN pg_namespace n ON n.oid = c.relnamespace
-                             WHERE NOT i.indisvalid AND n.nspname = current_schema()")"
+     invalid="$(psql_ -tAc "SELECT string_agg(format('%I.%I', n.nspname, c.relname), ', ')
+                               FROM pg_index i
+                               JOIN pg_class c ON c.oid = i.indexrelid
+                               JOIN pg_namespace n ON n.oid = c.relnamespace
+                              WHERE NOT i.indisvalid AND n.nspname = current_schema()")"
      if [ -n "$invalid" ]; then
-       echo "db-migrate: ERROR: invalid index left by a failed concurrent build: $invalid" >&2
-       echo "db-migrate: drop it (DROP INDEX CONCURRENTLY <name>) and deploy again" >&2
+       echo "db-migrate: ERROR: the schema holds an invalid index: $invalid" >&2
+       echo "db-migrate: unless a build of it is still running, drop it (DROP INDEX CONCURRENTLY <name>) and deploy again" >&2
        exit 1
      fi
      psql_ -c "INSERT INTO schema_migrations (version) VALUES ('$v')"
@@ -78,7 +79,15 @@ rules below as of this change: `packages/agents/src/migrate.ts`.
    deploy) leaves an `INVALID` index. `IF NOT EXISTS` skips it on the next run, and
    without the check the file would be recorded as applied over an index Postgres never
    uses and, for a unique one, never enforces. With it the deploy fails and names the
-   index. Runbook: `DROP INDEX CONCURRENTLY <name>;`, then deploy again.
+   index, with its schema and quoted where it has to be. Runbook:
+   `DROP INDEX CONCURRENTLY <name>;`, then deploy again.
+
+   Any invalid index in the schema fails a marked file, not only one the file names:
+   telling them apart would mean reading SQL, and a wrong guess is the silent failure the
+   check is there to prevent. So an invalid index left by something else (a
+   `REINDEX CONCURRENTLY` that failed) has to be dropped before a marked file can be
+   recorded, and one whose build is still running has to finish first. The app's migrator
+   (`packages/agents/src/migrate.ts`) does the same.
 
 ## For the record
 
