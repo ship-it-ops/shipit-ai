@@ -3,321 +3,348 @@ type: status
 status: active
 created: 2026-10-01
 updated: 2026-10-04
-author: claude-session-2026-09-30 (handoff written at context limit)
-branch: ai-agents-design
-agent: claude-session-2026-10-02 (executing the plans)
-tags: [ai, agents, workflows, handoff, postgres, vertex]
+author: claude-session-2026-10-02 (agents workstream; handoff written 2026-10-04)
+branch: ai-agents-design (to be merged; the work continues on a new branch from main)
+agent: none (handed off)
+tags: [ai, agents, workflows, handoff, postgres, vertex, web-ui]
 importance: core
 ---
 
-# Handoff: AI agents and workflows — M0 nav, M1 foundation and the agent runner built; UI plan awaits review
+# Handoff: AI agents — backend is on `ai-agents-design`, ready to PR; next is the UI plan, on a new branch
 
-Read this first, then the spec. It replaces the conversations that produced it.
+Read this first, then the plan you are about to execute. It replaces the conversations that
+produced it. The previous version of this note (longer, with the session-by-session history)
+is in git: `git show 423e628:docs/agent/status/ai-agents-platform-handoff.md`.
 
-## Where things stand
+## The owner's plan (2026-10-04)
 
-The owner asked for an **AI** section in the left nav plus a builder for user-defined
-agents, tool permissions, triggers and LangGraph-style workflows. The design, two
-implementation plans, and the code for both plans (except the foundation plan's Task 9
-spike) are on branch `ai-agents-design`, pushed. No pull request yet.
+1. **Open a PR for `ai-agents-design` and merge it.** The owner does this.
+2. **Continue on a new branch from `main`.** The next piece of work is the agents UI plan,
+   which is written and verified but **not executed and not yet approved**.
 
-| Stage                                    | State                                                                            |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| Deep dive, owner decisions, design spec  | Done.                                                                            |
-| Infra brief                              | Worked in infra PR #91 (open 2026-10-03). Vertex APIs already live.              |
-| Plan: AI nav (Milestone 0)               | Approved 2026-10-02. **Implemented**, final review: ready to merge.              |
-| Plan: agents foundation (M1, part 1)     | Approved 2026-10-02. **Tasks 1–8 implemented**; final review fixes in `545d6b8`. |
-| Foundation Task 9 (Vertex probe)         | Gemini **passed**; Claude **blocked**: zero quota on `global` (429).             |
-| Plan: agent runner (M1, part 2, backend) | **Implemented** (`8009189`..`0b3af28`); final review fixes in `bb650d3`.         |
-| Plan: agents UI (M1, part 3)             | **Written and verified; awaiting the owner's review.** Not executed.             |
+## What is on `ai-agents-design`
+
+More than 70 commits ahead of `main` (base `fe5009c`; `main` has not moved since). Two
+workstreams share the branch. Read the list with
+`git log --oneline origin/main..origin/ai-agents-design`.
+
+**Agents (this workstream):**
+
+| Piece                                  | State                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Design spec, owner decisions           | Done (`85aa05c`).                                                                                            |
+| Milestone 0: AI nav                    | Implemented; final review clean.                                                                             |
+| Milestone 1, part 1: agents foundation | Implemented (Postgres package, migrations, config, status service, definitions API); review fixes `545d6b8`. |
+| Vertex probe                           | Gemini passes. Claude has zero quota (see "Waiting on the owner").                                           |
+| Milestone 1, part 2: agent runner      | Implemented, 11 tasks (`8009189`..`0b3af28`); final review fixes `bb650d3`.                                  |
+| Milestone 1, part 3: agents UI         | **Plan only** (`a0a87ec`): `docs/superpowers/plans/2026-10-04-agents-ui.md`. No UI code is on the branch.    |
+| Fixes found on the way                 | MCP server no longer starts inside the api-server (`8825bd3`); `pnpm start:all` works again (`4447981`).     |
+
+**Knowledge layer (another session):** K0 foundations and K1a GitHub text, with their own
+plans, reviews and status note (`docs/agent/status/knowledge-k0-foundations.md`,
+`docs/agent/plans/knowledge-connectors.md`). Not described here.
+
+What a person can do after this branch merges: nothing new in the web UI beyond the AI nav
+group (Agents is a placeholder page, Ask is still the mocked preview). Over HTTP, with a
+database and a runner: create and publish agents, run them, chat, cancel, and follow a run
+live. `docs/local-development.md`, "Running agents locally", has the commands.
+
+## For the PR
+
+**CI has never run on this branch.** It triggers only on pushes to `main` and on pull
+requests, so the PR is its first run. A local rehearsal on the head `f3835a2`, in a clean
+worktree, on 2026-10-04:
+
+- Passed: `pnpm format:check`, `pnpm turbo lint` (warnings only, none new), secretlint over
+  the whole repo, `pnpm turbo typecheck`, `pnpm turbo test --force`, `pnpm turbo build`.
+- Passed, against Docker Postgres (pgvector) and Redis: integration suites for `agents` (49),
+  `knowledge` (61), `agent-runner` (37) and `api-server` (46 passed, 42 skipped).
+- Built: the `agent-runner` and `api-server` images.
+- **Not rehearsed:** the `core-writer` and `event-bus` integration suites and the 42
+  api-server tests that need a throwaway Neo4j (locally they would write to the dev graph);
+  the `web-ui`, `core-writer`, `mcp-server` and `knowledge-worker` images.
+
+**One decision before merging: `ai.enabled`.** The spec says "Milestones 1 to 5 merge to
+`main` behind `ai.enabled: false` in the committed config" (spec line 918). The committed
+`shipit.config.yaml` has `ai.enabled: true`, and the schema defaults to `true`; the database
+URL is the gate in practice (no `DATABASE_URL`, no agent features). The knowledge layer does
+follow the rule (`knowledge.enabled: false`). Not changed, because flipping it also turns
+agents off in every local setup that does not say otherwise. To follow the spec:
+
+- `shipit.config.yaml`: `ai.enabled: false`.
+- `shipit.config.local.example.yaml` and the owner's `shipit.config.local.yaml`: add
+  `enabled: true` under `ai:`.
+- `docs/local-development.md`, "Postgres and agent features": say so.
+- The schema default can stay `true`; only the committed YAML needs to say `false`.
+
+**What merging switches on in a deployment.** Without `DATABASE_URL`: nothing; agent routes
+answer `503 AI_UNAVAILABLE` and the log says "Agent features: off". With `DATABASE_URL` and
+the migrations applied: the definitions API works and the api-server seeds the built-in Graph
+assistant at boot; runs stay unavailable (`503`, check `runner`) until an `agent-runner`
+Deployment exists.
+
+**What infra must do** (briefs in `docs/agent/briefs/`):
+
+- Apply `db/migrations/0001`..`0004`. `0002_knowledge.sql` needs the pgvector extension
+  created first by a superuser (`pnpm db:bootstrap` does it locally).
+- Build and deploy two new images: `agent-runner` (`infra-agent-runner.md`) and
+  `knowledge-worker` (the knowledge session's brief).
+- Vertex: `GOOGLE_CLOUD_PROJECT` for the runner, Workload Identity for credentials.
+- Brief 1 (Postgres, the migration hook, Vertex service accounts) was worked in infra PR #91,
+  open on 2026-10-03; its state has not been re-checked. A copy of that brief sits untracked
+  in `~/Repos/Ship-It-Ops/shipit-ai-infra/docs/agent/status/`.
+
+**For the PR description, the agents half:**
+
+- An **AI** group in the nav (Ask, Agents, Workflows, Activity, Tools, MCP Access), with
+  redirects from the old routes.
+- `@shipit-ai/agents`: Postgres access, forward-only SQL migrations (`pnpm db:migrate`), agent
+  definitions with versions and optimistic concurrency, runs with leases, transcripts, tool
+  calls and per-day token usage.
+- `agent-runner`: a new process. A BullMQ worker runs each agent as a loop over its stored
+  transcript: one model step at a time on Vertex AI (AI SDK), the graph read tools reused
+  in-process from the MCP server, limits per run and per day, cancel, multi-turn chat, and
+  recovery when a worker dies (a read is re-run, a write is never repeated).
+- api-server: `/api/ai/status`, `/api/ai/models`, `/api/agents` (create, edit, publish,
+  archive), `/api/runs` (start, list, read, chat, cancel) and a live stream of each run over
+  server-sent events; a built-in Graph assistant seeded at boot.
+- Compose (`--profile agents`), CI (integration step, image build), local-dev docs.
+- Plans, design spec and probe findings under `docs/`.
+
+## Next session: start here
+
+1. **Check the merge happened.** `git fetch origin`, then
+   `git cat-file -e origin/main:packages/agent-runner/src/main.ts` exits zero once the backend
+   is on `main`. Ask the owner for the new branch's name, or create one from `origin/main`.
+2. **Get the UI plan approved.** The owner has not said the plan captures what they want. Its
+   summary is in "The agents UI plan" below.
+3. **Commit and push approval does not carry over.** The standing approval ("commit at each
+   plan commit step, push after each commit") was given for `ai-agents-design`. Ask again for
+   the new branch.
+4. **Execute `docs/superpowers/plans/2026-10-04-agents-ui.md`** with
+   `superpowers:executing-plans` (the owner chose native execution for every plan so far: one
+   session implements all tasks, then one fresh reviewer on the most capable model).
+   - Run `SHIPIT_API_URL=http://localhost:3001 pnpm build` first.
+   - The plan's diffs were cut against `4447981`. Checked against `f3835a2` (the branch head):
+     ten apply as written; the one for `packages/api-server/src/server.ts` needs
+     `git apply --3way` and then merges cleanly. A squash merge does not change that: the
+     diffs match on content.
+   - Ask the owner to run `gcloud auth application-default login` before Task 9's browser
+     check, or runs fail with `MODEL_ERROR` (`invalid_grant`).
+5. **Then** the final review, and the plan for Milestone 2 (triggers and chaining: schedules,
+   API runs and the `agents:run` token scope, inbound webhooks, `run_completed`, the trigger
+   UI, the Activity runs tab). Milestones are in the spec's last table.
+
+## The agents UI plan (not executed)
+
+`docs/superpowers/plans/2026-10-04-agents-ui.md`, 9 tasks:
+
+1. api-server: `GET /api/tools`; CORS allows `PUT`, `PATCH`, `DELETE` and exposes `ETag`.
+2. web-ui: API client (`AgentApiError` keeps the conflict revision, validation issues and
+   failing checks) and the live run stream.
+3. Transcript model, answer text (a small Markdown subset as React elements, never HTML),
+   transcript component, live-run hook.
+4. AI off-states from `GET /api/ai/status`; the agents list.
+5. Tools-and-permissions matrix with per-tool overrides.
+6. Agent editor: draft save with `If-Match`, conflict and reload, publish with a diff,
+   versions, runs, archive, read-only without `agents:write`.
+7. One chat component for the test panel (runs the saved draft) and Ask (the built-in Graph
+   assistant by default).
+8. Run view and navigation.
+9. Docs and a browser check.
+
+How it was verified: built test-first in a scratch worktree; replayed task by task into a
+clean one with every fail and pass step run; the plan text re-applied from scratch and
+compared tree by tree with that replay (all 9 match). On the final state: web-ui 342 tests,
+api-server 719 unit and 46 integration, a production `next build`. Every flow was exercised
+in a browser against the real stack. **Not seen in the browser:** a model's answer arriving
+in the test panel or Ask, because the local Google credentials had expired; those runs failed
+cleanly and showed why. The run view did render a real earlier run with six tool calls.
+
+Not in it, on purpose: the Triggers tab (Milestone 2), approval cards (Milestone 3), the
+Activity list and the Tools page (they stay placeholders), a structured-output editor
+(workflows milestone), the owner-team field.
 
 ## Waiting on the owner
 
-1. **Claude quota on Vertex.** Infra enabled the APIs and the models resolve, but
-   `claude-sonnet-5-5`, `claude-opus-5-5` and `claude-haiku-4-5@20251001` all answer 429
-   "Quota exceeded for …global_online_prediction_requests_per_base_model … Please submit a
-   quota increase request." A quota increase per Claude family on `global` is needed; then
-   re-run the probe for Claude (see the investigation note). **The owner must wait 48 hours
-   before requesting Claude again (said 2026-10-03), so not before 2026-10-05.** Meanwhile
-   `ai.defaultModel` is `gemini`; switch it back once Claude passes the probe.
-2. **Local dev user capabilities.** `shipit.config.local.example.yaml` (and the owner's
-   local copy) set `frontend.devUser.capabilities: [admin]`. `admin` is not a capability
-   name; only `*` is a wildcard. With auth off, the local dev user therefore gets 403 on
-   every capability-gated route (the new `/api/agents*` and `/api/ai/models`, and the
-   existing `graph:write` manual-edit routes). Change the example to `'*'`? Not changed yet.
+1. **Review the UI plan.**
+2. **`ai.enabled` in the committed config** (see "For the PR").
+3. **`gcloud auth application-default login`.** The local credentials expired on 2026-10-04.
+4. **Claude quota on Vertex.** `claude-sonnet-5-5`, `claude-opus-5-5` and
+   `claude-haiku-4-5@20251001` answer 429 (zero quota on `global`). The owner said to wait 48
+   hours before asking again, so from 2026-10-05. Then re-run the probe for Claude
+   (`docs/agent/investigations/vertex-model-layer-probe.md`) and consider switching
+   `ai.defaultModel` back from `gemini`.
+5. **Local dev user capabilities.** `shipit.config.local.example.yaml` and the owner's local
+   file set `frontend.devUser.capabilities: [admin]`. `admin` is not a capability name; only
+   `*` is a wildcard, so with auth off the dev user gets 403 on every agents route. Change the
+   example to `'*'`? Asked, not answered. For hands-on checks this workstream set `'*'` in a
+   copy or temporarily, and restored the file.
+6. **A per-user cap for Ask?** The daily token cap is per agent, so one person can use up the
+   shared Graph assistant for everyone until the next UTC day. That is the spec's design.
+7. **The deferred minors below.**
 
-3. **Local Google credentials expired again (2026-10-04).** Vertex answers `invalid_grant`
-   (`invalid_rapt`) for the application-default credentials, so no local run can reach a model
-   until the owner runs `gcloud auth application-default login`. The runner fails such a run
-   cleanly with `MODEL_ERROR`.
-4. **The pull request.** The knowledge session relayed the owner's decision: no PR until the
-   agents work is complete, then the branch goes up as a whole. Tell the owner and the
-   knowledge session when it is PR-ready.
-5. **A per-user cap for Ask?** The daily token cap is per agent, so one person can use up the
-   shared Graph assistant for everyone until the next UTC day. That is the spec's design; say
-   if a per-user cap is wanted.
+## Decisions made on the owner's behalf (not yet reviewed by them)
 
-Owner approvals on 2026-10-02: both plans ("good to go"); native execution; commit at each
-plan commit step and push after each commit on `ai-agents-design`. Pushing elsewhere,
-opening a PR or merging still needs its own approval.
-
-## The agent-runner plan (2026-10-03)
-
-`docs/superpowers/plans/2026-10-03-agent-runner.md`: 11 tasks, Milestone 1's backend (runner
-process, Vertex model client, graph read tools, run loop, runs API, live stream, built-in
-Graph assistant). Every task was built and tested in a scratch worktree, replayed in order into
-a clean one with each task's checks, and the plan text was then re-applied from scratch and
-compared byte-for-byte with that replay. The UI half of Milestone 1 is the next plan.
-
-**Rebased onto K0, then executed (2026-10-03 to 04).** The plan's diffs are against `52650e1`.
-All 11 tasks are on the branch, one commit each (`8009189` mcp registry, `7356c83` run store,
-`cb92201` tool resolution and queue, `22b0471` model client, `84730e2` graph tools, `2811f55`
-run loop, `242d432` process/image/compose/CI, `b62b98a` runs API, `0e9733f` stream, `4735083`
-built-in agent, `0b3af28` docs and infra brief 2). The hands-on check passed against real
-Gemini: a chat on the Graph assistant answered from the local graph, a follow-up resumed the
-stream, and neither a SIGTERM with a viewer nor a Postgres outage broke anything.
-
-**Decisions made while executing** (the owner has not reviewed these yet):
+From executing the runner plan:
 
 - `turbo.json`: the `dev` task passes `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` and
-  `GOOGLE_APPLICATION_CREDENTIALS` through. Turbo 2 strips undeclared variables, so
-  `GOOGLE_CLOUD_PROJECT=… pnpm start:backend` reached no process.
-- The workspace gate ran in a clean worktree at each commit while the knowledge session had
-  uncommitted work in the shared tree.
+  `GOOGLE_APPLICATION_CREDENTIALS` through (turbo 2 strips undeclared variables), and
+  `"concurrency": "20"` so 13 dev tasks can start.
+- The daily cap counts tokens on the day they are spent, in a new table: migration
+  `0004_agent_usage.sql`. The cheaper fix (count runs touched today) could falsely block the
+  shared assistant after one conversation crossed midnight.
+- Compose: `agent-runner` is behind `--profile agents` and mounts `~/.config/gcloud` as a
+  directory. A missing credentials file used to be created as a directory by Docker.
+- Left as designed after the final review set them aside: a failed chat turn ends the
+  conversation; `ask` grants are not offered until approvals exist (Milestone 3); agents need
+  the pgvector bootstrap because migration `0002` precedes `0003`; Claude and open models are
+  untested; no cap on concurrent streams per user; `agents:run` is not a token scope yet; the
+  run transcript endpoint is unpaginated; the runner image runs as root like the others.
 
-**Final review (Opus; the Fable reviewer hit the account's usage limit before reporting).** No
-Critical findings, 6 Important, 9 Minor. Fixed in `bb650d3`, each with a test that failed first:
+**Deferred minors from the runner's final review** (not fixed):
 
-- The stream response carried no CORS headers, so a browser on another origin (local dev)
-  could not read it.
-- A stream could hang open: it now also catches up on its 15 s keep-alive tick.
-- With Redis down the run routes hung: the heartbeat read (2 s) and the enqueue (3 s) are bounded.
-- Sweeper gaps: a queued run whose job was lost is queued again after a minute; a cancelled run
-  whose worker died is finished as cancelled; a takeover no longer resets the stall clock.
-- The lease owner was one name per process: each claim now has its own, so a worker slot that
-  lost a run cannot write to it.
-- The daily cap missed tokens spent after midnight by a chat begun earlier: migration
-  **`0004_agent_usage.sql`** (`agent_usage_daily`), `EXPECTED_SCHEMA_VERSION` **`'0004'`**.
-- Re-graded up from Minor: a last-step note ("you cannot call tools any more") was replayed on
-  later chat questions; the compose `agent-runner` service is now behind `--profile agents` and
-  mounts the gcloud directory (a missing credentials file used to become a directory).
+- `sweep failed:` logs an empty message when Postgres refuses connections.
+- Tool calls have no timeout or abort: a slow Cypher query outlives the run timeout and holds
+  one of the four worker slots.
+- `?afterSeq=` with an empty value skips message 0.
+- A possible write after end when a stream shuts down.
+- One agent lookup per row on the run list.
+- Tool results are matched by call id alone.
+- No re-entrancy guard on the sweep.
+- A chat continues on a disabled or archived agent.
+- A crash between appending a message and counting the step loses that step's usage.
+- A model-auth failure shows Google's raw JSON as the run's error.
 
-**Deferred minors** (not fixed; the owner decides): empty `sweep failed:` log text; tool calls
-have no timeout or abort (a slow Cypher query outlives the run timeout and holds a worker
-slot); `?afterSeq=` (empty) skips message 0; a possible write after end on stream shutdown; one
-agent lookup per row on the run list; tool results matched by call id alone; no re-entrancy
-guard on the sweep; a chat continues on a disabled or archived agent; a crash between append
-and `recordStep` loses that step's usage; a model-auth failure shows Google's raw JSON as the
-run's error.
+Earlier, from the foundation plan: nine minors in its ledger
+(`.superpowers/sdd/2026-10-01-agents-foundation/progress.md`, git-ignored, local).
 
-**Left as designed** (reviewer set these aside; they stand unless the owner says otherwise): a
-failed chat turn ends the conversation; `ask` grants are not offered until approvals
-(Milestone 3); agents need the pgvector bootstrap because migration `0002` precedes `0003`;
-Claude and open models are untested (no quota); `agents:run` is not a token scope yet
-(Milestone 2); the runner image runs as root like the others.
+## Working next to the knowledge session
 
-## The agents UI plan (2026-10-04)
+- It commits on the same branch and, so far, in the **same working tree**. Stage by path,
+  never `git add -A`. Read `git diff` on a shared file before staging it.
+- Its uncommitted, in-progress tests can break the workspace gate in the shared tree. Run the
+  gate in a clean worktree checked out at your commit instead.
+- Message it before touching `packages/api-server/src/{server,index}.ts`, `docker-compose.yml`,
+  `ci.yml`, `docs/local-development.md`, `turbo.json`, `pnpm-lock.yaml` or adding a migration.
+  **The next free migration number is `0005`.** Session names change between restarts; list
+  the peers to find it.
+- It asked to be told when the branch is PR-ready, so the PR description covers both halves.
 
-`docs/superpowers/plans/2026-10-04-agents-ui.md`: 9 tasks, base `4447981`. It adds
-`GET /api/tools` and a CORS fix to the api-server, and to the web UI an API client and live
-run stream, the transcript view, the AI off-states, the agents list, the
-tools-and-permissions matrix, the agent editor (draft save with `If-Match`, publish with a
-diff, versions, runs, archive), the test panel and Ask on one chat component, and the run
-view with navigation. Built test-first in a scratch worktree, replayed task by task into a
-clean one with every fail and pass step run, and the plan text was re-applied and matched the
-replay tree for all 9 tasks. Every flow was exercised in a browser against the real stack,
-except seeing a model's answer arrive in the test panel or Ask: the local Google credentials
-had expired (see "Waiting on the owner").
+## Standing rules
 
-**Next:** the owner reviews the plan; then execute it natively on `ai-agents-design`
-(committing and pushing per task). The knowledge session is executing its K1a plan on the same
-branch and also edits `server.ts` and `docs/local-development.md`; the plan's header says how
-to apply its two diffs to those files if they have moved.
-
-Found while building it:
-
-- **CORS (already on `main`):** `@fastify/cors` 11 allows only `GET`, `HEAD` and `POST` and
-  hides `ETag`. In local dev (UI on :3000, API on :3001) no save, edit or delete works from
-  the browser, and the schema and connector editors never send `If-Match`. Fixed in the plan's
-  Task 1; not on the branch yet.
-- **`pnpm start:all`** could not start on this branch: 13 `dev` tasks, and turbo allows 9 by
-  default. Fixed in `4447981` (`"concurrency": "20"` in `turbo.json`).
-- **Do not run the compose file from another worktree.** Its relative mount paths differ, so
-  Docker recreates the Postgres and Neo4j containers. It happened once during this work; the
-  data is in named volumes and was intact, and the containers were recreated from the main
-  checkout.
-
-Found while building it, fixed in `8825bd3`: the mcp-server entry started its server whenever the
-process script ended in `index.js`, so every api-server process also ran an MCP server on port
-3002, and `pnpm start:mcp` (`tsx src/index.ts`) ran none. It now compares real paths, and the
-api-server imports `@shipit-ai/mcp-server/metadata`.
-
-## Standing rules that bit or nearly bit this session
-
-- **Never `git commit` or `git push` without explicit approval for that specific action.**
-  "GO ahead" to a direct commit question counted; plan approval does not. Ask separately
-  for push.
+- **Never `git commit` or `git push` without the owner's approval for that action.** Plan
+  approval is not commit approval.
 - **No `Co-Authored-By` or any AI trailer** in commit messages.
-- **Never state a SHA, id or tag you did not read.** Run the command.
+- **Never state a SHA, id or tag you did not read.**
 - Stop subagents when their task is done.
 - The owner's pronouns have not been stated; use they/them.
 
-## Git state
+## What the owner decided (2026-10-01), still binding
 
-- Branch `ai-agents-design`, created from `main` at `fe5009c`, pushed to `origin`. No PR.
-- Read the commit list with `git log --oneline fe5009c..origin/ai-agents-design`. In order:
-  design docs; plans + secretlint allow-list; three nav commits (M0); eight foundation
-  commits (Tasks 1–8). This status note may be one commit behind; trust `git log`.
-- Git-ignored, local only: `ClaudePlans/agents-foundation-verified.patch` (the clone's
-  diff for foundation Tasks 1–8). Every file written for Tasks 1–8 was byte-compared
-  against it; all matched. It can be deleted.
-- Execution ledgers (git-ignored): `.superpowers/sdd/2026-10-01-agents-foundation/progress.md`.
+- **Storage:** Postgres. The infra repo creates the instance and applies schema changes; the
+  app never migrates at boot.
+- **Runtime:** our own agent loop in the `agent-runner` process. Not Claude Managed Agents,
+  not the Claude Agent SDK.
+- **Models:** through Vertex AI, any model it offers.
+- **First release:** everything, working end to end. Milestones are build order inside one
+  release.
+- **Write and delete tools:** graph edits, external MCP servers, and GitHub including commits
+  and pull requests. Kubernetes stays read-only.
+- Accepted defaults: our own workflow engine, admins-only agent creation, each agent its own
+  principal, Ask is a chat with a built-in agent.
+- Never individually confirmed (spec, "To confirm in review"): GitHub writes go through a
+  separate "actions" App; agent-written graph claims use a new `agent` source ranked below
+  `manual`. Still open: open source versus Enterprise.
+
+## Facts that cost time to establish
+
+Environment and tooling:
+
+- **Never run the compose file from another worktree.** Docker recreates the dev Postgres and
+  Neo4j containers (scar `compose-from-another-worktree-recreates-dev-containers`). In a
+  worktree, start only the Node processes: `pnpm exec turbo dev`.
+- **Turbo 2 strips environment variables** a task does not declare. A variable that "is set"
+  but never arrives is this.
+- **CORS:** `@fastify/cors` 11 allows only `GET`, `HEAD`, `POST` and hides `ETag`. In local
+  dev (UI on :3000, API on :3001) no save, edit or delete works from the browser. Already on
+  `main`; fixed by the UI plan's Task 1.
+- **Never put `DATABASE_URL` in the secrets registry** (the 2026-09-16 boot crash). It is a
+  `${DATABASE_URL:-}` placeholder under `ai.database.url`.
+- **secretlint** flags Postgres URLs with an inline password; `.secretlintrc.json` allows only
+  user `shipit`, passwords `shipit-dev` or `testpassword`, hosts `localhost`, `127.0.0.1` or
+  `postgres`, port 5432.
+- **Prettier reformats code inside markdown fences.** In plans, wrap code blocks in
+  `<!-- prettier-ignore-start -->` and `<!-- prettier-ignore-end -->`.
+- `next dev` and test runs rewrite `packages/web-ui/next-env.d.ts`, and `next dev` may create
+  `packages/web-ui/AGENTS.md` and `CLAUDE.md`. Restore or delete them; never commit them.
+- A package's own `typecheck` needs its sibling packages built (`pnpm build` once, or go
+  through `pnpm turbo typecheck`).
+- In zsh, a shell variable named `path` replaces `PATH`.
+- Integration suites: `DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit`
+  and `REDIS_TEST_URL=redis://localhost:6379`. Each creates and drops its own schema. Do not
+  set `NEO4J_TEST_URI` to the dev graph: those suites write to it.
+
+Models (details in `docs/agent/investigations/vertex-model-layer-probe.md`):
+
+- Gemini's `thoughtSignature` rides on each tool-call part's `providerOptions`; dropping it
+  does not fail, the SDK silently replays without the model's reasoning. Store messages
+  verbatim.
+- The AI SDK answers a call to an undeclared tool itself; the model client drops that message
+  so the gateway records the call.
+- With tools removed from a transcript that used them, Gemini invents tool names. On the last
+  step the tools stay declared and a tagged note asks for an answer.
+- On long transcripts Gemini heeds a trailing user message and ignores the same words in the
+  instructions.
+
+Web UI (for the plan's executor):
+
+- The Radix `Select` is unreliable in jsdom; tests replace it with a native `<select>`.
+- The design system's `NumberInput` ignores an empty value, so a test must replace the
+  selected text instead of clearing and typing.
+- Run `axe` on the render container, not on `document.body`.
+- Icons that exist in `@ship-it-ui/icons`: `ask`, `sparkle`, `bot`, `workflow`, `activity`,
+  `package`, `server`, `shield`, `settings`, `warn`. `cog`, `wrench` and `plug` do not.
+
+How the plans are made (worth repeating for the next one): build in a scratch worktree
+test-first; replay into a clean worktree one task at a time, snapshotting each task with
+`git add -A && git write-tree`; generate every code block from the tree diffs; rebuild the
+work from the plan's text alone and compare trees. The scripts were in a session scratchpad
+and are gone; the method is what matters.
+
+## This machine, as left on 2026-10-04
+
+- Local Postgres is migrated to `0004`. It holds the built-in Graph assistant, an agent named
+  Owners, one archived test agent (UI Check Agent) and a few test runs.
+- Local Redis holds 50 graph-sync events the knowledge session queued; `core-writer` applies
+  them at its next start. That is expected.
+- `shipit.config.local.yaml` is as the owner had it (`capabilities` unchanged).
+- Docker images `shipit-agent-runner:dev`, `shipit-agent-runner:rehearsal` and
+  `shipit-api-server:rehearsal` can be deleted.
+- `.superpowers/sdd/` (git-ignored) holds earlier plans' ledgers; the runner plan's was
+  removed after its review.
 
 ## Documents, in reading order
 
-1. `docs/superpowers/specs/2026-10-01-ai-agents-and-workflows-design.md` — the design for
-   the whole first release. 17 decisions, data model, run loop, tool gateway, tool sources,
-   triggers, workflow engine, API, UI, safety, testing, 7 milestones.
-2. `docs/agent/decisions/agent-platform-v1-foundations.md` — the owner's four decisions.
-3. `docs/superpowers/plans/2026-10-01-ai-nav-section.md` — 3 tasks.
-4. `docs/superpowers/plans/2026-10-01-agents-foundation.md` — 9 tasks, about 5,100 lines
-   because it carries every file in full.
-5. `docs/agent/briefs/infra-postgres-and-vertex-for-agents.md` — what infra must provide.
-6. `docs/agent/plans/ai-agents-and-workflows.md` — deep-dive findings and a running status.
-7. Review doc the owner reads and comments on (private):
-   https://claude.ai/code/artifact/85e0c975-a028-4c6b-90cf-0b3f0832092c — a Claude Docs
-   document; edit it only through the Claude Docs connector, never by web fetch.
-
-## What the owner decided (2026-10-01)
-
-- **Storage:** Postgres. The infra repo creates the instance and applies schema changes.
-- **Runtime:** our own agent loop in a new `agent-runner` process. Not Claude Managed
-  Agents, not the Claude Agent SDK.
-- **Models:** through Vertex AI, any model it offers (the rest of the infra is on GCP).
-- **First release:** everything, working end to end. The milestones are build order
-  inside one release, not separate releases.
-- **Write and delete tools:** graph edits, external MCP servers, and GitHub, **including
-  committing changes and opening a pull request**. Kubernetes stays read-only.
-- Accepted defaults: our own workflow engine (BullMQ + Postgres state), admins-only agent
-  creation, each agent its own principal, Ask becomes a chat with a built-in agent, the
-  nav move may ship on its own.
-
-### Not explicitly confirmed
-
-The spec's last section, "To confirm in review", lists seven choices made on the owner's
-behalf. They were shown to the owner, who replied "GO ahead" to a message that also asked
-about committing and sending the brief. Treat them as accepted unless the owner says
-otherwise, but they were never individually confirmed. The two most consequential:
-
-- GitHub writes use a **separate "actions" App** (not broader connector-App permissions),
-  and **all** `github.*` tools, including reads, go through it.
-- Agent-written graph claims use a new `agent` source ranked **below `manual`**.
-
-Still genuinely open: **open source versus Enterprise** (nothing is gated by tier).
-
-## Verification done on this machine (2026-10-02)
-
-- Workspace typecheck, all tests, lint (no new warnings), format check, after every task.
-  api-server 674 passed / 51 skipped; agents 45 unit + 23 integration.
-- `agents` integration suites **23/23 against a real Postgres 17** in Docker, including the
-  two-concurrent-migrators test the clone could not run.
-- Hands-on (Task 8): create 201 `etag: "1"`, update 200 `etag: "2"`, stale `If-Match`
-  409 `VERSION_CONFLICT` `serverRevision: 2`, publish `publishedVersion: 1`, list total 1;
-  Postgres stopped → `/api/agents` 503 naming `database`, `/api/health` 200, process
-  survives, recovers without restart; no database → "Agent features: off", health 200,
-  agents 503.
-- api-server Docker image builds and ships `migrate-cli.js`; the compose `migrate` service
-  (`docker compose run --rm migrate`) applies from `/app/db/migrations`.
-- Nav: `next dev` curl check of all redirects, query string kept.
-- Final reviews: nav ready to merge (no fixes); foundation "with fixes", both Important
-  findings fixed test-first in `545d6b8` (10 s statement timeout on the pool, migrator
-  opts out; If-Match/paging values bounded so they cannot surface as a fake 503). Nine
-  Minors deferred, listed in the foundation ledger.
-- Vertex probe (Task 9), 2026-10-03, owner's refreshed ADC: Gemini 3 (`gemini-3.8-flash`,
-  `gemini-3.1-pro-preview`) passes every check; Claude not reachable (quota). Findings:
-  `docs/agent/investigations/vertex-model-layer-probe.md`. `gemini` added to `ai.models`.
-
-## Next steps, in order
-
-1. When Claude quota exists, re-run the probe for Claude (plan Task 9 Steps 1–3; the
-   directory takes a minute to recreate) and finish the investigation note.
-2. Write the next plan from the probe's findings (Gemini is enough to start; the runner
-   must store `providerOptions` verbatim, see the note): runner, model client, graph read tools,
-   runs API, agent editor, run view, Ask, built-in agent (Milestone 1, second half). If the
-   JSON round trip of signed reasoning fails for a family, that family's model layer falls
-   back to the direct SDK behind the same `ModelClient` interface.
-3. Open a PR for `ai-agents-design` when the owner wants one (M0 and the M1 foundation are
-   safe to ship before infra: with no `DATABASE_URL` agent routes answer 503).
-4. Write infra brief 2 (the `agent-runner` Deployment) once that image exists.
-
-## Cross-repo state
-
-- `~/Repos/Ship-It-Ops/shipit-ai-infra/docs/agent/status/incoming-brief-agent-platform-postgres-vertex-2026-10-01.md`
-  — a copy of the brief, placed as an inbox entry. **Untracked there.** That repo's
-  `MANIFEST.md` was not edited because it had another session's staged changes.
-- Nobody has started the infra work. The app changes are safe to ship before it: with no
-  `DATABASE_URL`, agent routes answer `503 AI_UNAVAILABLE` and everything else runs as
-  today.
-- The brief's contract the foundation plan relies on: migrations live in **this** repo at
-  `db/migrations/NNNN_description.sql`; infra applies them at deploy, pinned to the image
-  SHA, into `schema_migrations(version, applied_at)`; `DATABASE_URL` and
-  `SHIPIT_AGENT_PLATFORM_KEY` arrive as plain env vars through ESO.
-
-## Facts that cost time to establish (do not re-derive)
-
-- **Nothing in the product calls a model today.** `/ask` is a hard-coded mock; no LLM SDK
-  is installed; the "Phase 2 LLM seam" that `ClaudePlans/07` mentions does not exist.
-- **Never put `DATABASE_URL` in the secrets registry.** `hydrateSecrets` reads every
-  `consume: env` entry from GSM when its env var is unset, and the api-server has no grant
-  on that container. That is the 2026-09-16 boot crash. It is a `${DATABASE_URL:-}`
-  placeholder under `ai.database.url` instead.
-- **AI SDK 7 names, typechecked against `ai@7.0.126` and `@ai-sdk/google-vertex@5.0.101`:**
-  `generateText({ model, instructions, messages, tools, stopWhen: isStepCount(1) })`;
-  `tool({ description, inputSchema: jsonSchema(...) })` with no `execute`;
-  `result.toolCalls[i].{toolCallId, toolName, input}`; `result.responseMessages`;
-  `result.usage.{inputTokens, outputTokens}`; tool results are
-  `{ type: 'tool-result', toolCallId, toolName, output: { type: 'json', value } }`.
-  Providers: `createVertex` (Gemini), `createVertexAnthropic` from `/anthropic`,
-  `createVertexMaas` from `/maas`. Typechecked only; **never called live**.
-- Claude ids on Vertex: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-4-5@20251001`.
-  No Gemini id was verified; the probe records one.
-- `import { Pool } from 'pg'` works under this repo's NodeNext setup; `z.strictObject` and
-  full-value `.default(...)` are the Zod 4 forms the repo uses.
-- The MCP tool handlers are inline closures inside `server.tool(...)`; reusing them
-  in-process needs the extraction the spec describes. That is in the next plan, not the
-  foundation plan.
-- The event bus is one BullMQ work queue with one consumer; a second `subscribe()` throws.
-  Event triggers need a new queue (spec §Triggers).
-- `@ship-it-ui/graph-editor` already ships `GraphEditorCanvas` (React Flow), used by the
-  Schema Editor. The design-system ask in `ClaudePlans/08` was fulfilled.
-- Icons that exist in `@ship-it-ui/icons`: `ask`, `sparkle` (same icon as `ask`), `bot`,
-  `workflow`, `activity`, `package`, `server`, `shield`, `settings`. `cog`, `wrench` and
-  `plug` do not.
-- **Prettier reformats YAML and TS inside markdown fences** and strips their leading
-  indentation. In plans, show partial-file edits as ```diff blocks, which it leaves alone.
-- **secretlint flags Postgres URLs with an inline password**, in the husky pre-commit hook
-  and in CI (`secretlint "**/*"`). The clone that proved the foundation code never ran it.
-  On 2026-10-02 the owner approved a narrow allow-list in `.secretlintrc.json`: user
-  `shipit`, passwords `shipit-dev` or `testpassword`, hosts `localhost`, `127.0.0.1` or
-  `postgres`, port `5432`. Checked with that config: both plans pass, and a URL with any
-  other password or host is still flagged. The `${POSTGRES_PASSWORD:-shipit-dev}` form
-  used in `docker-compose.yml` and `scripts/infra.sh` passes without the allow-list.
-- BullMQ is pinned at 5 and schedules with legacy repeatable jobs; BullMQ 6 removed them.
-  New scheduling code should use Job Schedulers (`upsertJobScheduler`), available in 5.
-
-## Found along the way, not acted on
-
-- `packages/api-server/src/routes/connectors.ts` has **no role or capability gate**: any
-  signed-in member can create, edit and delete connectors. Reported to the owner; not
-  fixed, no issue filed.
-- `backend.mcp.rateLimits.queryTimeoutMs` and `graphQueryPerDay` appear unused in
-  `packages/mcp-server` although `docs/architecture.md` says they are enforced. Reported
-  by a research subagent; not verified.
+1. `docs/superpowers/specs/2026-10-01-ai-agents-and-workflows-design.md` — the design for the
+   whole first release: decisions, data model, run loop, tool gateway, triggers, workflows,
+   API, UI, safety, testing, milestones.
+2. `docs/superpowers/plans/2026-10-04-agents-ui.md` — the plan to execute next.
+3. `docs/superpowers/plans/2026-10-03-agent-runner.md`, `2026-10-01-agents-foundation.md`,
+   `2026-10-01-ai-nav-section.md` — executed; useful for how things were built.
+4. `docs/agent/investigations/vertex-model-layer-probe.md` — what the models actually do.
+5. `docs/agent/decisions/agent-platform-v1-foundations.md` — the owner's four decisions.
+6. `docs/agent/briefs/infra-postgres-and-vertex-for-agents.md`, `infra-agent-runner.md`.
+7. `docs/agent/plans/ai-agents-and-workflows.md` — deep-dive findings and a running status.
+8. The owner's private review doc for the spec:
+   https://claude.ai/code/artifact/85e0c975-a028-4c6b-90cf-0b3f0832092c (a Claude Docs
+   document; edit it only through the Claude Docs connector).
 
 ## Scope
 
-Planned files are listed per task in the two plans. Until implementation starts, the only
-files in play are under `docs/`.
+Until the UI plan is executed: `docs/` only. The UI plan's files are listed per task in it:
+`packages/web-ui/src/{components/ai,lib,app/(app)/ai}`, plus
+`packages/api-server/src/{routes/tools.ts,server.ts}` and two docs.
 
 ## Why
 
@@ -326,11 +353,8 @@ files in play are under `docs/`.
 
 ## Done when
 
-`commit 85aa05ce38599f75c20248fa0c97a91aca25cd58 on main`
-(`git merge-base --is-ancestor 85aa05ce38599f75c20248fa0c97a91aca25cd58 origin/main`
-exits zero).
+The Milestone 1 UI is on `main`:
+`git cat-file -e origin/main:packages/web-ui/src/components/ai/run-view.tsx` exits zero.
 
-That anchor only proves the design docs merged. **Do not let it archive this entry while
-implementation is still in flight:** once an implementation PR exists, replace this
-section with `PR #<n> merged`, or archive this file by hand and open a fresh status entry
-for the work in progress.
+When that holds, archive this entry and open a fresh status entry for Milestone 2. Until then
+this entry stays active, including after `ai-agents-design` merges.
