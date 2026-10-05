@@ -43,7 +43,7 @@
   "devDependencies": {
     "@kubernetes/client-node": "^1.0.0",
     "@types/ioredis-mock": "^8.2.8",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.6.4",
     "ioredis-mock": "^8.13.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
