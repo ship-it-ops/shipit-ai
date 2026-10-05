@@ -2,7 +2,7 @@
 type: plan
 status: active
 created: 2026-10-02
-updated: 2026-10-04
+updated: 2026-10-05
 author: claude-session-2026-10-01-knowledge-connectors
 tags: [knowledge, connectors, slack, jira, confluence, github, retrieval, suggestions]
 importance: core
@@ -371,6 +371,122 @@ ends early; the container `PUT` can select a `gone` container.
 
 Left to the owner: switching a kind or the whole facet off stops fetching but leaves what is
 stored in place until the container is deselected.
+
+**Pull request #119 and its review (2026-10-04, 2026-10-05).** The branch went up as
+[#119](https://github.com/ship-it-ops/shipit-ai/pull/119), both workstreams in one pull
+request. The CI review job skips itself on a pull request that changes `ci.yml`, so the review
+was run in a session (`ship-reviewed-prs`, six personas) at `ed1c8f8`. It found 2 must-fix, 8
+should-fix and 13 minor findings. The owner had it kept off the pull request (the repository
+is public and two findings were security findings) and asked for every finding to be fixed
+before the merge, the minor ones too. Each fix has a test that failed first. Each batch of
+fixes was then read by a fresh reviewer, which found more each time, with less at stake each
+time:
+
+1. The fixes for the review itself: `dc2fef0`, `a871e2a`, `3e73e63`, `a7392fe`, `8124799`,
+   `97267b9`, `69249d8`.
+2. The first re-reading found a slowdown in redaction that predated the fixes, and defects in
+   the fixes themselves, among them a dropped connection ending the process and a deleted
+   connector's rows being written back. Fixed in `6cec60f`, `8bd6e0e`, `42de1c9`.
+3. The second found one defect that mattered (a container refresh that outlived its
+   connector's delete stored what the source answered), ten small ones and five statements
+   in the docs that the code did not make true. Fixed in `25a45e9`, `deaecca`, `12529e1`.
+4. The third found nothing that mattered in ordinary use, seven small defects, four more
+   untrue statements and several fixes that no test would have missed. Fixed in `35e4c74`.
+
+`35e4c74` has had no reviewer of its own. It rests on its tests (each new one failed before
+its fix, or fails when the fix is taken away), on CI, and on the hands-on run below.
+
+What changed in the knowledge layer and in what it shares with the agents work, by what
+someone using or running it would notice:
+
+- **Deleting a connector removes what it indexed.** In order: its run and any container
+  refresh in flight are stopped and waited for; everything it holds is cleared; the connector
+  is removed. A container with no documents goes at once, one with documents is purged by the
+  worker (documents, then the row, then the people). When the clearing cannot be recorded the
+  connector stays (`503 KNOWLEDGE_PURGE_FAILED`). A delete and an update take turns. Deleting
+  an id the registry no longer knows clears what is still held under it.
+- **A connector id can be used again.** Connectors carry `createdAt`; the store keeps the one
+  it knows per id (`knowledge_state`, key `connector-life:<id>`) and clears what an earlier
+  connector left before anything is fetched, listed or selected for a new one. Creating a
+  connector does not touch the knowledge database. Ids are 1 to 100 characters of letters,
+  digits, `_` and `-`.
+- **Selecting.** A container the stored row calls open is checked against the source first,
+  one lookup (`getContainer`, optional on the SDK contract; a connector without it has its
+  list refreshed). An acknowledgement counts only for a container that is not open at that
+  moment. A container that is gone cannot be selected, also when it went between the
+  request's read and its write.
+- **A refresh made from the API is bounded:** 20 seconds for a wait the source asks for
+  (`429`), 60 for the whole refresh, authentication included (`504`), and it is answered then
+  whether or not the call to the source has returned.
+- **Redaction** covers segment keys and attribute names. secretlint profiled every call with
+  performance marks that it never released, which made each redaction slower than the last
+  and stalled the api-server during a sync; the profiler is switched off (`8bd6e0e`).
+- **The worker.** An embedding call has a deadline. A document is embedded a hundred chunks
+  at a time, each call retried by itself, with the claim renewed and progress counted between
+  calls. A stop aborts the calls in flight and hands the claimed documents back. The
+  heartbeat is written only while the index loop is alive. Purging works through batches
+  within a tick, and people nothing refers to are swept.
+- **The sink and the harness.** The people a batch names are written in the batch's own
+  transaction, after the batch is accepted. The wake-up is not waited for. A batch for a
+  container whose row is gone is skipped, not failed. A reconcile that cannot finish a
+  container within a run is stamped with a note instead of starving the others.
+- **Knowledge runs have their own history** (`lastKnowledgeRuns`); `lastRuns` is the graph
+  sync alone.
+- **Schema.** `0002_knowledge.sql` and `0003_runs.sql` were edited in place: the pgvector
+  guard asks for 0.7.0 or later, eight indexes that duplicated another or had no reader were
+  removed, and one was added (`knowledge_documents_author_idx`). That was safe because no environment had applied them:
+  the infra repo's migration hook merged on 2026-10-04 and nothing was deployed after it.
+  A local database that had applied the old files keeps the old indexes until it is reset.
+- **The migrator** runs each file under a lock timeout (5 seconds), runs a file whose first
+  line is `-- migrate: no-transaction` outside a transaction, and does not record such a file
+  while the schema holds an invalid index. The infra repo's deploy hook has to do the same
+  before the first such file:
+  [the brief](../briefs/infra-migration-lock-timeout-and-no-transaction.md).
+- **Postgres access (`packages/agents/src/db.ts`).** A connection that drops while a request
+  holds it no longer ends the process, and is destroyed instead of going back to the pool;
+  keepalive is on.
+- **`scripts/infra.sh`** migrates the compose database with this checkout's files, whatever
+  database URLs or `MIGRATIONS_DIR` the shell exports (`SHIPIT_DEV_DATABASE_URL` overrides).
+
+The agents-side fixes from the same review are in `dc2fef0`, `a871e2a` and `6cec60f`:
+`graph_query` is not offered to agents, `search_entities` takes only plain identifiers, the
+structured graph tools leave out nodes whose label starts with an underscore, a cancel at the
+end of a chat turn is settled, and a worker that lost its lease cannot start tool calls.
+
+Decided, and left as they are: the full-text configuration stays `'english'`; any invalid
+index in the schema, not only one a file names, refuses a no-transaction file; the graph
+tools' traversals do not filter internal nodes beyond what is listed in `docs/mcp-tools.md`
+(internal nodes carry no relationships); `runs.parent_run_id` has no index and no
+`ON DELETE` rule (the agents workstream's to decide); a server with the knowledge database
+and no scheduler (no Redis) makes no check of a connector id before its container routes
+answer, since it fetches nothing either; the 20 seconds a refresh allows for a wait the
+source asks for count from the start of the refresh, authentication included. Not done: the review's advisory
+delegations (test gaps on the run routes and the boot wiring, a clean-code pass over the
+largest functions, a devops pass over `ci.yml`). Found and not fixed, because it predates
+this branch: the older compose services (`api-server`, `core-writer`, `mcp-server`) cannot
+start from the committed config without placeholders the compose file does not set.
+
+Hands-on after the fixes (2026-10-05, at `35e4c74`, in the same isolated setup as before: its
+own port, a scratch database, its own Redis database, the real GitHub App installation). A
+refresh listed six repositories in about a second. Selecting a private repository without the
+acknowledgement was refused; selecting a public one asked GitHub about that repository and
+went through. A sync stored 24 pull requests and 2 docs with the note
+`issues_permission_missing`, on the knowledge run history alone. A second connector created
+on the same installation carried `createdAt`, and its life was on record after its containers
+were first listed. It was then deleted with a refresh, a listing and a select in flight: the
+refresh and the select answered `409 CONNECTOR_BEING_DELETED`, the listing `200` and the
+delete `204` within 20 ms; its five empty containers were gone at once, the one with 25
+documents was purged by the worker, its people and the record of its life went with it, and
+the other connector was untouched. Created again under the same id over planted leftovers (a
+selected container and an older life), two listings at once showed no containers and the
+api-server logged, once, the one row it cleared. No request answered 5xx and nothing was
+logged at error level. Embedding still fails on the machine's expired credentials
+(`invalid_rapt`), so every document ended `failed` and the first live embedding is still to
+run.
+
+Of the K1a review's deferred minors above, two are now fixed: a sleep that ignored a signal
+aborted before it began, and the container `PUT` selecting a `gone` container. The others
+stand.
 
 **Next:** refresh the credentials and run the live embedding; then the K1b plan (alias
 dictionary, deterministic linking, references, people matching, their migration at `0005` or

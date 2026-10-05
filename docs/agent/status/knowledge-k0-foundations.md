@@ -2,7 +2,7 @@
 type: status
 status: active
 created: 2026-10-03
-updated: 2026-10-04
+updated: 2026-10-05
 author: claude-session-2026-10-01-knowledge-connectors
 branch: ai-agents-design
 agent: claude-session-2026-10-01-knowledge-connectors
@@ -10,7 +10,13 @@ tags: [knowledge, connectors, postgres, pgvector, worker]
 importance: core
 ---
 
-# Knowledge layer on `ai-agents-design`: K0 (foundations) and K1a (GitHub text) implemented; K1b plan next
+# Knowledge layer on `ai-agents-design`: K0 and K1a are in pull request #119, reviewed and fixed, waiting for the owner to merge; K1b plan next
+
+The branch is up as [#119](https://github.com/ship-it-ops/shipit-ai/pull/119). A review of the
+whole pull request and fresh reviews of each batch of its fixes are done and their findings
+fixed ([knowledge-connectors](../plans/knowledge-connectors.md), "Pull request #119 and its
+review"). The merge is the owner's: the branch protection needs their admin bypass. After it,
+this work continues on a new branch from `main`, starting with the K1b plan.
 
 K0 is implemented, reviewed and pushed (`37ee7eb`..`52650e1`, review fixes in `b5882bf`; see
 [knowledge-connectors](../plans/knowledge-connectors.md) for the list). An independent audit on
@@ -45,6 +51,4 @@ plan on 2026-10-03.
 
 ## Done when
 
-`branch ai-agents-design deleted on remote`
-(`git ls-remote --exit-code --heads origin ai-agents-design` exits non-zero). Replace with
-`PR #<n> merged` once the branch has a pull request.
+`PR #119 merged` (`gh pr view 119 --json state -q .state` prints `MERGED`).
