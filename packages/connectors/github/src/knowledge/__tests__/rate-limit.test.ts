@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, it, expect } from 'vitest';
 import { isRunCutShort } from '@shipit-ai/connector-sdk';
 import { RunBudgetEnded, rateLimitWaitMs, withRateLimit } from '../rate-limit.js';
@@ -171,6 +172,23 @@ describe('withRateLimit', () => {
     );
     setTimeout(() => stop.abort(), 10);
     await expect(waiting).rejects.toThrow(/aborted/);
+  });
+
+  // The signal is the run's, and lives as long as the run does: a wait that
+  // ended must not stay attached to it.
+  it('leaves nothing on the signal once a wait is over', async () => {
+    const stop = new AbortController();
+    let n = 0;
+    const out = await withRateLimit(
+      async () => {
+        n += 1;
+        if (n === 1) throw limited({ 'retry-after': '0.01' }, 429);
+        return 'ok';
+      },
+      { signal: stop.signal },
+    );
+    expect(out).toBe('ok');
+    expect(getEventListeners(stop.signal, 'abort')).toHaveLength(0);
   });
 
   it('passes other errors straight through', async () => {

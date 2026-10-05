@@ -518,9 +518,9 @@ depends on the answer.
   lists is shown, flagged `gone`, while it is selected or still holds content; it is not
   purged automatically, but once it is deselected and purged its row is removed.
 - Deleting a connector, in order: its knowledge run and any container refresh in flight
-  are stopped and waited for, and no new one starts (a refresh answers
-  `409 CONNECTOR_BEING_DELETED`); everything it holds is cleared (below); the connector
-  is removed. When the
+  are stopped and waited for, as is a check of whose rows its id holds (below), and no
+  new one starts (a refresh answers `409 CONNECTOR_BEING_DELETED`); everything it holds
+  is cleared (below); the connector is removed. When the
   clearing cannot be recorded the request answers `503 KNOWLEDGE_PURGE_FAILED` and the
   connector stays, so the delete can be tried again; a knowledge schema that does not
   exist yet is nothing to clear and does not block the delete. A delete and an update of
@@ -535,25 +535,29 @@ depends on the answer.
   sweeps people nothing refers to on every tick.
 - A connector id can be used again. Connectors carry the time they were created
   (`createdAt`), and before anything is fetched, listed or selected for a connector the
-  store compares it with the one it has on record for the id: when they differ, what the
-  id holds belongs to an earlier connector and is cleared, and the api-server logs how
-  many rows that was. The comparison is made once per process and connector, and again
-  after a delete of the connector was attempted. While it cannot be made the container
-  routes answer `503 KNOWLEDGE_UNAVAILABLE`. Creating a connector does not touch the
-  knowledge database.
-- A container refresh made from the API bounds a wait the source asks for to 20 seconds
-  (`429 RATE_LIMITED`) and the whole refresh, authentication included, to 60
-  (`504 SOURCE_TIMEOUT`). The request is answered at that point whether or not the call
-  to the source has returned.
+  knowledge scheduler has the store compare it with the one on record for the id: when
+  the one on record is earlier or missing, what the id holds belongs to an earlier
+  connector and is cleared, and the api-server logs how many rows that removed or marked;
+  when it is later, the caller is the earlier connector and nothing is touched. The
+  comparison is made once per process and connector, and again after a delete of the
+  connector was attempted. While it cannot be made the container routes answer
+  `503 KNOWLEDGE_UNAVAILABLE`. A server with the knowledge database but no scheduler
+  (no Redis) fetches nothing and makes no comparison: its container routes show what is
+  stored as it is. Creating a connector does not touch the knowledge database.
+- A container refresh made from the API does not wait for the source past 20 seconds
+  from its start when the source asks it to (`429 RATE_LIMITED`), and lasts 60 seconds at
+  most, authentication included (`504 SOURCE_TIMEOUT`). The request is answered at that
+  point whether or not the call to the source has returned.
 - Knowledge runs are kept in a history of their own and returned as `lastKnowledgeRuns` on
   the connector list, detail and update responses. `lastRuns` is the graph sync alone,
   which is what the Connector Hub reads its status, last sync and entity count from.
 - The worker embeds a document a hundred chunks at a time and gives each call a deadline
   (a minute plus three seconds per chunk). A call that fails is tried again by itself.
-  Between calls the document's claim is renewed and the call counts as progress, so a
-  long document is neither reclaimed as stale nor taken for a stall; one the sink changed
-  or removed meanwhile is dropped there. On shutdown the worker aborts the calls in
-  flight and hands the documents it had claimed back as `pending` without counting an
+  Ahead of every call after a document's first, a call made again included, the
+  document's claim is renewed and progress is counted, so a long document is neither
+  reclaimed as stale nor taken for a stall; one the sink changed or removed meanwhile is
+  dropped there. On shutdown the worker aborts the calls in flight and a wait before a
+  retry, and hands the documents it had claimed back as `pending` without counting an
   attempt. Its heartbeat is written only while the index loop is alive.
 - Redaction runs on the api-server's event loop, one scan per string. secretlint's
   profiler is switched off there: left on, it kept every scan's performance marks for the

@@ -338,6 +338,45 @@ describe('indexDocument', () => {
       expect(store.replaced[0]!.chunks).toHaveLength(TEXTS_PER_EMBEDDING_CALL + 7);
     });
 
+    // One call may be tried five times, and an attempt that fails late has
+    // used most of its deadline: the attempts of a single call can outlast
+    // the stale window as surely as several calls can.
+    it('says so before a call is tried again, too', async () => {
+      vi.useFakeTimers();
+      const store = new MemoryIndexStore();
+      const { embedder, sizes } = counting({
+        call: 1,
+        error: Object.assign(new Error('unavailable'), { status: 503 }),
+      });
+      let progress = 0;
+      const indexing = indexDocument(
+        deps(store, embedder),
+        long(3),
+        undefined,
+        () => void (progress += 1),
+      );
+      await vi.runAllTimersAsync();
+      expect(await indexing).toBe('indexed');
+      expect(sizes).toEqual([3, 3]);
+      expect(store.kept).toEqual([{ documentId: 'doc-1', contentHash: 'h1' }]);
+      expect(progress).toBe(1);
+    });
+
+    it('does not try a call again for a document that is no longer its claim', async () => {
+      vi.useFakeTimers();
+      const store = new MemoryIndexStore();
+      store.stillClaimed = false;
+      const { embedder, sizes } = counting({
+        call: 1,
+        error: Object.assign(new Error('unavailable'), { status: 503 }),
+      });
+      const indexing = indexDocument(deps(store, embedder), long(3));
+      await vi.runAllTimersAsync();
+      expect(await indexing).toBe('superseded');
+      expect(sizes).toEqual([3]);
+      expect(store.replaced).toEqual([]);
+    });
+
     // The sink changed or removed the document while it was being embedded:
     // what is left of it would be thrown away at the end.
     it('stops when the document is no longer the claim it took', async () => {

@@ -290,6 +290,45 @@ describe('KnowledgeSyncScheduler', () => {
       expect(lives).toHaveLength(2);
     });
 
+    // A route's check is neither a run nor a refresh. One still talking to
+    // the store when the delete begins would record the connector's life
+    // after the delete had removed it, and leave that record behind.
+    it('is waited for by a delete that begins while it is being made', async () => {
+      let asked: () => void = () => undefined;
+      const started = new Promise<void>((resolve) => (asked = resolve));
+      let answer: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (answer = resolve));
+      const s = scheduler(fixtureType(fixture()), {
+        registry: bornRegistry,
+        store: {
+          ...store,
+          beginConnectorLife: async () => {
+            asked();
+            await held;
+            return 0;
+          },
+        } as never,
+      });
+      const check = s.checkLife('fx-1');
+      await started;
+
+      let retired = false;
+      const retiring = s.retire('fx-1').then(() => void (retired = true));
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(retired).toBe(false);
+
+      answer();
+      await retiring;
+      await check;
+    });
+
+    it('is asked of the store once when two requests need it at the same moment', async () => {
+      const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
+      await Promise.all([s.checkLife('fx-1'), s.checkLife('fx-1')]);
+      expect(lives).toHaveLength(1);
+    });
+
     it('is not checked while the connector is being deleted', async () => {
       const s = scheduler(fixtureType(fixture()), { registry: bornRegistry });
       await s.retire('fx-1');
@@ -510,6 +549,95 @@ describe('KnowledgeSyncScheduler', () => {
       expect(await refresh).toBe(1);
       await settle();
       expect(principals).toBe(0);
+    });
+
+    // What the refresh is writing when the delete begins has to be in the
+    // store before the delete clears it, or it would be written after.
+    it.each([
+      ['the container list', 'upsertContainers'],
+      ['a page of people', 'upsertPrincipals'],
+    ] as const)('is waited for while it stores %s', async (_what, method) => {
+      const connector = createFixtureKnowledgeConnector({
+        containers: [C1],
+        documents: {},
+        principals: [{ externalId: 'U1', kind: 'user', displayName: 'Ada', active: true }],
+      });
+      let writing: () => void = () => undefined;
+      const started = new Promise<void>((resolve) => (writing = resolve));
+      let finish: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (finish = resolve));
+      const s = scheduler(fixtureType(connector), {
+        store: {
+          ...store,
+          [method]: async () => {
+            writing();
+            await held;
+          },
+        } as never,
+      });
+      const refresh = s.refreshContainers('fx-1').catch((err: unknown) => err);
+      await started;
+
+      let retired = false;
+      const retiring = s.retire('fx-1').then(() => void (retired = true));
+      await settle();
+      await settle();
+      expect(retired).toBe(false);
+
+      finish();
+      await retiring;
+      await refresh;
+    });
+
+    // Stopped between two questions to the source: the second is not asked.
+    it('asks the source nothing more once it is stopped', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const holder: { scheduler?: KnowledgeSyncScheduler } = {};
+      let authenticated = 0;
+      connector.authenticate = async () => {
+        authenticated += 1;
+        return { success: true };
+      };
+      // The delete begins while the connector is being built.
+      const type = {
+        ...fixtureType(connector),
+        buildKnowledge: async () => {
+          void holder.scheduler!.retire('fx-1');
+          return {
+            ok: true,
+            connector,
+            sdkConfig: { id: 'fx-1', type: 'fixture', credentials: {}, scope: {} },
+          };
+        },
+      } as unknown as ConnectorType;
+      holder.scheduler = scheduler(type);
+      await expect(holder.scheduler.refreshContainers('fx-1')).rejects.toMatchObject({
+        code: 'CONNECTOR_BEING_DELETED',
+      });
+      expect(authenticated).toBe(0);
+
+      // And the people: the delete begins after the list was stored.
+      holder.scheduler.unretire('fx-1');
+      let asked = 0;
+      connector.listPrincipals = () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            asked += 1;
+            return { done: true as const, value: undefined };
+          },
+        }),
+      });
+      const people = scheduler(fixtureType(connector), {
+        store: {
+          ...store,
+          hasSelection: async () => {
+            void people.retire('fx-1');
+            return true;
+          },
+        } as never,
+      });
+      expect(await people.refreshContainers('fx-1')).toBe(1);
+      expect(asked).toBe(0);
     });
 
     it('leaves the refreshes of other connectors alone', async () => {

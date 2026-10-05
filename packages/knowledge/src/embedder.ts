@@ -104,10 +104,31 @@ export interface RetryOptions {
   attempts?: number;
   baseDelayMs?: number;
   isRetryable?: (err: unknown) => boolean;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Ends the wait before the next attempt; the retrying then fails with the signal's reason. */
+  signal?: AbortSignal;
+  /** Called ahead of every attempt after the first. What it throws ends the retrying. */
+  beforeRetry?: () => Promise<void> | void;
 }
 
-const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // Aborted before the wait began: a listener added now would never be called.
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
 
 /** Exponential backoff: baseDelay × 2^(attempt−1), only for errors `isRetryable` accepts. */
 export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
@@ -122,7 +143,8 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions =
     } catch (err) {
       lastError = err;
       if (attempt === attempts || !isRetryable(err)) throw err;
-      await sleep(base * 2 ** (attempt - 1));
+      await sleep(base * 2 ** (attempt - 1), options.signal);
+      await options.beforeRetry?.();
     }
   }
   throw lastError;

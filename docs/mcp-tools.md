@@ -224,10 +224,11 @@ else is refused before a query runs.
 
 Nodes whose label starts with an underscore are the application's own bookkeeping and
 not part of the catalog. No structured tool starts from one, lists one or counts one:
-`search_entities`, `graph_stats` and `schema_info` leave them out, and `entity_detail`,
-`find_owners`, `blast_radius` and `dependency_chain` answer "not found" for the id of
-one. They carry no relationships, so a traversal has none to reach; the neighbors of
-`entity_detail` and the paths of `dependency_chain` exclude them all the same.
+`search_entities`, `graph_stats` and `schema_info` leave them out, `entity_detail`,
+`find_owners` and `blast_radius` answer "not found" for the id of one, and
+`dependency_chain` finds no path from or to one. They carry no relationships, so a
+traversal has none to reach; the neighbors of `entity_detail` and the paths of
+`dependency_chain` exclude them all the same.
 
 **Response:**
 

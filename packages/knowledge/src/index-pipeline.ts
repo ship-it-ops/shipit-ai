@@ -38,10 +38,14 @@ export interface IndexPipelineDeps {
   containerNameOf(containerId: string): Promise<string>;
 }
 
+/** The document stopped being the claim the worker took while it was being embedded. */
+class ClaimLost extends Error {}
+
 /**
- * `signal` is the worker's stop signal: it ends an embedding call in flight,
- * and nothing is retried once it has fired. `onProgress` is called each time
- * an embedding call of a document that needs several has come back.
+ * `signal` is the worker's stop signal: it ends an embedding call in flight
+ * and a wait before a retry, and nothing is retried once it has fired.
+ * `onProgress` is called ahead of every embedding request of a document after
+ * its first: the next hundred chunks, or the same ones again.
  */
 export async function indexDocument(
   deps: IndexPipelineDeps,
@@ -72,32 +76,44 @@ export async function indexDocument(
   const reusable = await deps.store.existingChunkEmbeddings(doc.id, deps.embedder.model);
   const toEmbed = drafts.filter((d) => !reusable.has(d.textHash));
   const byHash = new Map(reusable);
-  // A call at a time. How long a document takes grows with its length, so
-  // what is sized for one call works a call at a time: a failed call is tried
-  // again by itself, and between calls the claim is renewed (it would
-  // otherwise go stale, and a second worker take the document halfway) and
-  // the caller is told there was progress.
-  for (let from = 0; from < toEmbed.length; from += TEXTS_PER_EMBEDDING_CALL) {
-    if (from > 0) {
-      // The sink changed or removed the document meanwhile: nothing of this
-      // would be written at the end.
-      if (!(await deps.store.keepClaim(doc.id, doc.contentHash))) return 'superseded';
-      onProgress?.();
+  // A request at a time. How long a document takes grows with its length and
+  // with how often a request has to be made again, so what is sized for one
+  // request is done before each one after the first: the claim is renewed (it
+  // would otherwise go stale, and a second worker take the document halfway)
+  // and the caller is told there was progress. A failed call is tried again
+  // by itself, not from the document's first.
+  const contentHash = doc.contentHash;
+  const stillClaimed = async (): Promise<void> => {
+    // The sink changed or removed the document meanwhile: nothing of this
+    // would be written at the end.
+    if (!(await deps.store.keepClaim(doc.id, contentHash))) throw new ClaimLost();
+    onProgress?.();
+  };
+  try {
+    for (let from = 0; from < toEmbed.length; from += TEXTS_PER_EMBEDDING_CALL) {
+      if (from > 0) await stillClaimed();
+      const slice = toEmbed.slice(from, from + TEXTS_PER_EMBEDDING_CALL);
+      const vectors = await withRetry(
+        () =>
+          deps.embedder.embedDocuments(
+            slice.map((d) => `${d.prefix}\n${d.text}`),
+            { title: doc.title, ...(signal ? { signal } : {}) },
+          ),
+        {
+          isRetryable: (err) => !signal?.aborted && isRetryableEmbeddingError(err),
+          beforeRetry: stillClaimed,
+          ...(signal ? { signal } : {}),
+        },
+      );
+      if (vectors.length !== slice.length) {
+        throw new Error(`embedder returned ${vectors.length} vectors for ${slice.length} chunks`);
+      }
+      assertDimensions(vectors, deps.embedder.dimensions);
+      slice.forEach((d, i) => byHash.set(d.textHash, toPgVector(vectors[i]!)));
     }
-    const slice = toEmbed.slice(from, from + TEXTS_PER_EMBEDDING_CALL);
-    const vectors = await withRetry(
-      () =>
-        deps.embedder.embedDocuments(
-          slice.map((d) => `${d.prefix}\n${d.text}`),
-          { title: doc.title, ...(signal ? { signal } : {}) },
-        ),
-      { isRetryable: (err) => !signal?.aborted && isRetryableEmbeddingError(err) },
-    );
-    if (vectors.length !== slice.length) {
-      throw new Error(`embedder returned ${vectors.length} vectors for ${slice.length} chunks`);
-    }
-    assertDimensions(vectors, deps.embedder.dimensions);
-    slice.forEach((d, i) => byHash.set(d.textHash, toPgVector(vectors[i]!)));
+  } catch (err) {
+    if (err instanceof ClaimLost) return 'superseded';
+    throw err;
   }
 
   const written = await deps.store.replaceChunks(

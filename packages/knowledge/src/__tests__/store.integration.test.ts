@@ -312,6 +312,39 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       expect(await store.keepClaim('99999999-9999-4999-8999-999999999999', 'h')).toBe(false);
     });
 
+    // The edited document is claimed again, by this worker's next batch or by
+    // another worker. The row is `indexing` once more, for other content: the
+    // first claimant must not renew that claim, nor go on embedding the old text.
+    it('does not keep a claim that is now someone else’s, on newer content', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [first] = await store.claimPending(10);
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a, edited')], [], 'cp2'));
+      const [second] = await store.claimPending(10);
+      expect(second!.id).toBe(first!.id);
+      expect(second!.contentHash).not.toBe(first!.contentHash);
+
+      expect(await store.keepClaim(first!.id, first!.contentHash!)).toBe(false);
+      expect(await store.keepClaim(second!.id, second!.contentHash!)).toBe(true);
+    });
+
+    // The same test replaceChunks makes before it writes, so that a worker
+    // stops at the next call for exactly the documents it could not finish.
+    it.each([
+      ['deleted', `deleted_at = now()`],
+      ['restricted', `restricted = true`],
+    ])('does not keep a claim on a row that is %s', async (_what, change) => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [d] = await store.claimPending(10);
+      await database.db.query(`UPDATE knowledge_documents SET ${change} WHERE id = $1`, [d!.id]);
+      expect(await store.keepClaim(d!.id, d!.contentHash!)).toBe(false);
+      expect(
+        await store.replaceChunks(d!.id, [chunk(0, 'alpha')], {
+          indexedHash: d!.contentHash!,
+          indexVersion: 1,
+        }),
+      ).toBe(false);
+    });
+
     it('stops retrying after five failures and backs off before that', async () => {
       await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
       for (let attempt = 1; attempt <= 5; attempt++) {
@@ -1302,6 +1335,20 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
           await store.beginConnectorLife('slack-1', '2026-11-01T00:00:00.000Z', 'system'),
         ).toBe(0);
       });
+
+      // A check made for a connector that has since been deleted and replaced
+      // (a request that was slow, a process with an older registry) arrives
+      // after the newer connector's. It must not clear what the newer one holds.
+      it('leaves everything alone when the id is on record for a later connector', async () => {
+        const later = '2026-11-01T00:00:00.000Z';
+        await store.beginConnectorLife('slack-1', later, 'system');
+        await sink.upsertContainers([C1, C2]);
+        await store.setSelected('slack-1', 'C1', true, 'ada');
+
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBeNull();
+        expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
+        expect(await store.getState('connector-life:slack-1')).toBe(later);
+      });
     });
 
     // The picker reads a container's row and then writes to it. A delete of
@@ -1340,6 +1387,29 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       await sink.upsertContainers([C1]);
       expect(await change(c2.id, true)).toBe(false);
       expect(await change(c2.id, false)).toBe(true);
+    });
+
+    // Clearing twice (a delete tried again, the check of a new connector made
+    // while the old one's purge is pending) finds nothing new to clear: the
+    // count is what it removed or marked this time, and rows already on their
+    // way out keep who deselected them and when their purge was asked for.
+    it('counts only what a clearing changed, and leaves rows already on their way out as they are', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      // C1 marked, C2 (empty) removed; the people stay until C1 is purged.
+      expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
+      const marked = await database.db.query<{ selected_by: string; purge_requested_at: Date }>(
+        `SELECT selected_by, purge_requested_at FROM knowledge_containers WHERE connector_id = 'slack-1'`,
+      );
+
+      expect(await store.deselectConnector('slack-1', 'someone-else')).toBe(0);
+      expect(await store.beginConnectorLife('slack-1', '2026-10-05T00:00:00.000Z', 'system')).toBe(
+        0,
+      );
+      const after = await database.db.query<{ selected_by: string; purge_requested_at: Date }>(
+        `SELECT selected_by, purge_requested_at FROM knowledge_containers WHERE connector_id = 'slack-1'`,
+      );
+      expect(after.rows).toEqual(marked.rows);
+      expect(after.rows[0]!.selected_by).toBe('ada');
     });
 
     it('removes a container the source no longer has once it is deselected and purged', async () => {

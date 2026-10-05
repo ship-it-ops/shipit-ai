@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { describe, it, expect } from 'vitest';
 import {
   FakeEmbedder,
@@ -94,6 +95,93 @@ describe('withRetry', () => {
         },
       ),
     ).rejects.toThrow('bad request');
+    expect(n).toBe(1);
+  });
+
+  it('calls beforeRetry ahead of every attempt after the first, and stops when it throws', async () => {
+    const order: string[] = [];
+    let n = 0;
+    const value = await withRetry(
+      async () => {
+        n += 1;
+        order.push(`attempt ${n}`);
+        if (n < 3) throw retryable;
+        return 'ok';
+      },
+      {
+        sleep: async () => undefined,
+        beforeRetry: async () => void order.push('before'),
+      },
+    );
+    expect(value).toBe('ok');
+    expect(order).toEqual(['attempt 1', 'before', 'attempt 2', 'before', 'attempt 3']);
+
+    n = 0;
+    await expect(
+      withRetry(
+        async () => {
+          n += 1;
+          throw retryable;
+        },
+        {
+          sleep: async () => undefined,
+          beforeRetry: () => {
+            throw new Error('no longer wanted');
+          },
+        },
+      ),
+    ).rejects.toThrow('no longer wanted');
+    expect(n).toBe(1);
+  });
+
+  // The worker stops by aborting this signal. A wait before the next attempt
+  // that sat it out would hold the stop for seconds.
+  it('ends the wait before a retry when its signal aborts, and tries nothing more', async () => {
+    const stop = new AbortController();
+    let n = 0;
+    const started = Date.now();
+    const retrying = withRetry(
+      async () => {
+        n += 1;
+        throw retryable;
+      },
+      { baseDelayMs: 60_000, signal: stop.signal },
+    );
+    setTimeout(() => stop.abort(new Error('the worker is stopping')), 10);
+    await expect(retrying).rejects.toThrow('the worker is stopping');
+    expect(n).toBe(1);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  // The signal is the worker's, and lives as long as the worker does.
+  it('leaves nothing on the signal once a wait is over', async () => {
+    const stop = new AbortController();
+    let n = 0;
+    const value = await withRetry(
+      async () => {
+        n += 1;
+        if (n === 1) throw retryable;
+        return 'ok';
+      },
+      { baseDelayMs: 1, signal: stop.signal },
+    );
+    expect(value).toBe('ok');
+    expect(getEventListeners(stop.signal, 'abort')).toHaveLength(0);
+  });
+
+  it('does not wait at all on a signal that has already aborted', async () => {
+    const stop = new AbortController();
+    stop.abort(new Error('the worker is stopping'));
+    let n = 0;
+    await expect(
+      withRetry(
+        async () => {
+          n += 1;
+          throw retryable;
+        },
+        { baseDelayMs: 60_000, signal: stop.signal },
+      ),
+    ).rejects.toThrow('the worker is stopping');
     expect(n).toBe(1);
   });
 });

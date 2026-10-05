@@ -44,6 +44,9 @@ export const DEFAULT_MAX_PARALLEL_CALLS = 4;
  * a request that has stopped answering. For a full call (a hundred texts, see
  * TEXTS_PER_EMBEDDING_CALL) that is six minutes: under the ten minutes after
  * which a claim counts as stale, and under the index loop's stall threshold.
+ * Both are measured from one call to the next, not across a document: the
+ * index pipeline renews the claim and reports progress ahead of every call
+ * after a document's first, a call made again included.
  */
 export const defaultTimeoutMs = (texts: number): number => 60_000 + 3_000 * texts;
 

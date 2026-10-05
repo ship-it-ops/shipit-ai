@@ -45,9 +45,10 @@ You are working in the infra repo. Read its `docs/agent/MANIFEST.md`, `status/` 
 - A document is embedded a hundred chunks at a time, and each call has a deadline (one
   minute plus three seconds per chunk, six minutes for a full hundred). A call that
   outlives it fails that document for this attempt; the worker logs `index failed for …
-took longer than …` and moves on. A document long enough to need several calls
-  renews its claim between them, so it is not reclaimed after 10 minutes while it is
-  still being embedded.
+took longer than …` and moves on. Ahead of every call after a document's first
+  (the next hundred chunks, or the same ones again) the worker renews the document's
+  claim, so a long document is not reclaimed after 10 minutes while it is still being
+  embedded.
 - Logs worth keeping: one `batch: N claimed, …` line per batch that had work.
 - Start order does not matter: with the schema or the extension missing, `DATABASE_URL` or
   `GOOGLE_CLOUD_PROJECT` empty, or `knowledge.embedding.dimensions` not 768, the pod exits

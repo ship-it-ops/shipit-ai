@@ -207,6 +207,13 @@ const NOTHING_REFERS_TO = (connectorId: string): string => `NOT EXISTS (
 
 const lifeKey = (connectorId: string): string => `connector-life:${connectorId}`;
 
+// A document row that is still the claim a worker took for the content hash in
+// $2: being indexed, same content, not deleted, not restricted. The sink may
+// have tombstoned, restricted or edited the document since, and an edited one
+// may have been claimed again.
+const STILL_THE_CLAIM = `index_status = 'indexing' AND content_hash = $2
+            AND deleted_at IS NULL AND NOT restricted`;
+
 /**
  * Removes everything a connector id holds. Shared by a delete and by the
  * start of a new connector under a used id; runs inside the caller's
@@ -221,12 +228,16 @@ async function clearConnector(tx: SqlClient, connectorId: string, by: string): P
         AND NOT EXISTS (SELECT 1 FROM knowledge_documents d WHERE d.container_id = c.id)`,
     [connectorId],
   );
+  // Only rows not already on their way out: clearing again (a delete tried
+  // twice, a new connector's check while the old one's purge is pending) is
+  // then nothing, and the count is what this call changed.
   const marked = await tx.query(
     `UPDATE knowledge_containers
         SET selected = false, selected_by = $2, selected_at = now(),
             visibility_acknowledged_by = NULL, purge_requested_at = now(),
             gone_at = COALESCE(gone_at, now()), updated_at = now()
-      WHERE connector_id = $1`,
+      WHERE connector_id = $1
+        AND (selected OR purge_requested_at IS NULL OR gone_at IS NULL)`,
     [connectorId, by],
   );
   // With containers still to purge, the people go with the last of them.
@@ -453,6 +464,10 @@ export class KnowledgeStore {
    * cleared, the way a delete clears it. Returns how many rows that removed
    * or marked (zero for an id that held nothing), and null, with nothing
    * touched, for a connector already known.
+   *
+   * Null, too, when the id is on record for a LATER connector: the caller is
+   * then the earlier one (a request that was slow, a process whose registry
+   * is behind), and what the id holds is not its to clear.
    */
   async beginConnectorLife(
     connectorId: string,
@@ -467,7 +482,9 @@ export class KnowledgeStore {
         'SELECT value FROM knowledge_state WHERE key = $1',
         [key],
       );
-      if (known.rows[0]?.value === bornAt) return null;
+      const recorded = known.rows[0]?.value;
+      if (recorded === bornAt) return null;
+      if (typeof recorded === 'string' && Date.parse(recorded) > Date.parse(bornAt)) return null;
       const cleared = await clearConnector(tx, connectorId, by);
       await tx.query(
         `INSERT INTO knowledge_state (key, value) VALUES ($1, $2::jsonb)
@@ -875,8 +892,7 @@ export class KnowledgeStore {
     return this.db.tx(async (tx) => {
       const claim = await tx.query<{ id: string }>(
         `SELECT id FROM knowledge_documents
-          WHERE id = $1 AND index_status = 'indexing' AND content_hash = $2
-            AND deleted_at IS NULL AND NOT restricted
+          WHERE id = $1 AND ${STILL_THE_CLAIM}
           FOR UPDATE`,
         [documentId, meta.indexedHash],
       );
@@ -957,8 +973,7 @@ export class KnowledgeStore {
   async keepClaim(documentId: string, contentHash: string): Promise<boolean> {
     const { rowCount } = await this.db.query(
       `UPDATE knowledge_documents SET index_claimed_at = now()
-        WHERE id = $1 AND index_status = 'indexing' AND content_hash = $2
-          AND deleted_at IS NULL AND NOT restricted`,
+        WHERE id = $1 AND ${STILL_THE_CLAIM}`,
       [documentId, contentHash],
     );
     return (rowCount ?? 0) > 0;
