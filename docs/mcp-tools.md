@@ -312,9 +312,32 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
 
 **Guardrails:**
 
-- Write operations are rejected (`MERGE`, `CREATE`, `DELETE`, `SET`, `REMOVE`, `DROP`, `CALL{}`)
+- The query text passes the read-only check the Query Playground also applies, before anything
+  reaches the database. A query it refuses comes back as `INVALID_PARAMETER`, with the reason.
+  - Clauses that write, change the schema, administer the database or import data are refused:
+    `CREATE`, `MERGE`, `SET`, `REMOVE`, `DELETE`, `FOREACH`, `LOAD CSV`, `DROP`, `SHOW`, `USE`,
+    `CALL { } IN TRANSACTIONS` and the rest of those families. A label or property that has one of
+    these names must be quoted in backticks.
+  - `CALL` is for subqueries and for these read procedures: `db.labels`, `db.relationshipTypes`,
+    `db.propertyKeys`, `db.schema.visualization`, `db.schema.nodeTypeProperties`,
+    `db.schema.relTypeProperties`, `apoc.path.expand`, `apoc.path.expandConfig`,
+    `apoc.path.spanningTree`, `apoc.path.subgraphAll`, `apoc.path.subgraphNodes`. Every other
+    procedure is refused.
+  - Functions without a namespace (`toUpper`, `size`, `datetime`, …) are allowed. Of the namespaced
+    ones, the date, time, duration, point and vector functions are, and so are
+    `apoc.convert.fromJsonList`, `apoc.convert.fromJsonMap` and `apoc.convert.toJson`. Every other
+    namespaced function is refused.
+  - Outside strings, backtick-quoted names and comments, the query must be plain ASCII. Unicode
+    escape sequences (a backslash and a `u`) are refused anywhere; pass such values as parameters.
+  - One statement per call, of at most 100,000 characters.
+- The query runs in a read-only transaction that is always rolled back, so the database itself
+  refuses a write.
+- Internal nodes (labels that start with an underscore) are not available. A query that names such
+  a label is refused, and an internal node in a result comes back as `null`, with a note in
+  `_meta.warnings`.
 - Variable-length patterns limited to 6 hops (configurable via `MCP_HOP_LIMIT`)
-- Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`)
+- Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
+  carries; `_meta.truncated` says when rows were cut
 - Queries timeout after 10 seconds (configurable via `MCP_QUERY_TIMEOUT_MS`)
 - Rate limited to 100 calls per day (configurable via `MCP_GRAPH_QUERY_LIMIT`)
 
