@@ -87,10 +87,18 @@ export class KnowledgeHarness {
       if (status === 401 || status === 403) result.authFailed = true;
     };
 
+    // Shutdown had begun before this run got its turn: nothing to do.
+    if (!budgetLeft()) return finish();
+
     let auth;
     try {
       auth = await this.connector.authenticate(this.config);
     } catch (err) {
+      // Shutdown interrupted the call: the run was cut short, it did not fail.
+      if (this.options.signal?.aborted) {
+        result.budgetExhausted = true;
+        return finish();
+      }
       recordError('authenticate', err);
       result.authFailed = true;
       return finish();
@@ -101,20 +109,23 @@ export class KnowledgeHarness {
       return finish();
     }
 
-    // The source asked for a wait that does not fit this run (a rate limit):
-    // the run ends there, with the connector's note, and is not a failure.
+    // Two ways a call can end the run without being a failure. The shutdown
+    // signal interrupted it (an aborted request throws): the run ends the way
+    // an abort between batches does. Or the source asked for a wait that does
+    // not fit this run (a rate limit): it ends there, with the connector's note.
     const cutShort = (err: unknown): boolean => {
+      if (this.options.signal?.aborted) {
+        result.budgetExhausted = true;
+        return true;
+      }
       if (!isRunCutShort(err)) return false;
       this.addNotes(result, [err.note]);
       result.budgetExhausted = true;
       return true;
     };
 
-    if (mode === 'reconcile') {
-      const ended =
-        (await this.refreshContainers(recordError, cutShort, limits)) ||
-        (await this.refreshPrincipals(recordError, cutShort, limits));
-      if (ended) return finish();
+    if (mode === 'reconcile' && (await this.refreshContainers(recordError, cutShort, limits))) {
+      return finish();
     }
 
     let containers: SelectedContainer[];
@@ -124,7 +135,16 @@ export class KnowledgeHarness {
       recordError('selectedContainers', err);
       return finish();
     }
-    for (const container of containers) {
+    // People are listed only for a connector that has something selected: the
+    // store holds names, emails and logins no longer than something uses them.
+    if (
+      mode === 'reconcile' &&
+      containers.length > 0 &&
+      (await this.refreshPrincipals(recordError, cutShort, limits))
+    ) {
+      return finish();
+    }
+    for (const [index, container] of containers.entries()) {
       if (!budgetLeft()) break;
       const scope = `container ${container.name} (${container.externalId})`;
       try {
@@ -137,15 +157,17 @@ export class KnowledgeHarness {
           // this mode starts with whoever has waited longest.
           await this.sink.markVisited(container, mode);
           result.containersProcessed += 1;
+        } else if (mode === 'reconcile' && index === 0 && !this.options.signal?.aborted) {
+          // It had the run to itself and still did not finish, and a reconcile
+          // starts over every time. Left unstamped it would sort first every
+          // night and no other container of this connector would be checked.
+          // (A poll resumes from its checkpoint, so it does finish in the end.)
+          await this.sink.markVisited(container, mode);
+          this.addNotes(result, [
+            `${container.name}: the nightly check did not finish within one run, so deletions there are not being detected`,
+          ]);
         }
       } catch (err) {
-        // The shutdown signal interrupted this container mid-call (an aborted
-        // request throws). That is the run being cut short, not the container
-        // failing: end it the way an abort between batches does.
-        if (this.options.signal?.aborted) {
-          result.budgetExhausted = true;
-          break;
-        }
         if (cutShort(err)) break;
         // The sink refused the batch because the container was deselected, or
         // purged and selected again, since this run read it. Not a failure of

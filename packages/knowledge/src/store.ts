@@ -308,7 +308,10 @@ export class KnowledgeStore {
   /**
    * Deselecting requests a purge (the worker deletes the content); selecting
    * again before it ran cancels it. `acknowledged` records who accepted that a
-   * restricted container's content becomes visible to every signed-in user.
+   * restricted container's content becomes visible to every signed-in user. It
+   * is recorded only for a container that is not open at that moment: sent for
+   * an open one there is nothing to accept, and it must not count as consent
+   * if the container is restricted later.
    */
   async selectContainer(
     connectorId: string,
@@ -319,7 +322,7 @@ export class KnowledgeStore {
       `UPDATE knowledge_containers
           SET selected = $3, selected_by = $4, selected_at = now(),
               visibility_acknowledged_by = CASE
-                WHEN $3 AND $5 THEN $4
+                WHEN $3 AND $5 AND visibility <> 'open' THEN $4
                 WHEN $3 THEN visibility_acknowledged_by
                 ELSE NULL END,
               purge_requested_at = CASE WHEN $3 THEN NULL ELSE now() END,
@@ -346,15 +349,27 @@ export class KnowledgeStore {
     return rowCount ?? 0;
   }
 
+  /** Whether anything of the connector is selected: the reason to hold its people. */
+  async hasSelection(connectorId: string): Promise<boolean> {
+    const { rows } = await this.db.query<{ selected: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM knowledge_containers
+                       WHERE connector_id = $1 AND selected) AS selected`,
+      [connectorId],
+    );
+    return rows[0]?.selected ?? false;
+  }
+
   /**
    * Deletes what deselected containers hold (chunks go by cascade) and resets
-   * their sync state, so selecting one again starts a fresh backfill. Returns
-   * the number of documents deleted.
+   * their sync state, so selecting one again starts a fresh backfill. A
+   * connector left with nothing selected, nothing stored and no purge pending
+   * loses its principals as well: names, emails and logins are held only while
+   * something refers to them. Returns the number of documents deleted.
    */
   async purgeRequested(limit = 20): Promise<number> {
     return this.db.tx(async (tx) => {
-      const { rows } = await tx.query<{ id: string }>(
-        `SELECT id FROM knowledge_containers
+      const { rows } = await tx.query<{ id: string; connector_id: string }>(
+        `SELECT id, connector_id FROM knowledge_containers
           WHERE purge_requested_at IS NOT NULL AND NOT selected
           ORDER BY purge_requested_at
           LIMIT $1
@@ -373,6 +388,17 @@ export class KnowledgeStore {
                 last_reconciled_at = NULL, updated_at = now()
           WHERE id = ANY($1::uuid[])`,
         [ids],
+      );
+      await tx.query(
+        `DELETE FROM knowledge_principals p
+          WHERE p.connector_id = ANY($1::text[])
+            AND NOT EXISTS (
+              SELECT 1 FROM knowledge_containers c
+               WHERE c.connector_id = p.connector_id
+                 AND (c.selected OR c.purge_requested_at IS NOT NULL
+                      OR EXISTS (SELECT 1 FROM knowledge_documents d
+                                  WHERE d.container_id = c.id)))`,
+        [[...new Set(rows.map((r) => r.connector_id))]],
       );
       return deleted.rowCount ?? 0;
     });

@@ -913,6 +913,167 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     });
   });
 
+  describe('pull request review fixes', () => {
+    const NUL = String.fromCharCode(0);
+    const principals = async (connectorId: string) =>
+      (
+        await database.db.query<{ external_id: string }>(
+          `SELECT external_id FROM knowledge_principals WHERE connector_id = $1 ORDER BY external_id`,
+          [connectorId],
+        )
+      ).rows.map((r) => r.external_id);
+    const acknowledgedBy = async (externalId: string) =>
+      (
+        await database.db.query<{ visibility_acknowledged_by: string | null }>(
+          `SELECT visibility_acknowledged_by FROM knowledge_containers WHERE external_id = $1`,
+          [externalId],
+        )
+      ).rows[0]!.visibility_acknowledged_by;
+
+    // A connector may build a segment key from source text: the Markdown
+    // splitter uses the heading path. A key is stored on the document and on
+    // every chunk made from it, so it is redacted like the rest.
+    it('redacts a segment key and strips NUL from it', async () => {
+      const heading = `Deploy token ${GH_TOKEN}`;
+      const readme = {
+        ...doc('d1', 'body'),
+        segments: [
+          { key: heading, text: 'body', headingPath: [heading] },
+          { key: `Set${NUL}up`, text: 'more' },
+        ],
+      };
+      await sink.storeBatch(await selectedC1(), batch([readme]));
+      const { rows } = await database.db.query<{
+        segments: Array<{ key: string }>;
+        redactions: number;
+      }>(`SELECT segments, redactions FROM knowledge_documents WHERE external_id = 'd1'`);
+      expect(rows[0]!.segments.map((segment) => segment.key)).toEqual([
+        expect.stringMatching(/^Deploy token \[redacted:/),
+        'Setup',
+      ]);
+      expect(JSON.stringify(rows[0]!.segments)).not.toContain(GH_TOKEN);
+      // Once in the heading path, once in the key.
+      expect(rows[0]!.redactions).toBe(2);
+    });
+
+    it('redacts attribute names and strips NUL from them, not only their values', async () => {
+      const issue = {
+        ...doc('d1', 'body'),
+        attributes: { [`fi${NUL}eld`]: 'v', [`key ${GH_TOKEN}`]: 1, nested: { [`a${NUL}b`]: 2 } },
+      };
+      await sink.storeBatch(await selectedC1(), batch([issue]));
+      const { rows } = await database.db.query<{ attributes: Record<string, unknown> }>(
+        `SELECT attributes FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(JSON.stringify(rows[0]!.attributes)).not.toContain(GH_TOKEN);
+      expect(rows[0]!.attributes).toMatchObject({ field: 'v', nested: { ab: 2 } });
+    });
+
+    // The api-server publishes the wake-up on a Redis client that queues
+    // commands while it is disconnected, so the promise may never settle.
+    it('does not wait for the wake-up', async () => {
+      const stuck = new PostgresKnowledgeSink({
+        connectorId: 'slack-1',
+        store,
+        wake: () => new Promise<void>(() => {}),
+      });
+      const result = await stuck.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      expect(result.changed).toBe(1);
+    });
+
+    it('logs a wake-up that fails; the batch is stored all the same', async () => {
+      const lines: string[] = [];
+      const failing = new PostgresKnowledgeSink({
+        connectorId: 'slack-1',
+        store,
+        wake: async () => {
+          throw new Error('redis is down');
+        },
+        log: (line) => lines.push(line),
+      });
+      const result = await failing.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      expect(result.changed).toBe(1);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(lines).toEqual([expect.stringContaining('redis is down')]);
+    });
+
+    // An acknowledgement accepts that restricted content becomes visible to
+    // every signed-in user. Sent for a container that is open, there is
+    // nothing to accept, and it must not stand in for consent later.
+    it('records a visibility acknowledgement only for a container that is not open', async () => {
+      const c1 = await rowFor('C1');
+      await store.selectContainer('slack-1', c1.id, {
+        selected: true,
+        by: 'ada',
+        acknowledged: true,
+      });
+      expect(await acknowledgedBy('C1')).toBeNull();
+
+      // It turns private later. Nobody accepted that, so runs leave it out.
+      await sink.upsertContainers([{ ...C1, visibility: 'restricted' }, C2]);
+      expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual([]);
+
+      await store.selectContainer('slack-1', c1.id, {
+        selected: true,
+        by: 'grace',
+        acknowledged: true,
+      });
+      expect(await acknowledgedBy('C1')).toBe('grace');
+      expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
+    });
+
+    // Names, emails and logins are held only while the connector has something
+    // selected or stored (spec success criterion 11).
+    it('deletes a connector’s principals once it has nothing selected and nothing stored', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      expect(await principals('slack-1')).toEqual(['U1']);
+      await store.deselectConnector('slack-1', 'ada');
+      await store.purgeRequested();
+      expect(await principals('slack-1')).toEqual([]);
+    });
+
+    it('keeps the principals while another container of the connector is selected', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await selectAcknowledged('C2');
+      await store.selectContainer('slack-1', (await rowFor('C1')).id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      expect(await store.purgeRequested()).toBe(1);
+      expect(await principals('slack-1')).toEqual(['U1']);
+    });
+
+    it('keeps the principals while a purge of the connector is still pending', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await selectAcknowledged('C2');
+      await store.deselectConnector('slack-1', 'ada');
+      // One container per pass: after the first, the other still awaits its purge.
+      await store.purgeRequested(1);
+      expect(await principals('slack-1')).toEqual(['U1']);
+      await store.purgeRequested(1);
+      expect(await principals('slack-1')).toEqual([]);
+    });
+
+    it('leaves another connector’s principals alone', async () => {
+      const other = new PostgresKnowledgeSink({ connectorId: 'slack-2', store });
+      await other.upsertPrincipals([
+        { externalId: 'U7', kind: 'user', displayName: 'Lin', active: true },
+      ]);
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      await store.deselectConnector('slack-1', 'ada');
+      await store.purgeRequested();
+      expect(await principals('slack-2')).toEqual(['U7']);
+    });
+
+    it('says whether a connector has anything selected', async () => {
+      expect(await store.hasSelection('slack-1')).toBe(true);
+      expect(await store.hasSelection('slack-2')).toBe(false);
+      await store.deselectConnector('slack-1', 'ada');
+      expect(await store.hasSelection('slack-1')).toBe(false);
+    });
+  });
+
   describe('state and retention', () => {
     it('round-trips state and deletes old tombstones only', async () => {
       await store.setState('dictionary', { version: 3 });

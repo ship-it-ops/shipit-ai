@@ -1,8 +1,8 @@
 // The SDK's KnowledgeSink on Postgres. Redacts every segment before anything is
 // stored (spec decision 14), then hands the batch to the store, which commits
 // documents, tombstones and the checkpoint together. After a commit it pokes
-// the worker through Redis pub/sub; the poke is best-effort because the worker
-// polls anyway.
+// the worker through Redis pub/sub. The poke is best-effort and never waited
+// for: the worker polls anyway.
 import type {
   ChangeBatch,
   KnowledgeDocumentInput,
@@ -83,17 +83,25 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
         });
         continue;
       }
-      // Everything that can reach a chunk prefix or the model is redacted: the
-      // segments, the title, heading paths and every string in attributes.
+      // Everything that can reach a chunk or the model is redacted: the
+      // segments and their keys, the title, heading paths, and every name and
+      // string in attributes.
       let count = 0;
       const segments = await redactSegments(doc.segments);
       count += segments.count;
       const withHeadings: typeof segments.segments = [];
       for (const redacted of segments.segments) {
-        // Not redacted (they are identifiers, not prose), but they are stored
-        // as text all the same: no NUL may survive in them either.
+        // A key may be built from source text (the Markdown splitter uses the
+        // heading path), and it is stored on the document and on every chunk
+        // made from it. Two keys that differed only in a secret become one;
+        // a chunk lists its keys as a set, so that only merges two citations.
+        const key = await redactText(redacted.key);
+        count += key.count;
+        // Author names and URLs are identifiers, not prose: stored as they
+        // are, minus any NUL, which Postgres cannot store in text or jsonb.
         const segment = {
           ...redacted,
+          key: key.text,
           ...(redacted.authorName ? { authorName: stripNul(redacted.authorName) } : {}),
           ...(redacted.url ? { url: stripNul(redacted.url) } : {}),
         };
@@ -128,16 +136,23 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
       { ...batch, documents },
       redactions,
     );
-    if (result.changed > 0 && this.opts.wake) {
-      try {
-        await this.opts.wake();
-      } catch (err) {
-        this.opts.log?.(
-          `knowledge sink: wake-up failed (worker polls anyway): ${(err as Error).message}`,
-        );
-      }
-    }
+    if (result.changed > 0) this.wakeWorker();
     return result;
+  }
+
+  // Not awaited. The api-server publishes on a Redis client that queues
+  // commands while it is disconnected, so the promise may not settle until
+  // Redis is back, and a run must not stop for that.
+  private wakeWorker(): void {
+    const failed = (err: unknown): void =>
+      this.opts.log?.(
+        `knowledge sink: wake-up failed (worker polls anyway): ${(err as Error).message}`,
+      );
+    try {
+      void this.opts.wake?.().catch(failed);
+    } catch (err) {
+      failed(err);
+    }
   }
 
   pruneMissing(
@@ -149,7 +164,11 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
   }
 }
 
-/** Redacts every string nested anywhere in a JSON value; other values pass through. */
+/**
+ * Redacts every string nested anywhere in a JSON value, property names
+ * included (a source's custom field names are source text too); other values
+ * pass through.
+ */
 async function redactStrings(value: unknown): Promise<{ value: unknown; count: number }> {
   if (typeof value === 'string') {
     const r = await redactText(value);
@@ -169,9 +188,10 @@ async function redactStrings(value: unknown): Promise<{ value: unknown; count: n
     let count = 0;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const name = await redactText(k);
       const r = await redactStrings(v);
-      count += r.count;
-      out[k] = r.value;
+      count += name.count + r.count;
+      out[name.text] = r.value;
     }
     return { value: out, count };
   }

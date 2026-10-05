@@ -514,7 +514,132 @@ describe('KnowledgeHarness reconcile', () => {
 
     expect(result.budgetExhausted).toBe(true);
     expect(sink.pruned).toEqual([]);
+  });
+
+  // A reconcile starts its listing over every time. A container that cannot
+  // finish in a whole run, left unstamped, would sort first every night and
+  // no other container of the connector would ever be checked.
+  it('gives the others a turn when the first container had the run to itself and did not finish', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    let t = 0;
+    const clock = () => (t += 20_000);
+
+    const result = await harness(connector, sink, 70_000, clock).run('reconcile');
+
+    expect(sink.pruned).toEqual([]);
+    expect(sink.visited).toEqual([{ container: 'C1', mode: 'reconcile' }]);
+    expect(result.containersProcessed).toBe(0);
+    expect(result.notes).toEqual([
+      'general: the nightly check did not finish within one run, so deletions there are not being detected',
+    ]);
+  });
+
+  it('leaves a later container that ran out of time for the next run, unstamped', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    // Time stands still until C1 is done; C2's listing then finds the budget spent.
+    let t = 0;
+    const clock = () => (sink.visited.length > 0 ? (t += 60_000) : t);
+
+    const result = await harness(connector, sink, 70_000, clock).run('reconcile');
+
+    expect(sink.visited).toEqual([{ container: 'C1', mode: 'reconcile' }]);
+    expect(result.budgetExhausted).toBe(true);
+    expect(result.notes).toEqual([]);
+  });
+
+  it('does not stamp a container whose check was cut by shutdown', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    sink.select(seed().containers[0]!);
+    const controller = new AbortController();
+    const listDocumentIds = connector.listDocumentIds.bind(connector);
+    connector.listDocumentIds = (container, options) => {
+      controller.abort();
+      return listDocumentIds(container, options);
+    };
+
+    const result = await new KnowledgeHarness(connector, sink, config, {
+      historyDays: 365,
+      budgetMs: 60_000,
+      signal: controller.signal,
+    }).run('reconcile');
+
     expect(sink.visited).toEqual([]);
+    expect(result.notes).toEqual([]);
+    expect(result.budgetExhausted).toBe(true);
+  });
+
+  // The spec: a request cut off by shutdown ends the run the same way the
+  // budget does. That holds for the listings before the containers too.
+  it.each(['listContainers', 'listPrincipals'] as const)(
+    'a shutdown during %s is the run being cut short, not a failure',
+    async (listing) => {
+      const sink = new MemorySink();
+      const connector = createFixtureKnowledgeConnector(seed());
+      for (const c of seed().containers) sink.select(c);
+      const controller = new AbortController();
+      connector[listing] = () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => {
+            controller.abort();
+            throw new Error('This operation was aborted');
+          },
+        }),
+      });
+
+      const result = await new KnowledgeHarness(connector, sink, config, {
+        historyDays: 365,
+        budgetMs: 60_000,
+        signal: controller.signal,
+      }).run('reconcile');
+
+      expect(result.errors).toEqual([]);
+      expect(result.status).toBe('success');
+      expect(result.budgetExhausted).toBe(true);
+      expect(sink.pruned).toEqual([]);
+    },
+  );
+
+  it('does nothing when the run starts after shutdown began', async () => {
+    const sink = new MemorySink();
+    const connector = createFixtureKnowledgeConnector(seed());
+    for (const c of seed().containers) sink.select(c);
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await new KnowledgeHarness(connector, sink, config, {
+      historyDays: 365,
+      budgetMs: 60_000,
+      signal: controller.signal,
+    }).run('reconcile');
+
+    expect(result).toMatchObject({ status: 'success', errors: [], budgetExhausted: true });
+    expect(result.authFailed).toBe(false);
+    expect(connector.calls.listContainersOptions).toEqual([]);
+    expect(sink.stored).toEqual([]);
+  });
+
+  // Names, emails and logins are held only for a connector that has something
+  // selected; the store deletes them when the last selection is purged.
+  it('does not list principals while nothing is selected', async () => {
+    class NothingSelected extends MemorySink {
+      override async selectedContainers(): Promise<SelectedContainer[]> {
+        return [];
+      }
+    }
+    const sink = new NothingSelected();
+    const connector = createFixtureKnowledgeConnector(seed());
+
+    const result = await harness(connector, sink).run('reconcile');
+
+    expect(result.status).toBe('success');
+    expect([...sink.containers.keys()]).toEqual(['C1', 'C2']);
+    expect(connector.calls.listPrincipalsOptions).toEqual([]);
+    expect(sink.principals).toEqual([]);
   });
 
   it('does not prune when the id listing throws after its first page', async () => {
