@@ -184,6 +184,12 @@ LIMIT 50`,
       expect(verdict.ok ? '' : verdict.message).toContain('some.other.procedure');
     });
 
+    it('says how to use the word as a name when that is what it was', () => {
+      const verdict = checkReadOnlyCypher('MATCH (n) RETURN n.call, n.name');
+      expect(verdict).toMatchObject({ ok: false, code: 'PROCEDURE' });
+      expect(verdict.ok ? '' : verdict.message).toContain('backticks');
+    });
+
     it('refuses CALL with nothing it can identify after it', () => {
       expect(outcome('CALL')).toBe('PROCEDURE');
       expect(outcome('CALL 5')).toBe('PROCEDURE');
@@ -206,6 +212,7 @@ LIMIT 50`,
       'RETURN point.distance(point({x: 0, y: 0}), point({x: 1, y: 1})) AS dist',
       "RETURN DATETIME.TRUNCATE('day', datetime()) AS d",
       'MATCH (n) RETURN apoc.convert.fromJsonList(n._claims) AS claims',
+      'MATCH (n) RETURN apoc.convert.fromJsonMap(n._meta) AS meta',
     ])('accepts a namespaced function on the list: %s', (cypher) => {
       expect(outcome(cypher)).toBe('accepted');
     });
@@ -215,6 +222,7 @@ LIMIT 50`,
       'RETURN `some`.`namespace`.`fn`(1)',
       'RETURN some . namespace . fn (1)',
       'RETURN apoc.something.else(1)',
+      'MATCH (n) RETURN apoc.convert.toJson(n) AS json',
       'MATCH (n) WHERE other.check(n) RETURN n',
       // Wherever it stands: after a range, a closing bracket, a number.
       'RETURN [1, 2, 3][0..some.namespace.fn(1)]',
@@ -280,6 +288,89 @@ LIMIT 50`,
       expect(outcome(`MATCH (n) RETURN ${before}SET n.x = 1`)).toBe('UNREADABLE');
       expect(outcome(`MATCH (n) RETURN ${before}CALL some.other.procedure()`)).toBe('UNREADABLE');
       expect(outcome(`MATCH (n) RETURN ${before}some.namespace.fn(1)`)).toBe('UNREADABLE');
+    });
+  });
+
+  // What the review asked for: each of these fails if one particular rule is
+  // broken in a way the tests above do not notice.
+  describe('rules that hold past the first thing they meet', () => {
+    it('ends a string at the quote after an escaped backslash', () => {
+      expect(outcome("MATCH (n) WHERE n.a = 'x\\\\' SET n.y = 1 //'")).toBe('WRITE_KEYWORD');
+      expect(outcome('MATCH (n) WHERE n.a = "x\\\\" SET n.y = 1 //"')).toBe('WRITE_KEYWORD');
+    });
+
+    it('does not take a backslash for an escape inside a quoted name', () => {
+      expect(outcome('MATCH (n:`a\\`) SET n.y = 1 //`')).toBe('WRITE_KEYWORD');
+    });
+
+    it('does not open a comment inside a string, or a string inside a comment', () => {
+      expect(outcome("MATCH (n) WHERE n.url = 'http://x' SET n.y = 1")).toBe('WRITE_KEYWORD');
+      expect(outcome("MATCH (n) WHERE n.a = '/*' SET n.y = 1 //*/")).toBe('WRITE_KEYWORD');
+      expect(outcome("MATCH (n) // don't\nSET n.y = 1 //'")).toBe('WRITE_KEYWORD');
+      expect(outcome("MATCH (n) /* ' */ SET n.y = 1 /* ' */")).toBe('WRITE_KEYWORD');
+      expect(outcome('MATCH (n) WHERE n.a = "it\'s" SET n.y = 1 //\'')).toBe('WRITE_KEYWORD');
+      expect(outcome("MATCH (n:`it's`) SET n.y = 1 //'")).toBe('WRITE_KEYWORD');
+      expect(outcome("MATCH (n) WHERE n.a = '`' SET n.y = 1 //`")).toBe('WRITE_KEYWORD');
+    });
+
+    it('keeps checking after a listed procedure', () => {
+      expect(outcome('CALL db.labels() YIELD label MATCH (n) SET n.x = 1')).toBe('WRITE_KEYWORD');
+      expect(outcome('CALL db.labels() YIELD label RETURN some.namespace.fn(label)')).toBe(
+        'FUNCTION',
+      );
+      expect(outcome('CALL db.labels() YIELD label CALL some.other.procedure() RETURN 1')).toBe(
+        'PROCEDURE',
+      );
+    });
+
+    it('keeps checking inside and after a subquery with an import list', () => {
+      expect(outcome('MATCH (n) CALL (n) { SET n.x = 1 } RETURN n')).toBe('WRITE_KEYWORD');
+      expect(outcome('MATCH (n) CALL (n) { RETURN some.namespace.fn(n) AS x } RETURN x')).toBe(
+        'FUNCTION',
+      );
+      expect(outcome('CALL () { CALL some.other.procedure() YIELD x RETURN x } RETURN x')).toBe(
+        'PROCEDURE',
+      );
+    });
+
+    it('reads a long dotted name that is not a call in linear time', () => {
+      const started = performance.now();
+      expect(outcome('RETURN ' + 'a.'.repeat(49_000) + 'b')).toBe('accepted');
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+  });
+
+  describe('a "$" that the database reads as part of a name', () => {
+    it.each([
+      'RETURN some.namespace.fn$x(1)',
+      'CALL db.labels$x()',
+      'MATCH (n) WHERE n.id = $a$b RETURN n',
+      'RETURN 1$x',
+    ])('refuses %s', (cypher) => {
+      expect(outcome(cypher)).toBe('UNREADABLE');
+    });
+
+    it('leaves a parameter that starts after anything else alone', () => {
+      expect(outcome('MATCH (n) WHERE n.id=$id AND n.tier IN [$a,$b] RETURN {k:$v}, n[$key]')).toBe(
+        'accepted',
+      );
+      expect(outcome('MATCH (n) WHERE n.id = $_id AND n.`a`=$b RETURN n')).toBe('accepted');
+    });
+  });
+
+  describe('query options', () => {
+    it.each([
+      'CYPHER 5 RETURN 1',
+      'cypher 25 MATCH (n) RETURN n',
+      'CYPHER runtime=interpreted RETURN 1',
+      'EXPLAIN CYPHER 5 RETURN 1',
+      'PROFILE CYPHER runtime=slotted MATCH (n) RETURN n',
+    ])('refuses a query that picks its own parser or runtime: %s', (cypher) => {
+      expect(outcome(cypher)).toBe('QUERY_OPTIONS');
+    });
+
+    it('leaves the word alone anywhere else', () => {
+      expect(outcome('MATCH (q:SavedQuery) RETURN q.cypher AS cypher')).toBe('accepted');
     });
   });
 
@@ -352,16 +443,40 @@ LIMIT 50`,
       'MATCH (t:_AccessToken) RETURN t',
       'MATCH (t:`_LinkingKey`) RETURN t',
       'MATCH (n:Repository|_IdempotencyLog) RETURN n',
+      'MATCH (n:Repository&_AccessToken) RETURN n',
+      'MATCH (n:!_AccessToken) RETURN n',
+      'MATCH (n:(_AccessToken)) RETURN n',
+      'MATCH (n:_AccessToken:Repository) RETURN n',
+      'MATCH (n:Repository:_AccessToken) RETURN n',
+      'MATCH (n IS _AccessToken) RETURN n',
       'MATCH (n) WHERE n:_AccessToken RETURN n',
+      'MATCH (n) WHERE n IS _AccessToken RETURN n',
+      'MATCH (n) RETURN _AccessToken',
     ])('refuses a query that names one: %s', (cypher) => {
       expect(outcome(cypher)).toBe('INTERNAL_LABEL');
     });
 
-    it('leaves properties that start with an underscore alone', () => {
+    it.each([
+      "MATCH (n:$('Repository')) RETURN n",
+      'MATCH (n:$($label)) RETURN n',
+      'MATCH ()-[r:$($type)]->() RETURN r',
+    ])('refuses a label or type that is chosen when the query runs: %s', (cypher) => {
+      expect(outcome(cypher)).toBe('INTERNAL_LABEL');
+    });
+
+    it('leaves properties and map keys that start with an underscore alone', () => {
       expect(
         outcome('MATCH (d:Deployment) WHERE d._last_synced IS NOT NULL RETURN d._last_synced'),
       ).toBe('accepted');
-      expect(outcome('MATCH (n {_absent_since: null}) RETURN n')).toBe('accepted');
+      expect(outcome('MATCH (n {_absent_since: null, _deleted: false}) RETURN n')).toBe('accepted');
+      expect(outcome('MATCH (n) RETURN n {._claims, .name}, {_k: 1, other: 2}')).toBe('accepted');
+      expect(outcome('MATCH (n) WHERE n.id = $_id RETURN n')).toBe('accepted');
+    });
+
+    it('says how such a name may be used when it refuses one', () => {
+      const verdict = checkReadOnlyCypher('MATCH (n) WITH n AS _n RETURN _n');
+      expect(verdict).toMatchObject({ ok: false, code: 'INTERNAL_LABEL' });
+      expect(verdict.ok ? '' : verdict.message).toContain('property');
     });
   });
 });

@@ -32,7 +32,9 @@ export type ReadOnlyCypherRefusal =
   | 'PROCEDURE'
   /** A namespaced function that is not listed. */
   | 'FUNCTION'
-  /** A label that names the application's own bookkeeping. */
+  /** A leading CYPHER block, which picks the parser or the runtime. */
+  | 'QUERY_OPTIONS'
+  /** A name that is, or may be, a label of the application's own bookkeeping. */
   | 'INTERNAL_LABEL';
 
 export type ReadOnlyCypherVerdict =
@@ -105,7 +107,7 @@ const ALLOWED_PROCEDURES: ReadonlySet<string> = new Set([
 // The namespaced functions a raw query may use, lower-cased. Cypher's built-in
 // functions without a namespace (toUpper, size, datetime, ...) need no entry:
 // a plugin cannot add a function there. The same rule as above applies to
-// additions. The three apoc.convert functions are here because claims are
+// additions. The two apoc.convert functions are here because claims are
 // stored as JSON text (`_claims`) and cannot be read without them.
 const ALLOWED_FUNCTIONS: ReadonlySet<string> = new Set([
   'date.realtime',
@@ -140,16 +142,11 @@ const ALLOWED_FUNCTIONS: ReadonlySet<string> = new Set([
   'vector.similarity.euclidean',
   'apoc.convert.fromjsonlist',
   'apoc.convert.fromjsonmap',
-  'apoc.convert.tojson',
 ]);
 
 // Long lists belong in parameters. The limit also bounds the work this check
 // does on text nobody has vetted yet.
 const MAX_QUERY_LENGTH = 100_000;
-
-// Where a name is a label (or a relationship type): after the colon, and after
-// the operators of a label expression.
-const LABEL_POSITION: ReadonlySet<string> = new Set([':', '|', '&', '!']);
 
 type Token =
   /** A bare word (keyword, variable, label, property, function) or a backtick-quoted name. */
@@ -262,6 +259,13 @@ function tokenize(text: string): Token[] | Unreadable {
       if (!quoted) return { reason: 'A backtick-quoted name is never closed.' };
       tokens.push({ kind: 'name', text: quoted.name, quoted: true });
       i = quoted.end;
+    } else if (c === '$' && isNamePart(text[i - 1])) {
+      // To the database "a$b" is one name. Splitting it here would check a name
+      // that is not the one that runs.
+      return {
+        reason:
+          'A "$" directly after a name or a number is not supported. Put a space before a parameter.',
+      };
     } else if (c === '$' && isDigit(next)) {
       // A numbered parameter, $1, ends where its digits do.
       i++;
@@ -307,6 +311,11 @@ function tokenize(text: string): Token[] | Unreadable {
 
 function isPunct(token: Token | undefined, text: string): boolean {
   return token?.kind === 'punct' && token.text === text;
+}
+
+/** Whether `token` is the bare (unquoted) word `word`, in any case. */
+function isWord(token: Token | undefined, word: string): boolean {
+  return token?.kind === 'name' && !token.quoted && token.text.toUpperCase() === word;
 }
 
 /** The dotted name (a.b.c) that starts at the name token `start`, and the index just past it. */
@@ -368,7 +377,7 @@ function checkCall(
   return {
     refusal: refuse(
       'PROCEDURE',
-      'CALL must be followed by a subquery in braces or by one of the procedures available to raw queries.',
+      'CALL must be followed by a subquery in braces or by one of the procedures available to raw queries. If "call" is a name in your graph, quote it in backticks.',
       'CALL',
     ),
   };
@@ -392,23 +401,46 @@ export function checkReadOnlyCypher(cypher: string): ReadOnlyCypherVerdict {
   const last = isPunct(tokens[tokens.length - 1], ';') ? tokens.length - 1 : tokens.length;
   if (last === 0) return refuse('EMPTY', 'The query is empty.');
 
+  // A leading CYPHER block chooses the language version and the runtime. The
+  // tokens above are read the way one version reads them, so that choice is
+  // not the caller's. EXPLAIN and PROFILE may stand before it.
+  let first = 0;
+  while (isWord(tokens[first], 'EXPLAIN') || isWord(tokens[first], 'PROFILE')) first++;
+  if (isWord(tokens[first], 'CYPHER')) {
+    return refuse(
+      'QUERY_OPTIONS',
+      'Query options (a leading CYPHER ...) are not available to raw queries.',
+    );
+  }
+
   for (let i = 0; i < last; i++) {
     const token = tokens[i]!;
     if (isPunct(token, ';')) {
       return refuse('UNREADABLE', 'Raw queries run one statement at a time.');
     }
+    // $( ... ) names a label or a relationship type with a value, which this
+    // check cannot see.
+    if (isPunct(token, '$') && isPunct(tokens[i + 1], '(')) {
+      return refuse(
+        'INTERNAL_LABEL',
+        'Labels and relationship types chosen when the query runs ($(...)) are not available to raw queries.',
+      );
+    }
     if (token.kind !== 'name') continue;
     const before = tokens[i - 1];
 
-    if (
-      isInternalLabel(token.text) &&
-      before?.kind === 'punct' &&
-      LABEL_POSITION.has(before.text)
-    ) {
-      return refuse(
-        'INTERNAL_LABEL',
-        'Labels that start with an underscore are internal and are not available to raw queries.',
-      );
+    // A name that starts with an underscore is taken for an internal label
+    // wherever it stands, like every rule here, except in the two places a
+    // label cannot be: after the dot of a property, and as the key of a map.
+    if (isInternalLabel(token.text)) {
+      const property = isPunct(before, '.');
+      const mapKey = (isPunct(before, '{') || isPunct(before, ',')) && isPunct(tokens[i + 1], ':');
+      if (!property && !mapKey) {
+        return refuse(
+          'INTERNAL_LABEL',
+          'Labels that start with an underscore are internal and are not available to raw queries. A name like that may only be used as a property (n._name) or as a map key.',
+        );
+      }
     }
 
     if (!token.quoted) {
