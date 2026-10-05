@@ -312,7 +312,8 @@ Amendments from the K0 audit (2026-10-04); the code in
   refreshed for that check.
 - Principals are listed only for a connector that has something selected (in a reconcile,
   and in a refresh made from the API), and the store deletes a connector's principals once
-  nothing of it is selected, stored or waiting for a purge.
+  nothing of it is selected, stored or waiting for a purge. A batch's `principals` are
+  written by the store in the batch's transaction, after it has accepted the batch.
 - A shutdown that interrupts the container or principal listing, or that began before the
   run got its turn, ends the run without recording a failure, the way one between batches
   does.
@@ -393,8 +394,8 @@ Indexes: `knowledge_chunks` HNSW on `embedding` (`halfvec_cosine_ops`) and GIN o
 
 **As built (2026-10-04).** The first migrations create only the indexes a query reads
 today: HNSW and GIN on chunks, the claim index on `knowledge_documents`,
-`(container_id, source_updated_at desc)`, and `(author_principal_id)`, which deleting a
-principal needs. `(kind, state, source_updated_at desc)`, the GIN on
+`(container_id, source_updated_at desc)`, `(author_principal_id)`, which deleting a
+principal needs, and `knowledge_containers (connector_id)` over the selected rows. `(kind, state, source_updated_at desc)`, the GIN on
 `participant_principal_ids`, and any index on `knowledge_principals` beyond its unique key
 arrive with the migrations whose queries need them. The full-text column uses the
 `english` configuration; changing it later means rewriting `knowledge_chunks`.
@@ -500,33 +501,50 @@ depends on the answer.
   documents are written. A UTF-16 doc is decoded by its byte-order mark. Reviews beyond
   the first fifty per pull request are not fetched; the document is flagged `truncated`.
 - Selecting a container that is not `open` at the source needs
-  `acknowledgeVisibility: true` on the API (the dialog is K1c). A selection without it
-  asks the source about that one container first (one request, not a listing): `409
-CONTAINER_GONE` when the source no longer has it, `429 RATE_LIMITED` when the source asks
-  to wait. An acknowledgement is recorded only for a container that is not open at that
-  moment, so one sent for a public repository does not count after it turns private; a
-  selected container that stops being open is not synced until someone acknowledges it.
+  `acknowledgeVisibility: true` on the API (the dialog is K1c). "Open" is what the last
+  listing said, so a selection of a container the stored row calls open asks the source
+  about that one container first, whether or not the request carries an acknowledgement
+  (one lookup after authenticating, not a listing): `409 CONTAINER_GONE` when the source
+  no longer has it, `429 RATE_LIMITED` when the source asks to wait, `504 SOURCE_TIMEOUT`
+  when it does not answer. An acknowledgement is recorded only for a container that is not
+  open at that moment; a selected container that stops being open is not synced until
+  someone acknowledges it. A container the source no longer lists cannot be selected.
 - Deselecting deletes the content through the worker. A batch for a container that was
-  deselected, or purged and selected again, since the run read it is refused and the
-  container skipped. A container the source no longer lists is shown, flagged `gone`,
-  while it is selected or still holds content; it is not purged automatically, but once it
-  is deselected and purged its row is removed.
-- Deleting a connector marks every container of it, selected or not, for removal **before**
-  the connector is removed, and answers `503 KNOWLEDGE_PURGE_FAILED`, keeping the
-  connector, when that cannot be recorded. The worker deletes the content, then the
-  container rows, then the connector's principals. Deleting an id the registry no longer
-  knows removes what is still held under it (a connector deleted while the knowledge
-  layer was off), and creating a connector first clears what an earlier one with the same
-  id left, so a new connector never starts with selections nobody made on it.
-- A container refresh made from the API gives the source 20 seconds; a rate limit that
-  asks for longer answers `429 RATE_LIMITED`.
+  deselected, purged and selected again, or removed since the run read it is refused and
+  the container skipped; the people a batch names are written in the batch's own
+  transaction, so a refused batch leaves no names behind. A container the source no longer
+  lists is shown, flagged `gone`, while it is selected or still holds content; it is not
+  purged automatically, but once it is deselected and purged its row is removed.
+- Deleting a connector, in order: its knowledge run in flight is stopped and no new one
+  starts; everything it holds is cleared (below); the connector is removed. When the
+  clearing cannot be recorded the request answers `503 KNOWLEDGE_PURGE_FAILED` and the
+  connector stays, so the delete can be tried again; a knowledge schema that does not
+  exist yet is nothing to clear and does not block the delete. A delete and an update of
+  the same connector take turns. Deleting an id the registry no longer knows removes what
+  is still held under it (a connector deleted while the knowledge layer was off).
+- Clearing a connector removes at once every container that holds no documents, and its
+  people when nothing else is left; a container that holds documents is deselected, marked
+  `gone` and purged by the worker, which deletes the documents, then the row, then the
+  people. A listing that commits meanwhile does not bring such a row back. The worker
+  purges batch after batch within a tick, and sweeps people nothing refers to on every
+  tick.
+- A connector id can be used again. Connectors carry the time they were created
+  (`createdAt`), and before a connector's first knowledge activity the store compares it
+  with the one it has on record for the id: when they differ, what the id holds belongs to
+  an earlier connector and is cleared. Creating a connector does not touch the knowledge
+  database.
+- A container refresh made from the API bounds a wait the source asks for to 20 seconds
+  (`429 RATE_LIMITED`) and the whole refresh to 60 (`504 SOURCE_TIMEOUT`).
 - Knowledge runs are kept in a history of their own and returned as `lastKnowledgeRuns` on
-  connector responses. `lastRuns` is the graph sync alone, which is what the Connector Hub
-  reads its status, last sync and entity count from.
-- The worker gives every embedding call a deadline (a minute plus three seconds per chunk,
-  ten minutes at most). On shutdown it aborts the calls in flight and hands the documents
-  it had claimed back as `pending` without counting an attempt. Its heartbeat is written
-  only while the index loop is alive.
+  the connector list, detail and update responses. `lastRuns` is the graph sync alone,
+  which is what the Connector Hub reads its status, last sync and entity count from.
+- The worker embeds a document a hundred chunks at a time and gives each call a deadline
+  (a minute plus three seconds per chunk). On shutdown it aborts the calls in flight and
+  hands the documents it had claimed back as `pending` without counting an attempt. Its
+  heartbeat is written only while the index loop is alive.
+- Redaction runs on the api-server's event loop, one scan per string. secretlint's
+  profiler is switched off there: left on, it kept every scan's performance marks for the
+  life of the process and each scan got slower than the one before.
 - Every connector mutation needs an admin: every non-GET route, and the GitHub App
   manifest flow (launch, callback, pending credentials), which is made of GETs.
 

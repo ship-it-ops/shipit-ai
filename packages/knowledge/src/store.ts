@@ -169,6 +169,76 @@ function toSelected(row: ContainerRow): SelectedContainer {
   };
 }
 
+async function upsertPrincipalRows(
+  client: SqlClient,
+  connectorId: string,
+  principals: SourcePrincipal[],
+): Promise<void> {
+  for (const p of principals) {
+    await client.query(
+      `INSERT INTO knowledge_principals (id, connector_id, external_id, kind, display_name, email, login, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (connector_id, external_id) DO UPDATE SET
+         kind = EXCLUDED.kind, display_name = EXCLUDED.display_name,
+         email = COALESCE(EXCLUDED.email, knowledge_principals.email),
+         login = COALESCE(EXCLUDED.login, knowledge_principals.login),
+         active = EXCLUDED.active, updated_at = now()`,
+      [
+        randomUUID(),
+        connectorId,
+        p.externalId,
+        p.kind,
+        p.displayName,
+        p.email ?? null,
+        p.login ?? null,
+        p.active,
+      ],
+    );
+  }
+}
+
+// True for a connector id that has nothing selected, nothing stored and no
+// purge pending: the condition under which its people are not held.
+const NOTHING_REFERS_TO = (connectorId: string): string => `NOT EXISTS (
+  SELECT 1 FROM knowledge_containers c
+   WHERE c.connector_id = ${connectorId}
+     AND (c.selected OR c.purge_requested_at IS NOT NULL
+          OR EXISTS (SELECT 1 FROM knowledge_documents d WHERE d.container_id = c.id)))`;
+
+const lifeKey = (connectorId: string): string => `connector-life:${connectorId}`;
+
+/**
+ * Removes everything a connector id holds. Shared by a delete and by the
+ * start of a new connector under a used id; runs inside the caller's
+ * transaction.
+ */
+async function clearConnector(tx: SqlClient, connectorId: string, by: string): Promise<number> {
+  // Nothing to wait for: an empty container goes now. Marking it for the
+  // worker instead would queue thousands of empty rows ahead of real purges.
+  const emptied = await tx.query(
+    `DELETE FROM knowledge_containers c
+      WHERE c.connector_id = $1
+        AND NOT EXISTS (SELECT 1 FROM knowledge_documents d WHERE d.container_id = c.id)`,
+    [connectorId],
+  );
+  const marked = await tx.query(
+    `UPDATE knowledge_containers
+        SET selected = false, selected_by = $2, selected_at = now(),
+            visibility_acknowledged_by = NULL, purge_requested_at = now(),
+            gone_at = COALESCE(gone_at, now()), updated_at = now()
+      WHERE connector_id = $1`,
+    [connectorId, by],
+  );
+  // With containers still to purge, the people go with the last of them.
+  const people = await tx.query(
+    `DELETE FROM knowledge_principals p
+      WHERE p.connector_id = $1 AND ${NOTHING_REFERS_TO('p.connector_id')}`,
+    [connectorId],
+  );
+  await tx.query('DELETE FROM knowledge_state WHERE key = $1', [lifeKey(connectorId)]);
+  return (emptied.rowCount ?? 0) + (marked.rowCount ?? 0) + (people.rowCount ?? 0);
+}
+
 async function upsertContainerRow(
   client: SqlClient,
   connectorId: string,
@@ -180,7 +250,12 @@ async function upsertContainerRow(
      ON CONFLICT (connector_id, external_id) DO UPDATE SET
        kind = EXCLUDED.kind, name = EXCLUDED.name, url = EXCLUDED.url, visibility = EXCLUDED.visibility,
        archived = EXCLUDED.archived, acl = COALESCE(EXCLUDED.acl, knowledge_containers.acl),
-       gone_at = NULL, updated_at = now()`,
+       -- A row on its way out stays that way: a listing that commits after a
+       -- connector was deleted must not undo the delete. The purge removes
+       -- the row, and the next listing adds a fresh one.
+       gone_at = CASE WHEN knowledge_containers.purge_requested_at IS NOT NULL
+                      THEN knowledge_containers.gone_at ELSE NULL END,
+       updated_at = now()`,
     [
       randomUUID(),
       connectorId,
@@ -347,22 +422,45 @@ export class KnowledgeStore {
   }
 
   /**
-   * The connector was deleted. Nothing lists its containers any more, so every
-   * one of them, selected or not, is deselected, marked gone and marked for
-   * purging: the worker deletes what they hold and then the rows themselves,
-   * which carry the names of repositories and channels. Returns how many
-   * containers that was.
+   * The connector was deleted: nothing of it is to remain. A container that
+   * holds no documents is removed here and now. One that does is deselected,
+   * marked gone and marked for purging, and the worker deletes what it holds
+   * and then the row (rows carry the names of repositories and channels). The
+   * connector's people go here when nothing is left for the worker, and with
+   * the last purged container otherwise. Returns how many rows were removed
+   * or marked, containers and people together: zero means the id held nothing.
    */
   async deselectConnector(connectorId: string, by: string): Promise<number> {
-    const { rowCount } = await this.db.query(
-      `UPDATE knowledge_containers
-          SET selected = false, selected_by = $2, selected_at = now(),
-              visibility_acknowledged_by = NULL, purge_requested_at = now(),
-              gone_at = COALESCE(gone_at, now()), updated_at = now()
-        WHERE connector_id = $1`,
-      [connectorId, by],
-    );
-    return rowCount ?? 0;
+    return this.db.tx((tx) => clearConnector(tx, connectorId, by));
+  }
+
+  /**
+   * Called before a connector's first knowledge activity, with the time the
+   * connector was created. Connector ids are chosen by the caller and can be
+   * used again, and a connector deleted while this layer was off left its rows
+   * behind: when `bornAt` is not the one recorded for the id, whatever the id
+   * holds belongs to an earlier connector and is cleared, the way a delete
+   * clears it. True when a new life began; false, and nothing touched, for a
+   * connector already known.
+   */
+  async beginConnectorLife(connectorId: string, bornAt: string, by: string): Promise<boolean> {
+    return this.db.tx(async (tx) => {
+      const key = lifeKey(connectorId);
+      // Serialises two first calls for the same id.
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [key]);
+      const known = await tx.query<{ value: unknown }>(
+        'SELECT value FROM knowledge_state WHERE key = $1',
+        [key],
+      );
+      if (known.rows[0]?.value === bornAt) return false;
+      await clearConnector(tx, connectorId, by);
+      await tx.query(
+        `INSERT INTO knowledge_state (key, value) VALUES ($1, $2::jsonb)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [key, JSON.stringify(bornAt)],
+      );
+      return true;
+    });
   }
 
   /** Whether anything of the connector is selected: the reason to hold its people. */
@@ -381,10 +479,10 @@ export class KnowledgeStore {
    * container the source no longer has (or whose connector was deleted) loses
    * its row too. A connector left with nothing selected, nothing stored and no
    * purge pending loses its principals as well: names, emails and logins are
-   * held only while something refers to them. Returns the number of documents
-   * deleted.
+   * held only while something refers to them. Handles up to `limit` containers
+   * and says how many it handled, so a caller can go on until none are left.
    */
-  async purgeRequested(limit = 20): Promise<number> {
+  async purgeBatch(limit = 20): Promise<{ containers: number; documents: number }> {
     return this.db.tx(async (tx) => {
       const { rows } = await tx.query<{ id: string; connector_id: string }>(
         `SELECT id, connector_id FROM knowledge_containers
@@ -394,7 +492,7 @@ export class KnowledgeStore {
           FOR UPDATE SKIP LOCKED`,
         [limit],
       );
-      if (rows.length === 0) return 0;
+      if (rows.length === 0) return { containers: 0, documents: 0 };
       const ids = rows.map((r) => r.id);
       const deleted = await tx.query(
         `DELETE FROM knowledge_documents WHERE container_id = ANY($1::uuid[])`,
@@ -417,46 +515,34 @@ export class KnowledgeStore {
       );
       await tx.query(
         `DELETE FROM knowledge_principals p
-          WHERE p.connector_id = ANY($1::text[])
-            AND NOT EXISTS (
-              SELECT 1 FROM knowledge_containers c
-               WHERE c.connector_id = p.connector_id
-                 AND (c.selected OR c.purge_requested_at IS NOT NULL
-                      OR EXISTS (SELECT 1 FROM knowledge_documents d
-                                  WHERE d.container_id = c.id)))`,
+          WHERE p.connector_id = ANY($1::text[]) AND ${NOTHING_REFERS_TO('p.connector_id')}`,
         [[...new Set(rows.map((r) => r.connector_id))]],
       );
-      return deleted.rowCount ?? 0;
+      return { containers: rows.length, documents: deleted.rowCount ?? 0 };
     });
+  }
+
+  /** One purge batch; returns the number of documents deleted. */
+  async purgeRequested(limit = 20): Promise<number> {
+    return (await this.purgeBatch(limit)).documents;
   }
 
   // ── Principals ───────────────────────────────────────────────────────────
 
   async upsertPrincipals(connectorId: string, principals: SourcePrincipal[]): Promise<void> {
     if (principals.length === 0) return;
-    await this.db.tx(async (tx) => {
-      for (const p of principals) {
-        await tx.query(
-          `INSERT INTO knowledge_principals (id, connector_id, external_id, kind, display_name, email, login, active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (connector_id, external_id) DO UPDATE SET
-             kind = EXCLUDED.kind, display_name = EXCLUDED.display_name,
-             email = COALESCE(EXCLUDED.email, knowledge_principals.email),
-             login = COALESCE(EXCLUDED.login, knowledge_principals.login),
-             active = EXCLUDED.active, updated_at = now()`,
-          [
-            randomUUID(),
-            connectorId,
-            p.externalId,
-            p.kind,
-            p.displayName,
-            p.email ?? null,
-            p.login ?? null,
-            p.active,
-          ],
-        );
-      }
-    });
+    await this.db.tx((tx) => upsertPrincipalRows(tx, connectorId, principals));
+  }
+
+  /**
+   * Deletes people nothing refers to: those of a connector that has nothing
+   * selected, nothing stored and no purge pending. Returns how many.
+   */
+  async sweepUnusedPrincipals(): Promise<number> {
+    const { rowCount } = await this.db.query(
+      `DELETE FROM knowledge_principals p WHERE ${NOTHING_REFERS_TO('p.connector_id')}`,
+    );
+    return rowCount ?? 0;
   }
 
   private async principalIds(
@@ -500,9 +586,12 @@ export class KnowledgeStore {
       );
       const found = containerRowResult.rows[0];
       const containerId = found?.id;
+      // The row is gone: its connector was deleted (or the container purged
+      // after the source dropped it) while this run was fetching. Like a
+      // deselect, that is the container changing under the run, not a failure.
       if (!found || !containerId) {
-        throw new Error(
-          `container ${container.externalId} is not known to connector ${connectorId}`,
+        throw new KnowledgeContainerChanged(
+          `container ${container.externalId} is not known to connector ${connectorId} any more`,
         );
       }
       // Deselected while this run was fetching: storing more would refill
@@ -520,6 +609,14 @@ export class KnowledgeStore {
         throw new KnowledgeContainerChanged(
           `container ${container.externalId} was reset since this run read it`,
         );
+      }
+
+      // Only now, with the batch accepted: the people it refers to, before the
+      // documents so that their authors resolve. Written ahead of the checks
+      // above, a batch refused after its connector was deleted would leave
+      // names behind with nothing left to remove them.
+      if (batch.principals && batch.principals.length > 0) {
+        await upsertPrincipalRows(tx, connectorId, batch.principals);
       }
 
       const externalIds = batch.documents.map((d) => d.externalId);

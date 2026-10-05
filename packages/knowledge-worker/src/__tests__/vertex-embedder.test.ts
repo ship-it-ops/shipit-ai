@@ -127,4 +127,65 @@ describe('VertexEmbedder', () => {
     controller.abort(new Error('worker stopping'));
     await expect(pending).rejects.toThrow('worker stopping');
   });
+
+  // One deadline for a whole document capped how many chunks a document may
+  // have: a 200 kB file of short sections has thousands, and would fail every
+  // attempt. Each slice gets its own.
+  it('embeds a long document a hundred texts at a time, each slice with its own deadline', async () => {
+    const { calls, embed } = fakeEmbed(8);
+    const budgets: number[] = [];
+    const e = embedder({
+      embed,
+      timeoutMs: (texts: number) => {
+        budgets.push(texts);
+        return 60_000;
+      },
+    });
+    const texts = Array.from({ length: 250 }, (_, i) => `chunk ${i}`);
+    const vectors = await e.embedDocuments(texts, { title: 'T' });
+    expect(vectors).toHaveLength(250);
+    expect(calls.map((c) => c.values.length)).toEqual([100, 100, 50]);
+    expect(calls[2]!.values[0]).toBe('chunk 200');
+    expect(calls.every((c) => c.title === 'T')).toBe(true);
+    expect(budgets).toEqual([100, 100, 50]);
+  });
+
+  it('stops between slices when the caller aborts', async () => {
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const e = embedder({
+      embed: async (call: EmbedCall) => {
+        seen.push(call.values.length);
+        controller.abort(new Error('worker stopping'));
+        return call.values.map(() => new Array<number>(8).fill(0.1));
+      },
+    });
+    const texts = Array.from({ length: 250 }, (_, i) => `chunk ${i}`);
+    await expect(e.embedDocuments(texts, { signal: controller.signal })).rejects.toThrow(
+      'worker stopping',
+    );
+    expect(seen).toEqual([100]);
+  });
+
+  // The stop signal lives as long as the worker. A listener left on it by
+  // every call would be kept for just as long.
+  it('leaves nothing attached to the caller’s signal after a call', async () => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+    let attached = 0;
+    const add = signal.addEventListener.bind(signal);
+    const remove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((...args: Parameters<typeof add>) => {
+      attached += 1;
+      return add(...args);
+    }) as typeof signal.addEventListener;
+    signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+      attached -= 1;
+      return remove(...args);
+    }) as typeof signal.removeEventListener;
+
+    const { embed } = fakeEmbed(8);
+    await embedder({ embed }).embedDocuments(['a', 'b'], { signal });
+    expect(attached).toBe(0);
+  });
 });

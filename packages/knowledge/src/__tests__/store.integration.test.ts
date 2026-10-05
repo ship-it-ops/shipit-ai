@@ -817,14 +817,16 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
 
       expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
       expect(await sink.selectedContainers()).toEqual([]);
-      const pending = await database.db.query<{ selected: boolean; acked: string | null }>(
-        `SELECT selected, visibility_acknowledged_by AS acked FROM knowledge_containers
-          WHERE connector_id = 'slack-1'`,
+      // C1 holds documents and waits for the worker; C2 held nothing and is gone.
+      const pending = await database.db.query<{
+        external_id: string;
+        selected: boolean;
+        acked: string | null;
+      }>(
+        `SELECT external_id, selected, visibility_acknowledged_by AS acked
+           FROM knowledge_containers WHERE connector_id = 'slack-1'`,
       );
-      expect(pending.rows).toEqual([
-        { selected: false, acked: null },
-        { selected: false, acked: null },
-      ]);
+      expect(pending.rows).toEqual([{ external_id: 'C1', selected: false, acked: null }]);
       expect(await store.purgeRequested()).toBe(2);
       expect(await documents()).toEqual([]);
       // Another connector's containers are untouched.
@@ -1050,6 +1052,10 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     it('keeps the principals while a purge of the connector is still pending', async () => {
       await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
       await selectAcknowledged('C2');
+      await sink.storeBatch(
+        (await sink.selectedContainers()).find((c) => c.externalId === 'C2')!,
+        batch([doc('e1', 'b')]),
+      );
       await store.deselectConnector('slack-1', 'ada');
       // One container per pass: after the first, the other still awaits its purge.
       await store.purgeRequested(1);
@@ -1118,11 +1124,154 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
     // row carries the name of a repository or channel, private ones included.
     it('removes every container row of a deleted connector, selected or not', async () => {
       await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
-      // C2 was never selected and holds nothing: it goes too.
+      // C2 was never selected and holds nothing: it goes at once. C1 waits for
+      // the worker, which deletes what it holds first.
       expect(await store.deselectConnector('slack-1', 'ada')).toBe(2);
+      expect(await containerIds('slack-1')).toEqual(['C1']);
+      expect(await principals('slack-1')).toEqual(['U1']);
       await store.purgeRequested();
       expect(await containerIds('slack-1')).toEqual([]);
+      expect(await principals('slack-1')).toEqual([]);
       expect((await database.db.query('SELECT 1 FROM knowledge_documents')).rows).toEqual([]);
+    });
+
+    // Nothing to wait for: a connector that indexed nothing must not queue two
+    // thousand empty rows behind the worker's purge, twenty a minute.
+    it('removes a deleted connector that holds no documents at once, people included', async () => {
+      expect(await store.deselectConnector('slack-1', 'ada')).toBe(3); // two containers, one person
+      expect(await containerIds('slack-1')).toEqual([]);
+      expect(await principals('slack-1')).toEqual([]);
+      expect(await store.purgeRequested()).toBe(0);
+    });
+
+    it('removes people left under an id that has no containers any more', async () => {
+      await database.db.query(`DELETE FROM knowledge_containers WHERE connector_id = 'slack-1'`);
+      expect(await principals('slack-1')).toEqual(['U1']);
+      expect(await store.deselectConnector('slack-1', 'ada')).toBe(1);
+      expect(await principals('slack-1')).toEqual([]);
+    });
+
+    // A run still in flight when its connector is deleted keeps fetching, and
+    // each batch names its authors. Stored before the batch was checked, they
+    // outlived the purge with nothing left to remove them.
+    it('stores the people a batch carries only when the batch itself is accepted', async () => {
+      const lin = {
+        externalId: 'U5',
+        kind: 'user' as const,
+        displayName: 'Lin',
+        email: 'lin@example.com',
+        active: true,
+      };
+      const held = await selectedC1();
+      await store.selectContainer('slack-1', (await rowFor('C1')).id, {
+        selected: false,
+        by: 'ada',
+        acknowledged: false,
+      });
+      await expect(
+        sink.storeBatch(held, { ...batch([doc('d1', 'a')]), principals: [lin] }),
+      ).rejects.toMatchObject({ code: 'KNOWLEDGE_CONTAINER_CHANGED' });
+      expect(await principals('slack-1')).toEqual(['U1']);
+    });
+
+    it('treats a batch for a container whose row is gone as changed under the run, not as a failure', async () => {
+      const held = await selectedC1();
+      await store.deselectConnector('slack-1', 'ada');
+      await expect(sink.storeBatch(held, batch([doc('d1', 'a')]))).rejects.toMatchObject({
+        code: 'KNOWLEDGE_CONTAINER_CHANGED',
+      });
+      expect(await principals('slack-1')).toEqual([]);
+    });
+
+    // A listing that commits after the delete must not undo it: the row stays
+    // on its way out, and a later listing adds a fresh one.
+    it('does not bring a deleted connector’s container back while its purge is pending', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const before = (await rowFor('C1')).id;
+      await store.deselectConnector('slack-1', 'ada');
+
+      await sink.upsertContainers([C1, C2]);
+      const pending = (await store.containersWithCounts('slack-1')).find(
+        (c) => c.externalId === 'C1',
+      )!;
+      expect(pending.goneAt).not.toBeNull();
+      expect(pending.purgeRequestedAt).not.toBeNull();
+
+      await store.purgeRequested();
+      await sink.upsertContainers([C1, C2]);
+      const fresh = await rowFor('C1');
+      expect(fresh.id).not.toBe(before);
+      expect(fresh).toMatchObject({ selected: false, checkpoint: null, goneAt: null });
+    });
+
+    it('purges in batches and says how much each one did', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a'), doc('d2', 'b')]));
+      await selectAcknowledged('C2');
+      await sink.storeBatch(
+        (await sink.selectedContainers()).find((c) => c.externalId === 'C2')!,
+        batch([{ ...doc('e1', 'c'), externalId: 'e1' }]),
+      );
+      for (const id of ['C1', 'C2']) {
+        await store.selectContainer('slack-1', (await rowFor(id)).id, {
+          selected: false,
+          by: 'ada',
+          acknowledged: false,
+        });
+      }
+      expect(await store.purgeBatch(1)).toMatchObject({ containers: 1 });
+      expect(await store.purgeBatch(1)).toMatchObject({ containers: 1 });
+      expect(await store.purgeBatch(1)).toEqual({ containers: 0, documents: 0 });
+      expect((await database.db.query('SELECT 1 FROM knowledge_documents')).rows).toEqual([]);
+    });
+
+    it('sweeps people nothing refers to, whatever connector they belonged to', async () => {
+      const other = new PostgresKnowledgeSink({ connectorId: 'slack-9', store });
+      await other.upsertPrincipals([
+        { externalId: 'U7', kind: 'user', displayName: 'Lin', active: true },
+      ]);
+      // slack-1 has C1 selected, so its person stays; slack-9 has no container at all.
+      expect(await store.sweepUnusedPrincipals()).toBe(1);
+      expect(await principals('slack-9')).toEqual([]);
+      expect(await principals('slack-1')).toEqual(['U1']);
+    });
+
+    // Connector ids are chosen by the caller and can be used again. A new
+    // connector must not start with what an earlier one with its id indexed,
+    // selected or acknowledged.
+    describe('a connector id that is used again', () => {
+      const born = '2026-10-05T00:00:00.000Z';
+
+      it('clears what an earlier connector left, when the new one first appears', async () => {
+        await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        expect(await sink.selectedContainers()).toEqual([]);
+        await store.purgeRequested();
+        expect(await containerIds('slack-1')).toEqual([]);
+        expect(await principals('slack-1')).toEqual([]);
+      });
+
+      it('leaves a connector’s own content alone from then on', async () => {
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        await sink.upsertContainers([C1, C2]);
+        await store.setSelected('slack-1', 'C1', true, 'ada');
+        await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(false);
+        expect((await sink.selectedContainers()).map((c) => c.externalId)).toEqual(['C1']);
+        expect((await database.db.query('SELECT 1 FROM knowledge_documents')).rows).toHaveLength(1);
+      });
+
+      it('starts over for a later connector with the same id, and after a delete', async () => {
+        expect(await store.beginConnectorLife('slack-1', born, 'system')).toBe(true);
+        expect(
+          await store.beginConnectorLife('slack-1', '2026-11-01T00:00:00.000Z', 'system'),
+        ).toBe(true);
+        await store.deselectConnector('slack-1', 'ada');
+        // The deleted connector's record is gone with it.
+        expect(
+          await store.beginConnectorLife('slack-1', '2026-11-01T00:00:00.000Z', 'system'),
+        ).toBe(true);
+      });
     });
 
     it('removes a container the source no longer has once it is deselected and purged', async () => {

@@ -39,13 +39,20 @@ export interface VertexEmbedderOptions {
 export const DEFAULT_MAX_PARALLEL_CALLS = 4;
 
 /**
+ * How many texts one call embeds. A document's chunks are embedded a slice at
+ * a time, each with its own deadline: one deadline for the whole document
+ * would cap how many chunks a document may have, and a file of a few thousand
+ * short sections would fail on every attempt.
+ */
+export const TEXTS_PER_CALL = 100;
+
+/**
  * A call makes one request per text, a few at a time. A minute plus three
  * seconds a text is far more than a model that is answering needs, and it ends
- * a request that has stopped answering; never more than ten minutes, which
- * stays under the index loop's stall threshold.
+ * a request that has stopped answering. For a full slice that is six minutes,
+ * well under the index loop's stall threshold.
  */
-export const defaultTimeoutMs = (texts: number): number =>
-  Math.min(10 * 60_000, 60_000 + 3_000 * texts);
+export const defaultTimeoutMs = (texts: number): number => 60_000 + 3_000 * texts;
 
 export class VertexEmbedder implements Embedder {
   readonly model: string;
@@ -66,18 +73,21 @@ export class VertexEmbedder implements Embedder {
     texts: string[],
     options?: { title?: string; signal?: AbortSignal },
   ): Promise<number[][]> {
-    if (texts.length === 0) return [];
-    const vectors = await this.call(
-      {
-        model: this.model,
-        values: texts,
-        taskType: 'RETRIEVAL_DOCUMENT',
-        outputDimensionality: this.dimensions,
-        title: options?.title,
-        maxParallelCalls: this.maxParallelCalls,
-      },
-      options?.signal,
-    );
+    const vectors: number[][] = [];
+    for (let from = 0; from < texts.length; from += TEXTS_PER_CALL) {
+      const slice = await this.call(
+        {
+          model: this.model,
+          values: texts.slice(from, from + TEXTS_PER_CALL),
+          taskType: 'RETRIEVAL_DOCUMENT',
+          outputDimensionality: this.dimensions,
+          title: options?.title,
+          maxParallelCalls: this.maxParallelCalls,
+        },
+        options?.signal,
+      );
+      vectors.push(...slice);
+    }
     assertDimensions(vectors, this.dimensions);
     return vectors;
   }
@@ -97,22 +107,36 @@ export class VertexEmbedder implements Embedder {
   // Every call gets a deadline. Without one a request the model never answers
   // holds its document, and a slot of the index loop, for as long as the HTTP
   // client waits, while the worker still looks healthy.
+  //
+  // One controller per call, with the timer and the listener on the caller's
+  // signal both removed when the call ends: the caller's signal lives as long
+  // as the worker, and anything a call left attached to it would too.
   private async call(input: Omit<EmbedCall, 'signal'>, caller?: AbortSignal): Promise<number[][]> {
     const texts = input.values.length;
     const ms = this.timeoutMs(texts);
-    const deadline = AbortSignal.timeout(ms);
-    const signal = caller ? AbortSignal.any([deadline, caller]) : deadline;
+    const outOfTime = new Error(
+      `Embedding ${texts} ${texts === 1 ? 'text' : 'texts'} took longer than ${ms} ms`,
+    );
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(outOfTime);
+    }, ms);
+    const onCallerAbort = (): void => controller.abort(caller?.reason);
+    if (caller?.aborted) onCallerAbort();
+    else caller?.addEventListener('abort', onCallerAbort, { once: true });
     try {
-      return await this.embed({ ...input, signal });
+      if (controller.signal.aborted) throw controller.signal.reason;
+      return await this.embed({ ...input, signal: controller.signal });
     } catch (err) {
       // The caller's own abort keeps its reason; a spent deadline says what happened.
       if (caller?.aborted) throw caller.reason instanceof Error ? caller.reason : err;
-      if (deadline.aborted) {
-        throw new Error(
-          `Embedding ${texts} ${texts === 1 ? 'text' : 'texts'} took longer than ${ms} ms`,
-        );
-      }
+      if (timedOut) throw outOfTime;
       throw err;
+    } finally {
+      clearTimeout(timer);
+      caller?.removeEventListener('abort', onCallerAbort);
     }
   }
 }

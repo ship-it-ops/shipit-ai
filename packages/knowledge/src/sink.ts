@@ -31,6 +31,13 @@ const storable = (c: SourceContainer): SourceContainer => ({
   ...(c.url ? { url: stripNul(c.url) } : {}),
 });
 
+const storablePrincipal = (p: SourcePrincipal): SourcePrincipal => ({
+  ...p,
+  displayName: stripNul(p.displayName),
+  ...(p.email ? { email: stripNul(p.email) } : {}),
+  ...(p.login ? { login: stripNul(p.login) } : {}),
+});
+
 export class PostgresKnowledgeSink implements KnowledgeSink {
   constructor(private readonly opts: PostgresKnowledgeSinkOptions) {}
 
@@ -46,12 +53,7 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
   upsertPrincipals(principals: SourcePrincipal[]): Promise<void> {
     return this.opts.store.upsertPrincipals(
       this.opts.connectorId,
-      principals.map((p) => ({
-        ...p,
-        displayName: stripNul(p.displayName),
-        ...(p.email ? { email: stripNul(p.email) } : {}),
-        ...(p.login ? { login: stripNul(p.login) } : {}),
-      })),
+      principals.map(storablePrincipal),
     );
   }
 
@@ -67,11 +69,6 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
     container: SelectedContainer,
     batch: ChangeBatch,
   ): Promise<{ changed: number; deleted: number }> {
-    // The people this batch refers to go in first, so the documents' authors
-    // and participants resolve as they are written.
-    if (batch.principals && batch.principals.length > 0) {
-      await this.upsertPrincipals(batch.principals);
-    }
     const redactions = new Map<string, number>();
     const documents: KnowledgeDocumentInput[] = [];
     for (const doc of batch.documents) {
@@ -135,10 +132,18 @@ export class PostgresKnowledgeSink implements KnowledgeSink {
         attributes: attributes.value as Record<string, unknown>,
       });
     }
+    // The people the batch refers to travel with it: the store writes them in
+    // the batch's own transaction, before the documents (so authors resolve)
+    // and only once it has accepted the batch (so a batch refused because its
+    // container was deselected or deleted leaves no names behind).
     const result = await this.opts.store.storeBatch(
       this.opts.connectorId,
       container,
-      { ...batch, documents },
+      {
+        ...batch,
+        documents,
+        ...(batch.principals ? { principals: batch.principals.map(storablePrincipal) } : {}),
+      },
       redactions,
     );
     if (result.changed > 0) this.wakeWorker();

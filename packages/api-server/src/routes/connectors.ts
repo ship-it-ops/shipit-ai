@@ -138,6 +138,8 @@ function removeUnreferencedCredentials(
 }
 
 const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** Postgres: the table a statement names does not exist. */
+const UNDEFINED_TABLE = '42P01';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -292,6 +294,19 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
     return { lastRuns, lastKnowledgeRuns };
   };
 
+  // One change at a time per connector id. A delete records the purge of what
+  // the connector indexed and only then removes the connector, with a database
+  // call in between: an update landing there would change the connector's
+  // version and turn the delete into a conflict after the purge was recorded.
+  const turns = new Map<string, Promise<unknown>>();
+  const inTurn = <T>(id: string, work: () => Promise<T>): Promise<T> => {
+    const mine = (turns.get(id) ?? Promise.resolve()).catch(() => undefined).then(work);
+    turns.set(id, mine);
+    return mine.finally(() => {
+      if (turns.get(id) === mine) turns.delete(id);
+    });
+  };
+
   // What a connector indexed is marked for removal (the worker deletes it).
   // Null when the knowledge layer is not wired on this server. A failure
   // answers 503 through `refused`, and the caller does not go on.
@@ -306,6 +321,10 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       const by = request.ctx.user.email ?? request.ctx.user.id;
       return { marked: await server.knowledgeStore.deselectConnector(id, by) };
     } catch (err) {
+      // The knowledge tables are not there (the layer was switched on before
+      // the migration step ran): nothing was ever indexed, so there is nothing
+      // to remove, and trying again would never help.
+      if ((err as { code?: unknown }).code === UNDEFINED_TABLE) return { marked: 0 };
       request.log.error(
         { connectorId: id, err: (err as Error).message },
         'knowledge: could not mark what a connector indexed for removal',
@@ -865,6 +884,17 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         },
       });
     }
+    // The id ends up in URLs and in Redis keys (the run histories append a
+    // suffix after ':'), so it is held to the same shape as everywhere else.
+    if (typeof body.id !== 'string' || !CONNECTOR_ID.test(body.id)) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message:
+            'id must be 1 to 64 characters: letters, digits, "_" and "-", starting with a letter or digit',
+        },
+      });
+    }
     if (body.type === 'github') {
       if (!body.installationId || !body.org) {
         return reply.status(400).send({
@@ -902,18 +932,6 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           .status(400)
           .send({ error: { code: 'CREDENTIAL_PATH_NOT_ALLOWED', message: pathErr } });
       }
-    }
-    // Ids are chosen by the caller. Whatever an earlier connector with this id
-    // indexed must not become this one's: it would start with selections, and
-    // visibility acknowledgements, nobody made on it.
-    if (!registry.list().some((c) => c.id === body.id)) {
-      const cleared = await purgeIndexed(
-        body.id,
-        request,
-        reply,
-        'Could not clear what an earlier connector with this id indexed, so the connector was not created. Try again.',
-      );
-      if (cleared.refused) return cleared.refused;
     }
     try {
       const created =
@@ -1181,21 +1199,24 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       }
       const ifMatch = parseIfMatch(request.headers['if-match']);
       try {
-        const updated = await registry.update(
-          request.params.id,
-          {
-            enabled: request.body?.enabled,
-            name: request.body?.name,
-            schedule: request.body?.schedule,
-            scope: request.body?.scope as never,
-            entities: request.body?.entities as never,
-            app: request.body?.app,
-            cluster: request.body?.cluster,
-            access: request.body?.access ?? undefined,
-            mapping: request.body?.mapping,
-            knowledge: request.body?.knowledge,
-          },
-          ifMatch,
+        // In turn with a delete of the same connector (see `inTurn`).
+        const updated = await inTurn(request.params.id, () =>
+          registry.update(
+            request.params.id,
+            {
+              enabled: request.body?.enabled,
+              name: request.body?.name,
+              schedule: request.body?.schedule,
+              scope: request.body?.scope as never,
+              entities: request.body?.entities as never,
+              app: request.body?.app,
+              cluster: request.body?.cluster,
+              access: request.body?.access ?? undefined,
+              mapping: request.body?.mapping,
+              knowledge: request.body?.knowledge,
+            },
+            ifMatch,
+          ),
         );
         reply.header('ETag', `"${registry.getHash(updated.id)}"`);
         // Hydrate lastRuns from the run store so PATCH responses match
@@ -1223,51 +1244,63 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   // DELETE /api/connectors/:id — same If-Match rule as PATCH.
   //
   // What the connector indexed goes with it (spec §API): nothing of it stays
-  // selected, and the worker deletes the content. That is recorded BEFORE the
-  // connector is removed, and the request fails if it cannot be: once the
-  // registry no longer knows the connector, no route can reach its containers
-  // to try again. For the same reason an id the registry does not know is not
-  // simply a 404: if content is still held under it (the connector was deleted
-  // while the knowledge layer was off), this deletes that.
-  server.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+  // selected, and the worker deletes the content. In order:
+  //   1. its knowledge run in flight is stopped, and no new one starts: a run
+  //      still fetching would write to the store after the purge;
+  //   2. the purge is recorded, and the request fails if it cannot be: once
+  //      the registry no longer knows the connector, no route can reach its
+  //      containers to try again;
+  //   3. the connector is removed.
+  // An id the registry does not know is not simply a 404: if content is still
+  // held under it (the connector was deleted while the knowledge layer was
+  // off), this deletes that.
+  server.delete<{ Params: { id: string } }>('/:id', (request, reply) => {
     const { id } = request.params;
     const ifMatch = parseIfMatch(request.headers['if-match']);
-    try {
-      const removed = registry.list().find((c) => c.id === id);
-      // The check remove() makes, made first: a refused delete purges nothing.
-      if (removed && ifMatch !== undefined && ifMatch !== registry.getHash(id)) {
-        throw new ConnectorVersionConflictError(registry.getHash(id));
-      }
-      const purge = await purgeIndexed(
-        id,
-        request,
-        reply,
-        'Could not mark what this connector indexed for removal, so the connector was not deleted. Try again.',
-      );
-      if (purge.refused) return purge.refused;
-      if (!removed && (purge.marked ?? 0) > 0) return reply.status(204).send();
-      await registry.remove(id, ifMatch);
-      if (removed) {
-        removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
-          request.log.warn(obj, msg),
+    return inTurn(id, async () => {
+      try {
+        const removed = registry.list().find((c) => c.id === id);
+        // The check remove() makes, made first: a refused delete purges nothing.
+        if (removed && ifMatch !== undefined && ifMatch !== registry.getHash(id)) {
+          throw new ConnectorVersionConflictError(registry.getHash(id));
+        }
+        await server.knowledgeScheduler?.retire(id);
+        const purge = await purgeIndexed(
+          id,
+          request,
+          reply,
+          'Could not mark what this connector indexed for removal, so the connector was not deleted. Try again.',
         );
-      }
-      return reply.status(204).send();
-    } catch (err) {
-      if (err instanceof ConnectorVersionConflictError) {
-        return reply.status(409).send({
-          error: { code: 'VERSION_CONFLICT', message: err.message },
-          serverHash: err.serverHash,
+        if (purge.refused) return purge.refused;
+        if (!removed && (purge.marked ?? 0) > 0) return reply.status(204).send();
+        await registry.remove(id, ifMatch);
+        if (removed) {
+          removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
+            request.log.warn(obj, msg),
+          );
+        }
+        return reply.status(204).send();
+      } catch (err) {
+        if (err instanceof ConnectorVersionConflictError) {
+          return reply.status(409).send({
+            error: { code: 'VERSION_CONFLICT', message: err.message },
+            serverHash: err.serverHash,
+          });
+        }
+        const status = (err as { statusCode?: number }).statusCode ?? 400;
+        return reply.status(status).send({
+          error: {
+            code: status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR',
+            message: (err as Error).message,
+          },
         });
+      } finally {
+        // A connector that was not deleted after all may run again. One that
+        // was is gone from the registry, and nothing runs for it; the mark is
+        // dropped either way, so that its id can be used again.
+        server.knowledgeScheduler?.unretire(id);
       }
-      const status = (err as { statusCode?: number }).statusCode ?? 400;
-      return reply.status(status).send({
-        error: {
-          code: status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR',
-          message: (err as Error).message,
-        },
-      });
-    }
+    });
   });
 
   // POST /api/connectors/kubernetes/credentials — store a pasted kubeconfig or

@@ -17,7 +17,10 @@ declare module 'fastify' {
       KnowledgeStore,
       'containersWithCounts' | 'getContainer' | 'selectContainer' | 'deselectConnector'
     >;
-    knowledgeScheduler?: Pick<KnowledgeSyncScheduler, 'refreshContainers' | 'refreshContainer'>;
+    knowledgeScheduler?: Pick<
+      KnowledgeSyncScheduler,
+      'refreshContainers' | 'refreshContainer' | 'retire' | 'unretire'
+    >;
   }
 }
 
@@ -62,10 +65,12 @@ const notWired = (reply: FastifyReply): FastifyReply =>
 
 /** The status a refused container refresh answers with. */
 const refreshStatus = (err: KnowledgeRefreshError): number => {
-  if (err.code === 'KNOWLEDGE_NOT_ENABLED') return 409;
+  if (err.code === 'KNOWLEDGE_NOT_ENABLED' || err.code === 'CONNECTOR_BEING_DELETED') return 409;
   if (err.code === 'AUTH_FAILED') return 502;
   // The source asked to wait longer than a request should: try again later.
   if (err.code === 'RATE_LIMITED') return 429;
+  if (err.code === 'SOURCE_TIMEOUT') return 504;
+  if (err.code === 'KNOWLEDGE_UNAVAILABLE') return 503;
   return 400;
 };
 
@@ -143,31 +148,38 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
               'This container is not open to everyone at the source. Indexing it makes its content visible to every signed-in user; send acknowledgeVisibility: true to accept that.',
           },
         });
-      if (selected && !acknowledged) {
-        if (container.visibility !== 'open') return refuse();
-        // "Open" is what the last listing said, up to a day ago. Before
-        // content is indexed without an acknowledgement, ask the source now,
-        // about this one container.
-        if (!server.knowledgeScheduler) return notWired(reply);
-        try {
-          const atSource = await server.knowledgeScheduler.refreshContainer(id, container);
-          if (!atSource) {
-            return reply.status(409).send({
-              error: {
-                code: 'CONTAINER_GONE',
-                message: 'The source no longer has this container. Refresh the list.',
-              },
-            });
+      const gone = (): FastifyReply =>
+        reply.status(409).send({
+          error: {
+            code: 'CONTAINER_GONE',
+            message:
+              'The source no longer has this container, so it cannot be selected. Deselect it to remove what it holds, or refresh the list.',
+          },
+        });
+      if (selected) {
+        // Not at the source any more, or on its way out with a deleted
+        // connector: there is nothing to index, and selecting it would keep
+        // what an earlier selection left.
+        if (container.goneAt !== null) return gone();
+        // "Open" is what the last listing said, up to a day ago. Before content
+        // is indexed on that word, ask the source now, about this one
+        // container. Also when the request carries an acknowledgement: it is
+        // recorded against what the source says today, not against the stale row.
+        if (container.visibility === 'open') {
+          if (!server.knowledgeScheduler) return notWired(reply);
+          try {
+            if (!(await server.knowledgeScheduler.refreshContainer(id, container))) return gone();
+          } catch (err) {
+            if (!(err instanceof KnowledgeRefreshError)) throw err;
+            return reply
+              .status(refreshStatus(err))
+              .send({ error: { code: err.code, message: err.message } });
           }
-        } catch (err) {
-          if (!(err instanceof KnowledgeRefreshError)) throw err;
-          return reply
-            .status(refreshStatus(err))
-            .send({ error: { code: err.code, message: err.message } });
+          container = await find();
+          if (!container) return notFound(reply, 'No such container.');
+          if (container.goneAt !== null) return gone();
         }
-        container = await find();
-        if (!container) return notFound(reply, 'No such container.');
-        if (container.visibility !== 'open') return refuse();
+        if (container.visibility !== 'open' && !acknowledged) return refuse();
       }
       await store.selectContainer(id, containerId, {
         selected,

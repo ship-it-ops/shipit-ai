@@ -255,6 +255,8 @@ export class ConnectorRegistry {
       id: input.id,
       name: input.name,
       enabled: input.enabled ?? true,
+      // Tells this connector from an earlier one with the same id (see the schema).
+      createdAt: new Date().toISOString(),
       lastRuns: [] as LastRun[],
       ...(input.schedule !== undefined ? { schedule: input.schedule } : {}),
     };

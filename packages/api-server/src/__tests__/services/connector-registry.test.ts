@@ -407,6 +407,42 @@ describe('ConnectorRegistry — github knowledge block', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  // The knowledge layer tells a connector from an earlier one with the same
+  // id by this: ids are chosen by the caller and can be used again.
+  it('stamps a connector with the time it was created, and keeps it through an update', async () => {
+    const registry = new ConnectorRegistry({ localConfigPath: yamlPath, initial: [] });
+    const before = Date.now();
+    const created = await registry.create({
+      id: 'gh-born',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+    });
+    expect(Date.parse(created.createdAt!)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(created.createdAt!)).toBeLessThanOrEqual(Date.now());
+
+    const updated = await registry.update('gh-born', { name: 'renamed' }, undefined);
+    expect(updated.createdAt).toBe(created.createdAt);
+    const onDisk = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<{ id: string; createdAt?: string }> };
+    };
+    expect(onDisk.connectors.instances.find((c) => c.id === 'gh-born')?.createdAt).toBe(
+      created.createdAt,
+    );
+
+    await registry.remove('gh-born', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const again = await registry.create({
+      id: 'gh-born',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+    });
+    expect(again.createdAt).not.toBe(created.createdAt);
+  });
+
   it('update replaces the knowledge block, fills its defaults, persists it and re-binds the runner', async () => {
     const updated = await registry.update(
       'gh-1',

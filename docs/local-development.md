@@ -243,13 +243,16 @@ purpose, set `SHIPIT_DEV_DATABASE_URL`. Run by hand, `pnpm db:migrate` uses
 `DATABASE_MIGRATOR_URL` when it is set and `pnpm db:bootstrap` uses
 `DATABASE_SUPERUSER_URL`, each before `DATABASE_URL`.
 
-Two rules keep a migration from stalling a database that is in use. Every file
-runs under a 5-second lock timeout: one that cannot get its lock fails, and is
-tried again later, instead of making every other query on the table wait
-behind it. And a file whose first line is `-- migrate: no-transaction` runs
-outside a transaction, which is what `CREATE INDEX CONCURRENTLY` needs to index
-a table without blocking writes to it. Such a file holds one statement, written
-so that running it twice is harmless (`IF NOT EXISTS`).
+Two rules keep a migration from stalling a database that is in use. A file runs
+under a 5-second lock timeout: one that cannot get its lock fails, and is tried
+again later, instead of making every other query on the table wait behind it.
+And a file whose first line is `-- migrate: no-transaction` runs outside a
+transaction (and without that timeout), which is what `CREATE INDEX
+CONCURRENTLY` needs to index a table without blocking writes to it. Such a file
+holds one statement, written with `IF NOT EXISTS`. It is recorded only while
+the schema holds no invalid index: a concurrent build that fails leaves one
+behind, and the migrator then names it and the `DROP INDEX CONCURRENTLY` to run
+before trying again.
 
 The knowledge layer (`packages/knowledge`, `packages/knowledge-worker`) stores
 documents and embeddings in the same database and needs the pgvector extension.
@@ -291,10 +294,11 @@ curl -s -X POST $API/sync -H 'content-type: application/json' -d '{"mode":"incre
 The `PATCH` replaces the whole `knowledge` block, so send every setting you changed from
 its default, not only the one you are changing now. A change to `docs.paths`,
 `docs.maxFileBytes` or `historyDays` takes effect at the next poll. Deselecting a repository
-(`{"selected":false}`) deletes what was indexed for it, within about a minute, and so does
-deleting the connector. Selecting a repository without `acknowledgeVisibility` asks GitHub
-about that repository first, to make sure it is still public. A `429 RATE_LIMITED` from
-the refresh or the select means GitHub asked to wait; try again in a few minutes.
+(`{"selected":false}`) deletes what was indexed for it: the worker purges once a minute, so
+it usually takes a minute or two. Deleting the connector does the same for everything it
+holds. Selecting a repository the last listing called public asks GitHub about that
+repository first, to make sure it still is. A `429 RATE_LIMITED` from the refresh or the
+select means GitHub asked to wait; try again in a few minutes.
 
 Knowledge runs have their own history: `GET $API` returns them as `lastKnowledgeRuns`,
 with their notes, beside `lastRuns`, which is the graph sync alone.

@@ -164,11 +164,18 @@ const githubKnowledgeSchema = z.object({
 
 export type GitHubKnowledgeConfig = z.infer<typeof githubKnowledgeSchema>;
 
+// When the connector was created (ISO time), stamped by the registry. Absent on
+// a connector that predates the field. Ids are chosen by the caller and can be
+// used again: this is how the knowledge layer tells a connector from an
+// earlier one with the same id.
+const connectorCreatedAt = z.string().min(1).optional();
+
 const githubConnectorSchema = z.object({
   id: z.string().min(1),
   type: z.literal('github'),
   enabled: z.boolean().default(true),
   name: z.string().min(1),
+  createdAt: connectorCreatedAt,
   // GitHub App installation that backs this connector instance. The App
   // itself is configured once globally under connectors.github.app.*; only the
   // installation id and org name vary per instance — unless `app` below
@@ -312,6 +319,7 @@ const kubernetesConnectorSchema = z.object({
   type: z.literal('kubernetes'),
   enabled: z.boolean().default(true),
   name: z.string().min(1),
+  createdAt: connectorCreatedAt,
   schedule: z.string().default('*/5 * * * *').refine(isCrontabShape, {
     message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "*/5 * * * *".',
   }),
