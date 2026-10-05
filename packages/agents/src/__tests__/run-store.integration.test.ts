@@ -229,6 +229,25 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
     expect(messages.at(-1)).toMatchObject({ seq: 2, role: 'user' });
   });
 
+  // A worker sees a cancel request at its next heartbeat or before its next
+  // model step. A chat turn that ends before either must not park the run with
+  // the request still pending: claim() refuses such a run, so the next message
+  // would leave it queued for good.
+  it('ends a chat run cancelled when it parks with a cancel request pending', async () => {
+    const run = await make({ mode: 'chat' });
+    await runs.claim(run.id, 'worker-a', 60);
+    await runs.appendMessages(run.id, [{ role: 'assistant', content: 'Hi.' }]);
+    await runs.requestCancel(run.id);
+
+    const parked = await runs.waitForInput(run.id, 'worker-a');
+    expect(parked).toMatchObject({ status: 'cancelled', cancelRequested: true });
+    expect(parked!.finishedAt).not.toBeNull();
+    await expect(runs.addUserMessage(run.id, userMessage('more'))).rejects.toBeInstanceOf(
+      RunNotWaitingError,
+    );
+    expect(await runs.requeueStaleQueued(0)).toEqual([]);
+  });
+
   it('refuses a message for a run that is not waiting for one', async () => {
     const run = await make({ mode: 'chat' });
     await expect(runs.addUserMessage(run.id, userMessage('x'))).rejects.toBeInstanceOf(
@@ -294,6 +313,64 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
     expect(finished).toMatchObject({ status: 'succeeded', output: { owners: ['team-a'] } });
     expect(finished.finishedAt).not.toBeNull();
     expect((await runs.listToolCalls(run.id)).map((c) => c.callId)).toEqual(['call_1']);
+  });
+
+  const writeCall = (runId: string) => ({
+    runId,
+    callId: 'call_w',
+    messageSeq: 1,
+    toolId: 'gh.comment',
+    service: 'gh',
+    effect: 'write' as const,
+    policy: 'allow' as const,
+    decision: 'allow' as const,
+    status: 'executing' as const,
+    input: { body: 'hi' },
+  });
+
+  // "A write is never repeated" has to hold against a worker that is still
+  // alive but no longer holds the run, not only against one that died.
+  it('refuses to start a tool call for a worker that does not hold the run', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    await expect(runs.startToolCall(writeCall(run.id), 'worker-b')).rejects.toBeInstanceOf(
+      RunLeaseLostError,
+    );
+    expect(await runs.listToolCalls(run.id)).toEqual([]);
+    expect(await runs.startToolCall(writeCall(run.id), 'worker-a')).toMatchObject({
+      status: 'executing',
+    });
+  });
+
+  it('never starts a write a second time', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    const first = await runs.startToolCall(writeCall(run.id), 'worker-a');
+    await expect(runs.startToolCall(writeCall(run.id), 'worker-a')).rejects.toBeInstanceOf(
+      RunLeaseLostError,
+    );
+    const [stored] = await runs.listToolCalls(run.id);
+    expect(stored).toMatchObject({ id: first.id, startedAt: first.startedAt });
+  });
+
+  it('keeps the first outcome recorded for a tool call', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    const call = await runs.startToolCall(writeCall(run.id), 'worker-a');
+    // The worker that took the run over found the write in flight and said so.
+    await runs.finishToolCall(call.id, {
+      status: 'outcome_unknown',
+      error: {
+        code: 'OUTCOME_UNKNOWN',
+        message: 'The runner stopped while this call was running.',
+      },
+    });
+    // The worker that lost the run finishes late.
+    const late = await runs.finishToolCall(call.id, { status: 'succeeded', output: { ok: true } });
+    expect(late).toMatchObject({ status: 'outcome_unknown', output: null });
+    await expect(
+      runs.finishToolCall('00000000-0000-0000-0000-000000000000', { status: 'failed' }),
+    ).rejects.toThrow(/not found/);
   });
 
   it('records a call to a tool that does not exist, with no service or effect', async () => {
@@ -384,6 +461,34 @@ describe.skipIf(!DATABASE_TEST_URL)('RunStore — Postgres integration', () => {
     );
     expect(await runs.claim(run.id, 'worker-b', 60)).not.toBeNull();
     expect(await runs.failStalled()).toEqual([run.id]);
+  });
+
+  // The run loop adds a run's warnings again after every takeover. One the run
+  // already has is not progress either.
+  it('does not reset the stall clock when a warning the run already has is added again', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    await runs.addWarning(run.id, 'Tool graph.x is no longer available.');
+    await database.db.query(
+      `UPDATE runs SET updated_at = now() - interval '601 seconds',
+                       lease_expires_at = now() - interval '1 second'
+        WHERE id = $1`,
+      [run.id],
+    );
+    expect(await runs.claim(run.id, 'worker-b', 60)).not.toBeNull();
+    await runs.addWarning(run.id, 'Tool graph.x is no longer available.');
+    expect(await runs.failStalled()).toEqual([run.id]);
+  });
+
+  it('moves the stall clock for a warning the run did not have', async () => {
+    const run = await make();
+    await runs.claim(run.id, 'worker-a', 60);
+    await database.db.query(
+      `UPDATE runs SET updated_at = now() - interval '601 seconds' WHERE id = $1`,
+      [run.id],
+    );
+    await runs.addWarning(run.id, 'Tool graph.y is no longer available.');
+    expect(await runs.failStalled()).toEqual([]);
   });
 
   it('still starts the clock when a queued run is first claimed', async () => {

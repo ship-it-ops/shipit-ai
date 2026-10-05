@@ -537,11 +537,16 @@ export class RunStore {
     });
   }
 
+  /**
+   * Records a warning once. Adding one the run already has changes nothing,
+   * `updated_at` included: the run loop adds a run's warnings again after
+   * every takeover, and that must not look like progress to failStalled.
+   */
   async addWarning(id: string, warning: string): Promise<RunRecord> {
     const { rows } = await this.db.query<RunRow>(
       `UPDATE runs
           SET warnings = CASE WHEN warnings @> $2::jsonb THEN warnings ELSE warnings || $2::jsonb END,
-              updated_at = now()
+              updated_at = CASE WHEN warnings @> $2::jsonb THEN updated_at ELSE now() END
         WHERE id = $1
         RETURNING *`,
       [id, json([warning])],
@@ -582,11 +587,18 @@ export class RunStore {
     return null;
   }
 
-  /** Ends a chat turn: the run waits for the next message and holds no worker. */
+  /**
+   * Ends a chat turn: the run waits for the next message and holds no worker.
+   * A cancel requested while the worker held the run is settled here instead:
+   * the run ends cancelled. Parked with the request still pending it could
+   * never be claimed again, and its next message would leave it queued for good.
+   */
   async waitForInput(id: string, owner?: string): Promise<RunRecord | null> {
     const { rows } = await this.db.query<RunRow>(
       `UPDATE runs
-          SET status = 'waiting_input', updated_at = now(), lease_owner = NULL, lease_expires_at = NULL
+          SET status = CASE WHEN cancel_requested THEN 'cancelled' ELSE 'waiting_input' END,
+              finished_at = CASE WHEN cancel_requested THEN now() ELSE finished_at END,
+              updated_at = now(), lease_owner = NULL, lease_expires_at = NULL
         WHERE id = $1 AND status = 'running' AND ($2::text IS NULL OR lease_owner = $2::text)
         RETURNING *`,
       [id, owner ?? null],
@@ -655,18 +667,27 @@ export class RunStore {
   }
 
   /**
-   * Writes the audit row for a tool call before it runs. Starting a call that
-   * already has a row (a read re-run after a crash) reuses that row.
+   * Writes the audit row for a tool call before it runs. With `owner`, only
+   * the worker holding the run's lease may start a call. A read that already
+   * has a row (it was in flight when a worker died) reuses the row. A write or
+   * delete that already has a row is never started again: whoever wrote that
+   * row ran it, or may have. In both refusals the caller gets RunLeaseLostError
+   * and nothing is written, so a worker that lost the run while it was cut off
+   * cannot repeat a write the new holder already settled.
    */
-  async startToolCall(input: StartToolCallInput): Promise<ToolCallRecord> {
+  async startToolCall(input: StartToolCallInput, owner?: string): Promise<ToolCallRecord> {
     const { rows } = await this.db.query<ToolCallRow>(
       `INSERT INTO tool_calls (id, run_id, call_id, message_seq, tool_id, service, effect, policy,
                                decision, status, input, error, started_at, finished_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, now(),
-               CASE WHEN $10 = 'executing' THEN NULL ELSE now() END)
+       SELECT $1::uuid, $2::uuid, $3::text, $4::integer, $5::text, $6::text, $7::text, $8::text,
+              $9::text, $10::text, $11::jsonb, $12::jsonb, now(),
+              CASE WHEN $10::text = 'executing' THEN NULL ELSE now() END
+        WHERE $13::text IS NULL
+           OR EXISTS (SELECT 1 FROM runs WHERE id = $2::uuid AND lease_owner = $13::text)
        ON CONFLICT (run_id, call_id) DO UPDATE
           SET status = EXCLUDED.status, started_at = now(), finished_at = EXCLUDED.finished_at,
               error = EXCLUDED.error
+        WHERE tool_calls.effect IS NULL OR tool_calls.effect = 'read'
        RETURNING *`,
       [
         randomUUID(),
@@ -681,11 +702,18 @@ export class RunStore {
         input.status,
         json(input.input),
         input.error === undefined ? null : json(input.error),
+        owner ?? null,
       ],
     );
-    return toToolCall(rows[0]!);
+    if (!rows[0]) throw new RunLeaseLostError(input.runId);
+    return toToolCall(rows[0]);
   }
 
+  /**
+   * Records how a call ended. The first outcome stands: a call that is no
+   * longer in flight is returned as stored, so a worker that lost the run and
+   * finishes late cannot overwrite what the new holder recorded.
+   */
   async finishToolCall(
     id: string,
     result: {
@@ -699,7 +727,7 @@ export class RunStore {
       `UPDATE tool_calls
           SET status = $2, output = $3::jsonb, output_truncated = $4, error = $5::jsonb,
               finished_at = now()
-        WHERE id = $1
+        WHERE id = $1 AND status IN ('pending', 'executing')
         RETURNING *`,
       [
         id,
@@ -709,8 +737,10 @@ export class RunStore {
         result.error === undefined ? null : json(result.error),
       ],
     );
-    if (!rows[0]) throw new Error(`Tool call ${id} not found`);
-    return toToolCall(rows[0]);
+    if (rows[0]) return toToolCall(rows[0]);
+    const stored = await this.db.query<ToolCallRow>('SELECT * FROM tool_calls WHERE id = $1', [id]);
+    if (!stored.rows[0]) throw new Error(`Tool call ${id} not found`);
+    return toToolCall(stored.rows[0]);
   }
 
   async listToolCalls(runId: string): Promise<ToolCallRecord[]> {

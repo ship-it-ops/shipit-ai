@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createPool } from '../db.js';
+import type { Pool } from 'pg';
+import { createDb, createPool } from '../db.js';
 
 // No connection is opened here: pg connects lazily, on the first query.
 const URL = 'postgres://user:pw@127.0.0.1:1/none';
@@ -50,5 +51,100 @@ describe('createPool', () => {
     expect(off.options.statement_timeout).toBeUndefined();
     expect(off.options.query_timeout).toBeUndefined();
     await off.end();
+  });
+
+  // Without keepalive a connection whose peer vanished (a node lost, not a
+  // clean close) looks healthy until something is written to it.
+  it('turns TCP keepalive on', async () => {
+    const pool = createPool({ connectionString: URL });
+    expect(pool.options.keepAlive).toBe(true);
+    expect(pool.options.keepAliveInitialDelayMillis).toBe(10_000);
+    await pool.end();
+  });
+});
+
+// A stand-in for pg's Pool: one client whose queries are scripted, recording
+// what was sent and how the client was handed back.
+function fakePool(answer: (text: string) => Promise<unknown>) {
+  const sent: string[] = [];
+  const release = vi.fn();
+  const client = {
+    query: async (text: string) => {
+      sent.push(text);
+      return (await answer(text)) ?? { rows: [], rowCount: 0 };
+    },
+    release,
+  };
+  const pool = { connect: async () => client, query: client.query } as unknown as Pool;
+  return { pool, sent, release };
+}
+
+const serverError = () => Object.assign(new Error('duplicate key value'), { code: '23505' });
+const socketError = () => Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+
+describe('createDb', () => {
+  it('commits a transaction and hands the connection back', async () => {
+    const { pool, sent, release } = fakePool(async () => undefined);
+    await createDb(pool).tx((client) => client.query('SELECT 1'));
+    expect(sent).toEqual(['BEGIN', 'SELECT 1', 'COMMIT']);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(release.mock.calls[0]![0]).toBeFalsy();
+  });
+
+  it('rolls back and keeps the connection when the server refuses a statement', async () => {
+    const { pool, sent, release } = fakePool(async (text) => {
+      if (text === 'INSERT') throw serverError();
+      return undefined;
+    });
+    await expect(createDb(pool).tx((client) => client.query('INSERT'))).rejects.toThrow(
+      'duplicate key value',
+    );
+    expect(sent).toEqual(['BEGIN', 'INSERT', 'ROLLBACK']);
+    expect(release.mock.calls[0]![0]).toBeFalsy();
+  });
+
+  it('rolls back and keeps the connection when the callback itself throws', async () => {
+    const { pool, sent, release } = fakePool(async () => undefined);
+    await expect(
+      createDb(pool).tx(async () => {
+        throw new Error('not waiting for input');
+      }),
+    ).rejects.toThrow('not waiting for input');
+    expect(sent).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(release.mock.calls[0]![0]).toBeFalsy();
+  });
+
+  // pg-pool keeps a client unless it is released with an error. A connection
+  // that failed below SQL (reset, or the client-side query timeout) would go
+  // back into the pool and fail the next caller the same way.
+  it('discards a connection that failed below SQL, without trying to roll back on it', async () => {
+    const { pool, sent, release } = fakePool(async (text) => {
+      if (text === 'SELECT 1') throw socketError();
+      return undefined;
+    });
+    await expect(createDb(pool).tx((client) => client.query('SELECT 1'))).rejects.toThrow(
+      'ECONNRESET',
+    );
+    expect(sent).toEqual(['BEGIN', 'SELECT 1']);
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  it('discards a connection whose query timed out on the client side', async () => {
+    const { pool, release } = fakePool(async (text) => {
+      if (text === 'SELECT pg_sleep(60)') throw new Error('Query read timeout');
+      return undefined;
+    });
+    await expect(
+      createDb(pool).withClient((client) => client.query('SELECT pg_sleep(60)')),
+    ).rejects.toThrow('Query read timeout');
+    expect(release).toHaveBeenCalledWith(true);
+  });
+
+  it('keeps a dedicated connection after a server error', async () => {
+    const { pool, release } = fakePool(async () => {
+      throw serverError();
+    });
+    await expect(createDb(pool).withClient((client) => client.query('INSERT'))).rejects.toThrow();
+    expect(release.mock.calls[0]![0]).toBeFalsy();
   });
 });

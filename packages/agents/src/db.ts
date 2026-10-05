@@ -44,6 +44,10 @@ export function createPool(opts: CreatePoolOptions): Pool {
     max: opts.max ?? 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    // A peer that vanished without closing (a node lost) is otherwise only
+    // noticed when something is written to the connection.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   };
   if (opts.searchPath) config.options = `-c search_path=${opts.searchPath}`;
   const statementTimeout = opts.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS;
@@ -76,31 +80,63 @@ function wrap(target: PgQueryable): SqlClient {
   };
 }
 
+// An error the server sent carries a five-character SQLSTATE and leaves the
+// connection usable. Anything else a query fails with (a reset socket, the
+// client-side query timeout) means the connection cannot be trusted again.
+function failedBelowSql(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return !(typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code));
+}
+
+/** One checked-out connection, remembering whether a query on it failed below SQL. */
+function dedicated(client: PgQueryable): { sql: SqlClient; broken: () => boolean } {
+  const inner = wrap(client);
+  let broken = false;
+  return {
+    sql: {
+      async query<R extends object>(text: string, params?: ReadonlyArray<unknown>) {
+        try {
+          return await inner.query<R>(text, params);
+        } catch (err) {
+          if (failedBelowSql(err)) broken = true;
+          throw err;
+        }
+      },
+    },
+    broken: () => broken,
+  };
+}
+
 export function createDb(pool: Pool): Db {
   const root = wrap(pool);
   return {
     query: (text, params) => root.query(text, params),
     async withClient(fn) {
       const client = await pool.connect();
+      const scoped = dedicated(client);
       try {
-        return await fn(wrap(client));
+        return await fn(scoped.sql);
       } finally {
-        client.release();
+        // pg-pool keeps a client unless it is released with an error: a broken
+        // one would be handed to the next caller.
+        client.release(scoped.broken() ? true : undefined);
       }
     },
     async tx(fn) {
       const client = await pool.connect();
-      const scoped = wrap(client);
+      const scoped = dedicated(client);
       try {
-        await scoped.query('BEGIN');
-        const value = await fn(scoped);
-        await scoped.query('COMMIT');
+        await scoped.sql.query('BEGIN');
+        const value = await fn(scoped.sql);
+        await scoped.sql.query('COMMIT');
         return value;
       } catch (err) {
-        await scoped.query('ROLLBACK').catch(() => undefined);
+        // Dropping a broken connection ends its transaction; a ROLLBACK on it
+        // would only wait for the query timeout a second time.
+        if (!scoped.broken()) await scoped.sql.query('ROLLBACK').catch(() => undefined);
         throw err;
       } finally {
-        client.release();
+        client.release(scoped.broken() ? true : undefined);
       }
     },
   };

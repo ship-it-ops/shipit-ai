@@ -1,20 +1,9 @@
 export { createDb, createPool } from './db.js';
 export type { CreatePoolOptions, Db, QueryResult, SqlClient } from './db.js';
-export {
-  MIGRATION_LOCK_KEY,
-  MigrationPlanError,
-  listMigrationFiles,
-  parseMigrationFilename,
-  planMigrations,
-  runMigrations,
-} from './migrate.js';
+export { runMigrations } from './migrate.js';
 export type { MigrationPlan, RunMigrationsOptions, RunMigrationsResult } from './migrate.js';
 export { EXPECTED_SCHEMA_VERSION } from './schema-version.js';
 export {
-  GRANT_POLICIES,
-  TOOL_EFFECTS,
-  agentDefinitionSchema,
-  agentLimitsSchema,
   checkDefinitionAgainstPolicy,
   grantedServiceEffects,
   parseAgentDefinition,
@@ -66,7 +55,7 @@ export type {
   ToolCallRecord,
   ToolCallStatus,
 } from './run-store.js';
-export { modelToolName, resolvePolicy, resolveTools } from './tools.js';
+export { resolveTools } from './tools.js';
 export type { ResolvedTool, ToolDescriptor } from './tools.js';
 export { AGENT_RUNS_QUEUE, RUN_EVENTS_CHANNEL, RUNNER_HEARTBEAT_KEY } from './queues.js';
 export type { RunEvent, RunJob } from './queues.js';

@@ -107,13 +107,22 @@ export class AgentLoop implements AgentRuntime {
     // The lease heartbeat doubles as the cancel check: a cancel request or a
     // takeover aborts whatever the run is waiting on.
     const control = new AbortController();
+    let renewedAt = Date.now();
     const heartbeat = setInterval(() => {
       this.opts.runs.renewLease(runId, holder, this.leaseSeconds).then(
         (lease) => {
+          renewedAt = Date.now();
           if (!lease.held) control.abort('lease_lost' satisfies AbortReason);
           else if (lease.cancelRequested) control.abort('cancelled' satisfies AbortReason);
         },
-        (err: Error) => this.log(`run ${runId}: lease renewal failed: ${err.message}`),
+        (err: Error) => {
+          this.log(`run ${runId}: lease renewal failed: ${err.message}`);
+          // A lease nobody could renew for its whole length has run out: the
+          // run may be another worker's by now, so stop as if it were.
+          if (Date.now() - renewedAt >= this.leaseSeconds * 1000) {
+            control.abort('lease_lost' satisfies AbortReason);
+          }
+        },
       );
     }, this.renewEveryMs);
 
@@ -165,16 +174,19 @@ export class AgentLoop implements AgentRuntime {
       if (last?.role === 'assistant') {
         const calls = toolCallsOf(last.content);
         if (calls.length > 0) {
-          const results = await this.settleCalls(run, last.seq, calls, offered);
+          const results = await this.settleCalls(holder, run, last.seq, calls, offered, signal);
           const stopped = this.stopFor(signal);
           if (stopped === 'lease_lost') return 'lease_lost';
           await this.append(holder, run, [toolResultMessage(results)]);
           continue;
         }
         if (run.mode === 'chat') {
-          await runs.waitForInput(run.id, holder);
-          this.publish({ runId: run.id, status: 'waiting_input' });
-          return 'waiting';
+          // Parking settles a cancel that arrived while the turn's last step
+          // was returning, which neither the heartbeat nor checkBeforeStep saw.
+          const parked = await runs.waitForInput(run.id, holder);
+          const cancelled = parked?.status === 'cancelled';
+          this.publish({ runId: run.id, status: cancelled ? 'cancelled' : 'waiting_input' });
+          return cancelled ? 'finished' : 'waiting';
         }
         return this.end(holder, run, {
           status: 'succeeded',
@@ -369,10 +381,12 @@ export class AgentLoop implements AgentRuntime {
    * deletes run one at a time, after the reads.
    */
   private async settleCalls(
+    holder: string,
     run: RunRecord,
     messageSeq: number,
     calls: ToolCallRequest[],
     offered: Map<string, Offered>,
+    signal: AbortSignal,
   ): Promise<Array<{ callId: string; name: string; output: unknown }>> {
     const { runs } = this.opts;
     const recorded = new Map((await runs.listToolCalls(run.id)).map((c) => [c.callId, c]));
@@ -393,19 +407,22 @@ export class AgentLoop implements AgentRuntime {
             code: 'UNKNOWN_TOOL',
             message: `There is no tool named ${call.name}. Use only the tools you were given.`,
           };
-          await runs.startToolCall({
-            runId: run.id,
-            callId: call.callId,
-            messageSeq,
-            toolId: call.name,
-            service: null,
-            effect: null,
-            policy: 'off',
-            decision: 'deny',
-            status: 'denied',
-            input: call.input ?? null,
-            error,
-          });
+          await runs.startToolCall(
+            {
+              runId: run.id,
+              callId: call.callId,
+              messageSeq,
+              toolId: call.name,
+              service: null,
+              effect: null,
+              policy: 'off',
+              decision: 'deny',
+              status: 'denied',
+              input: call.input ?? null,
+              error,
+            },
+            holder,
+          );
           outputs[i] = { error };
         });
         return;
@@ -423,7 +440,10 @@ export class AgentLoop implements AgentRuntime {
         input: call.input ?? null,
       };
       // A write or delete that was running when the runner stopped is never
-      // repeated (design decision 13): the model is told to check first.
+      // repeated (design decision 13): the model is told to check first. The
+      // same holds against a worker that is alive but lost the run: the store
+      // starts a call only for the lease holder, and never starts a write that
+      // already has a row.
       if (prior?.status === 'executing' && resolved.effect !== 'read') {
         writes.push(async () => {
           const error = {
@@ -440,29 +460,34 @@ export class AgentLoop implements AgentRuntime {
       if (!parsed.ok) {
         reads.push(async () => {
           const error = { code: 'INVALID_INPUT', message: parsed.message };
-          await runs.startToolCall({ ...base, status: 'failed', error });
+          await runs.startToolCall({ ...base, status: 'failed', error }, holder);
           outputs[i] = { error };
         });
         return;
       }
       (resolved.effect === 'read' ? reads : writes).push(async () => {
-        outputs[i] = await this.execute(base, tool, parsed.value);
+        outputs[i] = await this.execute(holder, base, tool, parsed.value);
       });
     });
 
     await Promise.all(reads.map((task) => task()));
-    for (const task of writes) await task();
+    for (const task of writes) {
+      // The heartbeat saw the run go to another worker: the rest is theirs.
+      if (this.stopFor(signal) === 'lease_lost') break;
+      await task();
+    }
     return calls.map((call, i) => ({ callId: call.callId, name: call.name, output: outputs[i] }));
   }
 
   /** Runs one call with its audit row written before and after. */
   private async execute(
+    holder: string,
     base: Omit<StartToolCallInput, 'status'>,
     tool: RunnerTool,
     input: Record<string, unknown>,
   ): Promise<unknown> {
     const { runs } = this.opts;
-    const row = await runs.startToolCall({ ...base, status: 'executing' });
+    const row = await runs.startToolCall({ ...base, status: 'executing' }, holder);
     try {
       const output = await tool.execute(input);
       const fitted = this.fit(output);
@@ -490,11 +515,15 @@ export class AgentLoop implements AgentRuntime {
     const text = JSON.stringify(output ?? null);
     const limit = this.opts.toolResultChars;
     if (text.length <= limit) return { value: output ?? null, truncated: false };
+    // Cut between characters: half of a surrogate pair is not valid jsonb, and
+    // a recorded result is cut the same way on every retry of the run.
+    let content = text.slice(0, limit);
+    if (/[\uD800-\uDBFF]$/.test(content)) content = content.slice(0, -1);
     return {
       value: {
         truncated: true,
-        note: `Result truncated to ${limit} of ${text.length} characters.`,
-        content: text.slice(0, limit),
+        note: `Result truncated to ${content.length} of ${text.length} characters.`,
+        content,
       },
       truncated: true,
     };

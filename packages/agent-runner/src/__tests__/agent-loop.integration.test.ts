@@ -293,6 +293,32 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
     });
   });
 
+  // The cut is made on UTF-16 units. Halving a character outside the basic
+  // plane leaves a lone surrogate, which Postgres refuses in jsonb, and the
+  // same cut would be refused again on every retry of the run.
+  it('never cuts a result in the middle of a character', async () => {
+    const run = await createRun();
+    const rocket = fakeTool('graph.find_owners', 'read', {
+      // `{"blob":"` is 9 characters, so the pair sits at 29 and 30: a cut at 30 splits it.
+      result: () => ({ blob: `${'x'.repeat(20)}\u{1F680}${'y'.repeat(100)}` }),
+    });
+    const model = new ScriptedModel([
+      callTools([{ callId: 'c1', name: 'graph__find_owners', input: { q: 'x' } }]),
+      answer('ok'),
+    ]);
+    expect(await loop(model, [rocket], { toolResultChars: 30 }).instance.process(run.id)).toBe(
+      'finished',
+    );
+
+    const inContext = toolResults(await runs.listMessages(run.id))[0]!.output.value as {
+      note: string;
+      content: string;
+    };
+    expect(inContext.content).toBe(`{"blob":"${'x'.repeat(20)}`);
+    expect(inContext.note).toMatch(/29 of \d+ characters/);
+    expect((await reload(run.id)).status).toBe('succeeded');
+  });
+
   describe('limits', () => {
     it('fails with STEP_LIMIT when the model keeps calling tools past maxSteps', async () => {
       const run = await createRun({
@@ -474,6 +500,24 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
       expect((await reload(run.id)).status).toBe('cancelled');
     });
 
+    // The heartbeat is the only thing that tells a worker in a model call
+    // about a cancel. A turn whose last step returns before the next beat goes
+    // straight to parking the run, which must settle the request instead of
+    // dropping it.
+    it('ends a chat cancelled when the request lands as the last step of a turn returns', async () => {
+      const run = await createRun({ mode: 'chat', text: 'Hi' });
+      const model = new ScriptedModel([
+        async (request) => {
+          await runs.requestCancel(run.id);
+          return answer('Hello.')(request);
+        },
+      ]);
+      const { instance, events } = loop(model, [], { renewEveryMs: 60_000 });
+      expect(await instance.process(run.id)).toBe('finished');
+      expect(await reload(run.id)).toMatchObject({ status: 'cancelled', cancelRequested: true });
+      expect(events.at(-1)).toEqual({ runId: run.id, status: 'cancelled' });
+    });
+
     it('does nothing for a run that was cancelled before a worker took it', async () => {
       const run = await createRun();
       await runs.requestCancel(run.id);
@@ -641,6 +685,61 @@ describe.skipIf(!DATABASE_TEST_URL)('AgentLoop — Postgres integration', () => 
       },
     ]);
     expect(await loop(model, []).instance.process(run.id)).toBe('lease_lost');
+    expect((await reload(run.id)).status).toBe('running');
+  });
+
+  // "A write is never repeated" has to hold against a worker that is alive
+  // but has lost the run (cut off from Postgres for longer than its lease),
+  // not only against one that died. The new holder settles the step's calls.
+  it('does not start a write for a run it no longer holds', async () => {
+    const run = await createRun();
+    const comment = fakeTool('gh.comment', 'write', {
+      result: async (input) => {
+        // Another worker takes the run while the first write is in flight.
+        if (input.q === 'first') {
+          await database.db.query(`UPDATE runs SET lease_owner = 'worker-other' WHERE id = $1`, [
+            run.id,
+          ]);
+        }
+        return { ok: true };
+      },
+    });
+    const model = new ScriptedModel([
+      callTools([
+        { callId: 'w1', name: 'gh__comment', input: { q: 'first' } },
+        { callId: 'w2', name: 'gh__comment', input: { q: 'second' } },
+      ]),
+    ]);
+    // No heartbeat during the test: the worker has not noticed.
+    const { instance } = loop(model, [comment], { renewEveryMs: 60_000 });
+    expect(await instance.process(run.id)).toBe('lease_lost');
+    expect(comment.calls).toEqual([{ q: 'first' }]);
+    expect((await runs.listToolCalls(run.id)).map((c) => c.callId)).toEqual(['w1']);
+  });
+
+  // A lease nobody could renew for its whole length has run out, whatever the
+  // reason: the run may be another worker's by now.
+  it('gives a run up when its lease could not be renewed for a whole lease', async () => {
+    const run = await createRun();
+    const model = new ScriptedModel([
+      (request) =>
+        new Promise((_resolve, reject) =>
+          request.signal.addEventListener('abort', () =>
+            reject(new ModelCallError('ABORTED', 'aborted')),
+          ),
+        ),
+    ]);
+    const unreachable = Object.create(runs) as RunStore;
+    unreachable.renewLease = async () => {
+      throw new Error('connection refused');
+    };
+    const { instance } = loop(model, [], {
+      runs: unreachable,
+      leaseSeconds: 0.1,
+      renewEveryMs: 10,
+      log: () => {},
+    });
+    expect(await instance.process(run.id)).toBe('lease_lost');
     expect((await reload(run.id)).status).toBe('running');
   });
 
