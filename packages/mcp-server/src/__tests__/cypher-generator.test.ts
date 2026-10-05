@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  CATALOG_NODE_EXISTS_CYPHER,
+  CATALOG_NODE_IDS_CYPHER,
   generateBlastRadiusCypher,
   generateEntityDetailCypher,
   generateFindOwnersCypher,
@@ -148,6 +150,45 @@ describe('Cypher Generator', () => {
       const result = generateSearchEntitiesCypher(undefined, undefined, 50);
       expect(result.params.limit).toBe(50);
     });
+
+    // The label, the filter keys and the sort key are written into the query
+    // as identifiers, so anything that is not a plain identifier is refused:
+    // a backtick would end the identifier and the rest would run as Cypher.
+    it('refuses a label that is not a plain identifier', () => {
+      expect(() => generateSearchEntitiesCypher('Repository`) MATCH (m')).toThrow(/label/);
+      expect(() => generateSearchEntitiesCypher('Logical Service')).toThrow(/label/);
+      expect(() => generateSearchEntitiesCypher('Repository\\u0060')).toThrow(/label/);
+    });
+
+    it('refuses an internal label', () => {
+      expect(() => generateSearchEntitiesCypher('_AccessToken')).toThrow(/label/);
+    });
+
+    it('refuses a filter key that is not a plain identifier', () => {
+      expect(() =>
+        generateSearchEntitiesCypher('Repository', { 'name` IS NOT NULL OR n.`x': 1 }),
+      ).toThrow(/property_filters/);
+      expect(() => generateSearchEntitiesCypher('Repository', { '': null })).toThrow(
+        /property_filters/,
+      );
+    });
+
+    it('refuses a sort key that is not a plain identifier', () => {
+      expect(() =>
+        generateSearchEntitiesCypher('Repository', undefined, 25, 'name` DESC //'),
+      ).toThrow(/sort_by/);
+    });
+
+    it('accepts property names that start with an underscore', () => {
+      const result = generateSearchEntitiesCypher(
+        'Repository',
+        { _event_version: 3 },
+        25,
+        '_absent_since',
+      );
+      expect(result.query).toContain('n.`_event_version` = $filter_0');
+      expect(result.query).toContain('ORDER BY n.`_absent_since` ASC');
+    });
   });
 
   describe('generateGraphStatsCypher', () => {
@@ -172,7 +213,7 @@ describe('Cypher Generator', () => {
 
     it('entity detail neighbors exclude absent nodes by default', () => {
       expect(generateEntityDetailCypher(id, true).query).toContain(
-        'WHERE neighbor._absent_since IS NULL',
+        'AND neighbor._absent_since IS NULL',
       );
       expect(generateEntityDetailCypher(id, true, true).query).not.toContain('_absent_since');
       // The entity itself is never filtered: asking for an absent node by id still works.
@@ -187,7 +228,7 @@ describe('Cypher Generator', () => {
     });
 
     it('search excludes absent nodes by default, also when no other filter is set', () => {
-      expect(generateSearchEntitiesCypher().query).toContain('WHERE n._absent_since IS NULL');
+      expect(generateSearchEntitiesCypher().query).toContain('AND n._absent_since IS NULL');
       expect(
         generateSearchEntitiesCypher(undefined, undefined, 25, 'name', true).query,
       ).not.toContain('_absent_since');
@@ -195,7 +236,7 @@ describe('Cypher Generator', () => {
 
     it('graph stats exclude absent nodes and their edges by default, and include them on request', () => {
       const q = generateGraphStatsCypher().query;
-      expect(q).toContain('MATCH (n) WHERE n._absent_since IS NULL');
+      expect(q).toMatch(/MATCH \(n\) WHERE .* AND n\._absent_since IS NULL/);
       expect(q).toContain('a._absent_since IS NULL AND b._absent_since IS NULL');
       expect(q).toContain('MATCH (d:Deployment) WHERE d._absent_since IS NULL');
       // Every read accepts include_absent; graph_stats used to hard-code the exclusion.
@@ -214,6 +255,74 @@ describe('Cypher Generator', () => {
       }
       expect(generateFindOwnersCypher(id, true, true).query).not.toContain('_absent_since');
       expect(generateFindOwnersCypher(id, false, true).query).not.toContain('_absent_since');
+    });
+  });
+
+  // Nodes whose label starts with an underscore are the application's own
+  // bookkeeping: access tokens, linking keys, the idempotency log. They are not
+  // part of the catalog. A label filter cannot name one, but that alone does
+  // not keep a tool off them: a search with no label, or a lookup by id, would
+  // still reach them.
+  describe('internal nodes', () => {
+    const notInternal = (alias: string) => `NONE(l IN labels(${alias}) WHERE l STARTS WITH '_')`;
+    const id = 'shipit://repository/default/acme/payments';
+
+    it('search leaves them out, with or without a label', () => {
+      expect(generateSearchEntitiesCypher().query).toContain(notInternal('n'));
+      expect(generateSearchEntitiesCypher(undefined, { revoked: false }).query).toContain(
+        notInternal('n'),
+      );
+      expect(generateSearchEntitiesCypher('Repository').query).toContain(notInternal('n'));
+    });
+
+    it('entity detail does not find one by id, or list one as a neighbor', () => {
+      expect(generateEntityDetailCypher(id, false).query).toContain(notInternal('n'));
+      const withNeighbors = generateEntityDetailCypher(id, true).query;
+      expect(withNeighbors).toContain(notInternal('n'));
+      expect(withNeighbors).toContain(notInternal('neighbor'));
+      // Also when absent nodes are asked for: that option is about the sweep.
+      expect(generateEntityDetailCypher(id, true, true).query).toContain(notInternal('neighbor'));
+    });
+
+    it('find owners does not answer for one', () => {
+      for (const chain of [false, true]) {
+        for (const absent of [false, true]) {
+          expect(generateFindOwnersCypher(id, chain, absent).query).toContain(
+            notInternal('entity'),
+          );
+        }
+      }
+    });
+
+    it('blast radius does not start from one', () => {
+      expect(generateBlastRadiusCypher(id, 2, 'BOTH').query).toContain(notInternal('start'));
+    });
+
+    it('a dependency chain does not start at, end at or pass through one', () => {
+      for (const absent of [false, true]) {
+        const { query } = generateDependencyChainCypher(id, 'x', 3, absent);
+        expect(query).toContain(notInternal('start'));
+        expect(query).toContain(notInternal('end'));
+        expect(query).toContain(
+          `none(x IN nodes(path) WHERE any(l IN labels(x) WHERE l STARTS WITH '_'))`,
+        );
+      }
+    });
+
+    it('graph stats count neither them nor their edges', () => {
+      for (const absent of [false, true]) {
+        const { query } = generateGraphStatsCypher(absent);
+        expect(query).toContain(notInternal('n'));
+        expect(query).toContain(notInternal('a'));
+        expect(query).toContain(notInternal('b'));
+      }
+    });
+
+    it('the id listing behind "did you mean" and the existence check leave them out', () => {
+      expect(CATALOG_NODE_IDS_CYPHER).toContain('n.id IS NOT NULL');
+      expect(CATALOG_NODE_IDS_CYPHER).toContain(notInternal('n'));
+      expect(CATALOG_NODE_EXISTS_CYPHER).toContain('MATCH (n {id: $nodeId})');
+      expect(CATALOG_NODE_EXISTS_CYPHER).toContain(notInternal('n'));
     });
   });
 });

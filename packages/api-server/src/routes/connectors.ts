@@ -6,10 +6,11 @@
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path';
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
+import { requireAdmin } from '../middleware/require-auth.js';
 import { ensureKeyDir } from '../secrets/key-dir.js';
 import { getConnectorType } from '../services/connector-types/index.js';
 import type { BuildContext } from '../services/connector-types/types.js';
@@ -22,7 +23,7 @@ import {
   type GitHubAppService,
 } from '../services/github-app-service.js';
 import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
-import type { Config, ConnectorInstanceConfig } from '@shipit-ai/shared';
+import type { Config, ConnectorInstanceConfig, LastRun } from '@shipit-ai/shared';
 
 // Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
 // body (so the wizard's per-org override panel can validate creds
@@ -136,7 +137,11 @@ function removeUnreferencedCredentials(
   }
 }
 
-const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+// Up to 100 characters: the Kubernetes wizard sends `k8s-<cluster name>`, and
+// a cluster name may be 63 characters long.
+const CONNECTOR_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
+/** Postgres: the table a statement names does not exist. */
+const UNDEFINED_TABLE = '42P01';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -198,6 +203,8 @@ interface UpdateConnectorBody {
   cluster?: unknown;
   access?: { kubeconfigPath?: string; tokenPath?: string; caDataPath?: string } | null;
   mapping?: unknown;
+  // GitHub only: the connector's knowledge facet (pull requests, issues, docs).
+  knowledge?: unknown;
 }
 
 interface KubernetesCredentialsBody {
@@ -219,6 +226,25 @@ interface ProbeBody {
 }
 
 const connectorRoutes: FastifyPluginAsync = async (server) => {
+  // Reading connectors is open to every signed-in user; creating, changing,
+  // deleting, probing and triggering are an administrator's. The first-boot
+  // setup routes are unaffected: their allow-listed principal is an admin.
+  //
+  // Three GETs are mutations in disguise and are gated with the rest: the
+  // GitHub App manifest flow sends the browser to GitHub and back, and its
+  // callback overwrites the App every connector authenticates with.
+  const adminOnlyGets = new Set([
+    `${server.prefix}/github/manifest/launch`,
+    `${server.prefix}/github/app-manifest-callback`,
+    `${server.prefix}/github/manifest/pending-instance/:nonce`,
+  ]);
+  server.addHook('preHandler', async (request, reply) => {
+    const reads =
+      request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS';
+    if (reads && !adminOnlyGets.has(request.routeOptions.url ?? '')) return undefined;
+    return requireAdmin(request, reply);
+  });
+
   const registry = server.connectorRegistry;
   // Run history is hydrated server-side so the API contract stays the
   // same as before the YAML→Redis migration — clients still see
@@ -246,9 +272,71 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.get('/', async () => {
     const connectors = registry.list();
     const ids = connectors.map((c) => c.id);
-    const runsById = await runStore.listManyLatest(ids);
-    return connectors.map((c) => ({ ...c, lastRuns: runsById[c.id] ?? [] }));
+    const [runsById, knowledgeRunsById] = await Promise.all([
+      runStore.listManyLatest(ids),
+      runStore.listManyLatest(ids, undefined, 'knowledge'),
+    ]);
+    return connectors.map((c) => ({
+      ...c,
+      lastRuns: runsById[c.id] ?? [],
+      lastKnowledgeRuns: knowledgeRunsById[c.id] ?? [],
+    }));
   });
+
+  // A connector's two run histories. `lastRuns` is the graph sync alone, which
+  // is what every reader of it assumes; the knowledge facet's runs, with their
+  // notes, come back beside it.
+  const runsOf = async (
+    id: string,
+  ): Promise<{ lastRuns: LastRun[]; lastKnowledgeRuns: LastRun[] }> => {
+    const [lastRuns, lastKnowledgeRuns] = await Promise.all([
+      runStore.listRuns(id),
+      runStore.listRuns(id, undefined, 'knowledge'),
+    ]);
+    return { lastRuns, lastKnowledgeRuns };
+  };
+
+  // One change at a time per connector id. A delete records the purge of what
+  // the connector indexed and only then removes the connector, with a database
+  // call in between: an update landing there would change the connector's
+  // version and turn the delete into a conflict after the purge was recorded.
+  const turns = new Map<string, Promise<unknown>>();
+  const inTurn = <T>(id: string, work: () => Promise<T>): Promise<T> => {
+    const mine = (turns.get(id) ?? Promise.resolve()).catch(() => undefined).then(work);
+    turns.set(id, mine);
+    return mine.finally(() => {
+      if (turns.get(id) === mine) turns.delete(id);
+    });
+  };
+
+  // What a connector indexed is marked for removal (the worker deletes it).
+  // Null when the knowledge layer is not wired on this server. A failure
+  // answers 503 through `refused`, and the caller does not go on.
+  const purgeIndexed = async (
+    id: string,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    message: string,
+  ): Promise<{ marked: number | null; refused?: FastifyReply }> => {
+    if (!server.knowledgeStore) return { marked: null };
+    try {
+      const by = request.ctx.user.email ?? request.ctx.user.id;
+      return { marked: await server.knowledgeStore.deselectConnector(id, by) };
+    } catch (err) {
+      // The knowledge tables are not there (the layer was switched on before
+      // the migration step ran): nothing was ever indexed, so there is nothing
+      // to remove, and trying again would never help.
+      if ((err as { code?: unknown }).code === UNDEFINED_TABLE) return { marked: 0 };
+      request.log.error(
+        { connectorId: id, err: (err as Error).message },
+        'knowledge: could not mark what a connector indexed for removal',
+      );
+      return {
+        marked: null,
+        refused: reply.status(503).send({ error: { code: 'KNOWLEDGE_PURGE_FAILED', message } }),
+      };
+    }
+  };
 
   // ── Global GitHub App ────────────────────────────────────────────────
   // GET /api/connectors/github/app — current status. Used by the wizard
@@ -798,6 +886,17 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         },
       });
     }
+    // The id ends up in URLs and in Redis keys (the run histories append a
+    // suffix after ':'), so it is held to the same shape as everywhere else.
+    if (typeof body.id !== 'string' || !CONNECTOR_ID.test(body.id)) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message:
+            'id must be 1 to 100 characters: letters, digits, "_" and "-", starting with a letter or digit',
+        },
+      });
+    }
     if (body.type === 'github') {
       if (!body.installationId || !body.org) {
         return reply.status(400).send({
@@ -1069,8 +1168,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const c = registry.get(request.params.id);
     reply.header('ETag', `"${registry.getHash(c.id)}"`);
-    const lastRuns = await runStore.listRuns(c.id);
-    return { ...c, lastRuns };
+    return { ...c, ...(await runsOf(c.id)) };
   });
 
   // PATCH /api/connectors/:id — partial update. If-Match required when the
@@ -1103,27 +1201,30 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
       }
       const ifMatch = parseIfMatch(request.headers['if-match']);
       try {
-        const updated = await registry.update(
-          request.params.id,
-          {
-            enabled: request.body?.enabled,
-            name: request.body?.name,
-            schedule: request.body?.schedule,
-            scope: request.body?.scope as never,
-            entities: request.body?.entities as never,
-            app: request.body?.app,
-            cluster: request.body?.cluster,
-            access: request.body?.access ?? undefined,
-            mapping: request.body?.mapping,
-          },
-          ifMatch,
+        // In turn with a delete of the same connector (see `inTurn`).
+        const updated = await inTurn(request.params.id, () =>
+          registry.update(
+            request.params.id,
+            {
+              enabled: request.body?.enabled,
+              name: request.body?.name,
+              schedule: request.body?.schedule,
+              scope: request.body?.scope as never,
+              entities: request.body?.entities as never,
+              app: request.body?.app,
+              cluster: request.body?.cluster,
+              access: request.body?.access ?? undefined,
+              mapping: request.body?.mapping,
+              knowledge: request.body?.knowledge,
+            },
+            ifMatch,
+          ),
         );
         reply.header('ETag', `"${registry.getHash(updated.id)}"`);
         // Hydrate lastRuns from the run store so PATCH responses match
         // the shape GET returns; otherwise the UI's local cache would
         // briefly show empty run history after every edit.
-        const lastRuns = await runStore.listRuns(updated.id);
-        return { ...updated, lastRuns };
+        return { ...updated, ...(await runsOf(updated.id)) };
       } catch (err) {
         if (err instanceof ConnectorVersionConflictError) {
           return reply.status(409).send({
@@ -1143,32 +1244,65 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   );
 
   // DELETE /api/connectors/:id — same If-Match rule as PATCH.
-  server.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+  //
+  // What the connector indexed goes with it (spec §API): nothing of it stays
+  // selected, and the worker deletes the content. In order:
+  //   1. its knowledge run in flight is stopped, and no new one starts: a run
+  //      still fetching would write to the store after the purge;
+  //   2. the purge is recorded, and the request fails if it cannot be: once
+  //      the registry no longer knows the connector, no route can reach its
+  //      containers to try again;
+  //   3. the connector is removed.
+  // An id the registry does not know is not simply a 404: if content is still
+  // held under it (the connector was deleted while the knowledge layer was
+  // off), this deletes that.
+  server.delete<{ Params: { id: string } }>('/:id', (request, reply) => {
+    const { id } = request.params;
     const ifMatch = parseIfMatch(request.headers['if-match']);
-    try {
-      const removed = registry.list().find((c) => c.id === request.params.id);
-      await registry.remove(request.params.id, ifMatch);
-      if (removed) {
-        removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
-          request.log.warn(obj, msg),
+    return inTurn(id, async () => {
+      try {
+        const removed = registry.list().find((c) => c.id === id);
+        // The check remove() makes, made first: a refused delete purges nothing.
+        if (removed && ifMatch !== undefined && ifMatch !== registry.getHash(id)) {
+          throw new ConnectorVersionConflictError(registry.getHash(id));
+        }
+        await server.knowledgeScheduler?.retire(id);
+        const purge = await purgeIndexed(
+          id,
+          request,
+          reply,
+          'Could not mark what this connector indexed for removal, so the connector was not deleted. Try again.',
         );
-      }
-      return reply.status(204).send();
-    } catch (err) {
-      if (err instanceof ConnectorVersionConflictError) {
-        return reply.status(409).send({
-          error: { code: 'VERSION_CONFLICT', message: err.message },
-          serverHash: err.serverHash,
+        if (purge.refused) return purge.refused;
+        if (!removed && (purge.marked ?? 0) > 0) return reply.status(204).send();
+        await registry.remove(id, ifMatch);
+        if (removed) {
+          removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
+            request.log.warn(obj, msg),
+          );
+        }
+        return reply.status(204).send();
+      } catch (err) {
+        if (err instanceof ConnectorVersionConflictError) {
+          return reply.status(409).send({
+            error: { code: 'VERSION_CONFLICT', message: err.message },
+            serverHash: err.serverHash,
+          });
+        }
+        const status = (err as { statusCode?: number }).statusCode ?? 400;
+        return reply.status(status).send({
+          error: {
+            code: status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR',
+            message: (err as Error).message,
+          },
         });
+      } finally {
+        // A connector that was not deleted after all may run again. One that
+        // was is gone from the registry, and nothing runs for it; the mark is
+        // dropped either way, so that its id can be used again.
+        server.knowledgeScheduler?.unretire(id);
       }
-      const status = (err as { statusCode?: number }).statusCode ?? 400;
-      return reply.status(status).send({
-        error: {
-          code: status === 404 ? 'NOT_FOUND' : 'VALIDATION_ERROR',
-          message: (err as Error).message,
-        },
-      });
-    }
+    });
   });
 
   // POST /api/connectors/kubernetes/credentials — store a pasted kubeconfig or
@@ -1184,7 +1318,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         return reply.status(400).send({
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'connectorId is required ([A-Za-z0-9_-], max 64 chars)',
+            message: 'connectorId is required ([A-Za-z0-9_-], max 100 chars)',
           },
         });
       }

@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Sidebar } from './sidebar';
+import { Sidebar, NAV_GROUPS } from './sidebar';
 
+// Controllable pathname so active-link behaviour can be exercised per test.
+const { mockPath } = vi.hoisted(() => ({ mockPath: { value: '/explore' } }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  usePathname: () => '/explore',
+  usePathname: () => mockPath.value,
 }));
 
 // Controllable identity so we can exercise the admin-only Settings nav item.
@@ -31,6 +33,7 @@ function renderWithQueryClient(ui: React.ReactNode) {
 describe('Sidebar', () => {
   beforeEach(() => {
     mockUser.role = 'admin';
+    mockPath.value = '/explore';
   });
 
   it('renders all top-level nav items', () => {
@@ -62,5 +65,65 @@ describe('Sidebar', () => {
     mockUser.role = 'member';
     renderWithQueryClient(<Sidebar />);
     expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+  });
+
+  it('groups the AI pages under /ai, in order', () => {
+    renderWithQueryClient(<Sidebar />);
+    const expected: Array<[RegExp, string]> = [
+      [/ask/i, '/ai/ask'],
+      [/agents/i, '/ai/agents'],
+      [/workflows/i, '/ai/workflows'],
+      [/activity/i, '/ai/activity'],
+      [/tools/i, '/ai/tools'],
+      [/mcp access/i, '/ai/mcp'],
+    ];
+    for (const [name, href] of expected) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
+    }
+    const ai = NAV_GROUPS.find((g) => g.label === 'AI');
+    expect(ai?.items.map((i) => i.href)).toEqual(expected.map(([, href]) => href));
+  });
+
+  it('places AI between Explore and Catalog', () => {
+    expect(NAV_GROUPS.map((g) => g.label)).toEqual([
+      undefined,
+      'Explore',
+      'AI',
+      'Catalog',
+      'Configure',
+      'Operations',
+      'Admin',
+    ]);
+  });
+
+  it('no longer links to the pre-move routes', () => {
+    renderWithQueryClient(<Sidebar />);
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).not.toContain('/ask');
+    expect(hrefs).not.toContain('/configure/mcp');
+    expect(hrefs).not.toContain('/admin/agent-activity');
+  });
+
+  it('shows the AI group to members, not only admins', () => {
+    mockUser.role = 'member';
+    renderWithQueryClient(<Sidebar />);
+    expect(screen.getByRole('link', { name: /agents/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /mcp access/i })).toBeInTheDocument();
+  });
+
+  it('highlights the AI entry for a nested AI path', () => {
+    mockPath.value = '/ai/agents/abc123';
+    renderWithQueryClient(<Sidebar />);
+    expect(screen.getByRole('link', { name: /agents/i }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: /ask/i }).getAttribute('aria-current')).toBeNull();
+  });
+
+  it('gives every entry in a group its own icon, so a collapsed group is readable', () => {
+    for (const group of NAV_GROUPS) {
+      const glyphs = group.items.map((i) => i.glyph);
+      expect(new Set(glyphs).size, `duplicate glyph in group ${group.label ?? 'top'}`).toBe(
+        glyphs.length,
+      );
+    }
   });
 });

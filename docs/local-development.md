@@ -163,15 +163,17 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 
 ### Recommended: scripted starts
 
-| Script                | What it starts                                                             |
-| --------------------- | -------------------------------------------------------------------------- |
-| `pnpm start:infra`    | Docker: Neo4j + Redis only                                                 |
-| `pnpm start:backend`  | Infra + `api-server` + `core-writer` (auto-seeds demo data if graph empty) |
-| `pnpm start:frontend` | Web UI dev server only                                                     |
-| `pnpm start:mcp`      | MCP server only (stdio)                                                    |
-| `pnpm start:all`      | Everything in parallel                                                     |
-| `pnpm stop`           | Bring all docker-compose services down                                     |
-| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j data)                                   |
+| Script                | What it starts                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates                    |
+| `pnpm start:backend`  | Infra + `api-server` + `core-writer` + `agent-runner` (seeds demo data if the graph is empty) |
+| `pnpm start:frontend` | Web UI dev server only                                                                        |
+| `pnpm start:mcp`      | MCP server only (stdio)                                                                       |
+| `pnpm start:all`      | Everything in parallel                                                                        |
+| `pnpm stop`           | Bring all docker-compose services down                                                        |
+| `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)                                  |
+| `pnpm db:migrate`     | Apply pending files in `db/migrations/` (needs `DATABASE_URL`)                                |
+| `pnpm db:bootstrap`   | Create the pgvector extension as a superuser; `start:infra` runs it first                     |
 
 ### Manual paths
 
@@ -179,7 +181,9 @@ For surgical control:
 
 ```bash
 # Terminal 1 — infra
-docker compose -f docker/docker-compose.yml up -d neo4j redis
+docker compose -f docker/docker-compose.yml up -d neo4j redis postgres
+DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:bootstrap
+DATABASE_URL=postgres://shipit:shipit-dev@localhost:5432/shipit pnpm db:migrate
 
 # Terminal 2 — api-server (watch mode)
 pnpm --filter @shipit-ai/api-server dev
@@ -189,18 +193,177 @@ pnpm --filter @shipit-ai/core-writer dev
 
 # Terminal 4 — web-ui (Next.js dev server)
 pnpm --filter @shipit-ai/web-ui dev
+
+# Terminal 5 — agent-runner (watch mode; see "Running agents locally")
+GOOGLE_CLOUD_PROJECT=<your project> pnpm --filter @shipit-ai/agent-runner dev
 ```
 
 ### Ports
 
-| Service     | URL                                         | Notes                                     |
-| ----------- | ------------------------------------------- | ----------------------------------------- |
-| Web UI      | <http://localhost:3000>                     | Next.js                                   |
-| API Server  | <http://localhost:3001>                     | Fastify; OpenAPI at `/docs`               |
-| Neo4j HTTP  | <http://localhost:7474>                     | Neo4j Browser; login `neo4j`/`shipit-dev` |
-| Neo4j Bolt  | `bolt://localhost:7687`                     | driver protocol                           |
-| Redis       | `redis://localhost:6379`                    | BullMQ + event bus                        |
-| Smee target | `http://localhost:3001/api/webhooks/github` | When you set up webhooks (§10)            |
+| Service     | URL                                         | Notes                                          |
+| ----------- | ------------------------------------------- | ---------------------------------------------- |
+| Web UI      | <http://localhost:3000>                     | Next.js                                        |
+| API Server  | <http://localhost:3001>                     | Fastify; OpenAPI at `/docs`                    |
+| Neo4j HTTP  | <http://localhost:7474>                     | Neo4j Browser; login `neo4j`/`shipit-dev`      |
+| Neo4j Bolt  | `bolt://localhost:7687`                     | driver protocol                                |
+| Redis       | `redis://localhost:6379`                    | BullMQ + event bus                             |
+| Postgres    | `postgres://localhost:5432/shipit`          | Agent definitions; login `shipit`/`shipit-dev` |
+| Smee target | `http://localhost:3001/api/webhooks/github` | When you set up webhooks (§10)                 |
+
+### Postgres and agent features
+
+Agent definitions (AI → Agents) live in Postgres. It is optional: without it the
+rest of the product runs as before and every `/api/agents` call answers
+`503 AI_UNAVAILABLE`.
+
+To turn it on locally, point the api-server at the compose database by adding
+this to `shipit.config.local.yaml` (new checkouts get it from the example file):
+
+```yaml
+ai:
+  database:
+    url: postgres://shipit:shipit-dev@localhost:5432/shipit
+```
+
+`GET http://localhost:3001/api/ai/status` then reports each prerequisite.
+Definitions work with the database alone; running agents also needs the
+runner and a model (next section).
+
+The schema is plain SQL in `db/migrations/`, named `NNNN_description.sql` and
+forward-only: never edit a file that has been applied, add a new one. The app
+does not migrate at boot. `pnpm start:infra` applies pending files locally; on
+GKE the infra repo's deploy step applies the same files. When you add a
+migration, bump `EXPECTED_SCHEMA_VERSION` in
+`packages/agents/src/schema-version.ts` in the same change.
+
+`pnpm start:infra` (and `start:backend`, `start:all`) always migrates the compose
+database it has just started, with this checkout's `db/migrations`, whatever
+`DATABASE_URL`, `DATABASE_MIGRATOR_URL`, `DATABASE_SUPERUSER_URL` or `MIGRATIONS_DIR` is
+exported in your shell. To point it at another database on purpose, set
+`SHIPIT_DEV_DATABASE_URL`. Run by hand, `pnpm db:migrate` uses `DATABASE_MIGRATOR_URL`
+when it is set and `pnpm db:bootstrap` uses `DATABASE_SUPERUSER_URL`, each before
+`DATABASE_URL`, and `pnpm db:migrate` reads `MIGRATIONS_DIR` (default `db/migrations`).
+
+Two rules keep a migration from stalling a database that is in use. A file runs
+under a 5-second lock timeout: one that cannot get its lock fails, and is tried
+again later, instead of making every other query on the table wait behind it.
+And a file whose first line is `-- migrate: no-transaction` runs outside a
+transaction (and without that timeout), which is what `CREATE INDEX
+CONCURRENTLY` needs to index a table without blocking writes to it. Such a file
+holds one statement, written with `IF NOT EXISTS`. It is recorded only while
+the schema holds no invalid index: a concurrent build that fails leaves one
+behind, and the migrator then names it and the `DROP INDEX CONCURRENTLY` to run
+before trying again.
+
+The knowledge layer (`packages/knowledge`, `packages/knowledge-worker`) stores
+documents and embeddings in the same database and needs the pgvector extension.
+pgvector is not a trusted extension, so a superuser creates it once:
+`pnpm db:bootstrap` locally (the compose `shipit` user is the superuser), the
+infra bootstrap step on GKE. The compose `postgres` service runs a pgvector
+image and creates the extension on a fresh volume; `pnpm start:infra` runs the
+bootstrap before migrating so an older volume catches up. `GET /api/knowledge/status`
+reports what is missing.
+
+The layer is off in the committed `shipit.config.yaml` until its first release. To work on
+it, set `knowledge: { enabled: true }` in your `shipit.config.local.yaml` (the example file
+has it) and run the worker on the host, which reads that file:
+
+```bash
+GOOGLE_CLOUD_PROJECT=<project> pnpm --filter @shipit-ai/knowledge-worker dev
+```
+
+It needs Application Default Credentials (`gcloud auth application-default login`) to embed;
+without a worker, documents wait as `pending`. `docker compose --profile knowledge up` runs
+the same worker in a container, but that one reads the committed config and so idles until
+`knowledge.enabled` is true there.
+
+To index a GitHub connector's text, switch its knowledge facet on, list its repositories
+and select the ones to index. All of it needs an admin (the local dev user is one):
+
+```bash
+API=http://localhost:3001/api/connectors/<connector-id>
+curl -s -X PATCH $API -H 'content-type: application/json' -d '{"knowledge":{"enabled":true}}'
+curl -s -X POST $API/containers/refresh
+curl -s $API/containers | jq '.containers[] | {id, name, visibility, selected, documents}'
+# A private repository needs "acknowledgeVisibility": true: its content becomes
+# visible to every signed-in user.
+curl -s -X PUT $API/containers/<container-id> -H 'content-type: application/json' \
+  -d '{"selected":true,"acknowledgeVisibility":true}'
+curl -s -X POST $API/sync -H 'content-type: application/json' -d '{"mode":"incremental"}'
+```
+
+The `PATCH` replaces the whole `knowledge` block, so send every setting you changed from
+its default, not only the one you are changing now. A change to `docs.paths`,
+`docs.maxFileBytes` or `historyDays` takes effect at the next poll. Deselecting a repository
+(`{"selected":false}`) deletes what was indexed for it: the worker purges once a minute, so
+it usually takes a minute or two. Deleting the connector does the same for everything it
+holds. Selecting a repository the last listing called public asks GitHub about that
+repository first, to make sure it still is. A `429 RATE_LIMITED` from the refresh or the
+select means GitHub asked to wait; try again in a few minutes.
+
+Knowledge runs have their own history: `GET $API` returns them as `lastKnowledgeRuns`,
+with their notes, beside `lastRuns`, which is the graph sync alone.
+
+Pull requests and docs need nothing new from the GitHub App. Issues need the App's
+**Issues: read** permission: the App's owner adds it under the App's settings, Permissions
+& events, and an owner of the organisation approves the request GitHub emails. Until then
+runs succeed with the note `issues_permission_missing` in `lastKnowledgeRuns`.
+
+If your `postgres_data` volume was created by the earlier `postgres:17-alpine` image, the
+pgvector image (Debian) sorts text with a different collation library, and indexes on text
+columns built under the old one can return wrong results. Either start clean
+(`pnpm stop:clean`, which deletes the local database) or run `REINDEX DATABASE shipit;` once.
+
+Run the Postgres-backed tests with the compose database up:
+
+```bash
+DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit \
+  pnpm --filter @shipit-ai/agents run test:integration
+```
+
+Each suite creates and drops its own schema, so it does not touch your data.
+
+### Running agents locally
+
+Runs are worked by the `agent-runner` process, which calls models on Vertex AI
+and runs the graph tools against your local Neo4j. Agents are offered seven of
+the MCP server's eight tools: `graph_query`, which runs raw Cypher, stays with
+MCP clients (the tool metadata marks it `agents: false`). The runner needs:
+
+- **Application Default Credentials:** `gcloud auth application-default login`.
+- **A Vertex project:** `GOOGLE_CLOUD_PROJECT` in the runner's environment (or
+  `ai.vertex.project` in `shipit.config.local.yaml`), with the models in
+  `ai.models` enabled, and given quota, in that project.
+- **A local dev user that may run agents.** With auth off, the dev user's
+  capabilities come from `frontend.devUser.capabilities` in
+  `shipit.config.local.yaml`; use `'*'`. (`admin` is not a capability name,
+  so it grants nothing.)
+
+`pnpm start:backend` starts the runner with the rest of the backend. In the
+Docker stack it is behind a profile, because it needs your gcloud credentials:
+`docker compose -f docker/docker-compose.yml --profile agents up -d`. On its
+first boot with a database, the api-server creates the built-in **Graph
+assistant**. Try it from a terminal:
+
+```bash
+AGENT=$(curl -s localhost:3001/api/agents | jq -r '.items[] | select(.slug=="graph-assistant") | .id')
+RUN=$(curl -s -X POST localhost:3001/api/agents/$AGENT/runs \
+  -H 'content-type: application/json' \
+  -d '{"input":"Which pipelines build the shipit-ai repository?","mode":"chat"}' | jq -r .id)
+curl -N localhost:3001/api/runs/$RUN/stream          # live events; Ctrl-C when it waits
+curl -s -X POST localhost:3001/api/runs/$RUN/messages \
+  -H 'content-type: application/json' -d '{"text":"Who owns it?"}'
+curl -s localhost:3001/api/runs/$RUN/messages | jq '.toolCalls[] | {toolId, status}'
+```
+
+The runner's suites need Postgres and Redis; the live model check needs ADC:
+
+```bash
+DATABASE_TEST_URL=postgres://shipit:shipit-dev@localhost:5432/shipit REDIS_TEST_URL=redis://localhost:6379 \
+  pnpm --filter @shipit-ai/agent-runner run test:integration
+VERTEX_TEST_PROJECT=<your project> VERTEX_TEST_MODELS=gemini:gemini-3.8-flash \
+  pnpm --filter @shipit-ai/agent-runner run test:live
+```
 
 ---
 

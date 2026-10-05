@@ -154,6 +154,79 @@ feedback:
     - user-report
   tokenSecret: github-feedback-token
 
+# User-defined AI agents (AI → Agents). Off until a database is configured:
+# with an empty database URL every agent route answers 503 AI_UNAVAILABLE and
+# the rest of the product is unaffected.
+ai:
+  enabled: true
+  database:
+    # Postgres connection string for the app role. Delivered as a plain env var
+    # (ESO in GKE). Intentionally not in the secrets: registry above, because
+    # boot hydration would then try to read it from GSM.
+    url: ${DATABASE_URL:-}
+  vertex:
+    # Model calls go to Vertex AI in this project, authenticated by Workload
+    # Identity / Application Default Credentials. No API key.
+    project: ${GOOGLE_CLOUD_PROJECT:-}
+    location: ${GOOGLE_CLOUD_LOCATION:-global}
+  # The model picker's catalog. `modelId` is the id Vertex expects for the
+  # family. Claude models must first be enabled in the project's Model Garden.
+  # Default is Gemini until the project has Claude quota on `global` (every
+  # Claude family answered 429 on 2026-10-03; see
+  # docs/agent/investigations/vertex-model-layer-probe.md).
+  defaultModel: gemini
+  models:
+    - key: claude-opus
+      label: Claude Opus 5.5
+      family: anthropic
+      modelId: claude-opus-5-5
+      contextWindow: 1000000
+      tools: true
+    - key: claude-sonnet
+      label: Claude Sonnet 5.5
+      family: anthropic
+      modelId: claude-sonnet-5-5
+      contextWindow: 1000000
+      tools: true
+    - key: claude-haiku
+      label: Claude Haiku 4.5
+      family: anthropic
+      modelId: claude-haiku-4-5@20251001
+      contextWindow: 200000
+      tools: true
+    # Probed live 2026-10-03 (docs/agent/investigations/vertex-model-layer-probe.md).
+    - key: gemini
+      label: Gemini 3.8 Flash
+      family: gemini
+      modelId: gemini-3.8-flash
+      contextWindow: 1048576
+      tools: true
+  # Instance ceilings. An agent may set lower limits, never higher.
+  limits:
+    maxSteps: 25
+    maxTokens: 400000
+    timeoutSeconds: 900
+    dailyTokens: 4000000
+
+# Knowledge layer: ingested text from Slack, Confluence, Jira and GitHub,
+# indexed in the same Postgres as the agent platform (needs pgvector). Shares
+# ai.database.url and ai.vertex. Everything below except `enabled` is the
+# default; the block exists so operators can find the knobs.
+knowledge:
+  # Off in the committed config until the knowledge layer's first release
+  # (spec: milestones merge behind `enabled: false` until K6). Local dev turns it
+  # on in shipit.config.local.yaml.
+  enabled: false
+  embedding:
+    model: gemini-embedding-2
+    dimensions: 768
+  sync:
+    maxRunMinutes: 10
+    reconcileCron: '0 3 * * *'
+  worker:
+    concurrency: 8
+    batchSize: 16
+
 frontend:
   api:
     # Public URL the web-UI's browser code uses to reach the api-server.

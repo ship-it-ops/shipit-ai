@@ -129,7 +129,7 @@ describe('kubernetes connector type', () => {
   it('build feeds credentials, scope and graph lookups into the sdk config', async () => {
     writeFileSync(join(keyDir, 'kubeconfig-k8s-demo.yaml'), 'apiVersion: v1');
     const type = makeKubernetesConnectorType(() => fakeClients());
-    const built = await type.build(
+    const built = await type.build!(
       k8s({
         mode: 'kubeconfig',
         kubeconfigPath: join(keyDir, 'kubeconfig-k8s-demo.yaml'),
@@ -159,13 +159,13 @@ describe('kubernetes connector type', () => {
 
   it('build reports unreadable credential files structurally and tolerates lookup failures', async () => {
     const type = makeKubernetesConnectorType(() => fakeClients());
-    const missing = await type.build(
+    const missing = await type.build!(
       k8s({ mode: 'token', server: 'https://h', tokenPath: join(keyDir, 'nope') }),
       ctx(),
     );
     expect(missing).toMatchObject({ ok: false, code: 'CREDENTIALS_UNREADABLE' });
     const warn = vi.fn();
-    const built = await type.build(
+    const built = await type.build!(
       k8s({ mode: 'in-cluster' }),
       ctx({
         listConnectors: () => [gh('a', 'acme')],

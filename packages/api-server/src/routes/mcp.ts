@@ -1,8 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { MCP_TOOLS } from '@shipit-ai/mcp-server';
+// The dependency-free metadata entry: the package root also carries the MCP
+// server and its transports, which the api-server has no use for.
+import { MCP_TOOLS } from '@shipit-ai/mcp-server/metadata';
 
 const mcpRoutes: FastifyPluginAsync = async (server) => {
-  // Runtime metadata about the MCP server, fetched by /configure/mcp.
+  // Runtime metadata about the MCP server, fetched by /ai/mcp.
   // Auth-status is the only field that depends on live config; the tool
   // catalog could be statically imported, but exposing it here keeps the
   // UI one round-trip and lets future clients (CLI, plugins) discover

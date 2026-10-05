@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "Starting Neo4j and Redis..."
-docker compose -f "$ROOT_DIR/docker/docker-compose.yml" up -d neo4j redis
+echo "Starting Neo4j, Redis and Postgres..."
+docker compose -f "$ROOT_DIR/docker/docker-compose.yml" up -d neo4j redis postgres
 
 echo "Waiting for services to be healthy..."
 
@@ -15,15 +15,33 @@ INTERVAL=5
 while (( ELAPSED < MAX_WAIT )); do
   NEO4J_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose -f "$ROOT_DIR/docker/docker-compose.yml" ps -q neo4j)" 2>/dev/null || echo "waiting")
   REDIS_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose -f "$ROOT_DIR/docker/docker-compose.yml" ps -q redis)" 2>/dev/null || echo "waiting")
+  POSTGRES_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$(docker compose -f "$ROOT_DIR/docker/docker-compose.yml" ps -q postgres)" 2>/dev/null || echo "waiting")
 
-  if [[ "$NEO4J_HEALTH" == "healthy" && "$REDIS_HEALTH" == "healthy" ]]; then
+  if [[ "$NEO4J_HEALTH" == "healthy" && "$REDIS_HEALTH" == "healthy" && "$POSTGRES_HEALTH" == "healthy" ]]; then
     echo "Neo4j: healthy"
     echo "Redis: healthy"
+    echo "Postgres: healthy"
+    # Schema changes are applied here in local dev (and by the infra repo's
+    # deploy step on GKE), never by the app at boot. Safe to re-run: applied
+    # files are skipped.
+    # pgvector first (needs the superuser, which the compose `shipit` user is),
+    # then schema changes. Both are safe to re-run.
+    # The target is the compose database this script has just started, not
+    # whatever database URL happens to be exported in the shell: that may
+    # belong to another project or a real environment. All three names the two
+    # commands read are set, because each prefers its privileged one
+    # (DATABASE_SUPERUSER_URL, DATABASE_MIGRATOR_URL) over DATABASE_URL.
+    # SHIPIT_DEV_DATABASE_URL is the deliberate override. The files applied
+    # are this checkout's, for the same reason: MIGRATIONS_DIR is set here.
+    DEV_DB="${SHIPIT_DEV_DATABASE_URL:-postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@localhost:5432/shipit}"
+    echo "Ensuring the pgvector extension and applying database migrations..."
+    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_SUPERUSER_URL="$DEV_DB" pnpm --silent db:bootstrap)
+    (cd "$ROOT_DIR" && DATABASE_URL="$DEV_DB" DATABASE_MIGRATOR_URL="$DEV_DB" MIGRATIONS_DIR="$ROOT_DIR/db/migrations" pnpm --silent db:migrate)
     echo "Infrastructure ready!"
     exit 0
   fi
 
-  echo "  neo4j=$NEO4J_HEALTH  redis=$REDIS_HEALTH  (${ELAPSED}s/${MAX_WAIT}s)"
+  echo "  neo4j=$NEO4J_HEALTH  redis=$REDIS_HEALTH  postgres=$POSTGRES_HEALTH  (${ELAPSED}s/${MAX_WAIT}s)"
   sleep "$INTERVAL"
   ELAPSED=$(( ELAPSED + INTERVAL ))
 done

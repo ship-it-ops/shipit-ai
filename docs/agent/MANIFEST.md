@@ -1,9 +1,10 @@
 # Agent Context
 
-Last updated: 2026-10-01 | Total notes: 89
+Last updated: 2026-10-05 | Total notes: 101
 
 ## Investigations
 
+- [vertex-model-layer-probe](investigations/vertex-model-layer-probe.md) | investigation | active | core | 2026-10-03 | AI SDK Vertex probe: Gemini 3 passes incl. thoughtSignature JSON round trip; Claude 429 zero quota
 - [deploy-e30da0f-boot-crash-gsm-read-of-eso-delivered-secrets](investigations/deploy-e30da0f-boot-crash-gsm-read-of-eso-delivered-secrets.md) | investigation | fixed | core | 2026-09-16 | #96 hydration read ESO-delivered neo4j/session secrets from GSM w/o grant → PERMISSION_DENIED boot crash; pre-set env now skips read
 - [sync-runtime-itest-connection-closed-teardown-race](investigations/sync-runtime-itest-connection-closed-teardown-race.md) | investigation | active | standard | 2026-09-15 | CI Integration red w/ all tests green = sync-runtime teardown race; test now awaits job settle; flip to fixed after ~20 green runs
 - [web-ui-dockerfile-three-layered-build-failure](investigations/web-ui-dockerfile-three-layered-build-failure.md) | investigation | completed | standard | 2026-06-11 | corepack, missing workspace install, wrong standalone paths stacked
@@ -31,8 +32,13 @@ Last updated: 2026-10-01 | Total notes: 89
 
 <!-- always-read at session start -->
 
+- [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-05 | knowledge K0 + K1a in PR #119, reviewed and fixed, waiting for the owner's merge; K1b plan next
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend on ai-agents-design, ready to PR; next session executes the agents UI plan on a new branch
+
 ## Decisions
 
+- [knowledge-layer-v1-foundations](decisions/knowledge-layer-v1-foundations.md) | decision | active | core | 2026-10-02 | knowledge layer: Postgres+pgvector index, curated visibility, reviewed suggestions, four sources
+- [agent-platform-v1-foundations](decisions/agent-platform-v1-foundations.md) | decision | active | core | 2026-10-01 | agents: Postgres (infra applies schema), own runner, Vertex any-model, all-in first release
 - [kubernetes-connector-v1-design](decisions/kubernetes-connector-v1-design.md) | decision | active | core | 2026-09-16 | K8s connector v1: both access modes, poll, per-type opt-in absence sweep, tiered repo links, LogicalService emission, connector-type factory
 - [runtime-image-strips-bundled-npm-and-apk-upgrades](decisions/runtime-image-strips-bundled-npm-and-apk-upgrades.md) | decision | active | core | 2026-09-15 | runtime stages `apk upgrade` + rm base-image npm CLI; unblocks infra Trivy gate; retire infra picomatch trivyignore after
 - [no-tenant-read-isolation-authenticated-sees-all](decisions/no-tenant-read-isolation-authenticated-sees-all.md) | decision | active | core | 2026-06-25 | authenticated user sees ALL orgs/connectors/entities; no per-tenant read filter; ctx.org seam stays no-op; connector=org view
@@ -75,6 +81,8 @@ Last updated: 2026-10-01 | Total notes: 89
 
 ## Plans
 
+- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-05 | knowledge connectors: K0 + K1a in PR #119, review findings fixed; live embedding waits on credentials
+- [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-04 | AI nav + agent builder; M0 nav and M1 backend (foundation, runner) implemented; M1 UI plan written, not executed
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
 - [integration-test-coverage-roadmap](plans/integration-test-coverage-roadmap.md) | plan | completed | core | 2026-06-20 | COMPLETE: all 10 prioritized integration-test gaps (Waves A+B+C+D) + 2 unit follow-ups; scar mapping retained
@@ -108,6 +116,7 @@ Last updated: 2026-10-01 | Total notes: 89
 
 ## Scars
 
+- [compose-from-another-worktree-recreates-dev-containers](scars/compose-from-another-worktree-recreates-dev-containers.md) | scar | active | core | 2026-10-04 | `docker compose up` from another worktree recreates dev Postgres/Neo4j (relative mounts differ); start infra only from the main checkout
 - [docker-builder-copies-fixed-package-set](scars/docker-builder-copies-fixed-package-set.md) | scar | active | core | 2026-09-16 | image build red in CI, turbo build green locally = Dockerfile builder COPY list missing a workspace (dev)dependency; tsc compiles tests too
 - [integration-tests-sharing-a-db-must-run-serially](scars/integration-tests-sharing-a-db-must-run-serially.md) | scar | active | core | 2026-06-19 | integration tests green alone but red together = vitest parallel files clobbering a shared real DB; --no-file-parallelism or isolate
 - [pnpm-install-under-live-next-dev-serves-stale-bundle](scars/pnpm-install-under-live-next-dev-serves-stale-bundle.md) | scar | active | core | 2026-06-19 | empty/blank local web-ui right after pnpm install = stale next dev serving old node_modules; restart before suspecting data loss

@@ -25,7 +25,7 @@ interface NavGroup {
   items: NavLink[];
 }
 
-const navGroups: NavGroup[] = [
+export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
   {
     items: [{ label: 'Home', href: '/', glyph: 'home' }],
   },
@@ -34,7 +34,22 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Graph Explorer', href: '/explore', glyph: 'graph' },
       { label: 'Query Playground', href: '/explore/query', glyph: 'cmd' },
-      { label: 'Ask', href: '/ask', glyph: 'ask' },
+    ],
+  },
+  {
+    // Everything AI lives here: our own agents (Ask, Agents, Workflows,
+    // Activity, Tools) and the surface for other people's (MCP Access).
+    // 'Soon' marks entries whose page is still a placeholder.
+    label: 'AI',
+    items: [
+      { label: 'Ask', href: '/ai/ask', glyph: 'ask' },
+      { label: 'Agents', href: '/ai/agents', glyph: 'bot', badge: 'Soon' },
+      { label: 'Workflows', href: '/ai/workflows', glyph: 'workflow', badge: 'Soon' },
+      { label: 'Activity', href: '/ai/activity', glyph: 'activity', badge: 'Soon' },
+      { label: 'Tools', href: '/ai/tools', glyph: 'package', badge: 'Soon' },
+      // 'server', not 'sparkle': 'ask' and 'sparkle' are the same icon, and a
+      // collapsed group must show distinct icons.
+      { label: 'MCP Access', href: '/ai/mcp', glyph: 'server' },
     ],
   },
   {
@@ -49,7 +64,6 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Connector Hub', href: '/connectors', glyph: 'bolt' },
       { label: 'Schema Editor', href: '/configure/schema', glyph: 'schema' },
-      { label: 'MCP Access', href: '/configure/mcp', glyph: 'sparkle' },
     ],
   },
   {
@@ -68,8 +82,7 @@ const navGroups: NavGroup[] = [
     label: 'Admin',
     items: [
       { label: 'Audit Log', href: '/admin/audit', glyph: 'file' },
-      { label: 'Access Control', href: '/admin/access', glyph: 'settings' },
-      { label: 'Agent Activity', href: '/admin/agent-activity', glyph: 'sparkle' },
+      { label: 'Access Control', href: '/admin/access', glyph: 'shield' },
       { label: 'Settings', href: '/admin/settings', glyph: 'settings', adminOnly: true },
     ],
   },
@@ -174,17 +187,16 @@ export function Sidebar() {
   // Drop admin-only entries for non-admins, then override the Reconciliation
   // nav entry's badge with the pending count when it's non-zero — otherwise
   // keep the static "P2" so users know it's gated.
-  const decoratedGroups = navGroups
-    .map((g) => ({
-      ...g,
-      items: g.items
-        .filter((item) => !item.adminOnly || isAdmin)
-        .map((item) =>
-          item.href === '/operations/reconciliation' && pendingCount > 0
-            ? { ...item, badge: String(pendingCount) }
-            : item,
-        ),
-    }))
+  const decoratedGroups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items
+      .filter((item) => !item.adminOnly || isAdmin)
+      .map((item) =>
+        item.href === '/operations/reconciliation' && pendingCount > 0
+          ? { ...item, badge: String(pendingCount) }
+          : item,
+      ),
+  }))
     // A group whose items all got filtered out shouldn't render a bare label.
     .filter((g) => g.items.length > 0);
 

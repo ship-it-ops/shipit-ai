@@ -1,6 +1,6 @@
 # MCP Tools
 
-> **In the app:** Configure → MCP Access (`/configure/mcp`) surfaces the connection snippets and tool catalog in a copy-paste friendly form. This doc is the canonical reference for parameters and response shapes.
+> **In the app:** AI → MCP Access (`/ai/mcp`) surfaces the connection snippets and tool catalog in a copy-paste friendly form. This doc is the canonical reference for parameters and response shapes.
 
 ShipIt-AI exposes the knowledge graph to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The MCP server connects directly to Neo4j and provides 8 tools for querying the graph.
 
@@ -216,6 +216,19 @@ Search and filter entities in the knowledge graph by label and property values.
 | `sort_by`          | string  | no       | `"name"` | Property to sort by                                                                    |
 | `include_absent`   | boolean | no       | false    | Include entities the owning connector no longer sees (marked absent by the sync sweep) |
 | `compact`          | boolean | no       | false    | Strip `_meta` envelope                                                                 |
+
+`label`, `sort_by` and the keys of `property_filters` are written into the query as
+identifiers, so each must be a plain identifier: letters, digits and underscores, not
+starting with a digit, at most 64 characters. A label must start with a letter. Anything
+else is refused before a query runs.
+
+Nodes whose label starts with an underscore are the application's own bookkeeping and
+not part of the catalog. No structured tool starts from one, lists one or counts one:
+`search_entities`, `graph_stats` and `schema_info` leave them out, `entity_detail`,
+`find_owners` and `blast_radius` answer "not found" for the id of one, and
+`dependency_chain` finds no path from or to one. They carry no relationships, so a
+traversal has none to reach; the neighbors of `entity_detail` and the paths of
+`dependency_chain` exclude them all the same.
 
 **Response:**
 

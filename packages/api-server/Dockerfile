@@ -4,8 +4,10 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 # api-server's workspace closure. Each line is one Docker layer, ordered
 # roughly from least-changing to most-changing for cache efficiency:
-#   shared → event-bus → connector-sdk → mcp-server → connectors/* → api-server
+#   shared → agents → event-bus → connector-sdk → mcp-server → connectors/* → api-server
 COPY packages/shared/ packages/shared/
+COPY packages/agents/ packages/agents/
+COPY packages/knowledge/ packages/knowledge/
 COPY packages/event-bus/ packages/event-bus/
 COPY packages/connector-sdk/ packages/connector-sdk/
 COPY packages/mcp-server/ packages/mcp-server/

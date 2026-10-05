@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MCP_TOOL_BY_NAME } from '../tools/metadata.js';
+import { MCP_TOOLS, MCP_TOOL_BY_NAME } from '../tools/metadata.js';
 
 describe('MCP tool metadata — include_absent', () => {
   it.each([
@@ -21,5 +21,35 @@ describe('MCP tool metadata — include_absent', () => {
     expect(MCP_TOOL_BY_NAME.schema_info.params.some((p) => p.name === 'include_absent')).toBe(
       false,
     );
+  });
+});
+
+describe('MCP tool metadata — service and effect', () => {
+  // Agents see these tools as service 'graph'. All eight only read; a write
+  // tool added here must say so, because the agent gateway grants by effect.
+  it.each(MCP_TOOLS.map((t) => t.name))('%s is a graph read tool', (tool) => {
+    expect(MCP_TOOL_BY_NAME[tool]).toMatchObject({ service: 'graph', effect: 'read' });
+  });
+});
+
+describe('MCP tool metadata — offered to agents', () => {
+  // The agent runner and the agent tool catalog read this flag. graph_query
+  // runs a caller-written string as Cypher, and its guard lets through clauses
+  // that fetch a URL, so a model is not handed it.
+  it('keeps raw Cypher away from agents', () => {
+    expect(MCP_TOOL_BY_NAME.graph_query.agents).toBe(false);
+  });
+
+  it('offers every other tool to agents', () => {
+    const offered = MCP_TOOLS.filter((t) => t.agents).map((t) => t.name);
+    expect(offered).toEqual([
+      'blast_radius',
+      'entity_detail',
+      'schema_info',
+      'find_owners',
+      'dependency_chain',
+      'graph_stats',
+      'search_entities',
+    ]);
   });
 });

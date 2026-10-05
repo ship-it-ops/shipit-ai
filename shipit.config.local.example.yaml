@@ -19,6 +19,17 @@ backend:
     # Required for the same reason as neo4j.uri.
     url: redis://localhost:6379
 
+ai:
+  database:
+    # Matches the postgres service in docker/docker-compose.yml. Remove this
+    # block to run without agent features.
+    url: postgres://shipit:shipit-dev@localhost:5432/shipit
+
+# The knowledge layer is off in the committed config until its first release;
+# switch it on locally to run the knowledge connectors and worker.
+knowledge:
+  enabled: true
+
 connectors:
   github:
     app:

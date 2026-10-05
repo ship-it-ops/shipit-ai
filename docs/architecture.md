@@ -213,6 +213,10 @@ Guardrails for the `graph_query` tool (configured under `backend.mcp.rateLimits`
 - Queries timeout after 10 seconds (`queryTimeoutMs`)
 - Configurable daily call quota (`graphQueryPerDay`, default 100)
 
+## Knowledge Layer
+
+Knowledge connectors (Slack, Confluence, Jira, and the GitHub connector's text facet) do not add resources to the graph. They produce documents, which the api-server's `KnowledgeSyncScheduler` fetches on its own BullMQ queue and stores in Postgres through a redacting sink (`@shipit-ai/knowledge`); the first source is the GitHub connector's text facet (pull requests, issues and Markdown docs of the repositories an admin selects); `knowledge-worker` claims pending documents straight from Postgres, chunks and embeds them through Vertex AI, and writes the chunks back (`halfvec(768)`, pgvector). Content reaches Neo4j only through a suggestion a person accepts. `GET /api/knowledge/status` reports the prerequisites (the `knowledge.enabled` switch, database, schema, pgvector, Vertex project, worker heartbeat). Design: `docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md`.
+
 ## API Server
 
 Fastify 5 with OpenAPI documentation via `@fastify/swagger` and a global rate limit via `@fastify/rate-limit` (200 req/min per IP by default). Every request passes through the `registerRequireAuth` preHandler — see [Access Control & Identity](#access-control--identity).
@@ -222,7 +226,8 @@ Route prefixes (registered in `packages/api-server/src/server.ts`):
 - `/api/health` — Liveness check
 - `/api/auth` — Auth flow: providers list, login start, OIDC + GitHub callbacks, `/me`, logout
 - `/api/tokens` — Personal access tokens _(only when `accessControl.auth.enabled`)_
-- `/api/connectors` — Connector CRUD, sync triggers, run history
+- `/api/connectors` — Connector CRUD, sync triggers, run history; `/:id/containers` lists and selects what a knowledge connector indexes. Reading is open to every signed-in user; every mutation needs an admin
+- `/api/knowledge` — Knowledge layer status (prerequisites and document counts)
 - `/api/schema` — Schema management (YAML)
 - `/api/graph` — Graph queries: stats, neighborhood, search _(requires Neo4j)_
 - `/api/query` — Saved/ad-hoc Cypher queries _(requires Neo4j)_
@@ -230,7 +235,7 @@ Route prefixes (registered in `packages/api-server/src/server.ts`):
 - `/api/teams` — Team detail, members, owned entities _(requires Neo4j)_
 - `/api/reconciliation` — Reconciliation candidates and review _(requires Neo4j)_
 - `/api/incident-events` — Incident-mode dashboard view log (no Neo4j dependency)
-- `/api/mcp` — MCP server metadata for the in-app `/configure/mcp` page
+- `/api/mcp` — MCP server metadata for the in-app `/ai/mcp` page
 
 The api-server also bootstraps the connector registry (`ConnectorRegistry`), schema service (`SchemaService`), optional GitHub App services (`GitHubAppService`, `GitHubAppManifestService`), and the optional `Neo4jService`. Routes that need Neo4j are skipped when no Neo4j service is injected, which keeps the server usable in offline / pre-bootstrap modes.
 
@@ -245,4 +250,4 @@ Next.js 16 (App Router) on React 19. The visual layer is the in-house **`@ship-i
 - **Tailwind CSS 4** for utility styling, layered over `@ship-it-ui/tokens`
 - **Next.js middleware** (`src/middleware.ts`) for layout-level 401 redirects when auth is enabled
 
-The web-ui depends on `@shipit-ai/shared` (for canonical types) and `@shipit-ai/mcp-server` (for MCP tool metadata surfaced on the `/configure/mcp` page). All other backend communication goes through HTTP to the api-server, with `credentials: 'include'` so the session cookie travels with every request.
+The web-ui depends on `@shipit-ai/shared` (for canonical types) and `@shipit-ai/mcp-server` (for MCP tool metadata surfaced on the `/ai/mcp` page). All other backend communication goes through HTTP to the api-server, with `credentials: 'include'` so the session cookie travels with every request.

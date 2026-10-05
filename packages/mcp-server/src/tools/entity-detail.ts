@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Neo4jClient } from '../neo4j-client.js';
-import { generateEntityDetailCypher } from '../cypher/generator.js';
+import { CATALOG_NODE_IDS_CYPHER, generateEntityDetailCypher } from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError, findSuggestions } from '../errors.js';
 import { MCP_TOOL_BY_NAME } from './metadata.js';
@@ -37,9 +37,7 @@ export function registerEntityDetail(server: McpServer, neo4j: Neo4jClient): voi
         const result = await neo4j.runCypher(cypher.query, cypher.params);
 
         if (result.records.length === 0) {
-          const allNodes = await neo4j.runCypher(
-            'MATCH (n) WHERE n.id IS NOT NULL RETURN n.id AS id',
-          );
+          const allNodes = await neo4j.runCypher(CATALOG_NODE_IDS_CYPHER);
           const allIds = allNodes.records.map((r) => r.get('id') as string);
           const suggestions = findSuggestions(entity, allIds);
           const error = createError(

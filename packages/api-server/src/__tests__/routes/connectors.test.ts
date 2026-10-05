@@ -278,6 +278,39 @@ describe('Connector routes (CRUD + ETag)', () => {
     expect(body.serverHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('PATCH /api/connectors/:id replaces the knowledge block', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { enabled: true, pullRequests: false } },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().knowledge).toMatchObject({
+      enabled: true,
+      pullRequests: false,
+      issues: true,
+    });
+    const get = await server.inject({ method: 'GET', url: '/api/connectors/github-test' });
+    expect(get.json().knowledge.enabled).toBe(true);
+    // Back to the default, so the tests below see the connector they expect.
+    const reset = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { enabled: false } },
+    });
+    expect(reset.json().knowledge).toMatchObject({ enabled: false, pullRequests: true });
+  });
+
+  it('PATCH /api/connectors/:id rejects a knowledge block that does not validate', async () => {
+    const response = await server.inject({
+      method: 'PATCH',
+      url: '/api/connectors/github-test',
+      payload: { knowledge: { historyDays: -5 } },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('POST /api/connectors/:id/sync triggers sync via the runner', async () => {
     const response = await server.inject({
       method: 'POST',
@@ -1400,6 +1433,25 @@ current-context: demo
     expect(dirname(ok.json().kubeconfigPath)).toBe(keyDir);
     expect(ok.json().kubeconfigPath).toBe(join(keyDir, `kubeconfig-${nasty}.yaml`));
     expect(readFileSync(ok.json().kubeconfigPath, 'utf-8')).toBe(kubeconfig);
+  });
+
+  // The wizard sends `k8s-<cluster name>`, and a cluster name may be 63 characters long.
+  it('POST /kubernetes/credentials takes the id built for the longest cluster name', async () => {
+    const connectorId = `k8s-${'a'.repeat(63)}`;
+    const res = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId, mode: 'kubeconfig', kubeconfig },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().kubeconfigPath).toBe(join(keyDir, `kubeconfig-${connectorId}.yaml`));
+
+    const tooLong = await server.inject({
+      method: 'POST',
+      url: '/api/connectors/kubernetes/credentials',
+      payload: { connectorId: 'a'.repeat(101), mode: 'kubeconfig', kubeconfig },
+    });
+    expect(tooLong.statusCode).toBe(400);
   });
 
   it('POST /kubernetes/credentials stores a token and PEM CA for mode token', async () => {

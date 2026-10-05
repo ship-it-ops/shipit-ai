@@ -20,3 +20,6 @@ export type { DryRunResult, DryRunSummary } from './dry-run.js';
 
 // Sync state
 export { SyncState, SyncStateMachine } from './sync-state.js';
+
+// Knowledge connectors (documents, not graph entities)
+export * from './knowledge/index.js';

@@ -1,7 +1,11 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Neo4jClient } from '../neo4j-client.js';
-import { generateBlastRadiusCypher } from '../cypher/generator.js';
+import {
+  CATALOG_NODE_EXISTS_CYPHER,
+  CATALOG_NODE_IDS_CYPHER,
+  generateBlastRadiusCypher,
+} from '../cypher/generator.js';
 import { wrapResponse } from '../envelope.js';
 import { McpErrorCode, createError, findSuggestions } from '../errors.js';
 import { MCP_TOOL_BY_NAME } from './metadata.js';
@@ -92,14 +96,12 @@ export function registerBlastRadius(server: McpServer, neo4j: Neo4jClient): void
 
         if (result.records.length === 0) {
           // Check if the starting node exists
-          const existCheck = await neo4j.runCypher('MATCH (n {id: $nodeId}) RETURN n.id AS id', {
+          const existCheck = await neo4j.runCypher(CATALOG_NODE_EXISTS_CYPHER, {
             nodeId: node,
           });
 
           if (existCheck.records.length === 0) {
-            const allNodes = await neo4j.runCypher(
-              'MATCH (n) WHERE n.id IS NOT NULL RETURN n.id AS id',
-            );
+            const allNodes = await neo4j.runCypher(CATALOG_NODE_IDS_CYPHER);
             const allIds = allNodes.records.map((r) => r.get('id') as string);
             const suggestions = findSuggestions(node, allIds);
             const error = createError(

@@ -44,7 +44,7 @@ declare module 'fastify' {
 // powers external uptime checks; the specific /api/auth/* endpoints
 // listed below need pre-login access so the login flow itself can run
 // (providers list, login start, IdP callback, logout); /api/mcp/info is
-// read by the /configure/mcp page so admins can verify their MCP setup
+// read by the /ai/mcp page so admins can verify their MCP setup
 // before they have any token.
 //
 // Note: /api/auth/me is intentionally NOT public. When auth is enabled
@@ -281,6 +281,23 @@ export function requireCapability(cap: string) {
       },
     });
   };
+}
+
+/**
+ * preHandler for actions only an administrator may take (connector and
+ * knowledge-container mutations). The check is on the role, not on a
+ * capability: a bearer token is always a member, whatever its scopes. Run
+ * after registerRequireAuth has populated `request.ctx`.
+ */
+export async function requireAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply | void> {
+  if (request.ctx.user.role === 'admin') return undefined;
+  request.log.warn({ path: request.url.split('?')[0], code: 'FORBIDDEN' }, 'authz: admin required');
+  return reply.status(403).send({
+    error: { code: 'FORBIDDEN', message: 'This action requires an administrator.' },
+  });
 }
 
 /**

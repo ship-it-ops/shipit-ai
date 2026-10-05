@@ -8,6 +8,10 @@ export default defineConfig({
   test: {
     projects: [
       'packages/shared',
+      'packages/agents',
+      'packages/agent-runner',
+      'packages/knowledge',
+      'packages/knowledge-worker',
       'packages/event-bus',
       'packages/core-writer',
       'packages/connector-sdk',

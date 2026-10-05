@@ -31,6 +31,48 @@ services:
       timeout: 5s
       retries: 5
 
+  # Postgres holds agent definitions, run history and the knowledge layer's
+  # documents and embeddings. The image ships pgvector (a baseline requirement:
+  # the extension is not trusted, so a superuser must create it; see
+  # docker/postgres-init and `pnpm db:bootstrap`). Optional for the rest of the
+  # product: without it the AI pages show setup guidance.
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: shipit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shipit-dev}
+      POSTGRES_DB: shipit
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U shipit -d shipit']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: applies db/migrations and exits. Runs the CLI that ships inside
+  # the api-server image (@shipit-ai/agents). On GKE the infra repo's deploy
+  # step applies the same files instead.
+  migrate:
+    build:
+      context: ..
+      dockerfile: packages/api-server/Dockerfile
+    # pgvector first (the compose `shipit` user is the superuser), then schema.
+    command:
+      - sh
+      - -c
+      - node node_modules/@shipit-ai/knowledge/dist/bootstrap-cli.js && node node_modules/@shipit-ai/agents/dist/migrate-cli.js
+    volumes:
+      - ../db/migrations:/app/db/migrations:ro
+    environment:
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Each backend service reads shipit.config.yaml mounted into /app. Only the
   # env vars referenced from the YAML's ${VAR} placeholders are passed in —
   # everything else lives in the committed config file. NEO4J_URI / REDIS_URL
@@ -50,11 +92,14 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       REDIS_URL: redis://redis:6379
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
     depends_on:
       neo4j:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   core-writer:
     build:
@@ -71,6 +116,79 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # Chunks and embeds knowledge documents. Needs Postgres (with pgvector) and
+  # Vertex AI: GOOGLE_CLOUD_PROJECT and your application-default credentials
+  # (`gcloud auth application-default login`). The gcloud directory is mounted,
+  # not the credentials file, for the reason given on agent-runner below.
+  # Off by default: `docker compose --profile knowledge up` adds it. It reads
+  # the committed shipit.config.yaml, where knowledge.enabled is false until
+  # the first release, so in this container it idles until that is true; for
+  # local work run it on the host instead
+  # (`pnpm --filter @shipit-ai/knowledge-worker dev`), which reads your
+  # shipit.config.local.yaml. Without a worker, documents wait as `pending`.
+  knowledge-worker:
+    build:
+      context: ..
+      dockerfile: packages/knowledge-worker/Dockerfile
+    volumes:
+      - ../shipit.config.yaml:/app/shipit.config.yaml:ro
+      - ${HOME}/.config/gcloud:/gcloud:ro
+    environment:
+      REDIS_URL: redis://redis:6379
+      NEO4J_URI: bolt://neo4j:7687
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them, though the worker opens no Neo4j or HTTP connection.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-global}
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    profiles: ['knowledge']
+
+  # Works the agent runs the api-server queues: model calls on Vertex AI and
+  # the tools each agent is granted. Locally it authenticates to Vertex with
+  # your application-default credentials (`gcloud auth application-default
+  # login`); on GKE, Workload Identity does that and nothing is mounted.
+  # Off by default: `docker compose --profile agents up` adds it. The gcloud
+  # directory is mounted, not the credentials file: Docker creates a missing
+  # bind source as a directory, and a directory at the file's path would
+  # break a later gcloud login.
+  agent-runner:
+    build:
+      context: ..
+      dockerfile: packages/agent-runner/Dockerfile
+    volumes:
+      - ../shipit.config.yaml:/app/shipit.config.yaml:ro
+      - ${HOME}/.config/gcloud:/gcloud:ro
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them, though the runner serves no HTTP.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    profiles: ['agents']
 
   mcp-server:
     build:
@@ -108,3 +226,4 @@ volumes:
   neo4j_data:
   neo4j_logs:
   redis_data:
+  postgres_data:

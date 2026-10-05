@@ -41,7 +41,7 @@ describe('connector-types registry', () => {
 describe('github connector type', () => {
   it('builds a GitHubConnector with the resolved App credentials and installation', async () => {
     const c = ctx();
-    const built = await getConnectorType('github')!.build(gh, c);
+    const built = await getConnectorType('github')!.build!(gh, c);
     expect(built.ok).toBe(true);
     if (!built.ok) throw new Error('unreachable');
     expect(built.connector.manifest.name).toBe('github');
@@ -56,7 +56,7 @@ describe('github connector type', () => {
 
   it('prefers the per-connector App override', async () => {
     const c = ctx();
-    const built = await getConnectorType('github')!.build(
+    const built = await getConnectorType('github')!.build!(
       { ...gh, app: { id: 'app-2', privateKeyPath: '/keys/override.pem' } },
       c,
     );
@@ -66,12 +66,12 @@ describe('github connector type', () => {
   });
 
   it('fails structurally when no App is configured or the key is unreadable', async () => {
-    const none = await getConnectorType('github')!.build(
+    const none = await getConnectorType('github')!.build!(
       gh,
       ctx({ globalApp: { id: '', privateKeyPath: '' } }),
     );
     expect(none).toMatchObject({ ok: false, code: 'APP_NOT_CONFIGURED' });
-    const unreadable = await getConnectorType('github')!.build(
+    const unreadable = await getConnectorType('github')!.build!(
       gh,
       ctx({
         readPrivateKey: () => {
@@ -84,5 +84,48 @@ describe('github connector type', () => {
       code: 'PRIVATE_KEY_UNREADABLE',
       message: expect.stringContaining('ENOENT'),
     });
+  });
+
+  it('has its knowledge facet off until the instance switches it on', () => {
+    const type = getConnectorType('github')!;
+    expect(type.knowledgeEnabled!(gh)).toBe(false);
+    expect(type.knowledgeEnabled!({ ...gh, knowledge: { ...gh.knowledge, enabled: true } })).toBe(
+      true,
+    );
+  });
+
+  it('github says how far back an instance backfills', () => {
+    const type = getConnectorType('github')!;
+    const gh = connectorInstanceSchema.parse({
+      id: 'gh-1',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+      knowledge: { historyDays: 90 },
+    });
+    expect(type.knowledgeHistoryDays!(gh)).toBe(90);
+  });
+
+  it('builds the knowledge connector with the same credentials as the graph one', async () => {
+    const c = ctx({ maxDocumentChars: 1234 });
+    const built = await getConnectorType('github')!.buildKnowledge!(gh, c);
+    expect(built.ok).toBe(true);
+    if (!built.ok) throw new Error('unreachable');
+    expect(built.connector.manifest.name).toBe('github-knowledge');
+    expect(built.sdkConfig).toEqual({
+      id: 'gh-acme',
+      type: 'github',
+      credentials: { appId: 'app-1', privateKey: 'PEM', installationId: '42' },
+      scope: { org: 'acme' },
+    });
+  });
+
+  it('refuses to build the knowledge connector without an App', async () => {
+    const built = await getConnectorType('github')!.buildKnowledge!(
+      gh,
+      ctx({ globalApp: { id: '', privateKeyPath: '' } }),
+    );
+    expect(built).toMatchObject({ ok: false, code: 'APP_NOT_CONFIGURED' });
   });
 });

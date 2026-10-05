@@ -29,6 +29,23 @@ import { SetupService } from './services/setup-service.js';
 import { SettingsService } from './services/settings-service.js';
 import { FeedbackService } from './services/feedback-service.js';
 import {
+  AgentStore,
+  RUN_EVENTS_CHANNEL,
+  RunQueue,
+  RunStore,
+  createDb,
+  createPool,
+  type Db,
+} from '@shipit-ai/agents';
+import { KNOWLEDGE_WAKE_CHANNEL, KnowledgeStore } from '@shipit-ai/knowledge';
+import { AiStatusService } from './services/ai/ai-status-service.js';
+import { RunEventHub } from './services/ai/run-event-hub.js';
+import { ensureBuiltinAgents } from './services/ai/builtin-agents.js';
+import { KnowledgeStatusService } from './services/knowledge/knowledge-status-service.js';
+import { KnowledgeSyncScheduler } from './services/knowledge-sync-scheduler.js';
+import { CompositeConnectorRunner } from './services/composite-connector-runner.js';
+import { getConnectorType } from './services/connector-types/index.js';
+import {
   applyDerivedAuthConfig,
   evaluateAuthBootability,
   shouldEnterSetupMode,
@@ -425,6 +442,107 @@ async function main() {
     redis: runStoreRedis,
   });
 
+  // User-defined AI agents and the knowledge layer share one Postgres pool.
+  // Postgres is optional: with both features off or no database URL, no pool
+  // is opened, the stores stay unwired and their routes answer 503 while the
+  // rest of the API runs as before. The pool connects lazily, so an
+  // unreachable database does not fail boot either; the status services
+  // report it per request.
+  const agentPool =
+    (config.ai.enabled || config.knowledge.enabled) && config.ai.database.url
+      ? createPool({ connectionString: config.ai.database.url })
+      : null;
+  const agentDb: Db | null = agentPool ? createDb(agentPool) : null;
+  const agentStore = agentDb ? new AgentStore(agentDb) : undefined;
+  // Runs are queued for the agent runner on Redis; with no Redis there is no
+  // queue, and the run routes answer 503 instead of creating runs nobody works.
+  // The pool may be open for the knowledge layer alone, so check ai.enabled too.
+  const runQueue =
+    config.ai.enabled && agentDb && config.backend.redis.url
+      ? new RunQueue({ redisUrl: config.backend.redis.url })
+      : undefined;
+  // Live run updates: one subscriber connection (a subscribed ioredis client
+  // can do nothing else) fanned out to every open /api/runs/:id/stream.
+  let runEventsSubscriber: Redis | null = null;
+  let runEvents: RunEventHub | undefined;
+  if (config.ai.enabled && agentDb && config.backend.redis.url) {
+    runEventsSubscriber = new Redis(config.backend.redis.url, { maxRetriesPerRequest: null });
+    runEventsSubscriber.on('error', (err: Error) => {
+      console.warn(`Run events subscriber error (live run updates degraded): ${err.message}`);
+    });
+    runEventsSubscriber.subscribe(RUN_EVENTS_CHANNEL).catch((err: Error) => {
+      console.warn(`Run events subscribe failed (live run updates off): ${err.message}`);
+    });
+    runEvents = new RunEventHub(runEventsSubscriber);
+  }
+  const aiStatus = new AiStatusService({
+    config: config.ai,
+    db: agentDb,
+    redis: runStoreRedis,
+    log: (message) => console.warn(message),
+  });
+  console.log(
+    agentPool
+      ? 'Agent features: database configured.'
+      : 'Agent features: off (ai.enabled is false or ai.database.url is empty).',
+  );
+
+  // Knowledge layer. Same optionality as agents: without a database the status
+  // route explains what is missing and nothing is scheduled.
+  const knowledgeStore = agentDb && config.knowledge.enabled ? new KnowledgeStore(agentDb) : null;
+  const knowledgeStatus = new KnowledgeStatusService({
+    knowledge: config.knowledge,
+    ai: config.ai,
+    db: agentDb,
+    store: knowledgeStore,
+    redis: runStoreRedis,
+    log: (message) => console.warn(message),
+  });
+  console.log(
+    knowledgeStore
+      ? 'Knowledge layer: database configured.'
+      : 'Knowledge layer: off (knowledge.enabled is false or ai.database.url is empty).',
+  );
+
+  // Knowledge connectors are scheduled on their own queue; the registry sees
+  // one runner that fans out to both. Needs Redis (the queue) and the store.
+  let knowledgeScheduler: KnowledgeSyncScheduler | null = null;
+  if (knowledgeStore && scheduler && config.backend.redis.url) {
+    try {
+      const wakeRedis = runStoreRedis;
+      knowledgeScheduler = new KnowledgeSyncScheduler({
+        redisUrl: config.backend.redis.url,
+        registry: connectorRegistry,
+        store: knowledgeStore,
+        // Spread keeps the SAME globalApp object (the live reference the App
+        // service mutates); only the knowledge limit is added.
+        buildContext: {
+          ...scheduler.context,
+          maxDocumentChars: config.knowledge.index.maxDocumentChars,
+        },
+        budgetMs: config.knowledge.sync.maxRunMinutes * 60_000,
+        reconcileCron: config.knowledge.sync.reconcileCron,
+        isAvailable: () => knowledgeStatus.ingestionAvailable(),
+        wake: wakeRedis
+          ? async () => {
+              await wakeRedis.publish(KNOWLEDGE_WAKE_CHANNEL, '');
+            }
+          : undefined,
+      });
+      connectorRegistry.setRunner(
+        new CompositeConnectorRunner({
+          graph: scheduler,
+          knowledge: knowledgeScheduler,
+          hasGraphFacet: (cfg) => Boolean(getConnectorType(cfg.type)?.build),
+        }),
+      );
+    } catch (err) {
+      console.warn(
+        `Knowledge scheduling failed to start (knowledge syncs off, API stays up): ${(err as Error).message}`,
+      );
+    }
+  }
+
   const server = await createServer({
     logger: true,
     neo4jService,
@@ -454,7 +572,34 @@ async function main() {
     // of a Redis URL stays a soft warning rather than a hard boot failure.
     redis: runStoreRedis ?? undefined,
     resolved,
+    agentStore,
+    runStore: agentDb ? new RunStore(agentDb) : undefined,
+    runQueue,
+    runEvents,
+    aiStatus,
+    knowledgeStatus,
+    knowledgeStore: knowledgeStore ?? undefined,
+    knowledgeScheduler: knowledgeScheduler ?? undefined,
   });
+
+  // The built-in Graph assistant backs Ask. Seeded once the database answers
+  // and a model is configured; until then it retries every minute, quietly.
+  if (agentStore && config.ai.enabled) {
+    const seed = async (): Promise<boolean> => {
+      try {
+        return await ensureBuiltinAgents(agentStore, config.ai, (m) => console.log(m));
+      } catch (err) {
+        console.warn(`Built-in agents not seeded yet: ${(err as Error).message}`);
+        return false;
+      }
+    };
+    if (!(await seed())) {
+      const retry = setInterval(() => {
+        void seed().then((done) => done && clearInterval(retry));
+      }, 60_000);
+      retry.unref();
+    }
+  }
 
   // Start any pre-configured connectors after the server is constructed so
   // the runner attaches once the rest of the wiring (event bus, etc.) is in
@@ -495,15 +640,24 @@ async function main() {
     process.exit(1);
   }
 
+  // Runs once: a second signal (Kubernetes, or an impatient Ctrl-C) must not
+  // close everything twice; pg's pool, for one, throws on a second end().
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     await server.close();
     if (scheduler) await scheduler.close();
+    if (knowledgeScheduler) await knowledgeScheduler.close();
     if (webhookRefetch) await webhookRefetch.close();
     if (auditRetention) await auditRetention.close();
     // The event bus owns its own Queue + stream connections (the scheduler's
     // close() only tears down the worker/queue it created), so close it here.
     if (eventBus) await eventBus.close();
     if (runStoreRedis) runStoreRedis.disconnect();
+    if (runQueue) await runQueue.close();
+    if (runEventsSubscriber) runEventsSubscriber.disconnect();
+    if (agentPool) await agentPool.end();
     await neo4jService.close();
     process.exit(0);
   };

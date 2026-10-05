@@ -109,6 +109,11 @@ export const lastRunSchema = z.object({
    * field existed still parse.
    */
   notes: z.array(z.string()).optional(),
+  /**
+   * Which half of a connector produced this run. Absent on runs recorded
+   * before knowledge connectors existed, which were all graph runs.
+   */
+  facet: z.enum(['graph', 'knowledge']).optional(),
 });
 
 // ── Per-connector App override ────────────────────────────────────────────
@@ -131,11 +136,46 @@ const githubConnectorAppOverrideSchema = z
   })
   .optional();
 
+// ── The knowledge facet of a GitHub connector ─────────────────────────────
+// Off by default: turning it on makes the connector fetch pull requests,
+// issues and Markdown docs for the repositories an admin selects. Spec:
+// docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md §GitHub text.
+const GITHUB_KNOWLEDGE_DOC_PATHS = ['README.md', 'docs/**/*.md', 'adr/**/*.md', '**/ADR-*.md'];
+
+const githubKnowledgeDocsSchema = z.object({
+  enabled: z.boolean().default(true),
+  // Globs over repository paths on the default branch. `**` crosses directories.
+  paths: z.array(z.string().min(1)).default(GITHUB_KNOWLEDGE_DOC_PATHS),
+  maxFileBytes: z.number().int().positive().default(200000),
+});
+
+const githubKnowledgeSchema = z.object({
+  enabled: z.boolean().default(false),
+  pullRequests: z.boolean().default(true),
+  issues: z.boolean().default(true),
+  docs: githubKnowledgeDocsSchema.default({
+    enabled: true,
+    paths: GITHUB_KNOWLEDGE_DOC_PATHS,
+    maxFileBytes: 200000,
+  }),
+  // Backfill horizon in days; 0 means everything.
+  historyDays: z.number().int().nonnegative().default(365),
+});
+
+export type GitHubKnowledgeConfig = z.infer<typeof githubKnowledgeSchema>;
+
+// When the connector was created (ISO time), stamped by the registry. Absent on
+// a connector that predates the field. Ids are chosen by the caller and can be
+// used again: this is how the knowledge layer tells a connector from an
+// earlier one with the same id.
+const connectorCreatedAt = z.string().min(1).optional();
+
 const githubConnectorSchema = z.object({
   id: z.string().min(1),
   type: z.literal('github'),
   enabled: z.boolean().default(true),
   name: z.string().min(1),
+  createdAt: connectorCreatedAt,
   // GitHub App installation that backs this connector instance. The App
   // itself is configured once globally under connectors.github.app.*; only the
   // installation id and org name vary per instance — unless `app` below
@@ -157,6 +197,13 @@ const githubConnectorSchema = z.object({
     cappedAcknowledged: false,
   }),
   entities: githubEntitiesSchema,
+  knowledge: githubKnowledgeSchema.default({
+    enabled: false,
+    pullRequests: true,
+    issues: true,
+    docs: { enabled: true, paths: GITHUB_KNOWLEDGE_DOC_PATHS, maxFileBytes: 200000 },
+    historyDays: 365,
+  }),
   // Last N runs, newest first. Capped at 20 by the scheduler — older entries
   // are dropped when persisting back to YAML.
   lastRuns: z.array(lastRunSchema).default([]),
@@ -272,6 +319,7 @@ const kubernetesConnectorSchema = z.object({
   type: z.literal('kubernetes'),
   enabled: z.boolean().default(true),
   name: z.string().min(1),
+  createdAt: connectorCreatedAt,
   schedule: z.string().default('*/5 * * * *').refine(isCrontabShape, {
     message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "*/5 * * * *".',
   }),
@@ -662,6 +710,167 @@ const feedbackConfigSchema = z.object({
   tokenSecret: z.string().default('github-feedback-token'),
 });
 
+// Top-level `ai:` block: user-defined agents (design:
+// docs/superpowers/specs/2026-10-01-ai-agents-and-workflows-design.md).
+// Everything defaults, so a config without the block still validates, and an
+// empty database URL simply leaves agent features switched off.
+const aiModelSchema = z.object({
+  // Stable key an agent definition refers to. Never sent to Vertex.
+  key: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, 'model keys are lower-case letters, digits and dashes'),
+  label: z.string().min(1),
+  // Which Vertex entry point serves the model: Claude (`anthropic`), Gemini
+  // (`gemini`), or an open model on the OpenAI-compatible endpoint (`maas`).
+  family: z.enum(['anthropic', 'gemini', 'maas']),
+  // The id Vertex expects for that family, e.g. `claude-opus-5-5`.
+  modelId: z.string().min(1),
+  contextWindow: z.number().int().positive(),
+  // False for a model that cannot call tools. Such a model can only back an
+  // agent that holds no grants.
+  tools: z.boolean().default(true),
+});
+
+const AI_LIMIT_DEFAULTS = {
+  maxSteps: 25,
+  maxTokens: 400_000,
+  timeoutSeconds: 900,
+  dailyTokens: 4_000_000,
+  toolResultChars: 50_000,
+  chatIdleMinutes: 60,
+};
+
+const aiConfigSchema = z.object({
+  // Master switch. False hides agent features without touching stored data.
+  enabled: z.boolean().default(true),
+  database: z
+    .object({
+      // Postgres connection string. Supplied as ${DATABASE_URL:-} in the
+      // committed YAML and deliberately NOT a secrets-registry entry: boot
+      // hydration reads every registry entry from GSM when its env var is
+      // unset, and the api-server holds no grant on this container.
+      url: z.string().default(''),
+    })
+    .default({ url: '' }),
+  vertex: z
+    .object({
+      project: z.string().default(''),
+      location: z.string().default('global'),
+    })
+    .default({ project: '', location: 'global' }),
+  // The catalog the agent editor's model picker shows.
+  models: z.array(aiModelSchema).default([]),
+  // Key of the model a new agent starts with. Empty means "no default".
+  defaultModel: z.string().default(''),
+  // The agent-runner process.
+  runner: z
+    .object({
+      // Runs one runner works on at once.
+      concurrency: z.number().int().positive().default(4),
+    })
+    .default({ concurrency: 4 }),
+  // Instance ceilings. An agent's own limits may be lower, never higher.
+  limits: z
+    .object({
+      maxSteps: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxSteps),
+      maxTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.maxTokens),
+      timeoutSeconds: z.number().int().positive().default(AI_LIMIT_DEFAULTS.timeoutSeconds),
+      dailyTokens: z.number().int().positive().default(AI_LIMIT_DEFAULTS.dailyTokens),
+      // A tool result longer than this (as JSON) is stored in full but cut,
+      // with a note, in the model's context.
+      toolResultChars: z.number().int().positive().default(AI_LIMIT_DEFAULTS.toolResultChars),
+      // A chat (Ask, test panel) with no new message for this long is closed.
+      chatIdleMinutes: z.number().int().positive().default(AI_LIMIT_DEFAULTS.chatIdleMinutes),
+    })
+    .default(AI_LIMIT_DEFAULTS),
+});
+export type AiConfig = z.infer<typeof aiConfigSchema>;
+export type AiModelConfig = z.infer<typeof aiModelSchema>;
+
+// ── Knowledge layer ───────────────────────────────────────────────────────
+// Ingested text (Slack, Confluence, Jira, GitHub discussions) indexed in
+// Postgres with pgvector. Design: docs/superpowers/specs/2026-10-02-knowledge-connectors-design.md.
+// Shares `ai.database.url` and `ai.vertex` with the agent platform.
+
+export const KNOWLEDGE_EMBEDDING_DIMENSIONS = 768;
+
+const knowledgeConfigSchema = z.object({
+  // Master switch. False hides the feature without touching stored data.
+  enabled: z.boolean().default(true),
+  embedding: z
+    .object({
+      model: z.string().default('gemini-embedding-2'),
+      // Must match the halfvec(768) column; a mismatch disables indexing.
+      dimensions: z.number().int().positive().default(KNOWLEDGE_EMBEDDING_DIMENSIONS),
+    })
+    .default({ model: 'gemini-embedding-2', dimensions: KNOWLEDGE_EMBEDDING_DIMENSIONS }),
+  sync: z
+    .object({
+      // A poll run yields after this long; the next run resumes from the checkpoint.
+      maxRunMinutes: z.number().int().positive().default(10),
+      reconcileCron: z.string().default('0 3 * * *').refine(isCrontabShape, {
+        message: 'Invalid cron schedule — expected a 5-field crontab string, e.g. "0 3 * * *".',
+      }),
+    })
+    .default({ maxRunMinutes: 10, reconcileCron: '0 3 * * *' }),
+  worker: z
+    .object({
+      concurrency: z.number().int().positive().default(8),
+      batchSize: z.number().int().positive().default(16),
+    })
+    .default({ concurrency: 8, batchSize: 16 }),
+  index: z
+    .object({
+      maxDocumentChars: z.number().int().positive().default(400000),
+      chunkTokens: z.number().int().positive().default(600),
+      maxChunkTokens: z.number().int().positive().default(800),
+    })
+    .default({ maxDocumentChars: 400000, chunkTokens: 600, maxChunkTokens: 800 }),
+  linking: z
+    .object({
+      labels: z.array(z.string()).default(['LogicalService', 'Repository', 'Team']),
+      stopList: z.array(z.string()).default([]),
+    })
+    .default({ labels: ['LogicalService', 'Repository', 'Team'], stopList: [] }),
+  search: z
+    .object({
+      defaultLimit: z.number().int().positive().default(8),
+      maxLimit: z.number().int().positive().default(25),
+      candidatesPerLeg: z.number().int().positive().default(50),
+      resultChars: z.number().int().positive().default(1500),
+    })
+    .default({ defaultLimit: 8, maxLimit: 25, candidatesPerLeg: 50, resultChars: 1500 }),
+  suggestions: z
+    .object({
+      enabled: z.boolean().default(true),
+      minSupport: z.number().int().positive().default(3),
+      extraction: z
+        .object({
+          enabled: z.boolean().default(false),
+          model: z.string().default(''),
+          dailyTokens: z.number().int().positive().default(2000000),
+        })
+        .default({ enabled: false, model: '', dailyTokens: 2000000 }),
+    })
+    .default({
+      enabled: true,
+      minSupport: 3,
+      extraction: { enabled: false, model: '', dailyTokens: 2000000 },
+    }),
+  agents: z
+    .object({
+      // After a run reads knowledge content, `allow` becomes `ask` for writes.
+      askWritesAfterRead: z.boolean().default(true),
+    })
+    .default({ askWritesAfterRead: true }),
+  retention: z
+    .object({
+      tombstoneDays: z.number().int().positive().default(30),
+    })
+    .default({ tombstoneDays: 30 }),
+});
+export type KnowledgeConfig = z.infer<typeof knowledgeConfigSchema>;
+
 const baseConfigSchema = z.object({
   // Secrets registry — maps logical secret keys to their GSM container and
   // consumption mode. Defaults include all 13 canonical entries so a config
@@ -873,6 +1082,33 @@ const baseConfigSchema = z.object({
     defaultLabels: ['user-report'],
     tokenSecret: 'github-feedback-token',
   }),
+  // User-defined AI agents. Defaulted so existing configs without an `ai`
+  // block still validate; with no database URL the feature stays off.
+  ai: aiConfigSchema.default({
+    enabled: true,
+    database: { url: '' },
+    vertex: { project: '', location: 'global' },
+    models: [],
+    defaultModel: '',
+    runner: { concurrency: 4 },
+    limits: AI_LIMIT_DEFAULTS,
+  }),
+  knowledge: knowledgeConfigSchema.default({
+    enabled: true,
+    embedding: { model: 'gemini-embedding-2', dimensions: KNOWLEDGE_EMBEDDING_DIMENSIONS },
+    sync: { maxRunMinutes: 10, reconcileCron: '0 3 * * *' },
+    worker: { concurrency: 8, batchSize: 16 },
+    index: { maxDocumentChars: 400000, chunkTokens: 600, maxChunkTokens: 800 },
+    linking: { labels: ['LogicalService', 'Repository', 'Team'], stopList: [] },
+    search: { defaultLimit: 8, maxLimit: 25, candidatesPerLeg: 50, resultChars: 1500 },
+    suggestions: {
+      enabled: true,
+      minSupport: 3,
+      extraction: { enabled: false, model: '', dailyTokens: 2000000 },
+    },
+    agents: { askWritesAfterRead: true },
+    retention: { tombstoneDays: 30 },
+  }),
 });
 
 // Cross-reference validation: ensure every logical secret has a registry entry
@@ -913,6 +1149,26 @@ export const configSchema = baseConfigSchema.superRefine((cfg, ctx) => {
     if (ref && !cfg.secrets[ref]) {
       ctx.addIssue({ code: 'custom', path, message: `references unknown secret "${ref}"` });
     }
+  }
+
+  // ai.models: keys are what agent definitions store, so they must be unique,
+  // and the default must point at one of them.
+  const modelKeys = cfg.ai.models.map((m) => m.key);
+  modelKeys.forEach((key, i) => {
+    if (modelKeys.indexOf(key) !== i) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ai', 'models', i, 'key'],
+        message: `duplicate model key "${key}"`,
+      });
+    }
+  });
+  if (cfg.ai.defaultModel && !modelKeys.includes(cfg.ai.defaultModel)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['ai', 'defaultModel'],
+      message: `"${cfg.ai.defaultModel}" is not a key in ai.models`,
+    });
   }
 });
 

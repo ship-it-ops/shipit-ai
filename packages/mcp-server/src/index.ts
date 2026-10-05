@@ -9,6 +9,7 @@ import { loadConfig, type McpServerConfig } from './config.js';
 import { createNeo4jClient, type Neo4jClient } from './neo4j-client.js';
 import { createMcpServer } from './server.js';
 import { authorizeMcpRequest } from './auth.js';
+import { isMainModule } from './is-main.js';
 
 export { createMcpServer } from './server.js';
 export { loadConfig } from './config.js';
@@ -211,9 +212,8 @@ function parsePort(value: string | undefined): number | null {
   return n;
 }
 
-// Only run main when executed directly (not imported)
-const isMainModule = process.argv[1]?.endsWith('index.js');
-if (isMainModule) {
+// Only run main when executed directly, not when another package imports this one.
+if (isMainModule(import.meta.url)) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

@@ -1,4 +1,8 @@
-import type { ConnectorConfig, ShipItConnector } from '@shipit-ai/connector-sdk';
+import type {
+  ConnectorConfig,
+  KnowledgeConnector,
+  ShipItConnector,
+} from '@shipit-ai/connector-sdk';
 import type { AppLike, ConnectorInstanceConfig } from '@shipit-ai/shared';
 
 /** What a connector type may need to turn a stored instance into a runnable connector. */
@@ -16,6 +20,8 @@ export interface BuildContext {
   lookupRepositoryNames?(org: string): Promise<string[]>;
   lookupTeamSlugs?(org: string): Promise<string[]>;
   listConnectors(): ConnectorInstanceConfig[];
+  /** knowledge.index.maxDocumentChars, for knowledge connectors to truncate at. */
+  maxDocumentChars?: number;
   /** Structured warn sink; defaults to console. Tests inject a spy so output stays pristine. */
   logger?: { warn(message: string, meta?: unknown): void };
 }
@@ -38,6 +44,10 @@ export interface ProbeResult {
   [key: string]: unknown;
 }
 
+export type KnowledgeBuildResult =
+  | { ok: true; connector: KnowledgeConnector; sdkConfig: ConnectorConfig }
+  | { ok: false; code: string; message: string };
+
 export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInstanceConfig> {
   readonly type: C['type'];
   /**
@@ -53,7 +63,18 @@ export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInst
    * must not sweep.
    */
   readonly sweepsAbsent: boolean;
-  build(cfg: C, ctx: BuildContext): Promise<BuildResult>;
+  /** The graph facet. Absent for a knowledge-only type (Slack, Confluence, Jira). */
+  build?(cfg: C, ctx: BuildContext): Promise<BuildResult>;
+  /** The knowledge facet. Absent for a graph-only type (Kubernetes). GitHub has both. */
+  buildKnowledge?(cfg: C, ctx: BuildContext): Promise<KnowledgeBuildResult>;
+  /**
+   * Whether THIS instance has its knowledge facet switched on. Absent: on for
+   * every instance of a type that has `buildKnowledge` (Slack, Atlassian).
+   * GitHub answers from `cfg.knowledge.enabled`.
+   */
+  knowledgeEnabled?(cfg: C): boolean;
+  /** How many days back THIS instance backfills its knowledge. Absent: 365. */
+  knowledgeHistoryDays?(cfg: C): number;
   /** Types whose probe lives in the factory (Kubernetes); GitHub's stays in the route. */
   probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>;
 }

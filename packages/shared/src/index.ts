@@ -156,6 +156,7 @@ export {
   secretsRegistrySchema,
   KUBERNETES_WORKLOAD_KINDS,
   KUBERNETES_DEFAULT_MAPPING,
+  KNOWLEDGE_EMBEDDING_DIMENSIONS,
 } from './config/index.js';
 export type {
   Config,
@@ -163,11 +164,15 @@ export type {
   ConfigPaths,
   ConnectorInstanceConfig,
   GitHubConnectorConfig,
+  GitHubKnowledgeConfig,
   LastRun,
   ResolvedAppCredentials,
   AppLike,
   AccessControlConfig,
   AuthConfig,
+  AiConfig,
+  AiModelConfig,
+  KnowledgeConfig,
   SecretEntry,
   SecretsRegistry,
   KubernetesConnectorConfig,

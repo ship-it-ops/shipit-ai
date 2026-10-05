@@ -375,3 +375,113 @@ describe('ConnectorRegistry — kubernetes instances', () => {
     expect(updated).not.toHaveProperty('entities');
   });
 });
+
+describe('ConnectorRegistry — github knowledge block', () => {
+  let tmpDir: string;
+  let yamlPath: string;
+  let started: ConnectorInstanceConfig[];
+  let registry: ConnectorRegistry;
+
+  beforeEach(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'shipit-registry-knowledge-'));
+    yamlPath = join(tmpDir, 'shipit.config.local.yaml');
+    started = [];
+    const runner: ConnectorRunner = {
+      start: async (c) => {
+        started.push(c);
+      },
+      stop: async () => undefined,
+      triggerSync: async (c) => ({ connectorId: c.id, state: 'idle' }),
+      getStatus: (id) => ({ connectorId: id, state: 'idle' }),
+    };
+    registry = new ConnectorRegistry({ localConfigPath: yamlPath, initial: [], runner });
+    await registry.create({
+      id: 'gh-1',
+      type: 'github',
+      name: 'Acme',
+      installationId: '1',
+      org: 'acme',
+    });
+  });
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // The knowledge layer tells a connector from an earlier one with the same
+  // id by this: ids are chosen by the caller and can be used again.
+  it('stamps a connector with the time it was created, and keeps it through an update', async () => {
+    const registry = new ConnectorRegistry({ localConfigPath: yamlPath, initial: [] });
+    const before = Date.now();
+    const created = await registry.create({
+      id: 'gh-born',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+    });
+    expect(Date.parse(created.createdAt!)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(created.createdAt!)).toBeLessThanOrEqual(Date.now());
+
+    const updated = await registry.update('gh-born', { name: 'renamed' }, undefined);
+    expect(updated.createdAt).toBe(created.createdAt);
+    const onDisk = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<{ id: string; createdAt?: string }> };
+    };
+    expect(onDisk.connectors.instances.find((c) => c.id === 'gh-born')?.createdAt).toBe(
+      created.createdAt,
+    );
+
+    await registry.remove('gh-born', undefined);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const again = await registry.create({
+      id: 'gh-born',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+    });
+    expect(again.createdAt).not.toBe(created.createdAt);
+  });
+
+  it('update replaces the knowledge block, fills its defaults, persists it and re-binds the runner', async () => {
+    const updated = await registry.update(
+      'gh-1',
+      { knowledge: { enabled: true, issues: false } },
+      undefined,
+    );
+    if (updated.type !== 'github') throw new Error('unreachable');
+    expect(updated.knowledge).toMatchObject({
+      enabled: true,
+      issues: false,
+      pullRequests: true,
+      historyDays: 365,
+    });
+    // The runner is started again with the new block: that is what schedules
+    // (or removes) the knowledge jobs.
+    const rebound = started.at(-1)!;
+    expect(rebound.type === 'github' && rebound.knowledge.enabled).toBe(true);
+    const yaml = parseYaml(readFileSync(yamlPath, 'utf-8')) as {
+      connectors: { instances: Array<Record<string, unknown>> };
+    };
+    expect(yaml.connectors.instances[0]).toMatchObject({
+      id: 'gh-1',
+      knowledge: { enabled: true, issues: false },
+    });
+  });
+
+  it('an update that does not mention knowledge leaves the block alone', async () => {
+    await registry.update('gh-1', { knowledge: { enabled: true } }, undefined);
+    const renamed = await registry.update('gh-1', { name: 'Acme Inc' }, undefined);
+    if (renamed.type !== 'github') throw new Error('unreachable');
+    expect(renamed.name).toBe('Acme Inc');
+    expect(renamed.knowledge.enabled).toBe(true);
+  });
+
+  it('rejects a knowledge block that does not validate and keeps the stored one', async () => {
+    await expect(
+      registry.update('gh-1', { knowledge: { historyDays: -1 } }, undefined),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    const current = registry.get('gh-1');
+    expect(current.type === 'github' && current.knowledge.historyDays).toBe(365);
+  });
+});

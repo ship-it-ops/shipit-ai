@@ -11,13 +11,18 @@
 //   - Capped FIFO is exactly what Redis lists model; using YAML for it is
 //     the wrong shape.
 //
-// On-disk layout:
-//   shipit:connector-runs:<connectorId>   LIST   newest entry at index 0
+// On-disk layout, one list per facet of a connector (newest entry at index 0):
+//   shipit:connector-runs:<connectorId>             LIST   graph syncs
+//   shipit:connector-runs:<connectorId>:knowledge   LIST   knowledge syncs
+//
+// The two are separate because every reader of the graph history takes entry
+// 0 as the latest graph sync (the Connector Hub's status, last sync and entity
+// count). A knowledge run in that list would overwrite all three.
 //
 // Operations:
-//   recordRun   LPUSH + LTRIM(0, MAX_RUNS-1)
+//   recordRun   LPUSH + LTRIM(0, MAX_RUNS-1), on the list of the run's facet
 //   listRuns    LRANGE 0 (limit-1)
-//   clear       DEL  (called by the registry on connector delete)
+//   clear       DEL of both lists (called by the registry on connector delete)
 //
 // The list is bounded at MAX_RUNS so a runaway poll loop can't fill Redis.
 // No TTL — runs persist across restarts and are cleared explicitly on
@@ -31,17 +36,31 @@ import type { LastRun } from '@shipit-ai/shared';
 export const MAX_RUNS = 20;
 export const KEY_PREFIX = 'shipit:connector-runs:';
 
-function keyFor(connectorId: string): string {
-  return `${KEY_PREFIX}${connectorId}`;
+export type RunFacet = 'graph' | 'knowledge';
+
+// A connector id cannot contain ':', so the suffix cannot name another connector.
+function keyFor(connectorId: string, facet: RunFacet = 'graph'): string {
+  const key = `${KEY_PREFIX}${connectorId}`;
+  return facet === 'knowledge' ? `${key}:knowledge` : key;
 }
+
+/** A run with no facet is a graph sync: that is all there was before the field existed. */
+const facetOf = (run: LastRun): RunFacet => (run.facet === 'knowledge' ? 'knowledge' : 'graph');
 
 // Test seam — the registry depends on this interface, not on Redis. The
 // in-memory implementation below is what unit tests pull in, and the
 // production wiring in index.ts swaps in the Redis-backed one.
 export interface ConnectorRunStore {
+  /** Appends to the history of the run's own facet. */
   recordRun(connectorId: string, run: LastRun): Promise<void>;
-  listRuns(connectorId: string, limit?: number): Promise<LastRun[]>;
-  listManyLatest(connectorIds: string[], limit?: number): Promise<Record<string, LastRun[]>>;
+  /** The graph syncs unless `facet` says otherwise. */
+  listRuns(connectorId: string, limit?: number, facet?: RunFacet): Promise<LastRun[]>;
+  listManyLatest(
+    connectorIds: string[],
+    limit?: number,
+    facet?: RunFacet,
+  ): Promise<Record<string, LastRun[]>>;
+  /** Drops both histories. */
   clear(connectorId: string): Promise<void>;
 }
 
@@ -54,7 +73,7 @@ export class RedisConnectorRunStore implements ConnectorRunStore {
   }
 
   async recordRun(connectorId: string, run: LastRun): Promise<void> {
-    const key = keyFor(connectorId);
+    const key = keyFor(connectorId, facetOf(run));
     // Single pipelined round trip: prepend + cap. Atomic enough for our
     // use case; concurrent writers might briefly exceed MAX_RUNS between
     // LPUSH and LTRIM, but the next call always converges.
@@ -64,11 +83,15 @@ export class RedisConnectorRunStore implements ConnectorRunStore {
     await pipeline.exec();
   }
 
-  async listRuns(connectorId: string, limit: number = MAX_RUNS): Promise<LastRun[]> {
+  async listRuns(
+    connectorId: string,
+    limit: number = MAX_RUNS,
+    facet: RunFacet = 'graph',
+  ): Promise<LastRun[]> {
     const cap = Math.min(Math.max(limit, 0), MAX_RUNS);
     if (cap === 0) return [];
-    const raw = await this.redis.lrange(keyFor(connectorId), 0, cap - 1);
-    return raw.map(parseRun).filter((r): r is LastRun => r !== null);
+    const raw = await this.redis.lrange(keyFor(connectorId, facet), 0, cap - 1);
+    return parseRuns(raw, facet);
   }
 
   // Pipelined fetch of N keys at once so the list-connectors endpoint
@@ -77,11 +100,12 @@ export class RedisConnectorRunStore implements ConnectorRunStore {
   async listManyLatest(
     connectorIds: string[],
     limit: number = MAX_RUNS,
+    facet: RunFacet = 'graph',
   ): Promise<Record<string, LastRun[]>> {
     if (connectorIds.length === 0) return {};
     const cap = Math.min(Math.max(limit, 0), MAX_RUNS);
     const pipeline = this.redis.pipeline();
-    for (const id of connectorIds) pipeline.lrange(keyFor(id), 0, cap - 1);
+    for (const id of connectorIds) pipeline.lrange(keyFor(id, facet), 0, cap - 1);
     const results = await pipeline.exec();
     const out: Record<string, LastRun[]> = {};
     for (let i = 0; i < connectorIds.length; i++) {
@@ -93,14 +117,13 @@ export class RedisConnectorRunStore implements ConnectorRunStore {
         out[id] = [];
         continue;
       }
-      const raw = entry[1] as string[];
-      out[id] = raw.map(parseRun).filter((r): r is LastRun => r !== null);
+      out[id] = parseRuns(entry[1] as string[], facet);
     }
     return out;
   }
 
   async clear(connectorId: string): Promise<void> {
-    await this.redis.del(keyFor(connectorId));
+    await this.redis.del(keyFor(connectorId), keyFor(connectorId, 'knowledge'));
   }
 }
 
@@ -108,31 +131,44 @@ export class RedisConnectorRunStore implements ConnectorRunStore {
 // Same semantics, no IO. Tests pass an instance of this directly instead
 // of mocking the Redis client.
 export class InMemoryConnectorRunStore implements ConnectorRunStore {
-  private readonly byId = new Map<string, LastRun[]>();
+  private readonly byKey = new Map<string, LastRun[]>();
 
   async recordRun(connectorId: string, run: LastRun): Promise<void> {
-    const existing = this.byId.get(connectorId) ?? [];
-    const next = [run, ...existing].slice(0, MAX_RUNS);
-    this.byId.set(connectorId, next);
+    const key = keyFor(connectorId, facetOf(run));
+    const existing = this.byKey.get(key) ?? [];
+    this.byKey.set(key, [run, ...existing].slice(0, MAX_RUNS));
   }
 
-  async listRuns(connectorId: string, limit: number = MAX_RUNS): Promise<LastRun[]> {
+  async listRuns(
+    connectorId: string,
+    limit: number = MAX_RUNS,
+    facet: RunFacet = 'graph',
+  ): Promise<LastRun[]> {
     const cap = Math.min(Math.max(limit, 0), MAX_RUNS);
-    return (this.byId.get(connectorId) ?? []).slice(0, cap);
+    return (this.byKey.get(keyFor(connectorId, facet)) ?? []).slice(0, cap);
   }
 
   async listManyLatest(
     connectorIds: string[],
     limit: number = MAX_RUNS,
+    facet: RunFacet = 'graph',
   ): Promise<Record<string, LastRun[]>> {
     const out: Record<string, LastRun[]> = {};
-    for (const id of connectorIds) out[id] = await this.listRuns(id, limit);
+    for (const id of connectorIds) out[id] = await this.listRuns(id, limit, facet);
     return out;
   }
 
   async clear(connectorId: string): Promise<void> {
-    this.byId.delete(connectorId);
+    this.byKey.delete(keyFor(connectorId));
+    this.byKey.delete(keyFor(connectorId, 'knowledge'));
   }
+}
+
+// Entries of `facet` only. A build from before the lists were split wrote
+// knowledge runs into the graph list; those are left out rather than shown as
+// graph syncs.
+function parseRuns(raw: string[], facet: RunFacet): LastRun[] {
+  return raw.map(parseRun).filter((r): r is LastRun => r !== null && facetOf(r) === facet);
 }
 
 // Defensive parser — a stray non-JSON entry (e.g. a manual `redis-cli LPUSH`

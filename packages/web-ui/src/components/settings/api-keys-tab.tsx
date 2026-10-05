@@ -72,7 +72,7 @@ export function ApiKeysTab() {
         description="Tokens require accessControl.auth.enabled to be true. Until then, the MCP server can use a shared secret via the apiKeySecret env var."
         action={
           <Button variant="outline" asChild icon={<IconGlyph name="sparkle" />}>
-            <a href="/configure/mcp">Open MCP Access</a>
+            <a href="/ai/mcp">Open MCP Access</a>
           </Button>
         }
       />

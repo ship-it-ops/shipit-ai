@@ -74,7 +74,9 @@ function emailPassesAllowList(
 // the seam future grants will hang off of.
 function capabilitiesForRole(role: AuthRole): ReadonlyArray<string> {
   if (role === 'admin') return ['*'];
-  return ['graph:read', 'catalog:read', 'graph:write'];
+  // agents:read / agents:run let members see and start agents; creating and
+  // editing them (agents:write) stays with admins until real roles exist.
+  return ['graph:read', 'catalog:read', 'graph:write', 'agents:read', 'agents:run'];
 }
 
 const authRoutes: FastifyPluginAsync = async (server) => {
