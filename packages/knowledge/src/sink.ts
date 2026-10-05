@@ -24,18 +24,23 @@ export interface PostgresKnowledgeSinkOptions {
   log?: (line: string) => void;
 }
 
+// Names and URLs are stored as text: no NUL may survive in them.
+const storable = (c: SourceContainer): SourceContainer => ({
+  ...c,
+  name: stripNul(c.name),
+  ...(c.url ? { url: stripNul(c.url) } : {}),
+});
+
 export class PostgresKnowledgeSink implements KnowledgeSink {
   constructor(private readonly opts: PostgresKnowledgeSinkOptions) {}
 
   upsertContainers(containers: SourceContainer[]): Promise<void> {
-    return this.opts.store.upsertContainers(
-      this.opts.connectorId,
-      containers.map((c) => ({
-        ...c,
-        name: stripNul(c.name),
-        ...(c.url ? { url: stripNul(c.url) } : {}),
-      })),
-    );
+    return this.opts.store.upsertContainers(this.opts.connectorId, containers.map(storable));
+  }
+
+  /** One container asked for on its own; the rest of the list is left as it is. */
+  upsertContainer(container: SourceContainer): Promise<void> {
+    return this.opts.store.upsertContainer(this.opts.connectorId, storable(container));
   }
 
   upsertPrincipals(principals: SourcePrincipal[]): Promise<void> {

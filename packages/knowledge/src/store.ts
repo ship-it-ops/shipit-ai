@@ -169,6 +169,32 @@ function toSelected(row: ContainerRow): SelectedContainer {
   };
 }
 
+async function upsertContainerRow(
+  client: SqlClient,
+  connectorId: string,
+  c: SourceContainer,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO knowledge_containers (id, connector_id, external_id, kind, name, url, visibility, archived, acl)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+     ON CONFLICT (connector_id, external_id) DO UPDATE SET
+       kind = EXCLUDED.kind, name = EXCLUDED.name, url = EXCLUDED.url, visibility = EXCLUDED.visibility,
+       archived = EXCLUDED.archived, acl = COALESCE(EXCLUDED.acl, knowledge_containers.acl),
+       gone_at = NULL, updated_at = now()`,
+    [
+      randomUUID(),
+      connectorId,
+      c.externalId,
+      c.kind,
+      c.name,
+      c.url ?? null,
+      c.visibility,
+      c.archived,
+      c.acl ? JSON.stringify(c.acl) : null,
+    ],
+  );
+}
+
 export class KnowledgeStore {
   constructor(private readonly db: Db) {}
 
@@ -177,33 +203,21 @@ export class KnowledgeStore {
   /** A COMPLETE listing from the source: present ones are upserted, the rest marked gone. */
   async upsertContainers(connectorId: string, containers: SourceContainer[]): Promise<void> {
     await this.db.tx(async (tx) => {
-      for (const c of containers) {
-        await tx.query(
-          `INSERT INTO knowledge_containers (id, connector_id, external_id, kind, name, url, visibility, archived, acl)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
-           ON CONFLICT (connector_id, external_id) DO UPDATE SET
-             kind = EXCLUDED.kind, name = EXCLUDED.name, url = EXCLUDED.url, visibility = EXCLUDED.visibility,
-             archived = EXCLUDED.archived, acl = COALESCE(EXCLUDED.acl, knowledge_containers.acl),
-             gone_at = NULL, updated_at = now()`,
-          [
-            randomUUID(),
-            connectorId,
-            c.externalId,
-            c.kind,
-            c.name,
-            c.url ?? null,
-            c.visibility,
-            c.archived,
-            c.acl ? JSON.stringify(c.acl) : null,
-          ],
-        );
-      }
+      for (const c of containers) await upsertContainerRow(tx, connectorId, c);
       await tx.query(
         `UPDATE knowledge_containers SET gone_at = now(), updated_at = now()
           WHERE connector_id = $1 AND gone_at IS NULL AND NOT (external_id = ANY($2::text[]))`,
         [connectorId, containers.map((c) => c.externalId)],
       );
     });
+  }
+
+  /**
+   * What the source says about ONE container, asked for on its own. The rest
+   * of the list is left as it is: nothing is marked gone on this evidence.
+   */
+  async upsertContainer(connectorId: string, container: SourceContainer): Promise<void> {
+    await upsertContainerRow(this.db, connectorId, container);
   }
 
   async listContainers(connectorId: string): Promise<ContainerRow[]> {

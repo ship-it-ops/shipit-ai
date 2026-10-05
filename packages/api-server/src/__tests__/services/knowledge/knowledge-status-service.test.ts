@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { Db } from '@shipit-ai/agents';
+import { KNOWLEDGE_WORKER_HEARTBEAT_KEY } from '@shipit-ai/knowledge';
 import {
   KnowledgeStatusService,
-  WORKER_HEARTBEAT_KEY,
   type KnowledgeStatus,
 } from '../../../services/knowledge/knowledge-status-service.js';
 import { makeTestConfig } from '../../test-config.js';
@@ -29,7 +29,7 @@ const healthyDb = dbAnswering((sql) => {
   return { rows: [] };
 });
 const redisWith = (beat: string | null) => ({
-  get: async (key: string) => (key === WORKER_HEARTBEAT_KEY ? beat : null),
+  get: async (key: string) => (key === KNOWLEDGE_WORKER_HEARTBEAT_KEY ? beat : null),
 });
 const check = (s: KnowledgeStatus, name: string) => s.checks.find((c) => c.name === name)!;
 

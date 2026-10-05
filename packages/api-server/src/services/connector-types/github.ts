@@ -59,6 +59,7 @@ export const githubConnectorType: ConnectorType<GitHubConnectorConfig> = {
   },
 
   knowledgeEnabled: (cfg) => cfg.knowledge.enabled,
+  knowledgeHistoryDays: (cfg) => cfg.knowledge.historyDays,
 
   async buildKnowledge(cfg, ctx): Promise<KnowledgeBuildResult> {
     const resolved = sdkConfigFor(cfg, ctx);

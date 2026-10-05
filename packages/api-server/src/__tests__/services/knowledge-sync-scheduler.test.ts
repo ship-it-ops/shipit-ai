@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createFixtureKnowledgeConnector, type KnowledgeConnector } from '@shipit-ai/connector-sdk';
+import {
+  KnowledgeRunCutShort,
+  createFixtureKnowledgeConnector,
+  type KnowledgeConnector,
+} from '@shipit-ai/connector-sdk';
 import type { ConnectorInstanceConfig, LastRun } from '@shipit-ai/shared';
 import {
   KnowledgeSyncScheduler,
@@ -82,6 +86,8 @@ describe('KnowledgeSyncScheduler', () => {
   let upserted: number;
   let principals: number;
   let available: boolean;
+  let hasSelection: boolean;
+  let upsertedOne: unknown[];
 
   const registry = {
     get: (id: string) => {
@@ -96,6 +102,8 @@ describe('KnowledgeSyncScheduler', () => {
   const store = {
     selectedContainers: async () => selected,
     upsertContainers: async (_c: string, list: unknown[]) => void (upserted = list.length),
+    upsertContainer: async (_c: string, one: unknown) => void upsertedOne.push(one),
+    hasSelection: async () => hasSelection,
     upsertPrincipals: async (_c: string, list: unknown[]) => void (principals += list.length),
     storeBatch: async (_c: string, _container: unknown, batch: { documents: unknown[] }) => {
       stored += batch.documents.length;
@@ -128,6 +136,8 @@ describe('KnowledgeSyncScheduler', () => {
     upserted = 0;
     principals = 0;
     available = true;
+    hasSelection = true;
+    upsertedOne = [];
   });
 
   it('schedules a poll and a reconcile job per enabled knowledge connector, and removes both on stop', async () => {
@@ -177,6 +187,23 @@ describe('KnowledgeSyncScheduler', () => {
       errors: [],
     });
     expect(s.getStatus('fx-1').state).toBe('idle');
+  });
+
+  it('backfills as far back as the type says for the instance, 365 days when it does not say', async () => {
+    const days = async (type: ConnectorType, connector: KnowledgeConnector) => {
+      await scheduler(type).runJob('fx-1', 'poll');
+      return (connector as ReturnType<typeof createFixtureKnowledgeConnector>).calls
+        .fetchOptions[0]!.historyDays;
+    };
+    const silent = createFixtureKnowledgeConnector({ containers: [C1], documents: { C1: [] } });
+    expect(await days(fixtureType(silent), silent)).toBe(365);
+
+    const told = createFixtureKnowledgeConnector({ containers: [C1], documents: { C1: [] } });
+    const type = {
+      ...fixtureType(told),
+      knowledgeHistoryDays: () => 90,
+    } as unknown as ConnectorType;
+    expect(await days(type, told)).toBe(90);
   });
 
   it('records a failed run when the type cannot be built', async () => {
@@ -372,6 +399,115 @@ describe('KnowledgeSyncScheduler', () => {
     );
     expect(await s.refreshContainers('fx-1')).toBe(1);
     expect(principals).toBe(2);
+  });
+
+  // Names, emails and logins are held only for a connector that has something
+  // selected. A refresh made before the first selection lists repositories only.
+  it('refreshContainers does not load the people while nothing is selected', async () => {
+    hasSelection = false;
+    const connector = createFixtureKnowledgeConnector({
+      containers: [C1],
+      documents: {},
+      principals: [{ externalId: 'U1', kind: 'user', displayName: 'Ada', active: true }],
+    });
+    const s = scheduler(fixtureType(connector));
+    expect(await s.refreshContainers('fx-1')).toBe(1);
+    expect(principals).toBe(0);
+    expect(connector.calls.listPrincipalsOptions).toEqual([]);
+  });
+
+  // The refresh runs inside an HTTP request. Without a deadline the connector
+  // would sleep through a rate limit for as long as the source says.
+  it('refreshContainers gives the listings a short deadline and the shutdown signal', async () => {
+    const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+    const s = scheduler(fixtureType(connector));
+    const before = Date.now();
+    await s.refreshContainers('fx-1');
+    for (const options of [
+      connector.calls.listContainersOptions[0],
+      connector.calls.listPrincipalsOptions[0],
+    ]) {
+      expect(options?.signal).toBeInstanceOf(AbortSignal);
+      expect(options?.deadline).toBeGreaterThan(before);
+      expect(options?.deadline).toBeLessThanOrEqual(Date.now() + 20_000);
+    }
+  });
+
+  it('refreshContainers says RATE_LIMITED when the source asks to wait past the deadline', async () => {
+    const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+    connector.listContainers = () => ({
+      [Symbol.asyncIterator]: () => ({
+        next: async () => {
+          throw new KnowledgeRunCutShort('rate_limited');
+        },
+      }),
+    });
+    await expect(scheduler(fixtureType(connector)).refreshContainers('fx-1')).rejects.toMatchObject(
+      { code: 'RATE_LIMITED' },
+    );
+    expect(upserted).toBe(0);
+  });
+
+  describe('refreshContainer', () => {
+    const row = { externalId: 'C1', name: 'general' };
+
+    it('asks the source about the one container and stores what it says', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      const asked: unknown[] = [];
+      connector.getContainer = async (container, options) => {
+        asked.push({ container, options });
+        return { ...C1, visibility: 'restricted' };
+      };
+      const s = scheduler(fixtureType(connector));
+      expect(await s.refreshContainer('fx-1', row)).toBe(true);
+      expect(upsertedOne).toEqual([{ ...C1, visibility: 'restricted' }]);
+      expect(asked).toEqual([
+        {
+          container: row,
+          options: { deadline: expect.any(Number), signal: expect.any(AbortSignal) },
+        },
+      ]);
+      // One request, not a listing of the whole source.
+      expect(connector.calls.listContainersOptions).toEqual([]);
+      expect(connector.calls.listPrincipalsOptions).toEqual([]);
+    });
+
+    it('says when the source no longer has the container, and stores nothing', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      connector.getContainer = async () => null;
+      expect(await scheduler(fixtureType(connector)).refreshContainer('fx-1', row)).toBe(false);
+      expect(upsertedOne).toEqual([]);
+    });
+
+    it('lists the whole source, without the people, for a connector that cannot answer for one', async () => {
+      const connector = createFixtureKnowledgeConnector({
+        containers: [C1],
+        documents: {},
+        principals: [{ externalId: 'U1', kind: 'user', displayName: 'Ada', active: true }],
+      });
+      expect(await scheduler(fixtureType(connector)).refreshContainer('fx-1', row)).toBe(true);
+      expect(upserted).toBe(1);
+      expect(principals).toBe(0);
+    });
+
+    it('says RATE_LIMITED when the source asks to wait past the deadline', async () => {
+      const connector = createFixtureKnowledgeConnector({ containers: [C1], documents: {} });
+      connector.getContainer = async () => {
+        throw new KnowledgeRunCutShort('rate_limited');
+      };
+      await expect(
+        scheduler(fixtureType(connector)).refreshContainer('fx-1', row),
+      ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    });
+
+    it('says why it cannot ask', async () => {
+      const revoked = fixtureType(
+        createFixtureKnowledgeConnector({ containers: [C1], documents: {}, authError: 'revoked' }),
+      );
+      await expect(scheduler(revoked).refreshContainer('fx-1', row)).rejects.toMatchObject({
+        code: 'AUTH_FAILED',
+      });
+    });
   });
 
   it('refreshContainers still answers when the people cannot be listed', async () => {

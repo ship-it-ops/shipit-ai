@@ -73,6 +73,8 @@ export interface ConnectorType<C extends ConnectorInstanceConfig = ConnectorInst
    * GitHub answers from `cfg.knowledge.enabled`.
    */
   knowledgeEnabled?(cfg: C): boolean;
+  /** How many days back THIS instance backfills its knowledge. Absent: 365. */
+  knowledgeHistoryDays?(cfg: C): number;
   /** Types whose probe lives in the factory (Kubernetes); GitHub's stays in the route. */
   probe?(body: unknown, ctx: BuildContext): Promise<ProbeResult>;
 }

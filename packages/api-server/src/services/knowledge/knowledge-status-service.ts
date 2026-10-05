@@ -3,14 +3,13 @@
 // never a host, URL or driver message.
 import type { Db } from '@shipit-ai/agents';
 import {
+  KNOWLEDGE_WORKER_HEARTBEAT_KEY,
   hasVectorExtension,
   missingKnowledgeMigrations,
   type KnowledgeStore,
 } from '@shipit-ai/knowledge';
 import type { AiConfig, KnowledgeConfig } from '@shipit-ai/shared';
 
-/** Written by knowledge-worker every 15s with a 60s TTL. Absent = no worker. */
-export const WORKER_HEARTBEAT_KEY = 'shipit-knowledge-worker-heartbeat';
 export const EXPECTED_EMBEDDING_DIMENSIONS = 768;
 
 export type KnowledgeCheckName =
@@ -177,7 +176,8 @@ export class KnowledgeStatusService {
       // this read (and with it the whole status, and the sync gate behind it)
       // would wait for as long as Redis is down.
       const beat = await withTimeout(
-        redis.get(WORKER_HEARTBEAT_KEY),
+        // Written by knowledge-worker every 15 s with a 60 s expiry. Absent: no worker.
+        redis.get(KNOWLEDGE_WORKER_HEARTBEAT_KEY),
         this.opts.redisTimeoutMs ?? 2_000,
       );
       return beat

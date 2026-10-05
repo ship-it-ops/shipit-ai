@@ -94,6 +94,19 @@ describe('github connector type', () => {
     );
   });
 
+  it('github says how far back an instance backfills', () => {
+    const type = getConnectorType('github')!;
+    const gh = connectorInstanceSchema.parse({
+      id: 'gh-1',
+      type: 'github',
+      name: 'acme',
+      installationId: '1',
+      org: 'acme',
+      knowledge: { historyDays: 90 },
+    });
+    expect(type.knowledgeHistoryDays!(gh)).toBe(90);
+  });
+
   it('builds the knowledge connector with the same credentials as the graph one', async () => {
     const c = ctx({ maxDocumentChars: 1234 });
     const built = await getConnectorType('github')!.buildKnowledge!(gh, c);

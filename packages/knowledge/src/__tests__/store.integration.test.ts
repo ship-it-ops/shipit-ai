@@ -1066,6 +1066,23 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       expect(await principals('slack-2')).toEqual(['U7']);
     });
 
+    it('stores what the source says about one container without touching the others', async () => {
+      await sink.upsertContainer({
+        ...C1,
+        name: `gen${NUL}eral-renamed`,
+        visibility: 'restricted',
+      });
+      const rows = (await store.listContainers('slack-1')).sort((a, b) =>
+        a.externalId.localeCompare(b.externalId),
+      );
+      expect(rows.map((r) => [r.externalId, r.name, r.visibility, r.goneAt])).toEqual([
+        ['C1', 'general-renamed', 'restricted', null],
+        ['C2', 'ops', 'restricted', null],
+      ]);
+      // Selection and sync state stay as they were.
+      expect(rows[0]).toMatchObject({ selected: true });
+    });
+
     it('says whether a connector has anything selected', async () => {
       expect(await store.hasSelection('slack-1')).toBe(true);
       expect(await store.hasSelection('slack-2')).toBe(false);

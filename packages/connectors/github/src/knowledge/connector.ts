@@ -66,6 +66,12 @@ export interface GitHubKnowledgeClient {
     signal?: AbortSignal,
   ): Promise<unknown>;
   git: TreeClient;
+  /** One repository by owner and name; null when the installation cannot see it. */
+  getRepository(
+    owner: string,
+    repo: string,
+    signal?: AbortSignal,
+  ): Promise<GitHubRepositorySummary | null>;
   /** One page (100) of the organisation's repositories, pages numbered from 1. */
   listRepositoriesPage(
     org: string,
@@ -158,6 +164,34 @@ function* chunks<T>(items: T[], size: number): Generator<T[]> {
   for (let i = 0; i < items.length; i += size) yield items.slice(i, i + size);
 }
 
+// A repository GitHub does not state the visibility of is treated as private.
+function summaryOf(r: {
+  id: number;
+  full_name: string;
+  html_url: string;
+  visibility?: string;
+  archived?: boolean;
+}): GitHubRepositorySummary {
+  return {
+    id: r.id,
+    fullName: r.full_name,
+    htmlUrl: r.html_url,
+    visibility: r.visibility ?? 'private',
+    archived: r.archived ?? false,
+  };
+}
+
+function containerOf(r: GitHubRepositorySummary): SourceContainer {
+  return {
+    externalId: String(r.id),
+    kind: 'repository',
+    name: r.fullName,
+    url: r.htmlUrl,
+    visibility: r.visibility === 'private' ? 'restricted' : 'open',
+    archived: r.archived,
+  };
+}
+
 export function clientFromOctokit(octokit: Octokit, issuesGranted: boolean): GitHubKnowledgeClient {
   const withSignal = (signal?: AbortSignal): { request?: { signal: AbortSignal } } =>
     signal ? { request: { signal } } : {};
@@ -166,6 +200,16 @@ export function clientFromOctokit(octokit: Octokit, issuesGranted: boolean): Git
     graphql: (query, variables, signal) =>
       octokit.graphql(query, { ...variables, ...withSignal(signal) }),
     git: octokit.rest.git as unknown as TreeClient,
+    async getRepository(owner, repo, signal) {
+      try {
+        const { data } = await octokit.rest.repos.get({ owner, repo, ...withSignal(signal) });
+        return summaryOf(data);
+      } catch (err) {
+        // Gone, or outside what the installation was granted: both answer 404.
+        if ((err as { status?: number }).status === 404) return null;
+        throw err;
+      }
+    },
     async listRepositoriesPage(org, page, signal) {
       const { data } = await octokit.rest.repos.listForOrg({
         org,
@@ -174,13 +218,7 @@ export function clientFromOctokit(octokit: Octokit, issuesGranted: boolean): Git
         type: 'all',
         ...withSignal(signal),
       });
-      return data.map((r) => ({
-        id: r.id,
-        fullName: r.full_name,
-        htmlUrl: r.html_url,
-        visibility: r.visibility ?? 'private',
-        archived: r.archived ?? false,
-      }));
+      return data.map(summaryOf);
     },
     async listMembersPage(org, page, signal) {
       const { data } = await octokit.rest.orgs.listMembers({
@@ -286,18 +324,26 @@ export class GitHubKnowledgeConnector implements KnowledgeConnector {
       const repos = await this.limited(limits, () =>
         this.github.listRepositoriesPage(this.org, page, limits.signal),
       );
-      for (const r of repos) {
-        yield {
-          externalId: String(r.id),
-          kind: 'repository',
-          name: r.fullName,
-          url: r.htmlUrl,
-          visibility: r.visibility === 'private' ? 'restricted' : 'open',
-          archived: r.archived,
-        };
-      }
+      for (const r of repos) yield containerOf(r);
       if (repos.length < PAGE_SIZE) return;
     }
+  }
+
+  /**
+   * One repository as GitHub has it now, in one request. Looked up by name
+   * (GitHub follows a rename) and matched on its id: a name that now belongs
+   * to another repository is not the one that was asked about.
+   */
+  async getContainer(
+    container: Pick<SourceContainer, 'externalId' | 'name'>,
+    limits: RunLimits = {},
+  ): Promise<SourceContainer | null> {
+    const [owner, repo, ...rest] = container.name.split('/');
+    if (!owner || !repo || rest.length > 0) return null;
+    const found = await this.limited(limits, () =>
+      this.github.getRepository(owner, repo, limits.signal),
+    );
+    return found && String(found.id) === container.externalId ? containerOf(found) : null;
   }
 
   async *listPrincipals(limits: RunLimits = {}): AsyncIterable<SourcePrincipal> {

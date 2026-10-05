@@ -37,7 +37,7 @@ import {
   createPool,
   type Db,
 } from '@shipit-ai/agents';
-import { KnowledgeStore } from '@shipit-ai/knowledge';
+import { KNOWLEDGE_WAKE_CHANNEL, KnowledgeStore } from '@shipit-ai/knowledge';
 import { AiStatusService } from './services/ai/ai-status-service.js';
 import { RunEventHub } from './services/ai/run-event-hub.js';
 import { ensureBuiltinAgents } from './services/ai/builtin-agents.js';
@@ -522,11 +522,10 @@ async function main() {
         },
         budgetMs: config.knowledge.sync.maxRunMinutes * 60_000,
         reconcileCron: config.knowledge.sync.reconcileCron,
-        historyDaysOf: (cfg) => (cfg.type === 'github' ? cfg.knowledge.historyDays : 365),
         isAvailable: () => knowledgeStatus.ingestionAvailable(),
         wake: wakeRedis
           ? async () => {
-              await wakeRedis.publish('shipit-knowledge-wake', '');
+              await wakeRedis.publish(KNOWLEDGE_WAKE_CHANNEL, '');
             }
           : undefined,
       });

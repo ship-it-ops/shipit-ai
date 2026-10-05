@@ -78,4 +78,28 @@ describe.skipIf(!URL)('RedisConnectorRunStore — Redis integration', () => {
     await store.clear(cid('d'));
     expect(await store.listRuns(cid('d'))).toEqual([]);
   });
+
+  it('keeps knowledge runs in a list of their own, and clears both', async () => {
+    const knowledge: LastRun = { ...lastRun(2), facet: 'knowledge' };
+    await store.recordRun(cid('k'), lastRun(1));
+    await store.recordRun(cid('k'), knowledge);
+    expect(await store.listRuns(cid('k'))).toEqual([lastRun(1)]);
+    expect(await store.listRuns(cid('k'), MAX_RUNS, 'knowledge')).toEqual([knowledge]);
+    expect(await store.listManyLatest([cid('k')], MAX_RUNS, 'knowledge')).toEqual({
+      [cid('k')]: [knowledge],
+    });
+    await store.clear(cid('k'));
+    expect(await redis.keys(`${KEY_PREFIX}${cid('k')}*`)).toEqual([]);
+  });
+
+  // A build from before the split wrote knowledge runs into the graph list.
+  it('leaves a knowledge run found in the graph list out of the graph history', async () => {
+    await store.recordRun(cid('l'), lastRun(1));
+    await redis.lpush(
+      `${KEY_PREFIX}${cid('l')}`,
+      JSON.stringify({ ...lastRun(9), facet: 'knowledge' }),
+    );
+    expect(await store.listRuns(cid('l'))).toEqual([lastRun(1)]);
+    expect((await store.listManyLatest([cid('l')]))[cid('l')]).toEqual([lastRun(1)]);
+  });
 });

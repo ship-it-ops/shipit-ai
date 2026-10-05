@@ -8,6 +8,8 @@ import { createDb, createPool } from '@shipit-ai/agents';
 import {
   INDEX_VERSION,
   IndexLoop,
+  KNOWLEDGE_WAKE_CHANNEL,
+  KNOWLEDGE_WORKER_HEARTBEAT_KEY,
   KnowledgeStore,
   hasVectorExtension,
   missingKnowledgeMigrations,
@@ -16,9 +18,6 @@ import { loadConfig } from '@shipit-ai/shared';
 import { startHousekeeping } from './housekeeping.js';
 import { VertexEmbedder } from './vertex-embedder.js';
 import { listenForWakeUps } from './wake.js';
-
-export const HEARTBEAT_KEY = 'shipit-knowledge-worker-heartbeat';
-export const WAKE_CHANNEL = 'shipit-knowledge-wake';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -142,7 +141,7 @@ async function main(): Promise<void> {
               await heartbeatRedis.set(key, value, 'EX', ttl);
             },
           },
-          key: HEARTBEAT_KEY,
+          key: KNOWLEDGE_WORKER_HEARTBEAT_KEY,
           ttlSeconds: 60,
           everyMs: 15_000,
         }
@@ -156,7 +155,7 @@ async function main(): Promise<void> {
   if (subscriber) {
     listenForWakeUps(
       subscriber,
-      WAKE_CHANNEL,
+      KNOWLEDGE_WAKE_CHANNEL,
       () => loop.kick(),
       (line) => console.warn(`knowledge-worker: ${line}`),
     );

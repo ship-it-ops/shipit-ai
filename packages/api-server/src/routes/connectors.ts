@@ -6,7 +6,7 @@
 import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath, sep } from 'node:path';
-import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticateGitHubApp, createAppJWTOctokit } from '@shipit-ai/connector-github';
 import { validateKubeconfigText } from '@shipit-ai/connector-kubernetes';
 import { resolveAppCredentials } from '@shipit-ai/shared';
@@ -23,7 +23,7 @@ import {
   type GitHubAppService,
 } from '../services/github-app-service.js';
 import type { GitHubAppManifestService } from '../services/github-app-manifest-service.js';
-import type { Config, ConnectorInstanceConfig } from '@shipit-ai/shared';
+import type { Config, ConnectorInstanceConfig, LastRun } from '@shipit-ai/shared';
 
 // Defense-in-depth: the probe endpoint accepts a privateKeyPath in its
 // body (so the wizard's per-org override panel can validate creds
@@ -268,9 +268,54 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.get('/', async () => {
     const connectors = registry.list();
     const ids = connectors.map((c) => c.id);
-    const runsById = await runStore.listManyLatest(ids);
-    return connectors.map((c) => ({ ...c, lastRuns: runsById[c.id] ?? [] }));
+    const [runsById, knowledgeRunsById] = await Promise.all([
+      runStore.listManyLatest(ids),
+      runStore.listManyLatest(ids, undefined, 'knowledge'),
+    ]);
+    return connectors.map((c) => ({
+      ...c,
+      lastRuns: runsById[c.id] ?? [],
+      lastKnowledgeRuns: knowledgeRunsById[c.id] ?? [],
+    }));
   });
+
+  // A connector's two run histories. `lastRuns` is the graph sync alone, which
+  // is what every reader of it assumes; the knowledge facet's runs, with their
+  // notes, come back beside it.
+  const runsOf = async (
+    id: string,
+  ): Promise<{ lastRuns: LastRun[]; lastKnowledgeRuns: LastRun[] }> => {
+    const [lastRuns, lastKnowledgeRuns] = await Promise.all([
+      runStore.listRuns(id),
+      runStore.listRuns(id, undefined, 'knowledge'),
+    ]);
+    return { lastRuns, lastKnowledgeRuns };
+  };
+
+  // What a connector indexed is marked for removal (the worker deletes it).
+  // Null when the knowledge layer is not wired on this server. A failure
+  // answers 503 through `refused`, and the caller does not go on.
+  const purgeIndexed = async (
+    id: string,
+    request: FastifyRequest,
+    reply: FastifyReply,
+    message: string,
+  ): Promise<{ marked: number | null; refused?: FastifyReply }> => {
+    if (!server.knowledgeStore) return { marked: null };
+    try {
+      const by = request.ctx.user.email ?? request.ctx.user.id;
+      return { marked: await server.knowledgeStore.deselectConnector(id, by) };
+    } catch (err) {
+      request.log.error(
+        { connectorId: id, err: (err as Error).message },
+        'knowledge: could not mark what a connector indexed for removal',
+      );
+      return {
+        marked: null,
+        refused: reply.status(503).send({ error: { code: 'KNOWLEDGE_PURGE_FAILED', message } }),
+      };
+    }
+  };
 
   // ── Global GitHub App ────────────────────────────────────────────────
   // GET /api/connectors/github/app — current status. Used by the wizard
@@ -858,6 +903,18 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
           .send({ error: { code: 'CREDENTIAL_PATH_NOT_ALLOWED', message: pathErr } });
       }
     }
+    // Ids are chosen by the caller. Whatever an earlier connector with this id
+    // indexed must not become this one's: it would start with selections, and
+    // visibility acknowledgements, nobody made on it.
+    if (!registry.list().some((c) => c.id === body.id)) {
+      const cleared = await purgeIndexed(
+        body.id,
+        request,
+        reply,
+        'Could not clear what an earlier connector with this id indexed, so the connector was not created. Try again.',
+      );
+      if (cleared.refused) return cleared.refused;
+    }
     try {
       const created =
         body.type === 'github'
@@ -1091,8 +1148,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   server.get<{ Params: { id: string } }>('/:id', async (request, reply) => {
     const c = registry.get(request.params.id);
     reply.header('ETag', `"${registry.getHash(c.id)}"`);
-    const lastRuns = await runStore.listRuns(c.id);
-    return { ...c, lastRuns };
+    return { ...c, ...(await runsOf(c.id)) };
   });
 
   // PATCH /api/connectors/:id — partial update. If-Match required when the
@@ -1145,8 +1201,7 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
         // Hydrate lastRuns from the run store so PATCH responses match
         // the shape GET returns; otherwise the UI's local cache would
         // briefly show empty run history after every edit.
-        const lastRuns = await runStore.listRuns(updated.id);
-        return { ...updated, lastRuns };
+        return { ...updated, ...(await runsOf(updated.id)) };
       } catch (err) {
         if (err instanceof ConnectorVersionConflictError) {
           return reply.status(409).send({
@@ -1166,28 +1221,35 @@ const connectorRoutes: FastifyPluginAsync = async (server) => {
   );
 
   // DELETE /api/connectors/:id — same If-Match rule as PATCH.
+  //
+  // What the connector indexed goes with it (spec §API): nothing of it stays
+  // selected, and the worker deletes the content. That is recorded BEFORE the
+  // connector is removed, and the request fails if it cannot be: once the
+  // registry no longer knows the connector, no route can reach its containers
+  // to try again. For the same reason an id the registry does not know is not
+  // simply a 404: if content is still held under it (the connector was deleted
+  // while the knowledge layer was off), this deletes that.
   server.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {
+    const { id } = request.params;
     const ifMatch = parseIfMatch(request.headers['if-match']);
     try {
-      const removed = registry.list().find((c) => c.id === request.params.id);
-      await registry.remove(request.params.id, ifMatch);
+      const removed = registry.list().find((c) => c.id === id);
+      // The check remove() makes, made first: a refused delete purges nothing.
+      if (removed && ifMatch !== undefined && ifMatch !== registry.getHash(id)) {
+        throw new ConnectorVersionConflictError(registry.getHash(id));
+      }
+      const purge = await purgeIndexed(
+        id,
+        request,
+        reply,
+        'Could not mark what this connector indexed for removal, so the connector was not deleted. Try again.',
+      );
+      if (purge.refused) return purge.refused;
+      if (!removed && (purge.marked ?? 0) > 0) return reply.status(204).send();
+      await registry.remove(id, ifMatch);
       if (removed) {
         removeUnreferencedCredentials(removed, registry.list(), (obj, msg) =>
           request.log.warn(obj, msg),
-        );
-      }
-      // What the connector indexed goes with it: nothing of it stays selected,
-      // and the worker deletes the content (spec §API). The connector is
-      // already gone, so a failure here is logged, not returned.
-      try {
-        await server.knowledgeStore?.deselectConnector(
-          request.params.id,
-          request.ctx.user.email ?? request.ctx.user.id,
-        );
-      } catch (err) {
-        request.log.error(
-          { connectorId: request.params.id, err: (err as Error).message },
-          'knowledge: could not schedule the purge of a deleted connector',
         );
       }
       return reply.status(204).send();

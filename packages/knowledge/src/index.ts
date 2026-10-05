@@ -1,4 +1,5 @@
 export { VECTOR_EXTENSION, ensureVectorExtension, hasVectorExtension } from './bootstrap.js';
+export { KNOWLEDGE_WAKE_CHANNEL, KNOWLEDGE_WORKER_HEARTBEAT_KEY } from './channels.js';
 export { INDEX_VERSION, KNOWLEDGE_MIGRATIONS } from './schema-version.js';
 export { missingKnowledgeMigrations } from './status.js';
 export { contentHashOf, sha256Hex } from './hash.js';

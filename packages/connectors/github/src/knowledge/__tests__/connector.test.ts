@@ -36,6 +36,8 @@ interface World {
   truncated?: boolean;
   /** Extra repositories after the three named ones, to make a second page. */
   extraRepos?: number;
+  /** What a lookup of acme/payments answers. Default: private. */
+  paymentsVisibility?: string;
 }
 
 function world(overrides: Partial<World> = {}): World {
@@ -85,6 +87,7 @@ function clientFor(w: World, graphqlOverride?: GitHubKnowledgeClient['graphql'])
     blobs: [] as string[],
     trees: 0,
     repoPages: [] as number[],
+    repoLookups: [] as string[],
   };
   const client: GitHubKnowledgeClient = {
     issuesGranted: w.issuesGranted,
@@ -143,6 +146,17 @@ function clientFor(w: World, graphqlOverride?: GitHubKnowledgeClient['graphql'])
           },
         };
       },
+    },
+    async getRepository(owner, repo) {
+      calls.repoLookups.push(`${owner}/${repo}`);
+      if (`${owner}/${repo}` !== 'acme/payments') return null;
+      return {
+        id: 42,
+        fullName: 'acme/payments',
+        htmlUrl: 'https://github.com/acme/payments',
+        visibility: w.paymentsVisibility ?? 'private',
+        archived: false,
+      };
     },
     async listRepositoriesPage(_org, page) {
       calls.repoPages.push(page);
@@ -522,6 +536,57 @@ describe('GitHubKnowledgeConnector', () => {
     await expect(drain()).rejects.toMatchObject({ code: 'KNOWLEDGE_RUN_CUT_SHORT' });
     // The harness reads a `status` of 403 as an authentication failure.
     await expect(drain()).rejects.not.toHaveProperty('status');
+  });
+
+  describe('getContainer', () => {
+    it('reads one repository as GitHub has it now, in one request', async () => {
+      const { connector, calls } = await connected(world({ paymentsVisibility: 'public' }));
+      expect(await connector.getContainer({ externalId: '42', name: 'acme/payments' })).toEqual({
+        externalId: '42',
+        kind: 'repository',
+        name: 'acme/payments',
+        url: 'https://github.com/acme/payments',
+        visibility: 'open',
+        archived: false,
+      });
+      expect(calls.repoLookups).toEqual(['acme/payments']);
+      expect(calls.repoPages).toEqual([]);
+    });
+
+    it('answers null for a repository the installation no longer sees', async () => {
+      const { connector } = await connected(world());
+      expect(await connector.getContainer({ externalId: '77', name: 'acme/gone' })).toBeNull();
+    });
+
+    // The name was given to another repository after the one asked about was
+    // renamed away or deleted: the answer is about the id, not the name.
+    it('answers null when another repository now has that name', async () => {
+      const { connector } = await connected(world());
+      expect(await connector.getContainer({ externalId: '99', name: 'acme/payments' })).toBeNull();
+    });
+
+    it('answers null for a name that is not owner/repository', async () => {
+      const { connector, calls } = await connected(world());
+      expect(await connector.getContainer({ externalId: '42', name: 'payments' })).toBeNull();
+      expect(calls.repoLookups).toEqual([]);
+    });
+
+    it('ends as a run cut short when GitHub asks to wait past the deadline', async () => {
+      const { client } = clientFor(world());
+      client.getRepository = async () => {
+        throw restLimited();
+      };
+      const connector = new GitHubKnowledgeConnector({
+        knowledge,
+        maxDocumentChars: 1000,
+        now: () => Date.parse('2026-03-01T00:00:00Z'),
+        connect: async () => ({ ok: true, client }),
+      });
+      await connector.authenticate(sdkConfig);
+      await expect(
+        connector.getContainer({ externalId: '42', name: 'acme/payments' }, { deadline: SOON }),
+      ).rejects.toMatchObject({ code: 'KNOWLEDGE_RUN_CUT_SHORT' });
+    });
   });
 
   it('pages through every repository', async () => {

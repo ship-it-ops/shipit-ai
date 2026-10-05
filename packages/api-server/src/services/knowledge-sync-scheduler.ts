@@ -12,8 +12,12 @@
 import { Queue, Worker, type ConnectionOptions, type Job } from 'bullmq';
 import {
   KnowledgeHarness,
+  isRunCutShort,
+  type KnowledgeConnector,
   type KnowledgeRunMode,
   type KnowledgeRunResult,
+  type RunLimits,
+  type SourceContainer,
   type SourcePrincipal,
 } from '@shipit-ai/connector-sdk';
 import { COMPLETED_JOB_RETENTION, FAILED_JOB_RETENTION } from '@shipit-ai/event-bus';
@@ -51,8 +55,6 @@ export interface KnowledgeSyncSchedulerOptions {
   /** Per-run wall-clock budget (knowledge.sync.maxRunMinutes). */
   budgetMs: number;
   reconcileCron: string;
-  /** Backfill horizon for a connector. Default 365 days. */
-  historyDaysOf?: (cfg: ConnectorInstanceConfig) => number;
   /** Status gate: false means "do not fetch now" (database, schema or extension missing). */
   isAvailable: () => Promise<boolean>;
   /** Publishes the worker wake-up after a batch commits. */
@@ -77,6 +79,22 @@ function parseRedisUrl(url: string): ConnectionOptions {
     db: u.pathname && u.pathname.length > 1 ? Number(u.pathname.slice(1)) : undefined,
     maxRetriesPerRequest: null,
   };
+}
+
+/** How long a refresh made from an HTTP request may wait on the source. */
+const REFRESH_BUDGET_MS = 20_000;
+
+/** Runs a call to the source; a wait it asked for past the deadline becomes RATE_LIMITED. */
+async function sourceCall<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (err) {
+    if (!isRunCutShort(err)) throw err;
+    throw new KnowledgeRefreshError(
+      'RATE_LIMITED',
+      'The source asked to wait before it answers. Try again in a few minutes.',
+    );
+  }
 }
 
 /** Why a container refresh could not run. `code` is safe to show; the route maps it to a status. */
@@ -205,6 +223,62 @@ export class KnowledgeSyncScheduler {
    * the source has.
    */
   async refreshContainers(connectorId: string): Promise<number> {
+    const connector = await this.connect(connectorId);
+    const limits = this.refreshLimits();
+    const count = await this.listAndStoreContainers(connectorId, connector, limits);
+    // The people too, so the first documents of a backfill find their authors;
+    // the principal listing otherwise runs only at the nightly reconcile. Only
+    // for a connector that has something selected: names, emails and logins
+    // are not held for one that indexes nothing. The containers are what was
+    // asked for, so a failure here is logged.
+    if (await this.opts.store.hasSelection(connectorId)) {
+      const sink = new PostgresKnowledgeSink({ connectorId, store: this.opts.store });
+      try {
+        let page: SourcePrincipal[] = [];
+        for await (const principal of connector.listPrincipals(limits)) {
+          page.push(principal);
+          if (page.length >= 500) {
+            await sink.upsertPrincipals(page);
+            page = [];
+          }
+        }
+        if (page.length > 0) await sink.upsertPrincipals(page);
+      } catch (err) {
+        this.log(
+          `knowledge: could not list principals for ${connectorId} during a container refresh: ${(err as Error).message}`,
+        );
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Asks the source about ONE container now and stores what it says: the check
+   * made before content is indexed on the word of a listing that may be a day
+   * old. False when the source no longer has the container. A connector that
+   * cannot answer for one container has its whole list refreshed instead.
+   */
+  async refreshContainer(
+    connectorId: string,
+    container: Pick<SourceContainer, 'externalId' | 'name'>,
+  ): Promise<boolean> {
+    const connector = await this.connect(connectorId);
+    const limits = this.refreshLimits();
+    if (!connector.getContainer) {
+      await this.listAndStoreContainers(connectorId, connector, limits);
+      return true;
+    }
+    const lookup = connector.getContainer.bind(connector);
+    const fresh = await sourceCall(() =>
+      lookup({ externalId: container.externalId, name: container.name }, limits),
+    );
+    if (!fresh) return false;
+    await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainer(fresh);
+    return true;
+  }
+
+  /** The connector of a knowledge instance, authenticated, for a call made outside a run. */
+  private async connect(connectorId: string): Promise<KnowledgeConnector> {
     const cfg = this.opts.registry.get(connectorId); // throws 404 for an unknown id
     const type = this.resolveType(cfg.type);
     if (!type?.buildKnowledge || !this.handles(cfg)) {
@@ -219,29 +293,27 @@ export class KnowledgeSyncScheduler {
     if (!auth.success) {
       throw new KnowledgeRefreshError('AUTH_FAILED', auth.error ?? 'Authentication failed');
     }
+    return built.connector;
+  }
+
+  // These calls are made inside an HTTP request. Without a deadline the
+  // connector waits out a rate limit for as long as the source says, up to an
+  // hour; with one it ends the call, and the request answers RATE_LIMITED.
+  private refreshLimits(): RunLimits {
+    return { deadline: Date.now() + REFRESH_BUDGET_MS, signal: this.shutdown.signal };
+  }
+
+  private async listAndStoreContainers(
+    connectorId: string,
+    connector: KnowledgeConnector,
+    limits: RunLimits,
+  ): Promise<number> {
     // The whole list first: an incomplete one must not mark anything gone.
-    const all = [];
-    for await (const container of built.connector.listContainers()) all.push(container);
-    const sink = new PostgresKnowledgeSink({ connectorId, store: this.opts.store });
-    await sink.upsertContainers(all);
-    // The people too: the principal listing otherwise runs only at the nightly
-    // reconcile, after a first backfill has stored documents without authors.
-    // The containers are what was asked for, so a failure here is logged.
-    try {
-      let page: SourcePrincipal[] = [];
-      for await (const principal of built.connector.listPrincipals()) {
-        page.push(principal);
-        if (page.length >= 500) {
-          await sink.upsertPrincipals(page);
-          page = [];
-        }
-      }
-      if (page.length > 0) await sink.upsertPrincipals(page);
-    } catch (err) {
-      this.log(
-        `knowledge: could not list principals for ${connectorId} during a container refresh: ${(err as Error).message}`,
-      );
-    }
+    const all: SourceContainer[] = [];
+    await sourceCall(async () => {
+      for await (const container of connector.listContainers(limits)) all.push(container);
+    });
+    await new PostgresKnowledgeSink({ connectorId, store: this.opts.store }).upsertContainers(all);
     return all.length;
   }
 
@@ -300,7 +372,7 @@ export class KnowledgeSyncScheduler {
         log: this.log,
       });
       const harness = new KnowledgeHarness(built.connector, sink, built.sdkConfig, {
-        historyDays: this.opts.historyDaysOf?.(cfg) ?? 365,
+        historyDays: type.knowledgeHistoryDays?.(cfg) ?? 365,
         budgetMs: this.opts.budgetMs,
         signal: this.shutdown.signal,
       });

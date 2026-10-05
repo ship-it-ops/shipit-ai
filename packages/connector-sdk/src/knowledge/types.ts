@@ -146,6 +146,15 @@ export interface KnowledgeConnector {
   readonly manifest: ConnectorManifest;
   authenticate(config: ConnectorConfig): Promise<AuthResult>;
   listContainers(options?: RunLimits): AsyncIterable<SourceContainer>;
+  /**
+   * One container as the source has it now, or null when the source no longer
+   * has it or no longer shows it to this connector. Optional: a caller that
+   * needs a fresh answer about one container lists them all without it.
+   */
+  getContainer?(
+    container: Pick<SourceContainer, 'externalId' | 'name'>,
+    options?: RunLimits,
+  ): Promise<SourceContainer | null>;
   listPrincipals(options?: RunLimits): AsyncIterable<SourcePrincipal>;
   /** Changes since the checkpoint, oldest first. A null checkpoint starts the backfill. */
   fetchChanges(

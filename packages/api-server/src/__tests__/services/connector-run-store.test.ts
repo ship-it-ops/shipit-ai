@@ -97,4 +97,35 @@ describe('InMemoryConnectorRunStore', () => {
     expect(out.c1?.length).toBe(2);
     expect(out.c3).toEqual([]);
   });
+
+  // The Connector Hub reads lastRuns[0] as the latest graph sync, so the
+  // knowledge facet's runs are a history of their own.
+  describe('knowledge runs', () => {
+    const knowledgeRun = (seq: number): LastRun => ({ ...makeRun(seq), facet: 'knowledge' });
+
+    it('are kept apart from the graph sync history', async () => {
+      await store.recordRun('c1', makeRun(1));
+      await store.recordRun('c1', knowledgeRun(2));
+      expect(await store.listRuns('c1')).toEqual([makeRun(1)]);
+      expect(await store.listRuns('c1', MAX_RUNS, 'knowledge')).toEqual([knowledgeRun(2)]);
+      expect(await store.listManyLatest(['c1'], MAX_RUNS, 'knowledge')).toEqual({
+        c1: [knowledgeRun(2)],
+      });
+    });
+
+    it('never push a graph run out of its history', async () => {
+      await store.recordRun('c1', makeRun(1));
+      for (let i = 0; i < MAX_RUNS + 5; i++) await store.recordRun('c1', knowledgeRun(i));
+      expect(await store.listRuns('c1')).toEqual([makeRun(1)]);
+      expect(await store.listRuns('c1', MAX_RUNS, 'knowledge')).toHaveLength(MAX_RUNS);
+    });
+
+    it('are dropped with the connector', async () => {
+      await store.recordRun('c1', makeRun(1));
+      await store.recordRun('c1', knowledgeRun(2));
+      await store.clear('c1');
+      expect(await store.listRuns('c1')).toEqual([]);
+      expect(await store.listRuns('c1', MAX_RUNS, 'knowledge')).toEqual([]);
+    });
+  });
 });

@@ -17,7 +17,7 @@ declare module 'fastify' {
       KnowledgeStore,
       'containersWithCounts' | 'getContainer' | 'selectContainer' | 'deselectConnector'
     >;
-    knowledgeScheduler?: Pick<KnowledgeSyncScheduler, 'refreshContainers'>;
+    knowledgeScheduler?: Pick<KnowledgeSyncScheduler, 'refreshContainers' | 'refreshContainer'>;
   }
 }
 
@@ -61,8 +61,13 @@ const notWired = (reply: FastifyReply): FastifyReply =>
   });
 
 /** The status a refused container refresh answers with. */
-const refreshStatus = (err: KnowledgeRefreshError): number =>
-  err.code === 'KNOWLEDGE_NOT_ENABLED' ? 409 : err.code === 'AUTH_FAILED' ? 502 : 400;
+const refreshStatus = (err: KnowledgeRefreshError): number => {
+  if (err.code === 'KNOWLEDGE_NOT_ENABLED') return 409;
+  if (err.code === 'AUTH_FAILED') return 502;
+  // The source asked to wait longer than a request should: try again later.
+  if (err.code === 'RATE_LIMITED') return 429;
+  return 400;
+};
 
 const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
   const available = requireKnowledge(server);
@@ -141,10 +146,19 @@ const connectorContainerRoutes: FastifyPluginAsync = async (server) => {
       if (selected && !acknowledged) {
         if (container.visibility !== 'open') return refuse();
         // "Open" is what the last listing said, up to a day ago. Before
-        // content is indexed without an acknowledgement, ask the source now.
+        // content is indexed without an acknowledgement, ask the source now,
+        // about this one container.
         if (!server.knowledgeScheduler) return notWired(reply);
         try {
-          await server.knowledgeScheduler.refreshContainers(id);
+          const atSource = await server.knowledgeScheduler.refreshContainer(id, container);
+          if (!atSource) {
+            return reply.status(409).send({
+              error: {
+                code: 'CONTAINER_GONE',
+                message: 'The source no longer has this container. Refresh the list.',
+              },
+            });
+          }
         } catch (err) {
           if (!(err instanceof KnowledgeRefreshError)) throw err;
           return reply
