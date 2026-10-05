@@ -2,7 +2,12 @@
 // nothing changed, otherwise chunk, embed only the chunks whose text is new,
 // and replace the stored chunks in one transaction (spec §Index pipeline).
 import { chunkDocument, type ChunkingOptions } from './chunking.js';
-import { assertDimensions, withRetry, type Embedder } from './embedder.js';
+import {
+  assertDimensions,
+  isRetryableEmbeddingError,
+  withRetry,
+  type Embedder,
+} from './embedder.js';
 import type { DocumentRow, StoredChunkInput } from './store.js';
 import { toPgVector } from './vector.js';
 
@@ -30,9 +35,14 @@ export interface IndexPipelineDeps {
   containerNameOf(containerId: string): Promise<string>;
 }
 
+/**
+ * `signal` is the worker's stop signal: it ends an embedding call in flight,
+ * and nothing is retried once it has fired.
+ */
 export async function indexDocument(
   deps: IndexPipelineDeps,
   doc: DocumentRow,
+  signal?: AbortSignal,
 ): Promise<IndexOutcome> {
   if (doc.deletedAt || doc.restricted || doc.segments.length === 0 || !doc.contentHash) {
     await deps.store.markSkipped(doc.id);
@@ -58,11 +68,13 @@ export async function indexDocument(
   const toEmbed = drafts.filter((d) => !reusable.has(d.textHash));
   const byHash = new Map(reusable);
   if (toEmbed.length > 0) {
-    const vectors = await withRetry(() =>
-      deps.embedder.embedDocuments(
-        toEmbed.map((d) => `${d.prefix}\n${d.text}`),
-        { title: doc.title },
-      ),
+    const vectors = await withRetry(
+      () =>
+        deps.embedder.embedDocuments(
+          toEmbed.map((d) => `${d.prefix}\n${d.text}`),
+          { title: doc.title, ...(signal ? { signal } : {}) },
+        ),
+      { isRetryable: (err) => !signal?.aborted && isRetryableEmbeddingError(err) },
     );
     if (vectors.length !== toEmbed.length) {
       throw new Error(`embedder returned ${vectors.length} vectors for ${toEmbed.length} chunks`);

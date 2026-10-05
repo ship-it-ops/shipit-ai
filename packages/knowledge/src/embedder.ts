@@ -6,8 +6,14 @@ import { createHash } from 'node:crypto';
 export interface Embedder {
   readonly model: string;
   readonly dimensions: number;
-  /** Document-side embeddings (RETRIEVAL_DOCUMENT). One vector per text, same order. */
-  embedDocuments(texts: string[], options?: { title?: string }): Promise<number[][]>;
+  /**
+   * Document-side embeddings (RETRIEVAL_DOCUMENT). One vector per text, same
+   * order. `signal` ends the call early: the worker aborts it when it stops.
+   */
+  embedDocuments(
+    texts: string[],
+    options?: { title?: string; signal?: AbortSignal },
+  ): Promise<number[][]>;
   /** Query-side embedding (RETRIEVAL_QUERY). */
   embedQuery(text: string): Promise<number[]>;
 }

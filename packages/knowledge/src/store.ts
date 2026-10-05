@@ -823,6 +823,19 @@ export class KnowledgeStore {
     });
   }
 
+  /**
+   * Hands a claimed document back, to be claimed again at once. For a worker
+   * that is stopping: the document did not fail, so no attempt is counted and
+   * no backoff starts. A document that is no longer a claim is left alone.
+   */
+  async releaseClaim(documentId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE knowledge_documents SET index_status = 'pending'
+        WHERE id = $1 AND index_status = 'indexing'`,
+      [documentId],
+    );
+  }
+
   async markFailed(documentId: string, error: string): Promise<void> {
     await this.db.query(
       `UPDATE knowledge_documents

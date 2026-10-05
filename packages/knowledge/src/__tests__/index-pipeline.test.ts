@@ -212,4 +212,24 @@ describe('indexDocument', () => {
     await expect(indexDocument(deps(store, lying), row())).rejects.toThrow(/expected 8/);
     expect(store.replaced).toHaveLength(0);
   });
+
+  // The worker aborts this signal when it is asked to stop, so an embedding
+  // call in flight ends instead of holding the shutdown.
+  it('hands the stop signal to the embedder', async () => {
+    const seen: Array<{ title?: string; signal?: AbortSignal } | undefined> = [];
+    const embedder: Embedder = {
+      model: 'm',
+      dimensions: 8,
+      async embedDocuments(texts, options) {
+        seen.push(options);
+        return texts.map(() => new Array<number>(8).fill(0.1));
+      },
+      async embedQuery() {
+        return new Array<number>(8).fill(0.1);
+      },
+    };
+    const controller = new AbortController();
+    await indexDocument(deps(new MemoryIndexStore(), embedder), row(), controller.signal);
+    expect(seen).toEqual([{ title: 'T', signal: controller.signal }]);
+  });
 });

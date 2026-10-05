@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FakeEmbedder } from '../embedder.js';
+import { FakeEmbedder, type Embedder } from '../embedder.js';
 import { IndexLoop } from '../index-loop.js';
 import type { DocumentRow, KnowledgeStore } from '../store.js';
 
@@ -105,5 +105,147 @@ describe('IndexLoop', () => {
     expect(beats[0]).toEqual({ key: 'hb', ttl: 60 });
     await new Promise((r) => setTimeout(r, 30));
     expect(beats.length).toBe(count);
+  });
+
+  const document = (id: string): DocumentRow =>
+    ({
+      id,
+      connectorId: 'c',
+      containerId: 'cont-1',
+      externalId: id,
+      kind: 'slack_thread',
+      title: 'T',
+      url: 'https://e/x',
+      segments: [{ key: '1', text: 'payments api is down' }],
+      contentHash: 'h1',
+      attributes: {},
+      restricted: false,
+      indexStatus: 'indexing',
+      indexedHash: null,
+      indexVersion: null,
+      deletedAt: null,
+    }) as unknown as DocumentRow;
+
+  // An embedder whose call ends only when its signal is aborted, the way a
+  // request to a model that has stopped answering does.
+  const stalled = (): Embedder => ({
+    model: 'm',
+    dimensions: 8,
+    embedDocuments: (_texts, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      }),
+    embedQuery: async () => [],
+  });
+
+  // Kubernetes gives a pod a grace period and then kills it. A stop that waits
+  // for every claimed document outlasts it, and the claims then sit for ten
+  // minutes until the stale reclaim.
+  it('stops at once: aborts what is in flight and hands every claimed document back', async () => {
+    const released: string[] = [];
+    const failed: string[] = [];
+    let claims = 0;
+    const store = {
+      claimPending: async () => (claims++ === 0 ? ['a', 'b', 'c'].map(document) : []),
+      existingChunkEmbeddings: async () => new Map<string, string>(),
+      releaseClaim: async (id: string) => void released.push(id),
+      markFailed: async (id: string) => void failed.push(id),
+    } as unknown as KnowledgeStore;
+    const loop = new IndexLoop({
+      store,
+      pipeline: {
+        store,
+        embedder: stalled(),
+        chunking: { chunkTokens: 600, maxChunkTokens: 800 },
+        indexVersion: 1,
+        containerNameOf: async () => 'general',
+      },
+      batchSize: 4,
+      concurrency: 1,
+      pollIntervalMs: 60_000,
+    });
+    loop.start();
+    await tick(); // 'a' is embedding; 'b' and 'c' wait their turn
+
+    await loop.stop();
+
+    expect(released.sort()).toEqual(['a', 'b', 'c']);
+    // Being stopped is not the document failing: no attempt is spent on it.
+    expect(failed).toEqual([]);
+  });
+
+  it('says what each batch did', async () => {
+    const log: string[] = [];
+    let claims = 0;
+    const store = {
+      claimPending: async () => (claims++ === 0 ? [document('a')] : []),
+      existingChunkEmbeddings: async () => new Map<string, string>(),
+      replaceChunks: async () => true,
+    } as unknown as KnowledgeStore;
+    const loop = new IndexLoop({
+      store,
+      pipeline: {
+        store,
+        embedder: new FakeEmbedder(8),
+        chunking: { chunkTokens: 600, maxChunkTokens: 800 },
+        indexVersion: 1,
+        containerNameOf: async () => 'general',
+      },
+      batchSize: 4,
+      concurrency: 2,
+      pollIntervalMs: 60_000,
+      log: (line) => log.push(line),
+    });
+    loop.start();
+    await tick();
+    await loop.stop();
+    expect(log).toEqual([
+      expect.stringMatching(/^batch: 1 claimed, 1 indexed, .*0 failed, in \d+ ms$/),
+    ]);
+  });
+
+  // The heartbeat is what the status check reads for "worker". On its own
+  // timer it keeps saying healthy while the loop is wedged.
+  it('stops writing the heartbeat when the loop has made no progress for too long', async () => {
+    const beats: number[] = [];
+    const loop = loopOver(
+      fakeStore(() => new Promise<DocumentRow[]>(() => {})), // the claim never answers
+      {
+        heartbeat: {
+          sink: { set: async () => void beats.push(Date.now()) },
+          key: 'hb',
+          ttlSeconds: 60,
+          everyMs: 10,
+          stallAfterMs: 30,
+        },
+      },
+    );
+    loop.start();
+    await new Promise((r) => setTimeout(r, 120));
+    const count = beats.length;
+    expect(count).toBeGreaterThanOrEqual(1);
+    expect(count).toBeLessThanOrEqual(5);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(beats.length).toBe(count);
+  });
+
+  it('keeps the heartbeat while it waits for work, however long that is', async () => {
+    const beats: number[] = [];
+    const loop = loopOver(
+      fakeStore(async () => []),
+      {
+        heartbeat: {
+          sink: { set: async () => void beats.push(Date.now()) },
+          key: 'hb',
+          ttlSeconds: 60,
+          everyMs: 10,
+          stallAfterMs: 30,
+        },
+      },
+    );
+    loop.start();
+    await new Promise((r) => setTimeout(r, 120));
+    await loop.stop();
+    expect(beats.length).toBeGreaterThanOrEqual(8);
   });
 });

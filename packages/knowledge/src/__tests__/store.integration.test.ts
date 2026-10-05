@@ -1083,6 +1083,26 @@ describe.skipIf(!DATABASE_TEST_URL)('KnowledgeStore and PostgresKnowledgeSink', 
       expect(rows[0]).toMatchObject({ selected: true });
     });
 
+    it('hands a claimed document back as pending, without counting an attempt', async () => {
+      await sink.storeBatch(await selectedC1(), batch([doc('d1', 'a')]));
+      const [claimed] = await store.claimPending(10);
+      await store.releaseClaim(claimed!.id);
+      const { rows } = await database.db.query<{ index_status: string; index_attempts: number }>(
+        `SELECT index_status, index_attempts FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(rows[0]).toEqual({ index_status: 'pending', index_attempts: 0 });
+      // It is claimable again straight away.
+      expect((await store.claimPending(10)).map((d) => d.id)).toEqual([claimed!.id]);
+
+      // A document that is no longer this worker's claim is left alone.
+      await store.markFailed(claimed!.id, 'boom');
+      await store.releaseClaim(claimed!.id);
+      const after = await database.db.query<{ index_status: string }>(
+        `SELECT index_status FROM knowledge_documents WHERE external_id = 'd1'`,
+      );
+      expect(after.rows[0]!.index_status).toBe('failed');
+    });
+
     it('says whether a connector has anything selected', async () => {
       expect(await store.hasSelection('slack-1')).toBe(true);
       expect(await store.hasSelection('slack-2')).toBe(false);
