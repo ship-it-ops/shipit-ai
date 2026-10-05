@@ -13,17 +13,17 @@ description: Use before writing or refining a Cypher query for the ShipIt-AI `gr
 
    **Procedures and functions are allowed by name; everything else is refused.**
    - `CALL` works for subqueries (`CALL { ... }`, `CALL (x) { ... }`) and for `db.labels`, `db.relationshipTypes`, `db.propertyKeys`, `db.schema.visualization`, `db.schema.nodeTypeProperties`, `db.schema.relTypeProperties`, `apoc.path.expand`, `apoc.path.expandConfig`, `apoc.path.spanningTree`, `apoc.path.subgraphAll` and `apoc.path.subgraphNodes`.
-   - Functions without a namespace (`toUpper`, `size`, `collect`, `datetime`, …) work. Of the namespaced ones, only the date, time, duration, point and vector functions do, plus `apoc.convert.fromJsonList`, `apoc.convert.fromJsonMap` and `apoc.convert.toJson` (for the JSON in `_claims`). Do not reach for other `apoc.*` functions; use plain Cypher.
+   - Functions without a namespace (`toUpper`, `size`, `collect`, `datetime`, …) work. Of the namespaced ones, only the date, time, duration, point and vector functions do, plus `apoc.convert.fromJsonList` and `apoc.convert.fromJsonMap` (for the JSON in `_claims`). Do not reach for other `apoc.*` functions; use plain Cypher.
 
-   **Plain text only.** Outside strings, backtick-quoted names and comments the query must be ASCII, and a Unicode escape (backslash, `u`) is refused anywhere. Send one statement per call. Pass unusual values as parameters.
+   **Plain text only.** Outside strings, backtick-quoted names and comments the query must be ASCII, and a Unicode escape (backslash, `u`) is refused anywhere. Send one statement per call, with no `CYPHER` options in front. Pass unusual values as parameters, and put a space before a parameter that follows a name.
 
-   **Internal nodes are off limits.** Labels that start with an underscore are the application's own bookkeeping. A query that names one is refused; one that reaches such a node anyway gets `null` in its place and a note in `_meta.warnings`.
+   **Leave internal nodes alone.** Labels that start with an underscore are the application's own bookkeeping, not part of the catalog. A query that uses a name starting with an underscore is refused unless the name is a property (`n._last_synced`) or a map key; so is a label chosen at run time (`$(...)`). An internal node in a result comes back as `null`, with a note in `_meta.warnings`.
 
 2. **Hop limit.** Variable-length patterns like `()-[*..N]->()` are capped at **N ≤ 6** by default. Going higher returns `HOP_LIMIT_EXCEEDED`. If you need a longer path, switch to `dependency_chain` (which can do up to 10 hops as a typed traversal).
 
 3. **Row limit.** Default 1000 rows per response, whatever `LIMIT` the query carries. Anything beyond truncates with `_meta.truncated: true`. Filter harder or paginate with `SKIP` and `LIMIT` rather than asking for the whole graph.
 
-4. **Query timeout.** 10 s default. If you hit `QUERY_TIMEOUT`, your query is doing a Cartesian or unindexed scan — usually means missing a label filter or a starting node.
+4. **Query timeout.** 10 s default. If you hit `QUERY_TIMEOUT`, your query is doing a Cartesian or unindexed scan — usually means missing a label filter or a starting node. The server also runs only a few raw queries at a time: `SERVER_BUSY` means wait a moment and send the same query again, not rephrase it.
 
 5. **Always parameterize.** Pass values via the `params` object, never via string concatenation. It keeps the query plan cacheable and the error messages legible, and a value in a parameter is never mistaken for a clause.
 

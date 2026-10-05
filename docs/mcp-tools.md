@@ -325,16 +325,21 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
     procedure is refused.
   - Functions without a namespace (`toUpper`, `size`, `datetime`, …) are allowed. Of the namespaced
     ones, the date, time, duration, point and vector functions are, and so are
-    `apoc.convert.fromJsonList`, `apoc.convert.fromJsonMap` and `apoc.convert.toJson`. Every other
-    namespaced function is refused.
+    `apoc.convert.fromJsonList` and `apoc.convert.fromJsonMap`. Every other namespaced function is
+    refused.
   - Outside strings, backtick-quoted names and comments, the query must be plain ASCII. Unicode
     escape sequences (a backslash and a `u`) are refused anywhere; pass such values as parameters.
-  - One statement per call, of at most 100,000 characters.
+    Put a space before a parameter that follows a name.
+  - One statement per call, of at most 100,000 characters, with no leading `CYPHER` options block.
+  - A name that starts with an underscore is read as an internal label (the application's own
+    bookkeeping) and refused, unless it is a property (`n._last_synced`) or a map key. A label
+    chosen when the query runs (`$(...)`) is refused too.
 - The query runs in a read-only transaction that is always rolled back, so the database itself
   refuses a write.
-- Internal nodes (labels that start with an underscore) are not available. A query that names such
-  a label is refused, and an internal node in a result comes back as `null`, with a note in
+- An internal node in a result, or a path through one, comes back as `null`, with a note in
   `_meta.warnings`.
+- Each server process runs at most four raw queries at a time. One more is refused with
+  `SERVER_BUSY` until a place is free; wait and send it again.
 - Variable-length patterns limited to 6 hops (configurable via `MCP_HOP_LIMIT`)
 - Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
   carries; `_meta.truncated` says when rows were cut
@@ -373,6 +378,7 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
 | `QUERY_TIMEOUT`        | Query exceeded timeout                                                           |
 | `ROW_LIMIT_EXCEEDED`   | Results exceeded row limit                                                       |
 | `RATE_LIMIT_EXCEEDED`  | Daily rate limit exceeded                                                        |
+| `SERVER_BUSY`          | Too many raw queries are running at once; retry shortly                          |
 | `RBAC_DENIED`          | Access denied                                                                    |
 | `TOOL_NOT_AVAILABLE`   | Tool is not available                                                            |
 | `INTERNAL_ERROR`       | Unexpected server error                                                          |
