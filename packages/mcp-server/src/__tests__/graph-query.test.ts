@@ -148,6 +148,7 @@ describe('graph_query', () => {
 
   describe('how it reports a failure', () => {
     it.each([
+      ['busy', 'SERVER_BUSY'],
       ['timeout', 'QUERY_TIMEOUT'],
       ['write_refused', 'INVALID_PARAMETER'],
       ['failed', 'INTERNAL_ERROR'],

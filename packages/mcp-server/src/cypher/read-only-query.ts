@@ -11,7 +11,8 @@
 //    that runs too long, whatever the caller does.
 //  - Rows are read one at a time and reading stops at the limit. The query's
 //    own LIMIT cannot raise it, and nothing past it is held in memory.
-//  - Internal nodes are withheld from what comes back.
+//  - An internal node, or a path through one, comes back as null.
+//  - A driver carries a few of these queries at a time, and refuses the rest.
 import neo4j, { type Driver, type Session } from 'neo4j-driver';
 import { isInternalLabel } from '@shipit-ai/shared';
 
@@ -33,6 +34,8 @@ export interface ReadOnlyQueryResult {
 }
 
 export type ReadOnlyQueryFailure =
+  /** As many queries as one driver carries at a time are already running. */
+  | 'busy'
   /** The query ran past its timeout. */
   | 'timeout'
   /** The database refused the query because it writes. */
@@ -57,6 +60,14 @@ const GRACE_MS = 500;
 
 // The driver's own page size. A higher row limit is read in pages of this.
 const MAX_FETCH_SIZE = 1000;
+
+// How many caller-written queries one driver carries at a time. The database
+// ends a query that is past its timeout between rows; work inside a single row
+// runs on after the caller has been answered. The limit keeps such queries from
+// adding up, on the database and in the driver's connection pool: a place is
+// held until the session has closed, which is when the database has let go.
+const MAX_CONCURRENT = 4;
+const running = new WeakMap<Driver, number>();
 
 const WRITE_IN_READ_TRANSACTION = 'Neo.ClientError.Statement.AccessMode';
 
@@ -158,13 +169,26 @@ export async function runReadOnlyQuery(
   params: Record<string, unknown>,
   limits: ReadOnlyQueryLimits,
 ): Promise<ReadOnlyQueryResult> {
-  const session = driver.session({
-    defaultAccessMode: neo4j.session.READ,
-    fetchSize: Math.min(limits.rowLimit + 1, MAX_FETCH_SIZE),
-  });
+  const inFlight = running.get(driver) ?? 0;
+  if (inFlight >= MAX_CONCURRENT) {
+    throw new ReadOnlyQueryError(
+      'busy',
+      'Too many raw queries are running at the moment. Try again shortly.',
+    );
+  }
+  running.set(driver, inFlight + 1);
+  const leave = (): void => {
+    running.set(driver, (running.get(driver) ?? 1) - 1);
+  };
+
+  let session: Session | undefined;
   let timer: NodeJS.Timeout | undefined;
   let gaveUp = false;
   try {
+    session = driver.session({
+      defaultAccessMode: neo4j.session.READ,
+      fetchSize: Math.min(limits.rowLimit + 1, MAX_FETCH_SIZE),
+    });
     const reading = readRows(session, cypher, params, limits);
     // If the timer wins the race below, nobody is left to hear `reading` fail.
     reading.catch(() => {});
@@ -179,9 +203,13 @@ export async function runReadOnlyQuery(
     throw toReadOnlyQueryError(err, limits.timeoutMs);
   } finally {
     clearTimeout(timer);
-    // Closing ends whatever the session still has open. After giving up there
-    // is no telling how long that takes, so the caller is not kept waiting.
-    const closing = session.close().catch(() => {});
+    // Closing ends whatever the session still has open, and settles once the
+    // database is done with it: only then is this query's place free. After
+    // giving up there is no telling how long that takes, so the caller is not
+    // kept waiting for it.
+    const closing = Promise.resolve(session?.close())
+      .catch(() => {})
+      .finally(leave);
     if (!gaveUp) await closing;
   }
 }

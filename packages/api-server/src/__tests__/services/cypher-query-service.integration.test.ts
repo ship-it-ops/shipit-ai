@@ -24,6 +24,11 @@ const PASSWORD = process.env.NEO4J_TEST_PASSWORD ?? 'testpassword';
 // lets it produce.
 const SLOW_READ = 'UNWIND range(1, 100000) AS a UNWIND range(1, 100000) AS b RETURN count(*) AS c';
 
+// The same amount of work inside a single row. The database ends a query that
+// is past its timeout between rows, so this one it carries on with.
+const SLOW_ROW =
+  'RETURN reduce(a = 0, x IN range(1, 20000) | a + reduce(b = 0, y IN range(1, 20000) | b + x + y)) AS s';
+
 describe.skipIf(!URI)('CypherQueryService — integration', () => {
   let driver: Driver;
 
@@ -144,6 +149,15 @@ describe.skipIf(!URI)('CypherQueryService — integration', () => {
         kind: 'timeout',
       });
       expect(Date.now() - started).toBeLessThan(3_000);
+    });
+
+    it('answers the caller at the timeout when the work sits inside one row', async () => {
+      const started = Date.now();
+      await expect(service({ timeoutMs: 300 }).execute(SLOW_ROW)).rejects.toMatchObject({
+        name: 'ReadOnlyQueryError',
+        kind: 'timeout',
+      });
+      expect(Date.now() - started).toBeLessThan(2_000);
     });
 
     it('leaves the service able to run the next query', async () => {

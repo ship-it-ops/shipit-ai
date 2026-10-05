@@ -800,7 +800,7 @@ export interface CypherQueryResult {
 }
 
 export interface CypherApiError {
-  code: 'WRITE_BLOCKED' | 'QUERY_TIMEOUT' | 'VALIDATION_ERROR' | 'CYPHER_ERROR';
+  code: 'WRITE_BLOCKED' | 'QUERY_TIMEOUT' | 'QUERY_BUSY' | 'VALIDATION_ERROR' | 'CYPHER_ERROR';
   message: string;
   keyword?: string;
 }

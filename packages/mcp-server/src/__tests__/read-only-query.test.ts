@@ -16,6 +16,8 @@ interface FakeGraph {
   runError?: Error;
   /** beginTransaction never settles. */
   hangs?: boolean;
+  /** Closing a session does not settle until letGo() is called. */
+  holdsOn?: boolean;
 }
 
 function fakeDriver(graph: FakeGraph = {}) {
@@ -38,16 +40,27 @@ function fakeDriver(graph: FakeGraph = {}) {
     rollback: vi.fn(async () => {}),
     commit: vi.fn(async () => {}),
   };
+  const held: Array<() => void> = [];
   const session = {
     beginTransaction: vi.fn((_config: { timeout: number }) => {
       if (graph.hangs) return new Promise(() => {});
       if (graph.beginError) return Promise.reject(graph.beginError);
       return Promise.resolve(tx);
     }),
-    close: vi.fn(async () => {}),
+    close: vi.fn(() =>
+      graph.holdsOn ? new Promise<void>((resolve) => held.push(resolve)) : Promise.resolve(),
+    ),
   };
   const driver = { session: vi.fn((_config: unknown) => session) };
-  return { driver: driver as unknown as Driver, sessionOf: driver.session, session, tx, read };
+  return {
+    driver: driver as unknown as Driver,
+    sessionOf: driver.session,
+    session,
+    tx,
+    read,
+    /** The database is done with every query whose session was being closed. */
+    letGo: () => held.splice(0).forEach((resolve) => resolve()),
+  };
 }
 
 const LIMITS = { timeoutMs: 5_000, rowLimit: 100 };
@@ -203,6 +216,78 @@ describe('runReadOnlyQuery', () => {
       expect(result.rows[0]!.when).toBe(when);
       expect(result.rows[0]!.text).toBe('_x');
       expect(result.withheld).toBe(0);
+    });
+  });
+
+  // The timeout ends a query between rows. Work inside one row runs on in the
+  // database after the caller has its answer, so the number of queries a driver
+  // carries at once is limited, and a place is held until the database is done.
+  describe('how many run at once', () => {
+    const kindOf = (outcome: unknown): string =>
+      outcome instanceof ReadOnlyQueryError ? outcome.kind : 'ran';
+    const start = (driver: Driver) =>
+      runReadOnlyQuery(driver, 'q', {}, LIMITS).catch((e: unknown) => e);
+
+    it('runs four for one driver and refuses the fifth without opening a session', async () => {
+      vi.useFakeTimers();
+      const { driver, sessionOf } = fakeDriver({ hangs: true });
+      const four = [start(driver), start(driver), start(driver), start(driver)];
+      expect(kindOf(await start(driver))).toBe('busy');
+      expect(sessionOf).toHaveBeenCalledTimes(4);
+
+      await vi.advanceTimersByTimeAsync(LIMITS.timeoutMs + 1_000);
+      expect((await Promise.all(four)).map(kindOf)).toEqual([
+        'timeout',
+        'timeout',
+        'timeout',
+        'timeout',
+      ]);
+    });
+
+    it('holds a place until the database has let go, not until the caller has its answer', async () => {
+      vi.useFakeTimers();
+      const { driver, sessionOf, letGo } = fakeDriver({ hangs: true, holdsOn: true });
+      const four = [start(driver), start(driver), start(driver), start(driver)];
+      await vi.advanceTimersByTimeAsync(LIMITS.timeoutMs + 1_000);
+      await Promise.all(four);
+
+      // All four callers were answered, and the database is still busy with them.
+      expect(kindOf(await start(driver))).toBe('busy');
+      expect(sessionOf).toHaveBeenCalledTimes(4);
+
+      letGo();
+      await vi.advanceTimersByTimeAsync(0);
+      const next = start(driver);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sessionOf).toHaveBeenCalledTimes(5);
+
+      await vi.advanceTimersByTimeAsync(LIMITS.timeoutMs + 1_000);
+      await next;
+      letGo();
+    });
+
+    it('gives the place back when a query ends, whichever way', async () => {
+      const failing = fakeDriver({
+        runError: neo4jError('Neo.ClientError.Statement.SyntaxError', 'bad'),
+      });
+      for (let i = 0; i < 6; i++) expect(kindOf(await start(failing.driver))).toBe('failed');
+
+      const unreachable = fakeDriver({ beginError: neo4jError('ServiceUnavailable', 'down') });
+      for (let i = 0; i < 6; i++) expect(kindOf(await start(unreachable.driver))).toBe('failed');
+
+      const fine = fakeDriver({ keys: ['n'], rows: [[1]] });
+      for (let i = 0; i < 6; i++) expect(kindOf(await start(fine.driver))).toBe('ran');
+    });
+
+    it('counts each driver by itself', async () => {
+      vi.useFakeTimers();
+      const full = fakeDriver({ hangs: true });
+      const four = [start(full.driver), start(full.driver), start(full.driver), start(full.driver)];
+      const other = fakeDriver({ keys: ['n'], rows: [[1]] });
+      expect(kindOf(await start(other.driver))).toBe('ran');
+
+      await vi.advanceTimersByTimeAsync(LIMITS.timeoutMs + 1_000);
+      await Promise.all(four);
     });
   });
 

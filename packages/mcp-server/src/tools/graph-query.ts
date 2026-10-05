@@ -16,6 +16,7 @@ const asText = (payload: unknown) => ({
 
 function failure(err: unknown): McpError {
   if (err instanceof ReadOnlyQueryError) {
+    if (err.kind === 'busy') return createError(McpErrorCode.SERVER_BUSY, err.message);
     if (err.kind === 'timeout') return createError(McpErrorCode.QUERY_TIMEOUT, err.message);
     if (err.kind === 'write_refused') {
       return createError(McpErrorCode.INVALID_PARAMETER, err.message);

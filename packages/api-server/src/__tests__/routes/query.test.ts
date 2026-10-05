@@ -103,6 +103,13 @@ describe('POST /api/query', () => {
   });
 
   describe('how it reports a failure', () => {
+    it('too many queries running at once as 429 QUERY_BUSY', async () => {
+      execute.mockRejectedValue(new ReadOnlyQueryError('busy', 'try again shortly'));
+      const response = await post({ cypher: 'MATCH (n) RETURN n' });
+      expect(response.statusCode).toBe(429);
+      expect(response.json().error).toEqual({ code: 'QUERY_BUSY', message: 'try again shortly' });
+    });
+
     it('a query that ran past its timeout as 504 QUERY_TIMEOUT', async () => {
       execute.mockRejectedValue(new ReadOnlyQueryError('timeout', 'took too long'));
       const response = await post({ cypher: 'MATCH (n) RETURN n' });

@@ -26,9 +26,10 @@ function refusalCode(refusal: Refusal): 'WRITE_BLOCKED' | 'VALIDATION_ERROR' {
     : 'VALIDATION_ERROR';
 }
 
-function failure(err: unknown): { status: 400 | 504; code: string; message: string } {
+function failure(err: unknown): { status: 400 | 429 | 504; code: string; message: string } {
   const message = (err as Error).message;
   if (err instanceof ReadOnlyQueryError) {
+    if (err.kind === 'busy') return { status: 429, code: 'QUERY_BUSY', message };
     if (err.kind === 'timeout') return { status: 504, code: 'QUERY_TIMEOUT', message };
     if (err.kind === 'write_refused') return { status: 400, code: 'WRITE_BLOCKED', message };
   }
