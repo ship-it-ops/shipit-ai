@@ -25,7 +25,8 @@ in commits and the pull request, and keep anything more specific for the owner i
 
 - New: `packages/shared/src/cypher/read-only-guard.ts` (the check, pure text),
   `packages/mcp-server/src/cypher/read-only-query.ts` (the executor), their tests.
-- New: `packages/mcp-server/src/daily-budget.ts`.
+- New: `packages/mcp-server/src/daily-budget.ts`, `src/__tests__/http.test.ts` (the network
+  surface end to end).
 - Changed: `packages/mcp-server/src/tools/graph-query.ts`, `neo4j-client.ts`, `tools/registry.ts`,
   `tools/metadata.ts`, `errors.ts` (a `SERVER_BUSY` code), `index.ts` (the token on each HTTP
   request), `package.json` (a `./cypher` export); `packages/api-server/src/routes/query.ts`

@@ -70,6 +70,14 @@ token without the scope (`RBAC_DENIED`) and counts the owner's calls against
 `graphQueryPerDay` (`RATE_LIMIT_EXCEEDED`), in the process's memory. Over stdio there is no
 token: that is the operator's own trust.
 
+**The network surface answers every request again.** The stateless entry point reused one
+transport and one server for all requests; `@modelcontextprotocol/sdk` 1.29 refuses to serve a
+second request through the same stateless transport, and the Node adapter turned that into an
+empty 500 with nothing logged, so on `main` the MCP server over HTTP answered only the first
+request of its life. Found while checking the scope end to end. Now a server and a transport
+are made per request (`createHttpRequestListener`), the daily budget is the process's, and
+`packages/mcp-server/src/__tests__/http.test.ts` sends three requests through a real HTTP server.
+
 **graph_query's hop limit** reads the query's code (`cypherCodeText`, the text with strings,
 comments and quoted names blanked) and requires every variable-length pattern and quantified
 path pattern to carry an upper bound of at most `hopLimit`. `[*]`, `[*2..]` and `{3,}` are
