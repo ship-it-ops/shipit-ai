@@ -10,36 +10,59 @@ ShipIt-AI knowledge graph over **HTTP**. Installing this plugin:
    for a question, writing safe Cypher, and recovering from errors.
 
 The plugin lives in the same repo as the server so its version is always
-locked to the server it configures.
+locked to the server it configures ([ADR-022](../docs/adrs/ADR-022-claude-code-plugin-and-tool-metadata.md)).
 
 ## How it talks to the server
 
-The plugin's `.mcp.json` registers a Streamable-HTTP MCP server pointing at:
+The plugin's `.mcp.json` registers a Streamable-HTTP MCP server:
 
-```
-${SHIPIT_MCP_URL:-http://localhost:3002/mcp}
+```json
+{
+  "type": "http",
+  "url": "${SHIPIT_MCP_URL:-http://localhost:3002/mcp}",
+  "headers": { "Authorization": "Bearer ${SHIPIT_MCP_TOKEN:-}" }
+}
 ```
 
-- **Local dev (default):** the dev stack starts the MCP server on
-  `http://localhost:3002/mcp`. Just run `pnpm dev` (or `pnpm start:all`)
-  in the ShipIt-AI repo — no env var needed.
-- **Remote / hosted:** export `SHIPIT_MCP_URL` to your deployed endpoint
-  before launching Claude Code:
-  ```sh
-  export SHIPIT_MCP_URL="https://shipit.your-company.com/mcp"
-  ```
+Two environment variables, exported in the shell that starts Claude Code:
+
+| Variable           | Default                     | Purpose                                                                |
+| ------------------ | --------------------------- | ---------------------------------------------------------------------- |
+| `SHIPIT_MCP_URL`   | `http://localhost:3002/mcp` | The instance's `/mcp` endpoint. Deployed: `https://<your-domain>/mcp`. |
+| `SHIPIT_MCP_TOKEN` | _(empty)_                   | A personal access token from **Settings → API Keys** on that instance. |
+
+The MCP server's HTTP transport requires a token on every request
+([docs/mcp-tools.md](../docs/mcp-tools.md#streamable-http-default)); without
+one every call answers `401 MISSING_TOKEN`. The token needs the `mcp:invoke`
+scope. `graph_query` (raw Cypher) also needs `graph:query` — the other seven
+tools work without it. A token can only carry scopes its minter holds, and
+the `member` role carries neither today, so ask an administrator for one.
+
+```sh
+export SHIPIT_MCP_URL="https://shipit.your-company.com/mcp"
+export SHIPIT_MCP_TOKEN="shipit_pat_..."   # shown once when minted
+```
+
+Tokens exist only on an instance where sign-in is enabled
+(`accessControl.auth.enabled: true`). The local dev stack runs with sign-in
+off, so against a local stack either turn sign-in on locally
+([docs/local-development.md](../docs/local-development.md)) and mint a token,
+or skip the plugin and register the server over stdio in your project's
+`.mcp.json` — the snippet is in
+[docs/mcp-tools.md](../docs/mcp-tools.md#stdio).
 
 ## Requirements
 
-- Node 22+ (only the dev stack — Claude Code itself runs the plugin via HTTP).
-- The ShipIt-AI dev stack running locally **or** a reachable remote
-  deployment.
+- A reachable ShipIt-AI instance (deployed, or the local dev stack on port 3002).
+- A personal access token for it, as above.
+- Node 22+ only if you run the dev stack yourself; Claude Code reaches the
+  plugin's server over HTTP.
 
 ## Install
 
 The plugin lives in the `plugin/` subdirectory of the ShipIt-AI repo. Today,
 Claude Code's marketplace install path expects plugins at the repo root, so
-use the local-directory install for now:
+use the local-directory install:
 
 ```sh
 claude plugin install --plugin-dir "$(git rev-parse --show-toplevel)/plugin"
@@ -55,7 +78,7 @@ Verify the MCP server registered:
 
 ```sh
 claude mcp list
-# expect: shipit-ai (http) - http://localhost:3002/mcp
+# expect: shipit-ai (http) - http://localhost:3002/mcp   (or your SHIPIT_MCP_URL)
 ```
 
 ## Smoke test
@@ -63,10 +86,10 @@ claude mcp list
 In any Claude Code session, in any directory (you do not need to be inside
 the ShipIt-AI repo):
 
-1. **Start the stack** in the ShipIt-AI repo: `pnpm start:all`.
+1. **Export** `SHIPIT_MCP_URL` and `SHIPIT_MCP_TOKEN`, then start Claude Code.
 2. **Confirm the server is up:**
    ```sh
-   curl -s http://localhost:3002/health
+   curl -s "${SHIPIT_MCP_URL%/mcp}/health"
    # {"status":"ok","transport":"http"}
    ```
 3. **Ask Claude:** _"What tools does the shipit-ai MCP server give me?"_ —
@@ -77,24 +100,24 @@ the ShipIt-AI repo):
 
 ## Troubleshooting
 
-| Symptom                                                                     | Likely cause                                                   | Fix                                                                                  |
-| --------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `claude mcp list` shows `shipit-ai` but tool calls fail with `ECONNREFUSED` | MCP server isn't running                                       | `pnpm start:all` in the ShipIt-AI repo, or check `http://localhost:3002/health`      |
-| `404 Not found` from the MCP endpoint                                       | URL is missing the `/mcp` path or you're hitting `/health`     | The full URL is `http://localhost:3002/mcp`                                          |
-| Tools register but every call returns `NODE_NOT_FOUND`                      | Graph is empty — connectors haven't synced                     | Configure a connector via the ShipIt-AI web UI at `http://localhost:3000/connectors` |
-| `SHIPIT_MCP_URL` not picked up                                              | Env var must be exported in the shell that started Claude Code | `export SHIPIT_MCP_URL=...` then restart the Claude Code session                     |
+| Symptom                                                                     | Likely cause                                                    | Fix                                                                                |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `claude mcp list` shows `shipit-ai` but tool calls fail with `ECONNREFUSED` | MCP server isn't running                                        | `pnpm start:all` in the ShipIt-AI repo, or check `<url without /mcp>/health`       |
+| `401 MISSING_TOKEN` / `401 INVALID_TOKEN`                                   | `SHIPIT_MCP_TOKEN` is unset, mistyped, or the token was revoked | Mint a token under Settings → API Keys, export it, restart the Claude Code session |
+| `403 INSUFFICIENT_SCOPE`                                                    | The token lacks `mcp:invoke`                                    | Mint a new token with that scope                                                   |
+| `graph_query` answers `RBAC_DENIED`, other tools work                       | The token lacks `graph:query`                                   | Ask an administrator for a token with that scope, or use the structured tools      |
+| `404 Not found` from the MCP endpoint                                       | URL is missing the `/mcp` path or you're hitting `/health`      | The full URL ends in `/mcp`                                                        |
+| Tools register but every call returns `NODE_NOT_FOUND`                      | Graph is empty — connectors haven't synced                      | Configure a connector in the ShipIt-AI web UI under **Connectors**                 |
+| `SHIPIT_MCP_URL` / `SHIPIT_MCP_TOKEN` not picked up                         | Env vars must be exported in the shell that started Claude Code | `export …` then restart the Claude Code session                                    |
 
 ## What this plugin does not do (yet)
 
-- **No auth.** The MCP HTTP endpoint is open today — fine for local dev,
-  not fine for remote deployments. Token enforcement is the remaining piece
-  of MCP Access Stage 2 (`docs/agent/plans/mcp-access-stage-2-real-login.md`).
-  When it lands, the plugin will support a bearer token via
-  `SHIPIT_MCP_TOKEN`.
 - **No slash commands.** The skills give the agent a strong decision tree;
   `/shipit:owners` etc. are a v2 nice-to-have.
 - **No subagents or hooks.** Future iterations may add a `graph-guide`
   subagent.
+- **No stdio registration.** The plugin is HTTP-only; the stdio path is a
+  plain `.mcp.json` entry ([docs/mcp-tools.md](../docs/mcp-tools.md#stdio)).
 
 ## Layout
 
@@ -102,7 +125,7 @@ the ShipIt-AI repo):
 plugin/
 ├── .claude-plugin/
 │   └── plugin.json          # manifest (name, description, version, author)
-├── .mcp.json                # HTTP MCP server registration
+├── .mcp.json                # HTTP MCP server registration (URL + bearer header)
 ├── skills/
 │   ├── shipit-graph/
 │   │   └── SKILL.md         # primary — picks the right tool for the question

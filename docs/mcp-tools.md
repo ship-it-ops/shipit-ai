@@ -2,53 +2,78 @@
 
 > **In the app:** AI → MCP Access (`/ai/mcp`) surfaces the connection snippets and tool catalog in a copy-paste friendly form. This doc is the canonical reference for parameters and response shapes.
 
-ShipIt-AI exposes the knowledge graph to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The MCP server connects directly to Neo4j and provides 8 tools for querying the graph.
+ShipIt-AI exposes the knowledge graph to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). The MCP server (`packages/mcp-server`) connects directly to Neo4j, read-only, and provides 8 tools for querying the graph. The same tool registry is what the in-app agents (AI → Agents) call, minus `graph_query`.
 
 ## Connecting to the MCP Server
 
-The MCP server uses stdio transport. Configure it in your MCP client:
+The server has two transports, chosen with `MCP_TRANSPORT`:
 
-### Claude Desktop
+| Transport        | When                                                   | Authentication                                                                                                              |
+| ---------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `http` (default) | A deployed instance, or the local dev stack (`:3002`)  | A personal access token on every request; see below                                                                         |
+| `stdio`          | A client that spawns the server itself, on one machine | None: whoever can start the process can read the graph, including `graph_query` ([ADR-028](adrs/ADR-028-mcp-token-auth.md)) |
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Both read the Neo4j connection from `shipit.config.yaml` (plus `shipit.config.local.yaml`), found by walking up from the working directory or named by `SHIPIT_CONFIG`.
+
+### Streamable HTTP (default)
+
+The endpoint is `/mcp` on port 3002 (`MCP_HTTP_PORT`); on a deployed instance it is served at the same origin as the web UI, `https://<your-domain>/mcp`. `GET /health` answers `{"status":"ok","transport":"http"}` without a token.
+
+Every MCP request needs `Authorization: Bearer <token>`, where the token is a personal access token minted under **Settings → API Keys** in the web UI (format `shipit_pat_<id>.<secret>`, shown once). It must carry the `mcp:invoke` scope; `graph_query` additionally needs `graph:query`. A token can only carry scopes its minter holds, and the `member` role carries neither today, so in practice an administrator mints MCP tokens. A missing or unknown token answers `401` (with `WWW-Authenticate: Bearer`), a token without the scope `403 INSUFFICIENT_SCOPE`. Tokens exist only on an instance where sign-in is enabled (`accessControl.auth.enabled: true`): the local dev stack runs with sign-in off, so for local work use stdio, or turn sign-in on locally ([local-development.md](local-development.md)).
+
+**Claude Code** — `.mcp.json` in the project, or the [Claude Code plugin](../plugin/README.md), which carries the same entry plus skills:
+
+```json
+{
+  "mcpServers": {
+    "shipit-ai": {
+      "type": "http",
+      "url": "https://shipit.your-company.com/mcp",
+      "headers": { "Authorization": "Bearer ${SHIPIT_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+**Claude Desktop, Cursor and other stdio-only clients** — bridge with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote). The in-app page AI → MCP Access (`/ai/mcp`) renders this snippet with your instance's URL filled in:
+
+```json
+{
+  "mcpServers": {
+    "shipit-ai": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://shipit.your-company.com/mcp",
+        "--header",
+        "Authorization: Bearer <PASTE_YOUR_TOKEN>"
+      ]
+    }
+  }
+}
+```
+
+### stdio
+
+Build once (`pnpm turbo build --filter=@shipit-ai/mcp-server`), then let the client start the server. Point `SHIPIT_CONFIG` at the repo's `shipit.config.yaml`: the server reads its Neo4j settings from there and from the `shipit.config.local.yaml` beside it, so no credentials go into the client config. (Claude Code ignores `cwd` in `.mcp.json`, hence the absolute paths.)
 
 ```json
 {
   "mcpServers": {
     "shipit-ai": {
       "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
-      "cwd": "/path/to/ShipIt-AI",
+      "args": ["/path/to/ShipIt-AI/packages/mcp-server/dist/index.js"],
       "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "shipit-dev"
+        "MCP_TRANSPORT": "stdio",
+        "SHIPIT_CONFIG": "/path/to/ShipIt-AI/shipit.config.yaml"
       }
     }
   }
 }
 ```
 
-### Claude Code
-
-Add to your project's `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "shipit-ai": {
-      "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
-      "cwd": "/path/to/ShipIt-AI",
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "shipit-dev"
-      }
-    }
-  }
-}
-```
+The same block works in Claude Desktop's `claude_desktop_config.json`.
 
 ## Response Envelope
 
@@ -346,16 +371,17 @@ is the operator's own trust.
   `_meta.warnings`.
 - Each server process runs at most four raw queries at a time. One more is refused with
   `SERVER_BUSY` until a place is free; wait and send it again.
-- Every variable-length pattern needs an upper bound of at most 6 hops (configurable via
-  `MCP_HOP_LIMIT`): `[*..6]`, `[*1..6]`, `[*3]`, `-->{1,6}`, `((a)-[]->(b)){1,6}`. A pattern with
-  no upper bound (`[*]`, `[*2..]`, `{3,}`, `-->+`, `(...)*`) is refused.
-- Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
-  carries; `_meta.truncated` says when rows were cut. A result may also hold at most 100,000
-  values, counting every list item and map entry; a larger one is refused with
-  `ROW_LIMIT_EXCEEDED`.
-- Queries timeout after 10 seconds (configurable via `MCP_QUERY_TIMEOUT_MS`)
-- 100 calls per token owner per UTC day (configurable via `MCP_GRAPH_QUERY_LIMIT`), counted in
-  memory by each server process, so the count starts again when the process does
+- Every variable-length pattern needs an upper bound of at most 6 hops (`hopLimit`): `[*..6]`,
+  `[*1..6]`, `[*3]`, `-->{1,6}`, `((a)-[]->(b)){1,6}`. A pattern with no upper bound (`[*]`,
+  `[*2..]`, `{3,}`, `-->+`, `(...)*`) is refused.
+- Results capped at 1000 rows (`rowLimit`), whatever `LIMIT` the query carries;
+  `_meta.truncated` says when rows were cut. A result may also hold at most 100,000 values,
+  counting every list item and map entry; a larger one is refused with `ROW_LIMIT_EXCEEDED`.
+- Queries time out after 10 seconds (`queryTimeoutMs`).
+- 100 calls per token owner per UTC day (`graphQueryPerDay`), counted in memory by each server
+  process, so the count starts again when the process does.
+
+The four limits are `backend.mcp.rateLimits.*` in `shipit.config.yaml` (see [Configuration](#configuration)).
 
 **Example:**
 
@@ -396,13 +422,17 @@ is the operator's own trust.
 
 ## Configuration
 
-| Environment Variable    | Default                 | Description                          |
-| ----------------------- | ----------------------- | ------------------------------------ |
-| `NEO4J_URI`             | `bolt://localhost:7687` | Neo4j connection URI                 |
-| `NEO4J_USER`            | `neo4j`                 | Neo4j username                       |
-| `NEO4J_PASSWORD`        | —                       | Neo4j password                       |
-| `MCP_API_KEY_SECRET`    | _(none)_                | Optional API key for authentication  |
-| `MCP_GRAPH_QUERY_LIMIT` | `100`                   | `graph_query` calls per day          |
-| `MCP_ROW_LIMIT`         | `1000`                  | Max rows per `graph_query`           |
-| `MCP_HOP_LIMIT`         | `6`                     | Max hops in variable-length patterns |
-| `MCP_QUERY_TIMEOUT_MS`  | `10000`                 | Query timeout in milliseconds        |
+The server reads `shipit.config.yaml` (merged with `shipit.config.local.yaml`) like every other backend service; only the transport is chosen by environment variable.
+
+| Setting                                     | Default                     | Description                                                         |
+| ------------------------------------------- | --------------------------- | ------------------------------------------------------------------- |
+| `backend.neo4j.uri` / `.user` / `.password` | `${NEO4J_URI}` … (required) | Neo4j connection; the local example config points at docker-compose |
+| `backend.mcp.rateLimits.graphQueryPerDay`   | `100`                       | `graph_query` calls per token owner per UTC day                     |
+| `backend.mcp.rateLimits.rowLimit`           | `1000`                      | Max rows per `graph_query` result                                   |
+| `backend.mcp.rateLimits.hopLimit`           | `6`                         | Max hops in variable-length and quantified patterns                 |
+| `backend.mcp.rateLimits.queryTimeoutMs`     | `10000`                     | Query timeout in milliseconds                                       |
+| `MCP_TRANSPORT` (env)                       | `http`                      | `http` or `stdio`                                                   |
+| `MCP_HTTP_PORT` (env)                       | `3002`                      | Listening port of the HTTP transport                                |
+| `SHIPIT_CONFIG` (env)                       | _(walk up from cwd)_        | Explicit path to `shipit.config.yaml`                               |
+
+`backend.mcp.apiKeySecret` is accepted by the config schema but no longer read: the HTTP transport authenticates personal access tokens against the same `_AccessToken` store the API server writes ([ADR-028](adrs/ADR-028-mcp-token-auth.md)).

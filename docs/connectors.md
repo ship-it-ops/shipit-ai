@@ -1,6 +1,6 @@
 # Connectors
 
-Connectors pull data from external systems, normalize it into canonical entities, and publish it through the event bus for ingestion into the knowledge graph.
+Connectors pull data from external systems, normalize it into canonical entities, and publish it through the event bus for ingestion into the knowledge graph. Two ship today — **GitHub** and **Kubernetes** — and both are added from the web UI under **Configure → Connector Hub**. A second, separate contract lets a connector also produce **knowledge** (text documents for the knowledge layer) without touching the graph; the GitHub connector implements both.
 
 ## Connector SDK
 
@@ -50,7 +50,7 @@ authenticate() → discover() → fetch(type, cursor?) → normalize(raw) → sy
 
 The `ConnectorHarness` wraps a connector and handles:
 
-- Publishing normalized entities to the event bus in batches (default: 100)
+- Publishing each fetched page of normalized entities to the event bus, and a control envelope at the end of the run so the writer knows it completed
 - Sync state management via `SyncStateMachine`
 - Error handling and state transitions
 
@@ -59,6 +59,8 @@ Sync States: IDLE → SYNCING → COMPLETING → IDLE
                                           → FAILED
                                           → DEGRADED
 ```
+
+Syncs run inside the api-server's `SyncScheduler`, on each instance's cron `schedule` and on demand (`POST /api/connectors/:id/sync`). Every node a connector emits is stamped by the writer with `_source_connector_id`, which powers the source facet in the catalog and the `sourceConnectorId` filters of `/api/graph`.
 
 ### Dry Run
 
@@ -71,44 +73,45 @@ const result = await dryRun(connector, config);
 // Returns sample nodes (max 50), edges (max 20), and a summary
 ```
 
+### Knowledge connectors
+
+A connector that indexes text implements the SDK's second contract, `KnowledgeConnector` ([ADR-035](adrs/ADR-035-knowledge-layer-v1-foundations.md)): it lists **containers** (a repository, a space, a channel), and for the selected ones produces documents in `ChangeBatch`es that a `KnowledgeHarness` hands to a `KnowledgeSink` — the api-server's redacting sink into Postgres. Runs come in two modes, `poll` (what changed since the checkpoint) and `reconcile` (a full pass, nightly by default), under a time budget (`knowledge.sync.maxRunMinutes`) with checkpoints so a run that is cut off resumes where it stopped. The api-server's connector-type factory separates `build` (graph) from `buildKnowledge`, and a connector instance records each facet's runs separately (`lastRuns` and `lastKnowledgeRuns`, each with `facet: 'graph' | 'knowledge'`).
+
 ## GitHub Connector
 
-The `@shipit-ai/connector-github` package pulls repositories, teams, people, pipelines, and CODEOWNERS from GitHub. As of v0.2 (P0), the connector is **multi-org**: one connector instance per GitHub org, all backed by a single shared GitHub App.
+The `@shipit-ai/connector-github` package pulls repositories, teams, people, pipelines and CODEOWNERS from GitHub, keeps them fresh through webhooks, and — when its knowledge facet is on — indexes pull requests, issues and Markdown docs. One connector instance per GitHub org.
 
-> **Full setup walkthrough lives in [docs/connectors/github-setup.md](./connectors/github-setup.md)** — App creation, permissions, env vars, rotation, troubleshooting. This section is the reference; the setup guide is the runbook.
+> **Full setup walkthrough lives in [docs/connectors/github-setup.md](./connectors/github-setup.md)** — App creation, permissions, rotation, troubleshooting. This section is the reference; the setup guide is the runbook.
 
 ### Supported Entity Types
 
-| Entity     | Node Types Created | Relationships Created |
-| ---------- | ------------------ | --------------------- |
-| Repository | `Repository`       | —                     |
-| Team       | `Team`, `Person`   | `MEMBER_OF`           |
-| Pipeline   | `Pipeline`         | `BUILT_BY`            |
-| Codeowners | —                  | `CODEOWNER_OF`        |
+| Entity     | Node Types Created | Relationships Created                    |
+| ---------- | ------------------ | ---------------------------------------- |
+| Repository | `Repository`       | —                                        |
+| Team       | `Team`, `Person`   | `MEMBER_OF`                              |
+| Pipeline   | `Pipeline`         | `BUILT_BY`                               |
+| Codeowners | —                  | `CODEOWNER_OF` (from `Person` or `Team`) |
 
-P1 adds first-class `WorkflowRun`, `Environment`, `Deployment`, plus branch-protection claims on `Repository`.
+Repository, Team and Pipeline IDs are scoped by org (`shipit://repository/default/<org>/<name>`, [ADR-021](adrs/ADR-021-org-scoped-canonical-ids-and-source-connector.md)); Person IDs are global and lower-cased, so a CODEOWNERS entry, a team membership and a sign-in all land on the same node. The `entities.{environment,deployment,branchProtection,workflowRun}` toggles exist in the instance config but nothing reads them yet: first-class Environments, Deployments, workflow runs and branch-protection claims are deferred with no target date.
 
 ### Authentication
 
-GitHub App only — PAT support was removed in v0.2. Setup has two paths:
+A **GitHub App** per org is the default ([ADR-018](adrs/ADR-018-github-connector-v1.md)): the Connector Hub creates it through GitHub's [App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest) flow, with the permissions and events pre-filled, and GitHub keeps the App private to the org that owns it. The private key is written to `~/.shipit/keys/github-app-<id>.pem` (override the directory with `SHIPIT_GITHUB_APP_KEY_DIR`) with its webhook secret beside it, and the App ID and key path are stored on the connector instance. On a deployment that uses Google Secret Manager, per-org Apps and instances are mirrored into one `connector-apps` secret and restored at boot ([ADR-025](adrs/ADR-025-secrets-in-google-secret-manager.md)).
 
-- **Manifest flow** _(recommended)_: the Connector Hub wizard creates the App via GitHub's [App manifest](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest) endpoint. All permissions/events/webhook URL pre-filled. PEM is written to `~/.shipit/keys/github-app-<id>.pem` (override with `SHIPIT_GITHUB_APP_KEY_DIR`), App ID + path are persisted to `connectors.github.app.*`. Full walkthrough: [`github-setup.md` §0](./connectors/github-setup.md#0-manifest-flow-recommended).
-- **Manual**: create the App yourself, set `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY_PATH` env vars before starting the API server. Full walkthrough: [`github-setup.md` §2](./connectors/github-setup.md).
-
-One App is configured globally via env vars and shared across all per-org connector instances:
+The alternative is **one shared App** installed in many orgs, which GitHub only allows for a public App. It is configured globally and inherited by every instance without an `app` override:
 
 ```bash
 GITHUB_APP_ID=123456
 GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-GITHUB_WEBHOOK_SECRET=<32-byte-hex>            # P1 webhook verification
-GITHUB_WEBHOOK_PUBLIC_URL=https://...          # P1 webhook delivery target
+GITHUB_WEBHOOK_PUBLIC_URL=https://shipit.your-company.com/api/webhooks/github
+GITHUB_WEBHOOK_SECRET=<32-byte-hex>   # or generate it from Admin → Settings → Webhooks
 ```
 
-The per-org `installationId` lives in the connector instance (in `shipit.config.local.yaml`), not in env. Required App permissions: `Contents: Read`, `Metadata: Read`, `Actions: Read`, `Members: Read`.
+Required App permissions, all read: `contents`, `metadata`, `actions`, `members`, `deployments`, `administration`, `pull_requests`, `issues` (the last is what the knowledge facet's issues need, and an existing installation has to approve it when it is added).
 
-### Per-org App override (optional)
+### Per-org App override
 
-By default every connector uses the global App configured via env vars. A connector can override that App on its own — useful for blast-radius isolation (dev App vs prod App) or for orgs that won't share an App:
+Every instance may carry its own App; absent fields fall back to the global one:
 
 ```yaml
 connectors:
@@ -117,22 +120,37 @@ connectors:
       type: github
       org: prod-corp
       installationId: '55555'
-      # Either or both of these fields can be present; the field that's
-      # absent falls back to the global App's value.
       app:
         id: '654321'
         privateKeyPath: '/etc/shipit/keys/prod-app.pem'
 ```
 
-The wizard collects this via the "Use a separate GitHub App for this org" advanced panel in step 1. The probe endpoint accepts the same override in its request body so the wizard can validate the credentials before persisting. See [`github-setup.md`](./connectors/github-setup.md) §6b for the full walkthrough.
+The wizard's App step offers this as the **One App for this org** card (the recommended default); `POST /api/connectors/probe` accepts the same `app` override so credentials are validated before anything is persisted. `PATCH /api/connectors/:id` with `{ "app": null }` reverts an instance to the global App. See [`github-setup.md`](./connectors/github-setup.md) §6b.
+
+### Schedule, rate limits and webhooks
+
+Each instance polls on its cron `schedule` (default `*/30 * * * *`). `connectors.github.rateLimits.conditionalRequests` turns on Octokit's `If-None-Match` requests to stretch the 5,000/hour installation budget, and `maxConcurrentSyncs` (3) caps parallel runs.
+
+Between polls, GitHub webhooks keep the graph fresh ([ADR-030](adrs/ADR-030-github-webhook-receiver.md)): `POST /api/webhooks/github` verifies the delivery's HMAC signature against the connector's App secret and queues a coalesced refetch — a `push` refetches the repository (including its CODEOWNERS), a `workflow_run` its workflows. The App created by the manifest flow already points at the receiver when `GITHUB_WEBHOOK_PUBLIC_URL` is set.
+
+### Knowledge facet
+
+Switching the facet on (`PATCH /api/connectors/:id` with a `knowledge` block; there is no UI for it yet) makes the connector list its repositories as containers:
+
+```yaml
+knowledge:
+  enabled: true
+  pullRequests: true
+  issues: true
+  docs: { enabled: true, paths: ['docs/**', '*.md'], maxFileBytes: 262144 }
+  historyDays: 90
+```
+
+Then `GET /api/connectors/:id/containers` lists them, `POST …/containers/refresh` re-lists, and `PUT …/containers/:containerId` with `{ "selected": true }` selects one for indexing (a private repository also needs `"acknowledgeVisibility": true`, since its content becomes readable to every signed-in user). The next sync carries a `knowledge` facet run; the [knowledge-worker](architecture.md#knowledge-layer) embeds what it produced. The walkthrough is in [local-development.md §5](local-development.md#5-running-the-stack).
 
 ### Data Normalization
 
-The GitHub connector normalizes data with the following confidence levels:
-
-- Repository properties: `0.9` confidence
-- CODEOWNERS relationships: `0.95` confidence
-- Team membership: `0.9` confidence
+Claims leave the connector with a base confidence per kind — repository properties `0.9`, CODEOWNERS relationships `0.95`, team membership `0.9` — and get their effective, per-field confidence in the writer: time decay, corroboration from independent sources, conflict and ambiguity penalties, and a floor for values a person has verified ([ADR-029](adrs/ADR-029-per-field-confidence-and-verification.md)).
 
 ### CODEOWNERS Discovery
 
@@ -142,7 +160,7 @@ The connector searches for CODEOWNERS files in three locations:
 2. `.github/CODEOWNERS`
 3. `docs/CODEOWNERS`
 
-CODEOWNERS entries create `CODEOWNER_OF` edges from Person or Team nodes to Repository nodes.
+CODEOWNERS entries create `CODEOWNER_OF` edges from Person or Team nodes to Repository nodes, carrying the matched `pattern`.
 
 ### Registering via API
 
@@ -165,18 +183,18 @@ curl -X POST http://localhost:3001/api/connectors \
   }'
 ```
 
-Subsequent PATCH/DELETE require `If-Match: "<etag>"` to avoid clobbering concurrent edits — same ETag pattern as `/api/schema` ([ADR-016](./adrs/ADR-016-optimistic-concurrency-for-editable-config.md)).
+Responses carry an `ETag`; send it back as `If-Match` on `PATCH`/`DELETE` to refuse a blind overwrite ([ADR-016](./adrs/ADR-016-optimistic-concurrency-for-editable-config.md)) — it is honoured when present and optional otherwise. Mutations need an administrator; see [api-reference.md](api-reference.md#connectors--apiconnectors) for every route and error code, including the probe's `APP_NOT_CONFIGURED`, `PRIVATE_KEY_PATH_NOT_ALLOWED`, `PRIVATE_KEY_UNREADABLE`, `BAD_PRIVATE_KEY`, `INSTALLATION_NOT_FOUND`, `INSUFFICIENT_PERMISSIONS` and `AUTH_FAILED`.
 
 ### Triggering a Sync
 
 ```bash
 # Full sync — re-fetch everything
-curl -X POST http://localhost:3001/api/connectors/github-main/sync \
+curl -X POST http://localhost:3001/api/connectors/github-acme/sync \
   -H 'Content-Type: application/json' \
   -d '{ "mode": "full" }'
 
 # Incremental sync — only changes since last sync
-curl -X POST http://localhost:3001/api/connectors/github-main/sync \
+curl -X POST http://localhost:3001/api/connectors/github-acme/sync \
   -H 'Content-Type: application/json' \
   -d '{ "mode": "incremental" }'
 ```
@@ -187,7 +205,9 @@ Polls a cluster read-only (every 5 minutes by default, full list each run) and e
 `Cluster`, `Namespace`, `Environment`, `Deployment` (one per Deployment / StatefulSet /
 DaemonSet / CronJob), `BuildArtifact` and `LogicalService` nodes with `PART_OF`, `RUNS_IN`,
 `RUNS_IN_ENV`, `RUNS_IMAGE`, `DEPLOYED_AS`, `IMPLEMENTED_BY`, `BUILT_FROM` and `OWNS` edges.
-One connector instance per cluster. Design: `docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md`.
+One connector instance per cluster. The Connector Hub's Kubernetes wizard (Access · Connect ·
+Configure · Review) collects the same things as the API calls below. Design:
+`docs/superpowers/specs/2026-09-16-kubernetes-connector-design.md` and [ADR-033](adrs/ADR-033-kubernetes-connector-v1.md).
 
 ### Access modes
 
@@ -214,7 +234,8 @@ curl -X POST localhost:3001/api/connectors -H 'Content-Type: application/json' -
 
 The returned paths are absolute, inside the key dir (`~/.shipit/keys` by default, override with
 `SHIPIT_GITHUB_APP_KEY_DIR`) — paste them into the create body exactly as returned; `~` is not
-expanded and an unexpanded tilde is rejected by the path allowlist.
+expanded and an unexpanded tilde is rejected by the path allowlist (`CREDENTIAL_PATH_NOT_ALLOWED`;
+an unreadable file is `CREDENTIALS_UNREADABLE`, a malformed kubeconfig `KUBECONFIG_INVALID`).
 
 `POST /api/connectors/probe` with `{ "type": "kubernetes", "access": { ... } }` checks access before you
 save: it returns the server version, the namespaces in scope and, per workload kind, `ok`, `forbidden`,
@@ -349,6 +370,7 @@ import type {
   SyncResult,
 } from '@shipit-ai/connector-sdk';
 import type { CanonicalEntity, CanonicalNode, PropertyClaim } from '@shipit-ai/shared';
+import { buildCanonicalId } from '@shipit-ai/shared';
 
 export class MySourceConnector implements ShipItConnector {
   readonly manifest: ConnectorManifest = {
@@ -382,9 +404,12 @@ export class MySourceConnector implements ShipItConnector {
   }
 
   normalize(raw: unknown[]): CanonicalEntity {
-    // Transform raw data into canonical nodes and edges
+    // Transform raw data into canonical nodes and edges. Pass the label as it
+    // appears in the schema: the helper kebab-cases it in the id
+    // (`shipit://logical-service/default/<name>`), which is what the
+    // Kubernetes connector emits for the same service.
     const nodes: CanonicalNode[] = raw.map((item) => ({
-      id: buildCanonicalId('logicalservice', 'default', item.name),
+      id: buildCanonicalId('LogicalService', 'default', item.name),
       label: 'LogicalService',
       properties: { name: item.name, owner: item.owner },
       _claims: [
@@ -416,6 +441,8 @@ export class MySourceConnector implements ShipItConnector {
 }
 ```
 
+Entities owned by a multi-tenant source (an org, an account) should be scoped with `buildScopedCanonicalId(label, namespace, scope, name)` so two tenants' `platform` teams do not collide; a `Person` keyed by a globally unique login uses `buildPersonCanonicalId`. The writer adds `_source_connector_id` from the envelope — do not set it yourself. A base confidence of `0.7` is used for a source the reliability registry does not know; add your source to `SOURCE_RELIABILITY` in `packages/shared/src/config/source-reliability.ts` to give it its own.
+
 ### 3. Linking Keys
 
 Register a linking key prefix for your source. Supported prefixes:
@@ -446,3 +473,7 @@ const result = await dryRun(connector, {
 console.log(result.summary);
 console.log(`Nodes: ${result.nodes.length}, Edges: ${result.edges.length}`);
 ```
+
+### 5. Register the type
+
+The api-server creates connector instances through a per-type factory (`packages/api-server/src/services/connector-types/`): one entry builds the graph connector (`build`), an optional one builds its knowledge connector (`buildKnowledge`), and the same file declares how the type probes credentials and which warnings make a run partial. The Connector Hub's picker lists the types the factory knows.

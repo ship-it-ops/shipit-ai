@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-035 (the knowledge layer uses pgvector in the Postgres that ADR-034 introduced)
 
 ## Date
 

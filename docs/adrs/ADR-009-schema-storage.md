@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded in practice (noted 2026-10-06). The schema is not stored in Neo4j: it is a YAML file at `backend.schema.path` (`config/shipit-schema.yaml` by default), loaded and written by the API server's `SchemaService`, which keeps a snapshot history in a `schema-history/` directory next to it and guards writes with an ETag ([ADR-016](ADR-016-optimistic-concurrency-for-editable-config.md)). On a deployment the file is delivered with the image and lives on an ephemeral volume ([ADR-024](ADR-024-runtime-config-persistence.md)). The `schema_info` MCP tool and the schema editor read that file through the API. The rest of this record is kept as written.
 
 ## Date
 

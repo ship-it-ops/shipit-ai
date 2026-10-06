@@ -1,18 +1,18 @@
 # Getting Started
 
-This is the 5-minute "just get it running" path. For the full
-development guide — config layering, daily commands, testing, debugging,
-webhooks, and code quality — see
-[local-development.md](./local-development.md).
+This is the "just get it running" path. For the full development guide —
+config layering, Postgres and agents, daily commands, testing, debugging,
+webhooks, and code quality — see [local-development.md](./local-development.md).
 
 ## Prerequisites
 
-| Tool           | Version | Install                                      |
-| -------------- | ------- | -------------------------------------------- |
-| Node.js        | 22+     | [nodejs.org](https://nodejs.org/)            |
-| pnpm           | 10+     | `npm install -g pnpm` or `brew install pnpm` |
-| Docker         | 20+     | [docker.com](https://www.docker.com/)        |
-| Docker Compose | v2+     | Included with Docker Desktop                 |
+| Tool           | Version | Install                                                                |
+| -------------- | ------- | ---------------------------------------------------------------------- |
+| Node.js        | 22+     | [nodejs.org](https://nodejs.org/)                                      |
+| pnpm           | 10+     | `corepack enable` (installs the version pinned in `package.json`)      |
+| Docker         | 20+     | [docker.com](https://www.docker.com/)                                  |
+| Docker Compose | v2+     | Included with Docker Desktop                                           |
+| gcloud CLI     | any     | Only for the optional AI agents and knowledge layer (Vertex AI access) |
 
 ## 1. Clone and Configure
 
@@ -22,115 +22,116 @@ cd ShipIt-AI
 pnpm preflight
 ```
 
-`preflight` checks prerequisites and bootstraps `shipit.config.local.yaml`
-from the committed example. It also prompts for your name/email on first
-run (these populate the user menu until real auth ships).
+`preflight` checks the prerequisites and creates `shipit.config.local.yaml`
+from the committed example. It is idempotent and also runs inside every
+`pnpm start:*` script.
 
-Configuration model — Backstage-style two-file YAML:
+Configuration is two YAML files:
 
-- **`shipit.config.yaml`** — committed, the production base. Hardcoded
-  defaults plus `${ENV_VAR}` and `${ENV_VAR:-default}` placeholders for
-  anything that varies per environment or is a secret.
-- **`shipit.config.local.yaml`** — gitignored, optional per-developer
-  overrides and local secrets. Merged on top of the base.
+- **`shipit.config.yaml`** — committed, the production base. Defaults plus
+  `${ENV_VAR}` and `${ENV_VAR:-default}` placeholders for anything that varies
+  per environment or is a secret. Sign-in is **on** here, with no provider and
+  no admins, so a deployment that forgets to configure auth fails loud instead
+  of opening up.
+- **`shipit.config.local.yaml`** — gitignored, merged on top of the base. The
+  example points every service at the docker-compose Neo4j, Redis and
+  Postgres, switches sign-in **off** (`accessControl.auth.enabled: false`) and
+  defines the `frontend.devUser` the API server treats every request as.
 
-The defaults in `shipit.config.yaml` work for local development with the
-docker-compose Neo4j/Redis instances. Override anything you need in your
-local file — see `shipit.config.local.example.yaml` for templates.
+Every backend service (api-server, core-writer, mcp-server, agent-runner,
+knowledge-worker) reads both files, so nothing else needs an env var for a
+local run.
 
-## 2. Start Infrastructure
-
-```bash
-docker compose -f docker/docker-compose.yml up -d neo4j redis
-```
-
-Wait for Neo4j to become healthy:
-
-```bash
-docker compose -f docker/docker-compose.yml ps
-```
-
-Neo4j Browser is available at http://localhost:7474 (login with `neo4j` / `shipit-dev`).
-
-## 3. Install and Build
+## 2. Install and Build
 
 ```bash
 pnpm install
 pnpm turbo build
 ```
 
-The build order is managed by Turborepo based on package dependencies:
+Turborepo builds the packages in dependency order (`shared` first, then the
+event bus, SDK, connectors and services; the web UI last).
 
-```
-shared → event-bus → core-writer, connector-sdk, api-server
-                     connector-sdk → connector-github, connector-kubernetes
-shared → mcp-server
-web-ui (independent)
-```
-
-## 4. Run Tests
+## 3. Start the Stack
 
 ```bash
-# Run all 221 tests across 8 packages
-pnpm turbo test
-
-# Bypass Turbo cache if you suspect stale results
-pnpm turbo test --force
-
-# Watch mode for active development
-pnpm turbo test:watch
+pnpm start:all
 ```
 
-## 5. Start the Development Stack
+This starts Neo4j, Redis and Postgres in Docker, waits for them, creates the
+pgvector extension and applies the SQL migrations in `db/migrations/`, then
+runs every dev server in watch mode:
 
-### Option A: Docker Compose (all services)
+| Service      | URL / port                              | Notes                                               |
+| ------------ | --------------------------------------- | --------------------------------------------------- |
+| Web UI       | <http://localhost:3000>                 | Next.js                                             |
+| API server   | <http://localhost:3001>                 | Fastify; health at `/api/health`                    |
+| MCP server   | `http://localhost:3002/mcp`             | Streamable HTTP; `/health` without a token          |
+| core-writer  | —                                       | Queue worker; the only process that writes to Neo4j |
+| agent-runner | —                                       | Idles until Vertex AI credentials are present (§8)  |
+| Neo4j        | <http://localhost:7474>, `bolt://:7687` | Browser login `neo4j` / `shipit-dev`                |
+| Redis        | `redis://localhost:6379`                | Queues, run history                                 |
+| Postgres     | `postgres://localhost:5432/shipit`      | Agents and knowledge; login `shipit` / `shipit-dev` |
+
+`pnpm start:backend` and `pnpm start:frontend` start the two halves
+separately; `pnpm stop` brings the Docker services down and `pnpm stop:clean`
+also deletes their volumes.
+
+To run everything as containers instead, use the compose file (see
+[deployment.md](./deployment.md)):
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-This starts Neo4j, Redis, API Server (port 3001), Core Writer, MCP Server, and Web UI (port 3000).
+## 4. Open the Web UI
 
-### Option B: Run services individually
+Open <http://localhost:3000>. On the first visit a dev-only modal asks for your
+name, email and team and writes them to `shipit.config.local.yaml` under
+`frontend.devUser`; it also offers to seed a demo graph so the pages are not
+empty. Both can be redone later (`pnpm seed`, `pnpm seed:reset`).
 
-```bash
-# Terminal 1 — Infrastructure (if not already running)
-docker compose -f docker/docker-compose.yml up -d neo4j redis
+The sidebar is the map of the product: **Explore** (graph explorer, query
+playground), **AI** (MCP access; the Ask and agent pages are previews for
+now), **Catalog** (entities, team dashboard), **Configure** (Connector Hub,
+schema editor), **Operations** (incident mode, claims, reconciliation) and
+**Admin** (audit log, access control, settings).
 
-# Terminal 2 — API Server
-cd packages/api-server && pnpm dev
-
-# Terminal 3 — Core Writer
-cd packages/core-writer && pnpm dev
-
-# Terminal 4 — Web UI
-cd packages/web-ui && pnpm dev
-```
-
-## 6. Configure the GitHub Connector
-
-ShipIt-AI uses a **GitHub App** to read repositories, teams, members,
-workflows, and CODEOWNERS. One App can serve many orgs (installation
-IDs differ per org) — or you can configure a different App per org for
-blast-radius isolation.
-
-1. Create a GitHub App and install it in your org. Full walkthrough:
-   [connectors/github-setup.md](./connectors/github-setup.md).
-2. Set env vars before starting the API server:
+## 5. Run the Tests
 
 ```bash
-export GITHUB_APP_ID=123456
-export GITHUB_APP_PRIVATE_KEY_PATH=/path/to/private-key.pem
-# Optional now / required when the webhook receiver lands in P1:
-export GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
+pnpm turbo test            # every package
+pnpm turbo test --force    # bypass the Turbo cache
+pnpm turbo test:watch      # watch mode
 ```
 
-3. Open <http://localhost:3000/connectors>, click **Connect GitHub**, and
-   follow the 5-step wizard. The wizard probes the App credentials live
-   against GitHub, lets you pick repo/team scope, and triggers an
-   initial sync on submit.
+Integration suites that need a real database are described in
+[local-development.md §7](./local-development.md#7-testing).
 
-To wire it up via API instead:
+## 6. Connect a GitHub Org
+
+ShipIt-AI reads repositories, teams, members, workflows and CODEOWNERS through
+a **GitHub App**, one connector per org. The Connector Hub creates the App for
+you through GitHub's manifest flow, so there is nothing to paste from GitHub's
+settings pages:
+
+1. Open **Configure → Connector Hub**, click **Add connector → GitHub**.
+2. **App step:** enter the org login and click **Create App on GitHub**.
+   GitHub shows a pre-filled registration form; confirm it, and the wizard
+   picks up the App ID and private key when you return.
+3. **Connect step:** install the App on the org (the wizard links to the
+   install page), then pick the installation from the list.
+4. **Configure step:** confirm the connector name and the repo/team scope.
+5. **Review → Create + sync.** The first full sync starts immediately; the
+   connector card shows its runs.
+
+The full runbook, including the manual App path, per-org Apps, rotation and
+troubleshooting, is [connectors/github-setup.md](./connectors/github-setup.md).
+Webhooks keep the graph fresh between polls; for local development relay them
+with smee.io as described in
+[local-development.md §10](./local-development.md#10-webhooks-for-local-development).
+
+The same can be done over the API once an App is configured:
 
 ```bash
 # Validate credentials and list a sample of accessible repos
@@ -141,27 +142,28 @@ curl -X POST http://localhost:3001/api/connectors/probe \
 # Create the connector
 curl -X POST http://localhost:3001/api/connectors \
   -H 'Content-Type: application/json' \
-  -d '{
-    "id": "github-acme",
-    "type": "github",
-    "name": "Acme Corp",
-    "installationId": "789012",
-    "org": "acme-corp",
-    "enabled": true
-  }'
+  -d '{"id": "github-acme", "type": "github", "name": "Acme Corp",
+       "installationId": "789012", "org": "acme-corp", "enabled": true}'
 
-# Trigger a full sync (the wizard does this automatically)
+# Trigger a full sync
 curl -X POST http://localhost:3001/api/connectors/github-acme/sync \
-  -H 'Content-Type: application/json' \
-  -d '{"mode": "full"}'
+  -H 'Content-Type: application/json' -d '{"mode": "full"}'
 ```
 
-To set up **webhooks for local development** (smee.io or ngrok), see
-[local-development.md §10](./local-development.md#10-webhooks-for-local-development).
+## 7. Connect a Kubernetes Cluster (optional)
 
-## 7. Verify in Neo4j Browser
+**Connector Hub → Add connector → Kubernetes** takes a cluster name and one of
+three access modes (in-cluster, kubeconfig, or server + ServiceAccount token),
+probes the cluster read-only, and polls it every five minutes. Workloads link
+to the services and repositories the GitHub connector already found. The
+reference, including the read-only RBAC to grant, is in
+[connectors.md](./connectors.md#kubernetes-connector).
 
-Open http://localhost:7474 and run:
+## 8. Verify the Graph
+
+In the UI, **Catalog → Entities** lists what the connectors produced and
+**Explore → Graph Explorer** draws it. In Neo4j Browser
+(<http://localhost:7474>):
 
 ```cypher
 // Count all nodes
@@ -171,63 +173,61 @@ MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC;
 MATCH (s:LogicalService)-[r]-(n) RETURN s, r, n LIMIT 50;
 ```
 
-## 8. Connect MCP to Claude
+## 9. Connect an AI Client
 
-### Claude Desktop
+The MCP server offers 8 read-only tools. Two ways in:
 
-Add to your Claude Desktop MCP config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "shipit-ai": {
-      "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
-      "cwd": "/path/to/ShipIt-AI",
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "shipit-dev"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
-
-Add to `.claude/settings.json` or your project's `.mcp.json`:
+- **Streamable HTTP (deployed instances).** `https://<your-domain>/mcp` with a
+  personal access token from **Settings → API Keys** in the `Authorization`
+  header (minted by an administrator: the `member` role cannot mint the
+  `mcp:invoke` scope today). Tokens exist where sign-in is enabled, so this
+  is the path for a deployed instance. The [Claude Code plugin](../plugin/README.md) packages the
+  registration plus three skills.
+- **stdio (local).** Let the client spawn the server from your checkout; it
+  reads the same config files, so no credentials go into the client config.
 
 ```json
 {
   "mcpServers": {
     "shipit-ai": {
       "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
-      "cwd": "/path/to/ShipIt-AI",
+      "args": ["/path/to/ShipIt-AI/packages/mcp-server/dist/index.js"],
       "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "shipit-dev"
+        "MCP_TRANSPORT": "stdio",
+        "SHIPIT_CONFIG": "/path/to/ShipIt-AI/shipit.config.yaml"
       }
     }
   }
 }
 ```
 
-Once connected, try asking Claude: "What services are in the graph?" or "What is the blast radius of config-service?"
+That block works in Claude Code's `.mcp.json` and in Claude Desktop's
+`claude_desktop_config.json`. Then ask: "What services are in the graph?" or
+"What is the blast radius of config-service?" The full reference, including
+the HTTP snippets, is [mcp-tools.md](./mcp-tools.md).
 
-## 9. Access the Web UI
+## 10. AI Agents and the Knowledge Layer (optional)
 
-Open http://localhost:3000 to view the graph visualization dashboard. The Web UI connects to the API Server at the URL configured in `NEXT_PUBLIC_API_URL`.
+Both run models on Vertex AI and need Google Cloud credentials:
+
+```bash
+gcloud auth application-default login
+export GOOGLE_CLOUD_PROJECT=<your project>   # or ai.vertex.project in the local config
+```
+
+With that, `pnpm start:backend` runs the agent-runner and the API creates a
+built-in **Graph assistant** on first boot; the knowledge worker indexes the
+GitHub text facet (pull requests, issues, Markdown docs) of the repositories
+you select. Both are walked through in
+[local-development.md §5](./local-development.md#5-running-the-stack).
 
 ## Next Steps
 
 - [Local Development](local-development.md) — config layering, day-to-day
-  commands, testing, debugging, webhooks for local dev
-- [GitHub setup](connectors/github-setup.md) — full App creation + install
-  runbook (one-time)
-- [Schema Guide](schema-guide.md) — customize node types and resolution strategies
+  commands, Postgres and agents, testing, debugging, webhooks for local dev
+- [GitHub setup](connectors/github-setup.md) — the App runbook
 - [Connectors](connectors.md) — connector reference + SDK for new sources
+- [Schema Guide](schema-guide.md) — customize node types and resolution strategies
 - [MCP Tools](mcp-tools.md) — full tool reference for AI integration
 - [Architecture](architecture.md) — understand the system design
+- [Deployment](deployment.md) — Docker Compose and the GKE deployment

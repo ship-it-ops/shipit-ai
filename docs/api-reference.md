@@ -1,332 +1,270 @@
 # API Reference
 
-The ShipIt-AI API Server is built on Fastify 4 with OpenAPI documentation via `@fastify/swagger`. By default it runs on port `3001`.
+The ShipIt-AI API server is Fastify 5. By default it listens on port `3001` (`backend.api.port`); on a deployed instance it is served under the web UI's origin at `/api`. This page lists every route as `packages/api-server/src/server.ts` registers it (101 routes as of 2026-10-06). Shapes come from the handlers and the shared types in `packages/shared/src/types/*-api.ts`; the web UI's `src/lib/api.ts` is the reference client.
 
-Base URL: `http://localhost:3001`
+Base URL (local): `http://localhost:3001`
 
-## Health
+## Conventions
+
+- **Errors** are `{ "error": { "code": "...", "message": "..." } }`. Some rows note extra top-level fields (`serverHash`, `issues`, `checks`, `status`). Unhandled errors become `INTERNAL_ERROR`; 5xx messages are generic.
+- **Who may call it:**
+  - **public** — no credentials even with sign-in on (`require-auth.ts` allow-list). Such requests run as the anonymous principal (role `member`, no capabilities).
+  - **any principal** — any signed-in session, bearer token, or the dev-fallback user when sign-in is off.
+  - **admin** — role `admin`. Bearer-token principals are always `member`, so they never reach these.
+  - **cap `x`** — the principal holds capability `x`. Admins hold `*`; members hold `graph:read`, `catalog:read`, `graph:write`, `agents:read`, `agents:run`; a token holds exactly its scopes.
+- **Rate limits:** 200 requests/minute per IP globally; stricter per-route limits are noted.
+- **YAML bodies** (`text/yaml`, `text/plain`, `application/x-yaml`) are accepted as raw strings by the schema routes.
+- **ETags:** connector instances, the schema and agents return an `ETag`; send it back as `If-Match` on writes to refuse blind overwrites (`409 VERSION_CONFLICT` with the server's current hash or revision). A missing `If-Match` forces the write.
+- **Neo4j-only groups** (`/api/graph`, `/api/query`, `/api/claims`, `/api/conflicts`, `/api/relations`, `/api/teams`, `/api/reconciliation`) are not registered when no graph database is wired (404).
+- `@fastify/swagger` is registered for route metadata; no OpenAPI UI or spec route is mounted.
+
+## Authentication
+
+Three modes, resolved per request in this order ([architecture.md](architecture.md#access-control--identity)):
+
+1. **Setup mode** (first boot of an unconfigured deployment): only `/api/health`, `/api/setup/*`, the GitHub App manifest routes and `/api/webhooks/github` answer, as a synthesized `setup` administrator; everything else is `401 SETUP_MODE`.
+2. **Sign-in off** (`accessControl.auth.enabled: false`, the local default): every request runs as the `frontend.devUser` principal (role `admin`, the capabilities listed there). `/api/tokens` is not registered.
+3. **Sign-in on:** public allow-list → `Authorization: Bearer shipit_pat_<id>.<secret>` → session cookie (`shipit_sid`, 12 h, set by `/api/auth/callback/:provider`) → `401 AUTH_REQUIRED`. An invalid or revoked token is `401 TOKEN_INVALID`; without Neo4j, bearer auth answers `503 TOKEN_AUTH_DISABLED`.
+
+Public allow-list: `/api/health`, `/api/auth/providers`, `/api/auth/login/*`, `/api/auth/callback/*`, `/api/auth/logout`, `/api/mcp/info`, `/api/webhooks/github`.
 
-### `GET /api/health`
+Feature-conditional `503`s: `TOKENS_DISABLED` (sign-in on, no Neo4j), `AI_UNAVAILABLE` (agents without Postgres/Redis or failing checks), `KNOWLEDGE_UNAVAILABLE`, `SETTINGS_DISABLED`, `FEEDBACK_DISABLED`, `CONFIG_EXPORT_DISABLED`, `OIDC_SETTINGS_DISABLED`, `SETUP_DISABLED`, `SERVICE_UNAVAILABLE` (GitHub App services), `MANUAL_EDIT_DISABLED`.
+
+## Health — `/api/health`
+
+| Method | Path          | Who    | What it does                                    | Response                                                       |
+| ------ | ------------- | ------ | ----------------------------------------------- | -------------------------------------------------------------- |
+| GET    | `/api/health` | public | Liveness, mode and uptime; served in every mode | `{ status: 'ok', mode: 'setup' \| 'active', version, uptime }` |
+
+## Setup — `/api/setup`
+
+The first-boot wizard ([ADR-026](adrs/ADR-026-first-boot-setup-mode.md)). In setup mode these run as the setup administrator; once the instance is active the mutating routes answer `409 SETUP_NOT_ACTIVE`. Mutations are limited to 10/min.
 
-Health check endpoint.
+| Method | Path                  | Who                   | What it does                                                               | Request / response                                                                                                |
+| ------ | --------------------- | --------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/setup/status`   | setup / any principal | Reports the gates                                                          | `{ mode, gates: { oauthClientPresent, adminConfigured, sessionSecretPresent, allowedOriginsConfigured }, ready }` |
+| POST   | `/api/setup/admin`    | setup                 | Records the first admin email                                              | `{ email }` → `{ ok: true }`; `400 INVALID_EMAIL`                                                                 |
+| POST   | `/api/setup/oauth`    | setup                 | Stores the sign-in OAuth App client                                        | `{ clientId, clientSecret }` → `{ ok: true }`; `400 INVALID_OAUTH_CLIENT`                                         |
+| POST   | `/api/setup/complete` | setup                 | Re-checks the gates, writes the one-way latch, restarts into enforced auth | `{ ok: true }`; `409 SETUP_INCOMPLETE` with `missing[]`, `messages[]`                                             |
 
-**Response:**
+## Auth — `/api/auth`
 
-```json
-{
-  "status": "ok",
-  "version": "0.1.0",
-  "uptime": 3600
-}
-```
+`/logout`, `/login/:provider` and `/callback/:provider` exist only when sign-in is on.
 
-## Connectors
+| Method | Path                           | Who                        | What it does                                                                                             | Request / response                                                                                                                                              |
+| ------ | ------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/auth/me`                 | any principal (not public) | The current principal                                                                                    | `{ user: { id, email, displayName, provider, role, capabilities[] }, org }` (+ `team`, `joinedAt` for the dev user); `401 AUTH_REQUIRED`                        |
+| GET    | `/api/auth/providers`          | public                     | Enabled sign-in providers                                                                                | `{ providers: [{ id: 'oidc' \| 'github', displayName }] }` (empty when sign-in is off)                                                                          |
+| GET    | `/api/auth/login/:provider`    | public; 10/min             | Starts the IdP round-trip                                                                                | query `redirect_to` (must start with `/`); `302` to the IdP; `404 PROVIDER_NOT_FOUND` / `PROVIDER_DISABLED`                                                     |
+| GET    | `/api/auth/callback/:provider` | public; 10/min             | Exchanges the code, resolves role and allow-list, sets the session, upserts the Person via the event bus | `302` to `redirect_to`; on failure `302 /login?error=IDP_ERROR \| INVALID_STATE \| NOT_ALLOWLISTED \| ACCESS_DENIED \| EXCHANGE_FAILED`; `400 INVALID_CALLBACK` |
+| POST   | `/api/auth/logout`             | public                     | Destroys the session                                                                                     | `204`                                                                                                                                                           |
+| PUT    | `/api/auth/providers/oidc`     | admin                      | Stores an externally registered OIDC client                                                              | `{ issuerUrl?, clientId?, clientSecret? }` → `{ ok: true, restartRequired }`; `503 OIDC_SETTINGS_DISABLED`                                                      |
+
+## Personal access tokens — `/api/tokens` _(sign-in on only)_
+
+Tokens for the MCP server and `POST /api/query` ([ADR-028](adrs/ADR-028-mcp-token-auth.md)). Scopes: `mcp:invoke` (default), `graph:read`, `catalog:read`, `graph:query`. A caller can only mint scopes they hold themselves — the `member` role holds none of these, so in practice an administrator mints them.
+
+| Method | Path              | Who                      | What it does                           | Request / response                                                                                                                           |
+| ------ | ----------------- | ------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/tokens`     | any principal with email | Mints a token; plaintext returned once | `{ name (1–128), scopes?[] }` → `201 { id, name, token, scopes, createdAt }`; `400 INVALID_NAME` / `UNKNOWN_SCOPE`; `403 SCOPE_OUT_OF_REACH` |
+| GET    | `/api/tokens`     | any principal with email | Lists the caller's tokens              | `{ tokens: [{ id, name, scopes, createdAt, lastUsedAt, revoked }] }`                                                                         |
+| DELETE | `/api/tokens/:id` | any principal with email | Revokes one of the caller's tokens     | `204`; `404 TOKEN_NOT_FOUND`                                                                                                                 |
+
+Without Neo4j the prefix answers `503 TOKENS_DISABLED`.
 
-### `GET /api/connectors`
+## Connectors — `/api/connectors`
+
+Reads are open to any principal; every mutation needs an admin (`403 FORBIDDEN`). Instances return `lastRuns` (graph facet) and `lastKnowledgeRuns`, each a list of `{ startedAt, durationMs, status: 'success' | 'partial' | 'failed', entitiesSynced, errors[], notes?, facet? }`. Runtime status is `{ connectorId, state: 'idle' | 'running' | 'failed' | 'degraded', startedAt?, lastError?, rateLimitRemaining? }`. GitHub App routes answer `503 SERVICE_UNAVAILABLE` when the App services are not wired.
+
+| Method | Path                                                      | Who                           | What it does                                                                                  | Request / response                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | --------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/connectors`                                         | any principal                 | Lists instances with run histories                                                            | `ConnectorInstanceConfig[]` + `lastRuns`, `lastKnowledgeRuns`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| POST   | `/api/connectors`                                         | admin                         | Creates an instance                                                                           | GitHub: `{ id, type: 'github', name, enabled?, installationId, org, schedule?, scope?, entities?, knowledge?, app?: { id, privateKeyPath } }`; Kubernetes: `{ id, type: 'kubernetes', name, enabled?, schedule?, cluster: { name }, access: { mode, kubeconfigPath?, context?, server?, tokenPath?, caDataPath? }, scope?, mapping? }` → `201` + `ETag`; `400 VALIDATION_ERROR` / `PRIVATE_KEY_PATH_NOT_ALLOWED` / `CREDENTIAL_PATH_NOT_ALLOWED`; `409 DUPLICATE`                                                                                     |
+| GET    | `/api/connectors/:id`                                     | any principal                 | One instance                                                                                  | instance + runs + `ETag`; `404`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| PATCH  | `/api/connectors/:id`                                     | admin                         | Partial update                                                                                | `If-Match` optional; `{ enabled?, name?, schedule?, scope?, entities?, knowledge?, app?: {...} \| null, cluster?, access?, mapping? }` → `200` + `ETag`; `404 NOT_FOUND`; `409 VERSION_CONFLICT`                                                                                                                                                                                                                                                                                                                                                      |
+| DELETE | `/api/connectors/:id`                                     | admin                         | Removes the instance, its indexed knowledge and credential files no other instance references | `204`; `404 NOT_FOUND`; `409 VERSION_CONFLICT`; `503 KNOWLEDGE_PURGE_FAILED`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| POST   | `/api/connectors/:id/sync`                                | admin                         | Enqueues a sync                                                                               | `{ mode?: 'full' \| 'incremental' }` → runtime status; `404 NOT_FOUND`; `SYNC_FAILED`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| GET    | `/api/connectors/:id/status`                              | any principal                 | Live runner status                                                                            | runtime status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| GET    | `/api/connectors/:id/runs`                                | any principal                 | Persisted graph-facet runs                                                                    | `{ connectorId, runs[] }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| POST   | `/api/connectors/probe`                                   | admin; 30/min                 | Validates credentials without persisting                                                      | GitHub `{ installationId, suggestedOrg?, app? }` → flat `{ ok: true, installation: { id, account, accountType, repoCount }, suggestedOrg, sampleRepos[], app: { id, overridden } }` or `400 { ok: false, code, message }` (`APP_NOT_CONFIGURED`, `PRIVATE_KEY_PATH_NOT_ALLOWED`, `PRIVATE_KEY_UNREADABLE`, `AUTH_FAILED`, `BAD_PRIVATE_KEY`, `INSUFFICIENT_PERMISSIONS`, `PROBE_FAILED`), `404 INSTALLATION_NOT_FOUND`; Kubernetes `{ type: 'kubernetes', access, ... }` → the probe result (see [connectors.md](connectors.md#kubernetes-connector)) |
+| POST   | `/api/connectors/kubernetes/credentials`                  | admin; 30/min                 | Stores a pasted kubeconfig or token (+CA) as files in the key directory                       | `{ connectorId, mode: 'kubeconfig' \| 'token', kubeconfig?, context?, token?, caData? }` → `201 { mode, kubeconfigPath, context, contexts[] }` or `{ mode, tokenPath, caDataPath? }`                                                                                                                                                                                                                                                                                                                                                                  |
+| GET    | `/api/connectors/github/app`                              | any principal                 | Shared GitHub App status                                                                      | `{ configured, id, privateKeyPath }` + `ETag`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| PUT    | `/api/connectors/github/app`                              | admin                         | Sets the shared App                                                                           | `{ id, privateKeyPath }` (a file directly in the key directory); `409 VERSION_CONFLICT`                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| GET    | `/api/connectors/github/installations`                    | any principal; 30/min         | Installations of the shared App, marking ones already used                                    | `{ appSlug, appName, installUrl, installations: [{ id, account: { login, type, avatarUrl }, targetType, repositorySelection, usedByConnectorId }] }`; `404 NO_APP_CONFIGURED`; `502 BAD_PRIVATE_KEY` / `GITHUB_API_ERROR`                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/api/connectors/github/owner-check`                      | any principal; 30/min         | Whether a GitHub login exists                                                                 | query `owner` → `{ owner, exists: true \| false \| null, type, htmlUrl }`                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/api/connectors/github/manifest`                         | any principal (setup: public) | The App manifest JSON                                                                         | manifest (+ `_warnings` when the webhook URL is not public)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| GET    | `/api/connectors/github/manifest/launch`                  | admin (setup: public)         | HTML page that posts the manifest to GitHub                                                   | query `owner?`, `target?: 'global' \| 'instance'`, `nonce?` (required for `instance`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| GET    | `/api/connectors/github/app-manifest-callback`            | admin (setup: public)         | GitHub's redirect target: exchanges the code, stores key and secret, persists the App         | query `code`, `state` → HTML                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| GET    | `/api/connectors/github/manifest/pending-instance/:nonce` | admin (setup: public)         | Claims credentials a per-org manifest flow stashed (single use)                               | `{ appId, appName, privateKeyPath, webhookSecretPath, installUrl }`; `404 NOT_READY` while pending                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+### Knowledge containers — `/api/connectors/:id/containers`
+
+What a knowledge connector indexes ([ADR-035](adrs/ADR-035-knowledge-layer-v1-foundations.md)). All three answer `503 KNOWLEDGE_UNAVAILABLE` unless ingestion is available, and map scheduler refusals to `409 KNOWLEDGE_NOT_ENABLED` / `CONNECTOR_BEING_DELETED`, `502 AUTH_FAILED`, `429 RATE_LIMITED`, `504 SOURCE_TIMEOUT`.
 
-List all registered connectors.
+| Method | Path                                          | Who           | What it does                                                        | Request / response                                                                                                                                                                                                           |
+| ------ | --------------------------------------------- | ------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/connectors/:id/containers`              | any principal | Lists containers (repositories) with counts and selection           | query `q?` → `{ containers: [{ id, externalId, kind, name, url, visibility, archived, selected, visibilityAcknowledged, purging, gone, lastPolledAt, lastReconciledAt, documents, indexed, pending, failed, restricted }] }` |
+| POST   | `/api/connectors/:id/containers/refresh`      | admin         | Re-lists containers from the source                                 | `{ containers: <count> }`                                                                                                                                                                                                    |
+| PUT    | `/api/connectors/:id/containers/:containerId` | admin         | Selects or deselects a container; private ones need acknowledgement | `{ selected, acknowledgeVisibility? }` → `{ ok: true }`; `409 VISIBILITY_NOT_ACKNOWLEDGED` / `CONTAINER_GONE`                                                                                                                |
 
-**Response:**
+## Schema — `/api/schema`
 
-```json
-[
-  {
-    "id": "github-main",
-    "type": "github",
-    "name": "GitHub - My Org",
-    "config": { "org": "acme-corp" },
-    "enabled": true
-  }
-]
-```
+The YAML schema with history, diff, migration preview and ETag locking ([schema-guide.md](schema-guide.md)). Any principal; not role-gated yet.
+
+| Method | Path                            | What it does                                         | Request / response                                                                                                   |
+| ------ | ------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/schema`                   | Current schema                                       | schema JSON + `ETag`; `404 NOT_FOUND` when none is loaded                                                            |
+| PUT    | `/api/schema`                   | Replaces the schema (previous version snapshotted)   | YAML body; `If-Match`; query `actor?` → schema + `ETag`; `400 SCHEMA_INVALID`; `409 VERSION_CONFLICT` + `serverHash` |
+| POST   | `/api/schema/validate`          | Validates without saving                             | YAML body → `{ valid: true, schema }`; `400 SCHEMA_INVALID`                                                          |
+| POST   | `/api/schema/diff`              | Diff against the current schema                      | YAML body → `{ added, removed, changed[] }`                                                                          |
+| POST   | `/api/schema/migration-preview` | The diff with the number of affected nodes and edges | YAML body → `{ impacts: [{ ..., affected }], skipped }` (`affected: null` without Neo4j)                             |
+| GET    | `/api/schema/history`           | Saved versions                                       | `[{ version, actor, size }]`                                                                                         |
+| GET    | `/api/schema/history/:version`  | One saved version                                    | `text/yaml`; `404`                                                                                                   |
+| POST   | `/api/schema/rollback`          | Makes a saved version current                        | `{ version }`; query `actor?` → schema + `ETag`                                                                      |
+
+## Graph — `/api/graph` _(Neo4j)_
+
+Read-only views for the explorer and pickers. `includeAbsent=true` includes nodes the owning connector no longer sees. Subgraphs are `{ nodes: [{ data: { id, label, ... } }], edges: [{ data: { source, target, type, ... } }], truncated? }`.
+
+| Method | Path                          | What it does                               | Query                                                                                                                                                                                                                         |
+| ------ | ----------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/graph/stats`            | Counts, staleness, last sync, health score | `includeAbsent?` → `{ nodeCount, edgeCount, nodesByLabel, edgeCountsByType, staleness, lastSync, healthScore }`                                                                                                               |
+| GET    | `/api/graph/overview`         | A bounded overview subgraph                | `limit?` (100, max 500), `sourceSystem?`, `sourceConnectorId?`, `includeAbsent?`                                                                                                                                              |
+| GET    | `/api/graph/sources`          | Source systems and connectors with counts  | `includeAbsent?` → `[{ sourceSystem, sourceConnectorId, entityCount }]`                                                                                                                                                       |
+| GET    | `/api/graph/neighborhood/:id` | N-hop neighbourhood                        | `depth?` (2, max 5), `includeAbsent?`                                                                                                                                                                                         |
+| GET    | `/api/graph/blast-radius/:id` | Downstream impact subgraph                 | `depth?` (3, max 5), `includeAbsent?`                                                                                                                                                                                         |
+| GET    | `/api/graph/search`           | Entity search                              | `label?`, `q?`, `tier?`, `owner?`, `sourceSystem?`, `sourceConnectorId?`, `limit?` (25, max 100), `includeAbsent?` → `[{ id, canonicalId, name, label, owner?, lastSynced?, sourceSystem?, sourceConnectorId?, sourceOrg? }]` |
 
----
+## Query Playground — `/api/query` _(Neo4j)_
 
-### `POST /api/connectors`
-
-Register a new connector.
-
-**Request Body:**
-
-```json
-{
-  "id": "github-main",
-  "type": "github",
-  "name": "GitHub - My Org",
-  "config": { "org": "acme-corp" },
-  "enabled": true
-}
-```
-
-**Response:** `201 Created`
-
-```json
-{
-  "id": "github-main",
-  "type": "github",
-  "name": "GitHub - My Org",
-  "config": { "org": "acme-corp" },
-  "enabled": true
-}
-```
-
----
-
-### `GET /api/connectors/:id`
-
-Get a connector by ID.
-
-**Response:**
-
-```json
-{
-  "id": "github-main",
-  "type": "github",
-  "name": "GitHub - My Org",
-  "config": { "org": "acme-corp" },
-  "enabled": true
-}
-```
-
----
-
-### `POST /api/connectors/:id/sync`
-
-Trigger a sync for a connector.
-
-**Request Body:**
-
-```json
-{
-  "mode": "full"
-}
-```
-
-`mode` is optional — accepts `"full"` or `"incremental"`.
-
-**Response:**
-
-```json
-{
-  "status": "started",
-  "connector_id": "github-main",
-  "mode": "full"
-}
-```
-
----
-
-### `GET /api/connectors/:id/status`
-
-Get the sync status of a connector.
-
-**Response:**
-
-```json
-{
-  "connector_id": "github-main",
-  "state": "IDLE",
-  "last_sync": {
-    "status": "success",
-    "entities_synced": 150,
-    "errors": [],
-    "duration_ms": 4500,
-    "completed_at": "2026-02-28T12:00:00Z"
-  }
-}
-```
-
----
-
-### `DELETE /api/connectors/:id`
-
-Remove a connector.
-
-**Response:** `204 No Content`
-
-## Schema
-
-### `GET /api/schema`
-
-Get the current graph schema.
-
-**Response:**
-
-```json
-{
-  "version": "1.0",
-  "mode": "full",
-  "node_types": {
-    "LogicalService": {
-      "description": "A named, team-owned service concept",
-      "constraints": { "unique_key": "name" },
-      "properties": {
-        "name": { "type": "string", "required": true, "resolution_strategy": "HIGHEST_CONFIDENCE" },
-        "tier": { "type": "integer", "resolution_strategy": "MANUAL_OVERRIDE_FIRST" },
-        "owner": { "type": "string", "resolution_strategy": "HIGHEST_CONFIDENCE" }
-      }
-    }
-  },
-  "relationship_types": {
-    "DEPENDS_ON": {
-      "from": "LogicalService",
-      "to": "LogicalService",
-      "cardinality": "N:M"
-    }
-  }
-}
-```
-
----
-
-### `PUT /api/schema`
-
-Update the graph schema. Accepts YAML as the request body.
-
-**Content-Type:** `text/yaml`, `text/plain`, or `application/x-yaml`
-
-**Request Body:**
-
-```yaml
-version: '1.0'
-mode: full
-node_types:
-  LogicalService:
-    description: A named, team-owned service concept
-    constraints:
-      unique_key: name
-    properties:
-      name:
-        type: string
-        required: true
-        resolution_strategy: HIGHEST_CONFIDENCE
-```
-
-**Response:** `200 OK` with the parsed schema as JSON.
-
----
-
-### `POST /api/schema/validate`
-
-Validate a schema without persisting it.
-
-**Content-Type:** `text/yaml`, `text/plain`, or `application/x-yaml`
-
-**Request Body:** YAML schema string (same format as PUT).
-
-**Response:**
-
-```json
-{
-  "valid": true
-}
-```
-
-On validation failure:
-
-```json
-{
-  "valid": false,
-  "errors": ["node_types.Foo: missing required field 'description'"]
-}
-```
-
-## Graph
-
-Graph endpoints are available when the API server is connected to Neo4j.
-
-### `GET /api/graph/stats`
-
-Get aggregate graph statistics.
-
-**Response:**
-
-```json
-{
-  "node_counts_by_label": {
-    "LogicalService": 15,
-    "Repository": 42,
-    "Team": 8,
-    "Person": 25
-  },
-  "edge_counts_by_type": {
-    "IMPLEMENTED_BY": 15,
-    "DEPENDS_ON": 30,
-    "MEMBER_OF": 25,
-    "OWNS": 15
-  },
-  "total_nodes": 200,
-  "total_edges": 350
-}
-```
-
----
-
-### `GET /api/graph/neighborhood/:id`
-
-Get the neighborhood subgraph around an entity.
-
-**Path Parameters:**
-
-| Parameter | Type   | Description                       |
-| --------- | ------ | --------------------------------- |
-| `id`      | string | Entity canonical ID (URL-encoded) |
-
-**Query Parameters:**
-
-| Parameter | Type    | Default | Description             |
-| --------- | ------- | ------- | ----------------------- |
-| `depth`   | integer | 1       | Traversal depth (max 5) |
-
-**Response:**
-
-```json
-{
-  "center": { "id": "shipit://logicalservice/default/config-service", "label": "LogicalService", "properties": {} },
-  "nodes": [...],
-  "edges": [...]
-}
-```
-
----
-
-### `GET /api/graph/search`
-
-Search entities in the graph.
-
-**Query Parameters:**
-
-| Parameter | Type    | Description              |
-| --------- | ------- | ------------------------ |
-| `label`   | string  | Filter by node label     |
-| `q`       | string  | Text search query        |
-| `tier`    | integer | Filter by tier           |
-| `owner`   | string  | Filter by owner          |
-| `limit`   | integer | Max results (default 25) |
-
-**Response:**
-
-```json
-{
-  "entities": [
-    {
-      "id": "shipit://logicalservice/default/config-service",
-      "label": "LogicalService",
-      "properties": { "name": "config-service", "tier": 1, "owner": "platform-team" }
-    }
-  ],
-  "total": 15,
-  "returned": 15
-}
-```
+Raw read-only Cypher through the shared guard ([ADR-036](adrs/ADR-036-raw-cypher-read-only-check-and-executor.md)), bounded by `backend.cypherQuery.{timeoutMs,rowLimit}`.
+
+| Method | Path         | Who                        | Request / response                                                                                                                                                                                                                                |
+| ------ | ------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/query` | admin or cap `graph:query` | `{ cypher, params? }` → `{ columns, rows, executionTimeMs, truncated, rowLimit, withheld }`; `400 WRITE_BLOCKED` (+ `keyword`) / `RESULT_TOO_LARGE` / `CYPHER_ERROR` / `VALIDATION_ERROR`; `429 QUERY_BUSY`; `504 QUERY_TIMEOUT`; `403 FORBIDDEN` |
+
+## Claims, conflicts and relations _(Neo4j)_
+
+Per-field claims, verification, the re-review queue and manual overrides ([ADR-029](adrs/ADR-029-per-field-confidence-and-verification.md)). Manual writes need cap `graph:write`, are switched off instance-wide by `accessControl.manualWrite.enabled: false` (`403 FEATURE_DISABLED`), and are limited per principal (60/min for people, 20/min for tokens). Reads are limited to 120/min, other writes to 30/min.
+
+| Method | Path                                        | Who               | What it does                                              | Request / response                                                                                                                                                                                                            |
+| ------ | ------------------------------------------- | ----------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/claims/:entityId`                     | any principal     | Every claim and the resolved winner per property          | `{ entityId, label, name, properties: ResolvedProperty[] }`; `404`                                                                                                                                                            |
+| GET    | `/api/claims/review-queue`                  | any principal     | Verified or manual values contradicted by a newer sync    | `limit?` → `[{ entityId, name, label, propertyKey, verifiedValue, verifiedBy, overrideSource, proposedValue, proposedSource }]`                                                                                               |
+| POST   | `/api/claims/review/resolve`                | any principal     | Accepts or rejects a queued re-review                     | `{ entityId, propertyKey, action: 'accept' \| 'reject' }`                                                                                                                                                                     |
+| POST   | `/api/claims/:entityId/:propertyKey/verify` | any principal     | Verifies a field value                                    | `{ value, evidence? }` → `{ ok: true }`                                                                                                                                                                                       |
+| POST   | `/api/claims/:entityId/:propertyKey/manual` | cap `graph:write` | Authors or replaces a `manual:<actor>` claim              | `{ value, evidence? }` → `{ property, claimsRev }`; `400 INVALID_VALUE_TYPE`; `404 ENTITY_NOT_FOUND`                                                                                                                          |
+| DELETE | `/api/claims/:entityId/:propertyKey/manual` | cap `graph:write` | Removes the caller's manual claim (`?actor=` admins only) | `{ property, claimsRev }`; `204` when nothing to remove                                                                                                                                                                       |
+| GET    | `/api/conflicts`                            | any principal     | Entities with active property conflicts                   | `label?`, `tier?`, `limit?` → `[{ entityId, name, label, tier, propertyKey, sources[], values[], claimCount }]`                                                                                                               |
+| POST   | `/api/relations`                            | cap `graph:write` | Adds a manual relationship                                | `{ from, to, type, properties? }` → `{ created, preexistingConnectorEdge? }`; `400 INVALID_RELATION_TYPE` / `SELF_LOOP` / `ENDPOINT_LABEL_MISMATCH`; `404 ENDPOINT_NOT_FOUND`; `409 CONNECTOR_EDGE` / `CARDINALITY_VIOLATION` |
+| DELETE | `/api/relations`                            | cap `graph:write` | Removes a manual relationship                             | `{ from, to, type }` → `{ deleted: true }`; `204` when nothing matched                                                                                                                                                        |
+
+## Teams — `/api/teams` _(Neo4j)_
+
+| Method | Path             | What it does                                | Response                                                                                            |
+| ------ | ---------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| GET    | `/api/teams`     | Teams with owned, member and on-call counts | `[{ id, name, slug, email, description, ownedCount, memberCount, onCallCount }]`                    |
+| GET    | `/api/teams/:id` | Team detail                                 | summary + `services[]`, `repositories[]`, `deployments[]`, `members[]`, `onCall[]`; `404 NOT_FOUND` |
+
+## Reconciliation — `/api/reconciliation` _(Neo4j)_
+
+Fuzzy-match candidates, merges and splits. Mutations need cap `graph:write` (30/min).
+
+| Method | Path                                          | What it does                 | Request / response                                                                                                                                                                                                                     |
+| ------ | --------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/reconciliation/candidates`              | Lists candidates             | `status?` (`pending` default, `confirmed`, `rejected`, `distinct`), `limit?` → `[{ id, status, leftId, leftName, leftSource, rightId, rightName, rightSource, label, confidence, scoreBreakdown, createdAt, reviewedAt, reviewedBy }]` |
+| GET    | `/api/reconciliation/candidates/:id`          | Side-by-side detail          | candidate + `leftProperties`, `rightProperties`                                                                                                                                                                                        |
+| POST   | `/api/reconciliation/candidates/:id/confirm`  | Merges the pair              | `{ id, sourceId, targetId, sourceName, targetName, actor, timestamp, method, confidence }`; `400 INVALID_STATE`                                                                                                                        |
+| POST   | `/api/reconciliation/candidates/:id/reject`   | Dismisses a candidate        | `{ ok: true }`                                                                                                                                                                                                                         |
+| POST   | `/api/reconciliation/candidates/:id/distinct` | Marks the pair distinct      | `{ ok: true }`                                                                                                                                                                                                                         |
+| POST   | `/api/reconciliation/scan`                    | Re-runs the fuzzy-match scan | `{ created }`                                                                                                                                                                                                                          |
+| POST   | `/api/reconciliation/reset-pending`           | Clears pending candidates    | `{ removed }`                                                                                                                                                                                                                          |
+| GET    | `/api/reconciliation/merges`                  | Recent merges                | `limit?` → merge summaries                                                                                                                                                                                                             |
+| POST   | `/api/reconciliation/merges/:id/split`        | Reverses a merge             | `{ ok: true }`; `404`                                                                                                                                                                                                                  |
+| GET    | `/api/reconciliation/stats`                   | Counts                       | `{ pending, recentMerges, lastScanAt }`                                                                                                                                                                                                |
+
+## Incident events — `/api/incident-events`
+
+A per-process ring buffer (1,000 entries) of incident-dashboard views; no Neo4j needed.
+
+| Method | Path                          | Request / response                                                                        |
+| ------ | ----------------------------- | ----------------------------------------------------------------------------------------- |
+| POST   | `/api/incident-events/view`   | `{ serviceId }` → `204`                                                                   |
+| GET    | `/api/incident-events/recent` | `limit?` (100, max 1000), `serviceId?` → `[{ timestamp, serviceId, requestId, referer }]` |
+
+## MCP metadata — `/api/mcp`
+
+| Method | Path            | Who    | Response                                                                                                                               |
+| ------ | --------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/mcp/info` | public | `{ authRequired, transport: 'http', tools: [{ name, description, docAnchor, params }] }` — the 8 tools of [mcp-tools.md](mcp-tools.md) |
+
+## Configuration export — `/api/config`
+
+| Method | Path                 | Who   | What it does                                                         | Response                                                                           |
+| ------ | -------------------- | ----- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| GET    | `/api/config/export` | admin | The merged configuration with placeholders kept and secrets scrubbed | `application/x-yaml` attachment `shipit.config.yaml`; `503 CONFIG_EXPORT_DISABLED` |
+
+## Portal settings — `/api/settings` _(admin)_
+
+| Method | Path                                         | What it does                                       | Request / response                                                                                                                              |
+| ------ | -------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/settings`                              | Settings snapshot                                  | `{ webhookUrl, webhooks: [{ connectorId, appId, org, secretConfigured, lastVerifiedDelivery }], oauth: { configured }, admins[], allowlist[] }` |
+| POST   | `/api/settings/webhooks/:connectorId/setup`  | Generates and persists a webhook secret            | `{ secret, webhookUrl, steps[] }`; `400 NO_RESOLVABLE_APP`                                                                                      |
+| POST   | `/api/settings/webhooks/:connectorId/rotate` | Same as `/setup`                                   |                                                                                                                                                 |
+| PUT    | `/api/settings/oauth`                        | Persists the sign-in OAuth App client              | `{ clientId, clientSecret }` → `{ ok: true }`                                                                                                   |
+| PUT    | `/api/settings/admins`                       | Replaces the admin list (caller must stay on it)   | `{ emails[] }` → `{ ok: true, admins }`; `422 SELF_LOCKOUT`                                                                                     |
+| PUT    | `/api/settings/allowlist`                    | Replaces the sign-in allow-list (empty = everyone) | `{ emails[] }` → `{ ok: true, emails }`                                                                                                         |
+
+## Feedback — `/api/feedback`
+
+The "Report a problem" widget ([ADR-031](adrs/ADR-031-feedback-widget-service-identity.md)).
+
+| Method | Path                   | Request / response                                                                                                                                                                      |
+| ------ | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/feedback/config` | `{ enabled }`                                                                                                                                                                           |
+| POST   | `/api/feedback`        | `{ type: 'bug' \| 'feature' \| 'question', title, description, context?, logs? }` → `{ issueUrl, issueNumber }`; `429 RATE_LIMITED`; `503 FEEDBACK_DISABLED`; `502 ISSUE_CREATE_FAILED` |
+
+## AI platform — `/api/ai`, `/api/agents`, `/api/runs`
+
+Agent definitions and runs ([ADR-034](adrs/ADR-034-agent-platform-v1-foundations.md)). Every route answers `503 AI_UNAVAILABLE` (with the failing `checks`) until Postgres, Redis and the model catalog are in place. Agents carry an integer `revision` as their `ETag`.
+
+An agent definition is `{ instructions, model, effort?, limits: { maxSteps, maxTokens, timeoutSeconds, dailyTokens }, grants: { services: { <service>: { read, write, delete } }, tools: { '<service>.<tool>': 'off' | 'allow' | 'ask' } }, output: { schema | null } }`; limits may not exceed `ai.limits`, and a saver may only grant what they hold (`403 GRANT_EXCEEDS_CAPABILITY`).
+
+| Method | Path                       | Who                                | What it does                                                                                                | Request / response                                                                                                                                                                   |
+| ------ | -------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/ai/status`           | any principal                      | Prerequisite checks                                                                                         | `{ available, definitionsAvailable, checks: [{ name: 'enabled' \| 'database' \| 'schema' \| 'models' \| 'runner', ok, detail }] }`                                                   |
+| GET    | `/api/ai/models`           | cap `agents:read`                  | The model catalog                                                                                           | `{ defaultModel, models: [{ key, label, family, contextWindow, tools }] }`                                                                                                           |
+| GET    | `/api/agents`              | cap `agents:read`                  | Lists agents                                                                                                | `includeArchived?`, `limit?`, `offset?` → `{ items: AgentRecord[], total }`                                                                                                          |
+| POST   | `/api/agents`              | cap `agents:write`                 | Creates a draft agent                                                                                       | `{ slug, name, description?, ownerTeamId?, definition }` → `201` + `ETag`; `400 VALIDATION_ERROR` + `issues[]`; `409 SLUG_TAKEN`                                                     |
+| GET    | `/api/agents/:id`          | cap `agents:read`                  | One agent                                                                                                   | `AgentRecord` + `ETag`                                                                                                                                                               |
+| PUT    | `/api/agents/:id`          | cap `agents:write`                 | Updates the draft                                                                                           | `If-Match`; any of `name`, `description`, `ownerTeamId`, `enabled`, `definition`; `409 VERSION_CONFLICT` + `serverRevision` / `BUILTIN_PROTECTED`                                    |
+| POST   | `/api/agents/:id/publish`  | cap `agents:write`                 | Freezes the draft as the next version                                                                       | `If-Match`; `{ note? }` → `{ agent, version }`                                                                                                                                       |
+| DELETE | `/api/agents/:id`          | cap `agents:write`                 | Archives the agent                                                                                          | `If-Match` → `204`                                                                                                                                                                   |
+| GET    | `/api/agents/:id/versions` | cap `agents:read`                  | Published versions                                                                                          | `{ items: [{ agentId, version, definition, note, createdBy, createdAt }] }`                                                                                                          |
+| POST   | `/api/agents/:id/runs`     | cap `agents:run`                   | Creates and queues a run                                                                                    | `{ input: string \| object, mode?: 'task' \| 'chat', draft? }` → `201 RunRecord` + `Location`; `409 AGENT_DISABLED` / `NOT_PUBLISHED` / `MODEL_UNAVAILABLE`; `503 QUEUE_UNAVAILABLE` |
+| GET    | `/api/runs`                | cap `agents:read`                  | Lists runs                                                                                                  | `agentId?`, `status?`, `limit?`, `offset?` → `{ items: RunRecord[], total }`                                                                                                         |
+| GET    | `/api/runs/:id`            | cap `agents:read`                  | One run                                                                                                     | `RunRecord`; content is hidden (`contentHidden: true`) from everyone but the starter, the agent's author and holders of `runs:read_transcript`                                       |
+| GET    | `/api/runs/:id/messages`   | cap `agents:read`                  | Transcript and tool calls                                                                                   | `afterSeq?` → `{ messages: [{ runId, seq, role, content, createdAt }], toolCalls[] }`                                                                                                |
+| GET    | `/api/runs/:id/stream`     | cap `agents:read`                  | Server-sent events: `run`, `message`, `end`; `: ping` every 15 s; resume with `Last-Event-ID` or `afterSeq` | `text/event-stream`                                                                                                                                                                  |
+| POST   | `/api/runs/:id/messages`   | cap `agents:run`; starter or admin | Adds a user message to a waiting run                                                                        | `{ text }` → `202 RunRecord`; `409 RUN_NOT_WAITING`                                                                                                                                  |
+| POST   | `/api/runs/:id/cancel`     | cap `agents:run`; starter or admin | Requests cancellation                                                                                       | the updated run                                                                                                                                                                      |
+
+A run record is `{ id, agentId, agentVersion, definition, parentRunId, rootRunId, depth, triggerKind, triggeredBy, mode, writePolicy, status, input, output, error, inputTokens, outputTokens, steps, cancelRequested, warnings[], createdAt, startedAt, finishedAt, updatedAt }` with status `queued | running | waiting_approval | waiting_input | succeeded | failed | cancelled`.
+
+## Knowledge — `/api/knowledge`
+
+| Method | Path                    | Response                                                                                                                                                    |
+| ------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/knowledge/status` | `{ available, ingestionAvailable, checks: [{ name: 'enabled' \| 'database' \| 'schema' \| 'extension' \| 'embedding' \| 'worker', ok, detail }], counts? }` |
+
+## Webhooks — `/api/webhooks`
+
+| Method | Path                   | Who                        | What it does                                                                                                                                                                                                            | Response                                                                                                                                                                                                |
+| ------ | ---------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/webhooks/github` | public, signature-verified | Verifies `X-Hub-Signature-256` against the matching connector's App secret, de-duplicates by delivery id, queues a coalesced refetch for `push` and `workflow_run` ([ADR-030](adrs/ADR-030-github-webhook-receiver.md)) | `202 { ok: true, kind: 'repo' \| 'workflows' }`; `200` for `ping`; `202` with `ignored` for other events; `401 BAD_SIGNATURE` / `INSTALLATION_MISMATCH`; `400 MISSING_WEBHOOK_HEADERS` / `INVALID_JSON` |
+
+Body limit 2 MB; 1,000 requests/minute per IP; unknown installations get an opaque `202`.
 
 ## Configuration
 
-| Environment Variable       | Default                  | Description                 |
-| -------------------------- | ------------------------ | --------------------------- |
-| `API_SERVER_PORT` / `PORT` | `3001`                   | Server port                 |
-| `NEO4J_URI`                | `bolt://localhost:7687`  | Neo4j connection URI        |
-| `NEO4J_USER`               | `neo4j`                  | Neo4j username              |
-| `NEO4J_PASSWORD`           | —                        | Neo4j password              |
-| `REDIS_URL`                | `redis://localhost:6379` | Redis connection URL        |
-| `SCHEMA_PATH`              | `./shipit-schema.yaml`   | Path to default schema file |
+The API server reads `shipit.config.yaml` and `shipit.config.local.yaml` like every other service; see [deployment.md](deployment.md#configuration-contract) for the placeholders and process-level variables. The settings it uses most: `backend.api.port` (3001), `backend.api.trustProxy`, `backend.schema.path`, `backend.cypherQuery.{timeoutMs,rowLimit}`, `backend.reconciliation.threshold`, `accessControl.*`, `ai.*`, `knowledge.*`.
