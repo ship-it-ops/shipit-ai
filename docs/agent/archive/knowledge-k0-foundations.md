@@ -1,8 +1,8 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-10-03
-updated: 2026-10-05
+updated: 2026-10-06
 author: claude-session-2026-10-01-knowledge-connectors
 branch: ai-agents-design
 agent: claude-session-2026-10-01-knowledge-connectors
@@ -11,6 +11,10 @@ importance: core
 ---
 
 # Knowledge layer on `ai-agents-design`: K0 and K1a are in pull request #119, reviewed and fixed, waiting for the owner to merge; K1b plan next
+
+**Completed 2026-10-06:** pull request #119 merged into `main` as `d966fa2`. The K1b plan is
+the next knowledge item and gets its own status entry when it starts. Archived by the docs
+refresh session.
 
 The branch is up as [#119](https://github.com/ship-it-ops/shipit-ai/pull/119). A review of the
 whole pull request and fresh reviews of each batch of its fixes are done and their findings

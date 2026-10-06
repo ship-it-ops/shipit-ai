@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-05 | Total notes: 103
+Last updated: 2026-10-06 | Total notes: 103
 
 ## Investigations
 
@@ -32,9 +32,8 @@ Last updated: 2026-10-05 | Total notes: 103
 
 <!-- always-read at session start -->
 
-- [knowledge-k0-foundations](status/knowledge-k0-foundations.md) | status | active | core | 2026-10-05 | knowledge K0 + K1a in PR #119, reviewed and fixed, waiting for the owner's merge; K1b plan next
-- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend on ai-agents-design, ready to PR; next session executes the agents UI plan on a new branch
-- [harden-raw-cypher](status/harden-raw-cypher.md) | status | active | core | 2026-10-05 | raw Cypher: one read-only check + one executor for the Query Playground and graph_query
+- [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
+- [docs-refresh-2026-10](status/docs-refresh-2026-10.md) | status | active | standard | 2026-10-06 | docs refresh on docs-refresh-2026-10: README, every docs/*.md, plugin README, ADR-018..036, SECURITY.md; awaiting PR
 
 ## Decisions
 
@@ -83,7 +82,7 @@ Last updated: 2026-10-05 | Total notes: 103
 
 ## Plans
 
-- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-05 | knowledge connectors: K0 + K1a in PR #119, review findings fixed; live embedding waits on credentials
+- [knowledge-connectors](plans/knowledge-connectors.md) | plan | active | core | 2026-10-05 | knowledge connectors: K0 + K1a merged in #119 (d966fa2); K1b plan next; live embedding waits on credentials
 - [ai-agents-and-workflows](plans/ai-agents-and-workflows.md) | plan | active | core | 2026-10-04 | AI nav + agent builder; M0 nav and M1 backend (foundation, runner) implemented; M1 UI plan written, not executed
 - [kubernetes-connector-v1-followups](plans/kubernetes-connector-v1-followups.md) | plan | active | standard | 2026-09-28 | 9/11 K8s v1 review items shipped in #115; M4 + markAbsent index scale-gated
 - [integration-tests-wave-cd-handoff](plans/integration-tests-wave-cd-handoff.md) | plan | completed | core | 2026-06-20 | COMPLETE: #5/#3/#9/#8 + both unit follow-ups done; harness recipe + per-item record retained
@@ -115,6 +114,7 @@ Last updated: 2026-10-05 | Total notes: 103
 - [redis-dataset-unbounded-growth](open-questions/redis-dataset-unbounded-growth.md) | open-question | answered | standard | 2026-06-22 | CORRECTED — dominant key is shipit-event-log stream (~825MB), not BullMQ; #75 freed ~nothing; cut the stream
 
 - [neo4j-no-indexes-declared](open-questions/neo4j-no-indexes-declared.md) | open-question | active | standard | 2026-06-23 | PARKED as future backlog — not starting indexes yet; revisit when graph outgrows demo scale (PR #87 IN7)
+- [docs-refresh-2026-10-findings](open-questions/docs-refresh-2026-10-findings.md) | open-question | active | standard | 2026-10-06 | docs audit gaps for the owner: members can't mint mcp:invoke; /api/schema not role-gated; simple mode unimplemented; compose env; plugin header
 
 ## Scars
 

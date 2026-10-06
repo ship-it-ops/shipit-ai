@@ -1,8 +1,8 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-10-06
 author: claude-session-2026-10-05-raw-cypher-hardening
 branch: harden-raw-cypher
 agent: claude-session-2026-10-05-raw-cypher-hardening
@@ -11,6 +11,9 @@ importance: core
 ---
 
 # Raw Cypher: one read-only check and one executor for the Query Playground and `graph_query`
+
+**Completed 2026-10-06:** pull request #132 merged into `main` as `00a3d42`. Archived by the
+docs refresh session.
 
 A small branch from `main` (`d966fa2`), separate from the knowledge work on `knowledge-k1b`.
 Two surfaces run Cypher that a caller wrote: the Query Playground (`POST /api/query`) and the

@@ -93,6 +93,11 @@ services:
       REDIS_URL: redis://redis:6379
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
       DATABASE_URL: postgres://shipit:${POSTGRES_PASSWORD:-shipit-dev}@postgres:5432/shipit
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them. The URLs are what a browser on the host uses.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://localhost:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
     depends_on:
       neo4j:
         condition: service_healthy
@@ -111,6 +116,11 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       REDIS_URL: redis://redis:6379
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      # The config file has no fallback for these three; the loader refuses to
+      # start without them, though the writer serves no HTTP.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
     depends_on:
       neo4j:
         condition: service_healthy
@@ -199,6 +209,12 @@ services:
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-shipit-dev}
+      # The config file has no fallback for these four; the loader refuses to
+      # start without them, though the MCP server uses only the Neo4j values.
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      REDIS_URL: redis://redis:6379
+      SHIPIT_API_URL: http://api-server:3001
+      SHIPIT_WEB_ORIGIN: http://localhost:3000
       MCP_TRANSPORT: http
       MCP_HTTP_PORT: '3002'
     ports:

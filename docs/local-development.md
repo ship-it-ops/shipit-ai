@@ -59,9 +59,12 @@ What each step does:
   workspace protocol. Husky's pre-commit hook is also wired up here.
 - **`pnpm turbo build`** — builds every package in dependency order
   (shared → connector-sdk → connectors, event-bus, etc.).
-- **`pnpm start:all`** — starts Neo4j + Redis in Docker, seeds demo data
-  if the graph is empty, then runs every dev server (`api-server`,
-  `core-writer`, `mcp-server`, `web-ui`) in parallel via `turbo dev`.
+- **`pnpm start:all`** — starts Neo4j, Redis and Postgres in Docker, waits
+  for them, creates the pgvector extension and applies `db/migrations/`,
+  prints a hint if the graph is empty (seeding itself is offered by the web
+  UI's onboarding modal, or `pnpm seed`), then runs every dev server
+  (`api-server`, `core-writer`, `mcp-server`, `agent-runner`,
+  `knowledge-worker`, `web-ui`) in parallel via `turbo dev`.
 
 Then open <http://localhost:3000>.
 
@@ -69,9 +72,12 @@ Then open <http://localhost:3000>.
 
 A dev-mode onboarding modal appears the first time you load the UI. It
 collects your name/email/team and writes them to `shipit.config.local.yaml`
-under `frontend.devUser`. This is a stand-in until real auth ships
-(`backend.mcp.apiKeySecret` is the only real auth surface today). The
-wizard is dev-only — production builds skip it entirely. See
+under `frontend.devUser`. That identity is the **dev-fallback principal**:
+with `accessControl.auth.enabled: false` (the local default) the api-server
+admits every request as this user, with the capabilities listed under
+`frontend.devUser.capabilities`. Production runs with sign-in on
+([ADR-027](./adrs/ADR-027-login-and-access-model.md)) and ignores `devUser`;
+the wizard is dev-only and production builds skip it entirely. See
 [`ADR-015`](./adrs/ADR-015-first-run-dev-onboarding.md) for the design.
 
 ---
@@ -81,20 +87,26 @@ wizard is dev-only — production builds skip it entirely. See
 ```
 ShipIt-AI/
 ├── packages/
-│   ├── shared/              # Types, Zod schemas, identity utils, canonical model
+│   ├── shared/              # Types, Zod schemas, config loader, identity utils, canonical model
 │   ├── event-bus/           # BullMQ/Redis client (producer + consumer)
-│   ├── core-writer/         # Sole Neo4j writer — claim resolution, identity matching
-│   ├── connector-sdk/       # ShipItConnector interface, harness, sync state
+│   ├── core-writer/         # Writer of connector data to Neo4j — claim resolution, identity matching
+│   ├── connector-sdk/       # ShipItConnector interface, harness, sync state, knowledge contract
 │   ├── connectors/
-│   │   ├── github/          # GitHub App connector
-│   │   └── kubernetes/      # Stub (planned)
-│   ├── api-server/          # Fastify REST API — /api/*
-│   ├── mcp-server/          # MCP server (stdio) — 8 tools for AI agents
+│   │   ├── github/          # GitHub App connector (+ webhooks, text facet)
+│   │   └── kubernetes/      # Kubernetes connector (polling, three access modes)
+│   ├── api-server/          # Fastify REST API — /api/*, sync schedulers, webhook receiver
+│   ├── mcp-server/          # MCP server (HTTP :3002 or stdio) — 8 tools for AI agents
+│   ├── agents/              # Agent + run stores, Postgres migrations CLI
+│   ├── agent-runner/        # Works agent runs on Vertex AI with the graph tools
+│   ├── knowledge/           # Knowledge documents, chunks, embeddings (pgvector)
+│   ├── knowledge-worker/    # Chunks and embeds pending documents
 │   └── web-ui/              # Next.js 16 dashboard (App Router + React Query)
-├── docker/                  # Docker Compose, Dockerfiles, Neo4j init
+├── db/migrations/           # Forward-only SQL applied by `pnpm db:migrate`
+├── docker/                  # Docker Compose, Neo4j + Postgres init
+├── plugin/                  # Claude Code plugin (MCP registration + skills)
 ├── scripts/                 # preflight, infra, seed, dev helpers
 ├── config/                  # shipit-schema.yaml (graph schema)
-├── docs/                    # User docs + ADRs + plans
+├── docs/                    # User docs + ADRs + specs + docs/agent
 ├── shipit.config.yaml       # Committed base config
 └── shipit.config.local.yaml # Per-developer overrides (gitignored)
 ```
@@ -125,8 +137,13 @@ design.
 
 ```yaml
 backend: # Services ShipIt runs: Neo4j, Redis, API, MCP, schema, etc.
-frontend: # Next.js client: api URL, devUser, integration links
+secrets: # Registry of every logical secret: container name, env var, writable?
 connectors: # External integrations (GitHub App identity + connector instances)
+feedback: # The in-app "Report a problem" widget
+ai: # Agent platform: Postgres URL, Vertex project, model catalog, limits
+knowledge: # Knowledge layer: enabled switch, embedding model, sync + worker knobs
+frontend: # Next.js client: api URL, devUser, integration links
+accessControl: # Sign-in providers, admins, allow-list, sessions, CORS origins
 ```
 
 `connectors:` is split into:
@@ -168,7 +185,7 @@ concurrently, the loser sees a 409 and a "reload and rebase" dialog.
 | `pnpm start:infra`    | Docker: Neo4j + Redis + Postgres (pgvector), bootstraps pgvector, migrates                    |
 | `pnpm start:backend`  | Infra + `api-server` + `core-writer` + `agent-runner` (seeds demo data if the graph is empty) |
 | `pnpm start:frontend` | Web UI dev server only                                                                        |
-| `pnpm start:mcp`      | MCP server only (stdio)                                                                       |
+| `pnpm start:mcp`      | MCP server only (HTTP on `:3002`; set `MCP_TRANSPORT=stdio` for a spawned server)             |
 | `pnpm start:all`      | Everything in parallel                                                                        |
 | `pnpm stop`           | Bring all docker-compose services down                                                        |
 | `pnpm stop:clean`     | Down + delete volumes (wipes Neo4j, Redis and Postgres data)                                  |
@@ -336,8 +353,9 @@ MCP clients (the tool metadata marks it `agents: false`). The runner needs:
   `ai.models` enabled, and given quota, in that project.
 - **A local dev user that may run agents.** With auth off, the dev user's
   capabilities come from `frontend.devUser.capabilities` in
-  `shipit.config.local.yaml`; use `'*'`. (`admin` is not a capability name,
-  so it grants nothing.)
+  `shipit.config.local.yaml`; use `'*'`. The example file preflight copies
+  does not include it (`admin` is not a capability name, so it grants
+  nothing), so a fresh checkout cannot run agents until you edit that list.
 
 `pnpm start:backend` starts the runner with the rest of the backend. In the
 Docker stack it is behind a profile, because it needs your gcloud credentials:
@@ -415,8 +433,12 @@ We use **Vitest** across every package. Tests live alongside source in
 ### Conventions
 
 - **Unit tests** are the default. Most coverage lives here.
-- **Integration tests** that need Neo4j/Redis use docker-compose-managed
-  services. Skipped automatically when those aren't reachable.
+- **Integration tests** that need Neo4j, Redis or Postgres are gated by
+  environment variables (`NEO4J_TEST_URI`, `REDIS_TEST_URL`,
+  `DATABASE_TEST_URL`; `describe.skipIf`) and run by each package's
+  `test:integration` script. Several of them **wipe the graph they are
+  pointed at** (`MATCH (n) DETACH DELETE n`), so never aim them at the
+  dev database — use a scratch Neo4j on another port.
 - **No e2e browser tests** yet — the web UI tests use Vitest + React
   Testing Library against a mocked API client.
 
@@ -537,7 +559,7 @@ Full walkthrough for both paths:
 
 To use a **separate App per org** (e.g. dev-app for dev orgs, prod-app for
 prod orgs), expand the "Use a separate GitHub App for this org" panel in
-step 1 of the wizard. See [github-setup.md §6b](./connectors/github-setup.md#6b-per-org-github-apps-optional).
+step 1 of the wizard. See [github-setup.md §6b](./connectors/github-setup.md#6b-per-org-github-apps-the-default).
 
 Trigger an immediate sync via the UI ("Sync now" in the connector
 detail drawer) or by API:
@@ -558,11 +580,20 @@ through a tunnel. We recommend **[smee.io](https://smee.io)** — free, no
 account, no auth token. ngrok and Cloudflare Tunnel are valid alternatives
 for teams that need authentication on the tunnel itself.
 
-> **Status:** the webhook receiver lands in P1; until then, deliveries
-> arrive at the smee channel and pass through to the API server, which
-> currently 404s on `/api/webhooks/github`. You can still set up the
-> tunnel now so the wiring is ready when the receiver ships — and so the
-> GitHub App's webhook URL doesn't need to change later.
+The receiver is `POST /api/webhooks/github` ([ADR-030](./adrs/ADR-030-github-webhook-receiver.md)).
+It verifies every delivery's `X-Hub-Signature-256` (HMAC-SHA256 over the
+raw body) against the App's webhook secret — a per-org App's secret from
+`<key dir>/github-app-<appId>.webhook-secret`, the shared App's from the
+secrets accessor — answers `401` on a bad signature and `202` on a good
+one, and queues a **coalesced refetch**: a `push` refetches the repository,
+a `workflow_run` its workflows; `ping` is acknowledged; other events are
+accepted and ignored. Polling on the connector's `schedule` stays the
+backstop.
+
+An App created through the Connector Hub's manifest flow already has the
+webhook URL (`GITHUB_WEBHOOK_PUBLIC_URL`, or `connectors.github.app.webhookPublicUrl`
+in your local config) and a generated secret. The steps below are for
+pointing that App at your machine.
 
 ### Setup with smee.io (recommended)
 
@@ -597,24 +628,30 @@ In GitHub → App settings → **Webhook**:
 - **Active**: ✅
 - **Webhook URL**: `https://smee.io/abc123XYZ` (the same one you started
   the client on)
-- **Webhook secret**: generate one with `openssl rand -hex 32` and paste
-  it. Save the same value into your shell as `GITHUB_WEBHOOK_SECRET`
-  before restarting the API server (see step 4).
+- **Webhook secret**: the one the manifest flow generated (shown on the
+  success page, stored beside the App's key), or a new one from
+  `openssl rand -hex 32` — in which case give the API server the same
+  value in step 4.
 - **SSL verification**: Enabled
 
-Then check the **Subscribe to events** boxes the receiver will care
-about in P1: `push`, `pull_request`, `workflow_run`, `deployment`,
-`deployment_status`, `member`, `membership`, `team`, `team_add`,
-`repository`. (Subscribing now is harmless — deliveries just get
-buffered into smee.)
+The events the manifest subscribes to are `push`, `pull_request`,
+`issues`, `issue_comment`, `workflow_run`, `deployment`,
+`deployment_status`, `member`, `membership`, `team`, `team_add` and
+`repository`; today the receiver acts on `push` and `workflow_run` and
+accepts the rest.
 
-#### Step 4 — Set the webhook secret env var
+#### Step 4 — Make sure the API server knows the secret
+
+For the shared (global) App, either set it from the UI — **Admin →
+Settings → Webhooks** generates or rotates it with no restart — or export
+it before starting the API server:
 
 ```bash
 export GITHUB_WEBHOOK_SECRET=<the-secret-you-pasted-into-github>
 ```
 
-Restart `pnpm start:backend` so the API server picks it up.
+A per-org App reads its own secret file next to its private key, so
+nothing to export.
 
 #### Step 5 — Verify deliveries
 
@@ -629,10 +666,9 @@ Then check three places, in order:
 3. **smee-client terminal**: prints each forwarded delivery and the
    HTTP status from your API server.
 
-Until the P1 receiver lands you'll see `404` from the API server. That's
-fine — it confirms GitHub → smee → your machine works end-to-end. Once
-the receiver is in place, the same setup keeps working without any
-changes.
+A `202` from the API server means the signature verified and a refetch
+was queued; the connector's **Runs** tab shows it a moment later. A `401`
+means the secret GitHub signed with is not the one the API server holds.
 
 ### Setup with ngrok (alternative)
 
@@ -659,15 +695,16 @@ Trade-offs vs smee:
   paid plan with a reserved domain) — you'll keep re-pasting it into the
   App settings.
 
-### Webhook signature verification (P1)
+### Webhook signature verification
 
-When the receiver lands, it'll verify each delivery's HMAC signature with
-`crypto.timingSafeEqual` against the raw request body using the
-`GITHUB_WEBHOOK_SECRET` env var. **Both smee and ngrok preserve the
-`X-Hub-Signature-256` header verbatim**, so signature verification works
-identically over either tunnel. If you see signature failures, the most
-common cause is the secret in GitHub not matching the env var (e.g. you
-regenerated it on one side without updating the other).
+The receiver verifies each delivery's HMAC signature with a constant-time
+compare against the raw request body (`packages/shared/src/auth/github-webhook.ts`).
+**Both smee and ngrok preserve the `X-Hub-Signature-256` header verbatim**,
+so verification works identically over either tunnel. If you see `401`s,
+the most common cause is the secret in GitHub not matching the one the API
+server holds (e.g. you regenerated it on one side without updating the
+other) — rotate it from **Admin → Settings → Webhooks** and paste the new
+value into GitHub.
 
 ### Common webhook gotchas
 
@@ -675,7 +712,7 @@ regenerated it on one side without updating the other).
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | GitHub shows red ✗ on deliveries               | Smee or ngrok URL doesn't match the App's webhook URL — re-paste.                                           |
 | smee-client says "ECONNREFUSED localhost:3001" | `api-server` isn't running. Start it with `pnpm start:backend`.                                             |
-| 401 on `/api/webhooks/github` after P1 ships   | `GITHUB_WEBHOOK_SECRET` env var differs from the App's webhook secret.                                      |
+| 401 on `/api/webhooks/github`                  | The secret the API server holds differs from the App's webhook secret — rotate from Admin → Settings.       |
 | Smee disconnect after long idle                | Re-run `npx smee-client …`. The smee server occasionally cycles channels.                                   |
 | ngrok URL stale after restart                  | Free tier rotates the URL on each restart. Update the GitHub App settings, or pay for a reserved domain.    |
 | Receiver complains "installation id not found" | The delivery's `installation.id` doesn't match any connector. Add the org via the wizard or check the YAML. |
@@ -700,28 +737,34 @@ See [schema-guide.md](./schema-guide.md) for the schema's structure and
 
 ## 12. MCP server
 
-The MCP server exposes 8 tools to AI agents. To connect Claude Desktop /
-Claude Code to your local graph, add to your MCP config (e.g.
-`~/Library/Application Support/Claude/claude_desktop_config.json`):
+The MCP server exposes 8 tools to AI agents. `pnpm start:all` runs it over
+Streamable HTTP on `http://localhost:3002/mcp`, but that transport requires
+a personal access token on every request, and tokens can only be minted
+when sign-in is on — so with the local default (sign-in off) connect a
+client over **stdio** instead. Add to your MCP config (Claude Code's
+`.mcp.json`, or `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "shipit-ai": {
       "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
-      "cwd": "/absolute/path/to/ShipIt-AI",
+      "args": ["/absolute/path/to/ShipIt-AI/packages/mcp-server/dist/index.js"],
       "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "shipit-dev"
+        "MCP_TRANSPORT": "stdio",
+        "SHIPIT_CONFIG": "/absolute/path/to/ShipIt-AI/shipit.config.yaml"
       }
     }
   }
 }
 ```
 
-Restart Claude after editing. See [mcp-tools.md](./mcp-tools.md) for the
+The server reads Neo4j settings from `shipit.config.yaml` and your
+`shipit.config.local.yaml`; `SHIPIT_CONFIG` is needed because Claude Code
+ignores `cwd`. Restart the client after editing. To exercise the HTTP path
+locally, turn sign-in on in `shipit.config.local.yaml`, mint a token under
+Settings → API Keys, and use the [Claude Code plugin](../plugin/README.md)
+with `SHIPIT_MCP_TOKEN` set. See [mcp-tools.md](./mcp-tools.md) for the
 full tool reference.
 
 ---
@@ -752,26 +795,31 @@ pnpm format:check   # CI-friendly check, no writes
 
 ### CI parity
 
-CI runs `pnpm turbo build`, `pnpm turbo typecheck`, `pnpm turbo test`,
-and `pnpm exec secretlint --secretlintrc .secretlintrc.json "**/*"`. If
-those four pass locally, the PR should be green.
+CI (`.github/workflows/ci.yml`) runs seven jobs: `lint` (`pnpm format:check`,
+`pnpm turbo lint`, secretlint), `typecheck`, `test` (`pnpm turbo test
+--force`), `integration` (the env-gated suites against Neo4j + APOC, Redis
+and a pgvector Postgres), `build`, `docker` (builds the backend images
+without pushing) and `claude-review` (an automated review that posts on
+non-draft pull requests). If `pnpm format:check`, `pnpm turbo lint`,
+`pnpm turbo typecheck`, `pnpm turbo test --force` and `pnpm turbo build`
+pass locally, the PR should be green.
 
 ---
 
 ## 14. Troubleshooting
 
-| Symptom                                                           | Likely cause / fix                                                                                                                         |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Config validation failed` on `pnpm start:*`                      | A required env var isn't set, or `.local.yaml` has a shape mismatch. Error message points at the failing path.                             |
-| `Cannot find module '@shipit-ai/...'`                             | Build cache mismatch. Run `pnpm install && pnpm turbo build`.                                                                              |
-| Connector card stuck on `not_connected`                           | Initial sync hasn't finished — check the Runs tab in the connector drawer for the latest run's error.                                      |
-| `SyncScheduler init failed: ...` at API server boot               | Either Redis isn't reachable, or the GitHub App private key file at `$GITHUB_APP_PRIVATE_KEY_PATH` is missing.                             |
-| Neo4j browser login fails                                         | Default password is `shipit-dev`. Override via the `NEO4J_PASSWORD` env var if you've changed it.                                          |
-| `pnpm preflight` doesn't pick up a new env var                    | Preflight only checks tool versions and bootstraps `.local.yaml`. Env-var changes are picked up by the next process start.                 |
-| Onboarding wizard keeps reappearing                               | The wizard only re-opens when `devUser` matches the example verbatim and `localStorage` is clean. Set a real name.                         |
-| Webhook deliveries show 200 OK in GitHub but graph doesn't update | The P1 receiver isn't in main yet — polling is what fills the graph today. Confirm by running "Sync now".                                  |
-| Schema editor shows 409 Conflict on save                          | Another writer (or another tab) saved between your read and your write. Reload the page to rebase.                                         |
-| `secretlint` blocks a commit and you're sure it's safe            | It's almost certainly not safe. Read the masked output carefully. Only override with `--no-verify` if you have a documented reason (rare). |
+| Symptom                                                           | Likely cause / fix                                                                                                                                                                                              |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Config validation failed` on `pnpm start:*`                      | A required env var isn't set, or `.local.yaml` has a shape mismatch. Error message points at the failing path.                                                                                                  |
+| `Cannot find module '@shipit-ai/...'`                             | Build cache mismatch. Run `pnpm install && pnpm turbo build`.                                                                                                                                                   |
+| Connector card stuck on `not_connected`                           | Initial sync hasn't finished — check the Runs tab in the connector drawer for the latest run's error.                                                                                                           |
+| `SyncScheduler init failed: ...` at API server boot               | Either Redis isn't reachable, or the GitHub App private key file at `$GITHUB_APP_PRIVATE_KEY_PATH` is missing.                                                                                                  |
+| Neo4j browser login fails                                         | Default password is `shipit-dev`. Override via the `NEO4J_PASSWORD` env var if you've changed it.                                                                                                               |
+| `pnpm preflight` doesn't pick up a new env var                    | Preflight only checks tool versions and bootstraps `.local.yaml`. Env-var changes are picked up by the next process start.                                                                                      |
+| Onboarding wizard keeps reappearing                               | The wizard only re-opens when `devUser` matches the example verbatim and `localStorage` is clean. Set a real name.                                                                                              |
+| Webhook deliveries show 200 OK in GitHub but graph doesn't update | 200 from smee only means the relay accepted it. Check the api-server log for the delivery: a `401` is a secret mismatch, a `202` means the refetch was queued — give it a moment, then confirm with "Sync now". |
+| Schema editor shows 409 Conflict on save                          | Another writer (or another tab) saved between your read and your write. Reload the page to rebase.                                                                                                              |
+| `secretlint` blocks a commit and you're sure it's safe            | It's almost certainly not safe. Read the masked output carefully. Only override with `--no-verify` if you have a documented reason (rare).                                                                      |
 
 ---
 
