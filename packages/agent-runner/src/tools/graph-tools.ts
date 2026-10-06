@@ -13,7 +13,7 @@ import type { RunnerTool } from './runner-tool.js';
 /**
  * The graph tools a model may be offered: those the MCP metadata marks
  * `agents: true`. graph_query is not among them (it runs a caller-written
- * string as Cypher; the metadata says what has to change first).
+ * string as Cypher; the metadata says why that is the owner's call).
  */
 export function graphTools(neo4j: Neo4jClient, config: GraphToolConfig): RunnerTool[] {
   return graphReadTools(neo4j, config)

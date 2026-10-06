@@ -795,10 +795,18 @@ export interface CypherQueryResult {
   executionTimeMs: number;
   truncated: boolean;
   rowLimit: number;
+  /** How many values came back as null because they were internal nodes. */
+  withheld?: number;
 }
 
 export interface CypherApiError {
-  code: 'WRITE_BLOCKED' | 'QUERY_TIMEOUT' | 'VALIDATION_ERROR' | 'CYPHER_ERROR';
+  code:
+    | 'WRITE_BLOCKED'
+    | 'QUERY_TIMEOUT'
+    | 'QUERY_BUSY'
+    | 'RESULT_TOO_LARGE'
+    | 'VALIDATION_ERROR'
+    | 'CYPHER_ERROR';
   message: string;
   keyword?: string;
 }

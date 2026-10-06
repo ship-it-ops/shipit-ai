@@ -5,12 +5,19 @@ import { graphTools, toRunnerTool } from '../tools/graph-tools.js';
 // A Neo4j stand-in: every query returns no rows, and calls are recorded.
 function emptyGraph() {
   const runCypher = vi.fn(async () => ({ records: [], summary: { resultAvailableAfter: 0 } }));
-  return { runCypher, close: vi.fn(async () => {}) } as unknown as Neo4jClient & {
+  const runReadOnlyQuery = vi.fn(async () => ({
+    columns: [] as string[],
+    rows: [] as Array<Record<string, unknown>>,
+    truncated: false,
+    withheld: 0,
+  }));
+  return { runCypher, runReadOnlyQuery, close: vi.fn(async () => {}) } as unknown as Neo4jClient & {
     runCypher: typeof runCypher;
+    runReadOnlyQuery: typeof runReadOnlyQuery;
   };
 }
 
-const LIMITS = { rateLimits: { rowLimit: 100, hopLimit: 6 } };
+const LIMITS = { rateLimits: { rowLimit: 100, hopLimit: 6, queryTimeoutMs: 10_000 } };
 
 describe('graphTools', () => {
   it('describes the graph tools an agent may be offered as built-in graph reads', () => {
@@ -36,9 +43,9 @@ describe('graphTools', () => {
     }
   });
 
-  // graph_query runs a caller-written string as Cypher. A model is steered by
-  // the text it reads, and the tool's guard lets through clauses that fetch a
-  // URL, so the runner never hands it over (mcp-server metadata: agents: false).
+  // graph_query runs a caller-written string as Cypher, and a model is steered
+  // by the text it reads, so the runner never hands it over (mcp-server
+  // metadata: agents: false).
   it('does not offer raw Cypher to a model', () => {
     const ids = graphTools(emptyGraph(), LIMITS).map((t) => t.descriptor.id);
     expect(ids).not.toContain('graph.graph_query');
@@ -103,18 +110,19 @@ describe('graphTools', () => {
   });
 
   it('keeps a truncation warning, so the model knows rows are missing', async () => {
-    const row = { get: () => 1, toObject: () => ({ n: 1 }) };
     const graph = emptyGraph();
-    graph.runCypher.mockResolvedValue({
-      records: [row, row],
-      summary: { resultAvailableAfter: 0 },
-    } as never);
+    graph.runReadOnlyQuery.mockResolvedValue({
+      columns: ['n'],
+      rows: [{ n: 1 }, { n: 1 }],
+      truncated: true,
+      withheld: 0,
+    });
     // graph_query is the one tool that truncates today. It is not offered to
     // agents, so the adapter is exercised on it directly.
     const query = toRunnerTool(
-      graphReadTools(graph, { rateLimits: { rowLimit: 2, hopLimit: 6 } }).find(
-        (t) => t.name === 'graph_query',
-      )!,
+      graphReadTools(graph, {
+        rateLimits: { rowLimit: 2, hopLimit: 6, queryTimeoutMs: 10_000 },
+      }).find((t) => t.name === 'graph_query')!,
     );
     const parsed = query.parse({ query: 'MATCH (n) RETURN n' });
     if (!parsed.ok) throw new Error(parsed.message);

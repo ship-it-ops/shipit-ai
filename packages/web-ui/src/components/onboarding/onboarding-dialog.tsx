@@ -23,6 +23,11 @@ const ALL_CAPABILITIES = [
   { id: 'connectors:manage', label: 'connectors:manage', hint: 'Add/remove data sources' },
   { id: 'schema:edit', label: 'schema:edit', hint: 'Update the entity-type schema' },
   { id: 'mcp:invoke', label: 'mcp:invoke', hint: 'Call MCP tools from AI agents' },
+  {
+    id: 'graph:query',
+    label: 'graph:query',
+    hint: 'Run raw Cypher (Query Playground, graph_query)',
+  },
 ] as const;
 
 type SeedStatus = 'unknown' | 'empty' | 'has-data' | 'unreachable';

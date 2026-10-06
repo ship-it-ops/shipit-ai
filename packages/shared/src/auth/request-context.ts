@@ -37,6 +37,15 @@ export interface RequestContext {
   requestId: string;
 }
 
+/**
+ * Running Cypher that a caller wrote (the Query Playground, the graph_query
+ * MCP tool). Such a query reads everything in the graph, the application's
+ * own records included, so this is an administrator's capability: admins have
+ * it through their wildcard, and a token carries it only if an admin minted it
+ * with this scope.
+ */
+export const GRAPH_QUERY_CAPABILITY = 'graph:query';
+
 export function hasCapability(ctx: RequestContext, capability: string): boolean {
   if (ctx.capabilities.has('*')) return true;
   return ctx.capabilities.has(capability);

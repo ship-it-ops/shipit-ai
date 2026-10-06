@@ -34,8 +34,8 @@ describe('MCP tool metadata — service and effect', () => {
 
 describe('MCP tool metadata — offered to agents', () => {
   // The agent runner and the agent tool catalog read this flag. graph_query
-  // runs a caller-written string as Cypher, and its guard lets through clauses
-  // that fetch a URL, so a model is not handed it.
+  // runs a caller-written string as Cypher, and a model acts on the text it
+  // reads, so a model is not handed it unless the owner decides otherwise.
   it('keeps raw Cypher away from agents', () => {
     expect(MCP_TOOL_BY_NAME.graph_query.agents).toBe(false);
   });

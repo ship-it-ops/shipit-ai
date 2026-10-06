@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { hasCapability } from '@shipit-ai/shared';
+import { hasCapability, GRAPH_QUERY_CAPABILITY } from '@shipit-ai/shared';
 import type { TokenService } from '../services/auth/token-service.js';
 
 declare module 'fastify' {
@@ -10,13 +10,19 @@ declare module 'fastify' {
 
 const MAX_NAME_LENGTH = 128;
 
-// Capability scopes a user can put on a token. Today we only have
-// `mcp:invoke` as the meaningful one (the MCP server checks it when a
-// token is presented), but the array is open-ended so future Stage B6/D
-// work can grow it without re-shipping. The set is intentionally a
-// subset of the principal's own capabilities — a member can only mint
-// tokens that grant capabilities they already have.
-const KNOWN_TOKEN_SCOPES: ReadonlyArray<string> = ['mcp:invoke', 'graph:read', 'catalog:read'];
+// Capability scopes a user can put on a token. `mcp:invoke` opens the MCP
+// server; `graph:query` lets a token run raw Cypher (graph_query, and
+// POST /api/query), which only an administrator holds and so only an
+// administrator can grant. The array is open-ended so future Stage B6/D work
+// can grow it without re-shipping. The set is intentionally a subset of the
+// principal's own capabilities — a member can only mint tokens that grant
+// capabilities they already have.
+const KNOWN_TOKEN_SCOPES: ReadonlyArray<string> = [
+  'mcp:invoke',
+  'graph:read',
+  'catalog:read',
+  GRAPH_QUERY_CAPABILITY,
+];
 
 interface CreateTokenBody {
   name?: string;

@@ -1,4 +1,9 @@
 import neo4j, { type Driver, type Session, type Record as Neo4jRecord } from 'neo4j-driver';
+import {
+  runReadOnlyQuery,
+  type ReadOnlyQueryLimits,
+  type ReadOnlyQueryResult,
+} from './cypher/read-only-query.js';
 
 export interface CypherResult {
   records: Neo4jRecord[];
@@ -8,7 +13,17 @@ export interface CypherResult {
 }
 
 export interface Neo4jClient {
+  /** Runs a query this package wrote itself. */
   runCypher(query: string, params?: Record<string, unknown>): Promise<CypherResult>;
+  /**
+   * Runs a query a caller wrote, for reading only and within `limits`: see
+   * runReadOnlyQuery. The text must have passed checkReadOnlyCypher first.
+   */
+  runReadOnlyQuery(
+    query: string,
+    params: Record<string, unknown>,
+    limits: ReadOnlyQueryLimits,
+  ): Promise<ReadOnlyQueryResult>;
   close(): Promise<void>;
 }
 
@@ -29,6 +44,10 @@ export function createNeo4jClient(uri: string, user: string, password: string): 
       } finally {
         await session.close();
       }
+    },
+
+    runReadOnlyQuery(query, params, limits) {
+      return runReadOnlyQuery(driver, query, params, limits);
     },
 
     async close(): Promise<void> {

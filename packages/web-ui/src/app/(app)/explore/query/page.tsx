@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Button, Spinner } from '@ship-it-ui/ui';
+import { Button, EmptyState, Spinner } from '@ship-it-ui/ui';
 import { IconGlyph } from '@ship-it-ui/icons';
 import { runCypherQuery, type CypherQueryResult, type CypherApiError } from '@/lib/api';
+import { useCurrentUser } from '@/lib/current-user';
 import { QueryEditor } from '@/components/query/query-editor';
 import { ResultGrid } from '@/components/query/result-grid';
 import { SavedQueries } from '@/components/query/saved-queries';
@@ -13,6 +14,10 @@ RETURN labels(n)[0] AS label, count(*) AS count
 ORDER BY count DESC`;
 
 export default function QueryPlaygroundPage() {
+  // The route is admin-only (raw Cypher reads everything in the graph), and
+  // the nav hides this page from members; say so to one who arrives by URL.
+  // While identity is still loading `role` is '' and nothing is decided.
+  const { role } = useCurrentUser();
   const [cypher, setCypher] = useState(DEFAULT_QUERY);
   const [result, setResult] = useState<CypherQueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +41,21 @@ export default function QueryPlaygroundPage() {
       setRunning(false);
     }
   }, [cypher, running]);
+
+  if (role !== 'admin') {
+    return (
+      <div className="mx-auto flex h-full max-w-[1400px] flex-col gap-4 p-6">
+        <h1 className="text-text text-[22px] font-semibold tracking-tight">Query Playground</h1>
+        {role !== '' && (
+          <EmptyState
+            icon={<IconGlyph name="shield" size={22} />}
+            title="For administrators"
+            description="Raw Cypher reads everything in the graph, so the Query Playground is available to administrators. The Graph Explorer and the catalog cover the rest."
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex h-full max-w-[1400px] flex-col gap-4 p-6">

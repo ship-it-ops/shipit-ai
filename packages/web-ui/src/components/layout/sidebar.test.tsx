@@ -67,6 +67,15 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
   });
 
+  // Raw Cypher is an administrator's; the route refuses everyone else.
+  it('shows the Query Playground to admins only', () => {
+    renderWithQueryClient(<Sidebar />);
+    expect(screen.getByRole('link', { name: /query playground/i })).toBeInTheDocument();
+    mockUser.role = 'member';
+    renderWithQueryClient(<Sidebar />);
+    expect(screen.getAllByRole('link', { name: /query playground/i })).toHaveLength(1);
+  });
+
   it('groups the AI pages under /ai, in order', () => {
     renderWithQueryClient(<Sidebar />);
     const expected: Array<[RegExp, string]> = [

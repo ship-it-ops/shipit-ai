@@ -304,6 +304,12 @@ Return the current graph schema: node types with property definitions and resolu
 
 Execute a raw Cypher query against the knowledge graph. **Read-only queries only.**
 
+A raw query reads everything in the graph, the application's own records included, so over
+HTTP the token must carry the `graph:query` scope as well as `mcp:invoke`. Only an
+administrator holds that capability, so only an administrator can mint such a token (Settings →
+API Keys). A call without it is refused with `RBAC_DENIED`. Over stdio there is no token: that
+is the operator's own trust.
+
 | Parameter | Type    | Required | Default | Description                                     |
 | --------- | ------- | -------- | ------- | ----------------------------------------------- |
 | `query`   | string  | yes      | —       | Cypher query (must be read-only, parameterized) |
@@ -312,11 +318,44 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
 
 **Guardrails:**
 
-- Write operations are rejected (`MERGE`, `CREATE`, `DELETE`, `SET`, `REMOVE`, `DROP`, `CALL{}`)
-- Variable-length patterns limited to 6 hops (configurable via `MCP_HOP_LIMIT`)
-- Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`)
+- The query text passes the read-only check the Query Playground also applies, before anything
+  reaches the database. A query it refuses comes back as `INVALID_PARAMETER`, with the reason.
+  - Clauses that write, change the schema, administer the database or import data are refused:
+    `CREATE`, `MERGE`, `SET`, `REMOVE`, `DELETE`, `FOREACH`, `LOAD CSV`, `DROP`, `SHOW`, `USE`,
+    `CALL { } IN TRANSACTIONS` and the rest of those families. A label or property that has one of
+    these names must be quoted in backticks.
+  - `CALL` is for subqueries and for these read procedures: `db.labels`, `db.relationshipTypes`,
+    `db.propertyKeys`, `db.schema.visualization`, `db.schema.nodeTypeProperties`,
+    `db.schema.relTypeProperties`, `apoc.path.expand`, `apoc.path.expandConfig`,
+    `apoc.path.spanningTree`, `apoc.path.subgraphAll`, `apoc.path.subgraphNodes`. Every other
+    procedure is refused.
+  - Functions without a namespace (`toUpper`, `size`, `datetime`, …) are allowed. Of the namespaced
+    ones, the date, time, duration, point and vector functions are, and so are
+    `apoc.convert.fromJsonList` and `apoc.convert.fromJsonMap`. Every other namespaced function is
+    refused.
+  - Outside strings, backtick-quoted names and comments, the query must be plain ASCII. Unicode
+    escape sequences (a backslash and a `u`) are refused anywhere; pass such values as parameters.
+    Put a space before a parameter that follows a name.
+  - One statement per call, of at most 100,000 characters, with no leading `CYPHER` options block.
+  - A name that starts with an underscore is read as an internal label (the application's own
+    bookkeeping) and refused, unless it is a property (`n._last_synced`) or a map key. A label
+    chosen when the query runs (`$(...)`) is refused too.
+- The query runs in a read-only transaction that is always rolled back, so the database itself
+  refuses a write.
+- An internal node in a result, or a path through one, comes back as `null`, with a note in
+  `_meta.warnings`.
+- Each server process runs at most four raw queries at a time. One more is refused with
+  `SERVER_BUSY` until a place is free; wait and send it again.
+- Every variable-length pattern needs an upper bound of at most 6 hops (configurable via
+  `MCP_HOP_LIMIT`): `[*..6]`, `[*1..6]`, `[*3]`, `-->{1,6}`, `((a)-[]->(b)){1,6}`. A pattern with
+  no upper bound (`[*]`, `[*2..]`, `{3,}`, `-->+`, `(...)*`) is refused.
+- Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
+  carries; `_meta.truncated` says when rows were cut. A result may also hold at most 100,000
+  values, counting every list item and map entry; a larger one is refused with
+  `ROW_LIMIT_EXCEEDED`.
 - Queries timeout after 10 seconds (configurable via `MCP_QUERY_TIMEOUT_MS`)
-- Rate limited to 100 calls per day (configurable via `MCP_GRAPH_QUERY_LIMIT`)
+- 100 calls per token owner per UTC day (configurable via `MCP_GRAPH_QUERY_LIMIT`), counted in
+  memory by each server process, so the count starts again when the process does
 
 **Example:**
 
@@ -348,9 +387,10 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
 | `DEPTH_EXCEEDED`       | Requested depth exceeds maximum                                                  |
 | `HOP_LIMIT_EXCEEDED`   | Cypher pattern exceeds hop limit                                                 |
 | `QUERY_TIMEOUT`        | Query exceeded timeout                                                           |
-| `ROW_LIMIT_EXCEEDED`   | Results exceeded row limit                                                       |
+| `ROW_LIMIT_EXCEEDED`   | The result has more rows, or more values, than a result may hold                 |
 | `RATE_LIMIT_EXCEEDED`  | Daily rate limit exceeded                                                        |
-| `RBAC_DENIED`          | Access denied                                                                    |
+| `SERVER_BUSY`          | Too many raw queries are running at once; retry shortly                          |
+| `RBAC_DENIED`          | The token lacks a scope the tool needs (`graph:query` for `graph_query`)         |
 | `TOOL_NOT_AVAILABLE`   | Tool is not available                                                            |
 | `INTERNAL_ERROR`       | Unexpected server error                                                          |
 

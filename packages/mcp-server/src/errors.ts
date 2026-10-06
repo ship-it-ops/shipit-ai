@@ -7,6 +7,8 @@ export enum McpErrorCode {
   QUERY_TIMEOUT = 'QUERY_TIMEOUT',
   ROW_LIMIT_EXCEEDED = 'ROW_LIMIT_EXCEEDED',
   RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+  /** The server is running as many raw queries as it carries at once. Retry shortly. */
+  SERVER_BUSY = 'SERVER_BUSY',
   RBAC_DENIED = 'RBAC_DENIED',
   TOOL_NOT_AVAILABLE = 'TOOL_NOT_AVAILABLE',
   INTERNAL_ERROR = 'INTERNAL_ERROR',

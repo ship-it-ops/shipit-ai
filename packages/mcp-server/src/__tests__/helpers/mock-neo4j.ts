@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { Neo4jClient, CypherResult } from '../../neo4j-client.js';
+import type { ReadOnlyQueryResult } from '../../cypher/read-only-query.js';
 
 export interface MockRecord {
   _data: Record<string, unknown>;
@@ -19,9 +20,10 @@ export function createMockRecord(data: Record<string, unknown>): MockRecord {
   };
 }
 
-export function createMockNeo4jClient(
-  responses?: Map<string, CypherResult>,
-): Neo4jClient & { runCypher: ReturnType<typeof vi.fn> } {
+export function createMockNeo4jClient(responses?: Map<string, CypherResult>): Neo4jClient & {
+  runCypher: ReturnType<typeof vi.fn>;
+  runReadOnlyQuery: ReturnType<typeof vi.fn>;
+} {
   const defaultResult: CypherResult = {
     records: [],
     summary: { resultAvailableAfter: 0 },
@@ -36,8 +38,18 @@ export function createMockNeo4jClient(
     return defaultResult;
   });
 
+  // What a caller-written query comes back as when the graph is empty. A test
+  // that needs rows replaces it with mockResolvedValue.
+  const runReadOnlyQuery = vi.fn(async (): Promise<ReadOnlyQueryResult> => ({
+    columns: [],
+    rows: [],
+    truncated: false,
+    withheld: 0,
+  }));
+
   return {
     runCypher,
+    runReadOnlyQuery,
     close: vi.fn(async () => {}),
   };
 }

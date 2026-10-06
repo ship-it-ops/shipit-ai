@@ -233,8 +233,9 @@ export const MCP_TOOLS: readonly McpToolMetadata[] = [
     service: 'graph',
     effect: 'read',
     // Not for agents: it runs a caller-written string as Cypher, and a model
-    // acts on the text it reads. It stays with MCP clients until its guard is
-    // at least as strict as the Query Playground's.
+    // acts on the text it reads. Its check is the Query Playground's now (one
+    // shared check, one shared executor); offering it to agents is still a
+    // decision for the owner to take, not a default.
     agents: false,
     params: [
       {

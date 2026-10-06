@@ -5,12 +5,16 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
  * registers, so a test can invoke the real tool body instead of re-implementing
  * it against the mock client.
  */
+export type CapturedHandler = (
+  args: Record<string, unknown>,
+  extra?: unknown,
+) => Promise<{ content: Array<{ text: string }> }>;
+
 export function captureTool(
   register: (server: McpServer, ...rest: never[]) => void,
   ...rest: never[]
-): (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }> {
-  let handler:
-    ((args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>) | undefined;
+): CapturedHandler {
+  let handler: CapturedHandler | undefined;
   const server = {
     tool: (...args: unknown[]) => {
       handler = args[args.length - 1] as typeof handler;

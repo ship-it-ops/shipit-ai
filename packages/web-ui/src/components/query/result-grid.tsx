@@ -97,6 +97,7 @@ export function ResultGrid({ result, error }: ResultGridProps) {
 }
 
 function ResultMeta({ result }: { result: CypherQueryResult }) {
+  const withheld = result.withheld ?? 0;
   return (
     <div className="text-text-muted flex items-center gap-3 text-[11px]">
       <span>
@@ -106,6 +107,12 @@ function ResultMeta({ result }: { result: CypherQueryResult }) {
       {result.truncated && (
         <Badge variant="warn" size="sm">
           truncated at {result.rowLimit}
+        </Badge>
+      )}
+      {/* The server returns an internal node as null; without this the ∅ looks like missing data. */}
+      {withheld > 0 && (
+        <Badge variant="neutral" size="sm">
+          {withheld} internal {withheld === 1 ? 'node' : 'nodes'} withheld
         </Badge>
       )}
     </div>

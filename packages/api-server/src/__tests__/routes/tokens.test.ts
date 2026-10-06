@@ -210,6 +210,18 @@ describe('/api/tokens', () => {
     expect(response.json().error.code).toBe('INVALID_NAME');
   });
 
+  it('lets an administrator mint a token with the graph:query scope', async () => {
+    const cookie = await login(server);
+    const response = await server.inject({
+      method: 'POST',
+      url: '/api/tokens',
+      payload: { name: 'raw queries', scopes: ['mcp:invoke', 'graph:query'] },
+      headers: { 'content-type': 'application/json', cookie },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(response.json().scopes).toEqual(['mcp:invoke', 'graph:query']);
+  });
+
   it('rejects unknown scopes', async () => {
     const cookie = await login(server);
     const response = await server.inject({
