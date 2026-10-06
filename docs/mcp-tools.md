@@ -347,8 +347,8 @@ is the operator's own trust.
 - Each server process runs at most four raw queries at a time. One more is refused with
   `SERVER_BUSY` until a place is free; wait and send it again.
 - Every variable-length pattern needs an upper bound of at most 6 hops (configurable via
-  `MCP_HOP_LIMIT`): `[*..6]`, `[*1..6]`, `[*3]`, `((a)-[]->(b)){1,6}`. A pattern with no upper
-  bound (`[*]`, `[*2..]`, `{3,}`) is refused.
+  `MCP_HOP_LIMIT`): `[*..6]`, `[*1..6]`, `[*3]`, `-->{1,6}`, `((a)-[]->(b)){1,6}`. A pattern with
+  no upper bound (`[*]`, `[*2..]`, `{3,}`, `-->+`, `(...)*`) is refused.
 - Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
   carries; `_meta.truncated` says when rows were cut. A result may also hold at most 100,000
   values, counting every list item and map entry; a larger one is refused with

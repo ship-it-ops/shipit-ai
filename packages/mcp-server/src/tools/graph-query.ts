@@ -10,14 +10,29 @@ import { McpErrorCode, createError, type McpError } from '../errors.js';
 import type { McpServerConfig } from '../config.js';
 import { MCP_TOOL_BY_NAME } from './metadata.js';
 
-// A variable-length relationship, [*], [*3], [*..5], [*2..5], with or without
-// a variable, a type and a property map; and the quantifier of a quantified
-// path pattern, (...){2}, (...){1,5}. Read on the query's code only (strings
-// and comments blanked), so "[*]" inside a string is not taken for one.
+// Every way Cypher 5 repeats a relationship, read on the query's code only
+// (strings and comments blanked), so "[*]" inside a string is not taken for one:
+//  - a variable-length relationship, [*], [*3], [*..5], [*2..5], with or
+//    without a variable, a type and a property map;
+//  - a quantifier after a relationship, -->{1,5}, -[:R]->+, --*;
+//  - a quantifier after a parenthesised path, ((a)-->(b)){1,5}, (...)+, (...)*.
 const VARIABLE_LENGTH = /\[[^[\]]*?\*\s*(\d*)\s*(\.\.\s*(\d*))?\s*(?:\{[^{}]*\})?\s*\]/g;
-const QUANTIFIED_PATH = /\)\s*\{\s*(\d*)\s*(,\s*(\d*))?\s*\}/g;
+const BRACES = /\{\s*(\d*)\s*(,\s*(\d*))?\s*\}/y;
+const RELATIONSHIP_END = /(?:--|->|<-|\]-)\s*(?=[{+*])/g;
+const RELATIONSHIP_TOKENS: ReadonlySet<string> = new Set(['-[', ']-', '->', '<-', '--']);
 
-/** The upper bound of every variable-length pattern in `code`; null where there is none. */
+/** The upper bound a quantifier at `at` states: {n}, {m,n}; null for +, * and {m,}. */
+function quantifierBound(code: string, at: number): number | null {
+  if (code[at] === '+' || code[at] === '*') return null;
+  BRACES.lastIndex = at;
+  const braces = BRACES.exec(code);
+  if (!braces) return null;
+  const [, lower, comma, upper] = braces;
+  const bound = comma === undefined ? lower : upper;
+  return bound ? Number(bound) : null;
+}
+
+/** The upper bound of every repeated pattern in `code`; null where there is none. */
 function hopBounds(code: string): Array<number | null> {
   const bounds: Array<number | null> = [];
   for (const [, lower, range, upper] of code.matchAll(VARIABLE_LENGTH)) {
@@ -25,9 +40,29 @@ function hopBounds(code: string): Array<number | null> {
     const bound = range === undefined ? lower : upper;
     bounds.push(bound ? Number(bound) : null);
   }
-  for (const [, lower, comma, upper] of code.matchAll(QUANTIFIED_PATH)) {
-    const bound = comma === undefined ? lower : upper;
-    bounds.push(bound ? Number(bound) : null);
+  for (const match of code.matchAll(RELATIONSHIP_END)) {
+    bounds.push(quantifierBound(code, match.index + match[0].length));
+  }
+  // A quantifier after ")" is a path's when the parentheses hold a
+  // relationship; after an arithmetic group, (a) * (b), it is an operator.
+  // One pass, with a stack: each group learns whether it holds one, and
+  // tells its parent when it closes.
+  const open: boolean[] = [];
+  for (let i = 0; i < code.length; i++) {
+    const c = code[i];
+    if (c === '(') {
+      open.push(false);
+    } else if (open.length > 0 && RELATIONSHIP_TOKENS.has(code.slice(i, i + 2))) {
+      open[open.length - 1] = true;
+    } else if (c === ')' && open.length > 0) {
+      const holdsRelationship = open.pop()!;
+      if (open.length > 0 && holdsRelationship) open[open.length - 1] = true;
+      let after = i + 1;
+      while (after < code.length && /\s/.test(code[after]!)) after++;
+      if (holdsRelationship && /[{+*]/.test(code[after] ?? '')) {
+        bounds.push(quantifierBound(code, after));
+      }
+    }
   }
   return bounds;
 }
@@ -101,14 +136,6 @@ export function registerGraphQuery(
           ),
         );
       }
-      if (token && !budget.take(token.clientId)) {
-        return asText(
-          createError(
-            McpErrorCode.RATE_LIMIT_EXCEEDED,
-            `graph_query is limited to ${budget.perDay} calls per user per day; the count starts again at midnight UTC.`,
-          ),
-        );
-      }
 
       // Guardrail: the read-only check every caller-written query passes, the
       // same one the Query Playground applies.
@@ -137,6 +164,17 @@ export function registerGraphQuery(
             ),
           );
         }
+      }
+
+      // The budget counts what runs, not what the checks above refused: a
+      // typo costs nothing.
+      if (token && !budget.take(token.clientId)) {
+        return asText(
+          createError(
+            McpErrorCode.RATE_LIMIT_EXCEEDED,
+            `graph_query is limited to ${budget.perDay} calls per user per day; the count starts again at midnight UTC.`,
+          ),
+        );
       }
 
       try {

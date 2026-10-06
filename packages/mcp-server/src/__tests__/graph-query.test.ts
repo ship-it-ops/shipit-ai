@@ -82,6 +82,15 @@ describe('graph_query', () => {
       'MATCH ((a)-[:DEPENDS_ON]->(b)){1,50} RETURN b',
       'MATCH ((a)-[:DEPENDS_ON]->(b)){3,} RETURN b',
       'MATCH ((a)-[:DEPENDS_ON]->(b)){,10} RETURN b',
+      // The postfix quantifiers of a quantified path pattern, and the
+      // quantifiers of a single relationship.
+      'MATCH ((a)-[:DEPENDS_ON]->(b))+ RETURN count(*)',
+      'MATCH (s) ((a)-->(b))* (t) RETURN s, t',
+      'MATCH (a)-[:DEPENDS_ON]->{1,50}(b) RETURN b',
+      'MATCH (a)-[:DEPENDS_ON]->+(b) RETURN b',
+      'MATCH (a)-->*(b) RETURN b',
+      'MATCH (a)<-[:DEPENDS_ON]-{2,}(b) RETURN b',
+      'MATCH (a)--{,9}(b) RETURN b',
     ])('a pattern with no upper bound, or one past the limit: %s', async (query) => {
       const { neo4j, run } = graphQuery();
       const payload = await run(query);
@@ -89,6 +98,14 @@ describe('graph_query', () => {
       expect(payload.error?.message).toContain('6');
       expect(neo4j.runReadOnlyQuery).not.toHaveBeenCalled();
     });
+  });
+
+  it('decides the hop limit in time proportional to the query', async () => {
+    const nested = 'MATCH ' + '('.repeat(20_000) + '(a)-->(b)' + ')*'.repeat(20_000) + ' RETURN a';
+    const started = performance.now();
+    const payload = await graphQuery().run(nested);
+    expect(payload.error?.code).toBe('HOP_LIMIT_EXCEEDED');
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   describe('what it runs', () => {
@@ -128,9 +145,12 @@ describe('graph_query', () => {
       'MATCH path = shortestPath((a)-[*..6]-(b)) RETURN path',
       'MATCH ((a)-[:DEPENDS_ON]->(b)){1,6} RETURN b',
       'MATCH ((a)-[:DEPENDS_ON]->(b)){2} RETURN b',
+      'MATCH (a)-[:DEPENDS_ON]->{1,6}(b) RETURN b',
+      'MATCH (a)-->{3}(b) RETURN b',
       // Not patterns: a string, arithmetic, a list comprehension.
       "MATCH (n) WHERE n.note = 'see [*] and [*2..]' RETURN n",
       'RETURN (1 + 2) * 3 AS a, [x IN [1, 2] | x * 2] AS b, [1, 2] * 3 AS c',
+      'MATCH (n) RETURN (n.a + n.b) * (n.c) AS p, (1) + (2) AS q, round((count(*) * 100.0) / 3) AS r',
     ])('a bounded pattern within the hop limit, or no pattern at all: %s', async (query) => {
       const { neo4j, run } = graphQuery();
       const payload = await run(query);
@@ -236,6 +256,15 @@ describe('graph_query', () => {
       await runAs('a@example.com', SCOPES);
       expect((await runAs('a@example.com', SCOPES)).error?.code).toBe('RATE_LIMIT_EXCEEDED');
       now = new Date('2026-10-06T00:00:30Z');
+      expect((await runAs('a@example.com', SCOPES)).error).toBeUndefined();
+    });
+
+    it('does not count a call the checks refuse', async () => {
+      const { runAs } = graphQuery(createMockNeo4jClient(), twoPerDay);
+      for (let i = 0; i < 4; i++) {
+        const refused = await runAs('a@example.com', SCOPES, 'MATCH (n) SET n.x = 1');
+        expect(refused.error?.code).toBe('INVALID_PARAMETER');
+      }
       expect((await runAs('a@example.com', SCOPES)).error).toBeUndefined();
     });
 

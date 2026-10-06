@@ -80,8 +80,11 @@ are made per request (`createHttpRequestListener`), the daily budget is the proc
 
 **graph_query's hop limit** reads the query's code (`cypherCodeText`, the text with strings,
 comments and quoted names blanked) and requires every variable-length pattern and quantified
-path pattern to carry an upper bound of at most `hopLimit`. `[*]`, `[*2..]` and `{3,}` are
-refused, `shortestPath((a)-[*]-(b))` among them: it needs `[*..6]`.
+path pattern to carry an upper bound of at most `hopLimit`: `[*]`, `[*2..]`, `{3,}`, `-->+` and
+`(...)*` are refused, `shortestPath((a)-[*]-(b))` among them (it needs `[*..6]`). A `+` or `*`
+after a closing parenthesis counts as a quantifier only when the parentheses hold a
+relationship, so `(a) * (b)` stays arithmetic. The daily budget counts queries that run, not
+ones the checks refused.
 
 **Which layer is trusted for what:**
 
