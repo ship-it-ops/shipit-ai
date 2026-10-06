@@ -162,6 +162,40 @@ describe('runReadOnlyQuery', () => {
     expect(sessionOf).toHaveBeenCalledWith(expect.objectContaining({ fetchSize: 4 }));
   });
 
+  // The row limit counts rows. A single row can carry a list of any length,
+  // so what comes back is also bounded by the number of values in it.
+  describe('the size of the result', () => {
+    const tooLarge = async (rows: unknown[][], rowLimit = 100): Promise<string> => {
+      const { driver, session, tx } = fakeDriver({ keys: ['v'], rows });
+      const outcome = await runReadOnlyQuery(driver, 'q', {}, { timeoutMs: 5_000, rowLimit }).then(
+        () => 'ran',
+        (e: unknown) => (e instanceof ReadOnlyQueryError ? e.kind : 'other'),
+      );
+      expect(tx.rollback).toHaveBeenCalledTimes(1);
+      expect(session.close).toHaveBeenCalledTimes(1);
+      return outcome;
+    };
+
+    it('refuses a single row that holds more than a hundred thousand values', async () => {
+      expect(await tooLarge([[Array.from({ length: 150_000 }, (_, i) => i)]])).toBe('too_large');
+    });
+
+    it('refuses rows that hold that many between them', async () => {
+      const rows = Array.from({ length: 30 }, () => [Array.from({ length: 5_000 }, (_, i) => i)]);
+      expect(await tooLarge(rows)).toBe('too_large');
+    });
+
+    it('counts the entries of a map and of what it holds', async () => {
+      const wide = Object.fromEntries(Array.from({ length: 60_000 }, (_, i) => [`k${i}`, [i, i]]));
+      expect(await tooLarge([[wide]])).toBe('too_large');
+    });
+
+    it('lets a result under the budget through', async () => {
+      const rows = Array.from({ length: 50 }, () => [Array.from({ length: 1_000 }, (_, i) => i)]);
+      expect(await tooLarge(rows)).toBe('ran');
+    });
+  });
+
   describe('internal nodes', () => {
     const team = node(1, ['Team'], { name: 'platform' });
     const repo = node(2, ['Repository'], { name: 'api' });

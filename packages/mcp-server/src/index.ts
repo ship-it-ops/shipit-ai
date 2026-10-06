@@ -5,6 +5,7 @@ import {
 } from 'node:http';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { loadConfig, type McpServerConfig } from './config.js';
 import { createNeo4jClient, type Neo4jClient } from './neo4j-client.js';
 import { createMcpServer } from './server.js';
@@ -108,12 +109,21 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
       sendAuthError(res, decision.status, decision.code, decision.message);
       return;
     }
+    // The transport hands this to every tool handler as `extra.authInfo`:
+    // graph_query reads the scopes and counts the owner's calls. The token
+    // itself stays out of it.
+    const authenticated: IncomingMessage & { auth?: AuthInfo } = req;
+    authenticated.auth = {
+      token: '',
+      clientId: decision.token.ownerEmail,
+      scopes: decision.token.scopes,
+    };
 
     try {
       // Body parsing: for POSTs the transport expects pre-parsed JSON.
       // GET/DELETE pass through without a body.
       const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
-      await transport.handleRequest(req, res, body);
+      await transport.handleRequest(authenticated, res, body);
     } catch (err) {
       // Body-cap exceedance: respond 413 with a generic message before
       // anything else so a noisy/malicious client can't drive memory

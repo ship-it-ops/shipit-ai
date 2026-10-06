@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkReadOnlyCypher } from '../cypher/read-only-guard.js';
+import { checkReadOnlyCypher, cypherCodeText } from '../cypher/read-only-guard.js';
 
 /** 'accepted', or the code the query was refused with. */
 function outcome(cypher: string): string {
@@ -478,5 +478,23 @@ LIMIT 50`,
       expect(verdict).toMatchObject({ ok: false, code: 'INTERNAL_LABEL' });
       expect(verdict.ok ? '' : verdict.message).toContain('property');
     });
+  });
+});
+
+// The code of a query is what is left once strings, comments and quoted
+// names are blanked: what a caller's other checks (graph_query's hop limit)
+// should read, so that a pattern inside a string is not taken for one.
+describe('cypherCodeText', () => {
+  it('blanks strings, comments and quoted names, keeping every other character in place', () => {
+    const text = "MATCH (n:`Odd Label`) WHERE n.a = 'x*y' /* [*] */ RETURN n // [*..9]";
+    const code = cypherCodeText(text);
+    expect(code).toHaveLength(text.length);
+    expect(code).toBe(
+      'MATCH (n:           ) WHERE n.a =       ' + ' '.repeat(9) + ' RETURN n ' + ' '.repeat(9),
+    );
+  });
+
+  it('is null for text the check cannot read', () => {
+    expect(cypherCodeText("MATCH (n {name: 'open) RETURN n")).toBeNull();
   });
 });

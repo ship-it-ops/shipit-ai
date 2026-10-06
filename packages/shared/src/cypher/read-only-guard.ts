@@ -217,7 +217,13 @@ function quotedName(text: string, start: number): { name: string; end: number } 
   return null;
 }
 
-function tokenize(text: string): Token[] | Unreadable {
+interface Tokenized {
+  tokens: Token[];
+  /** The spans of strings, comments and quoted names: text the rules never read. */
+  inert: Array<[start: number, end: number]>;
+}
+
+function tokenize(text: string): Tokenized | Unreadable {
   // The database decodes these escapes before it reads the query, anywhere in
   // it, so the text checked here would not be the text that runs.
   if (/\\u/i.test(text)) {
@@ -228,10 +234,12 @@ function tokenize(text: string): Token[] | Unreadable {
   }
 
   const tokens: Token[] = [];
+  const inert: Tokenized['inert'] = [];
   let i = 0;
   while (i < text.length) {
     const c = text[i]!;
     const next = text[i + 1];
+    const start = i;
 
     if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
       i++;
@@ -244,21 +252,25 @@ function tokenize(text: string): Token[] | Unreadable {
         }
         i++;
       }
+      inert.push([start, i]);
     } else if (c === '/' && next === '*') {
       const close = text.indexOf('*/', i + 2);
       if (close === -1) return { reason: 'A block comment is never closed.' };
       i = close + 2;
+      inert.push([start, i]);
     } else if (c === "'" || c === '"') {
       i++;
       while (i < text.length && text[i] !== c) i += text[i] === '\\' ? 2 : 1;
       if (i >= text.length) return { reason: 'A string is never closed.' };
       i++;
       tokens.push(VALUE);
+      inert.push([start, i]);
     } else if (c === '`') {
       const quoted = quotedName(text, i);
       if (!quoted) return { reason: 'A backtick-quoted name is never closed.' };
       tokens.push({ kind: 'name', text: quoted.name, quoted: true });
       i = quoted.end;
+      inert.push([start, i]);
     } else if (c === '$' && isNamePart(text[i - 1])) {
       // To the database "a$b" is one name. Splitting it here would check a name
       // that is not the one that runs.
@@ -282,6 +294,7 @@ function tokenize(text: string): Token[] | Unreadable {
       if (!quoted) return { reason: 'A backtick-quoted name is never closed.' };
       tokens.push(VALUE);
       i = quoted.end;
+      inert.push([start + 1, i]);
     } else if (isDigit(c)) {
       const end = endOfNumber(text, i);
       // "1abc" could be read as a number and then a word. Refuse it rather than
@@ -306,7 +319,24 @@ function tokenize(text: string): Token[] | Unreadable {
       };
     }
   }
-  return tokens;
+  return { tokens, inert };
+}
+
+/**
+ * The query with every string, comment and quoted name blanked out, each
+ * character replaced by a space so positions keep. What a further check
+ * on the text should read, so that a pattern inside a string is not taken
+ * for one. Null when the text cannot be read (checkReadOnlyCypher says why).
+ */
+export function cypherCodeText(cypher: string): string | null {
+  if (cypher.length > MAX_QUERY_LENGTH) return null;
+  const read = tokenize(cypher);
+  if (!('tokens' in read)) return null;
+  let code = cypher;
+  for (const [start, end] of read.inert) {
+    code = code.slice(0, start) + ' '.repeat(end - start) + code.slice(end);
+  }
+  return code;
 }
 
 function isPunct(token: Token | undefined, text: string): boolean {
@@ -394,8 +424,9 @@ export function checkReadOnlyCypher(cypher: string): ReadOnlyCypherVerdict {
       `Raw queries are limited to ${MAX_QUERY_LENGTH.toLocaleString('en-US')} characters. Pass long lists as parameters.`,
     );
   }
-  const tokens = tokenize(cypher);
-  if (!Array.isArray(tokens)) return refuse('UNREADABLE', tokens.reason);
+  const read = tokenize(cypher);
+  if (!('tokens' in read)) return refuse('UNREADABLE', read.reason);
+  const { tokens } = read;
 
   // One statement, which may end in a semicolon.
   const last = isPunct(tokens[tokens.length - 1], ';') ? tokens.length - 1 : tokens.length;

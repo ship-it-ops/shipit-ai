@@ -2,9 +2,16 @@
 // Read-only Cypher endpoint backing /explore/query. The query text passes
 // `checkReadOnlyCypher` (the check the graph_query MCP tool also applies), and
 // what passes is run by `CypherQueryService` in a read-access transaction with
-// a timeout and a row limit. Any authenticated caller may use it.
-import type { FastifyPluginAsync } from 'fastify';
-import { checkReadOnlyCypher, type ReadOnlyCypherVerdict } from '@shipit-ai/shared';
+// a timeout and a row limit. It is for administrators, and for bearer tokens
+// an administrator minted with the graph:query scope: a raw query reads
+// everything in the graph, the application's own records included.
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import {
+  checkReadOnlyCypher,
+  hasCapability,
+  GRAPH_QUERY_CAPABILITY,
+  type ReadOnlyCypherVerdict,
+} from '@shipit-ai/shared';
 import { ReadOnlyQueryError } from '@shipit-ai/mcp-server/cypher';
 import { CypherQueryService } from '../services/cypher-query-service.js';
 import type { Neo4jService } from '../services/neo4j-service.js';
@@ -30,10 +37,32 @@ function failure(err: unknown): { status: 400 | 429 | 504; code: string; message
   const message = (err as Error).message;
   if (err instanceof ReadOnlyQueryError) {
     if (err.kind === 'busy') return { status: 429, code: 'QUERY_BUSY', message };
+    if (err.kind === 'too_large') return { status: 400, code: 'RESULT_TOO_LARGE', message };
     if (err.kind === 'timeout') return { status: 504, code: 'QUERY_TIMEOUT', message };
     if (err.kind === 'write_refused') return { status: 400, code: 'WRITE_BLOCKED', message };
   }
   return { status: 400, code: 'CYPHER_ERROR', message };
+}
+
+// The role check is what lets the dev-fallback admin in whatever its
+// capability list says; the capability is how a token gets in.
+async function requireRawQueryAccess(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply | void> {
+  if (request.ctx.user.role === 'admin' || hasCapability(request.ctx, GRAPH_QUERY_CAPABILITY)) {
+    return undefined;
+  }
+  request.log.warn(
+    { path: request.url.split('?')[0], code: 'FORBIDDEN', cap: GRAPH_QUERY_CAPABILITY },
+    'authz: rejected request',
+  );
+  return reply.status(403).send({
+    error: {
+      code: 'FORBIDDEN',
+      message: `Raw Cypher is for administrators, or a token with the ${GRAPH_QUERY_CAPABILITY} scope.`,
+    },
+  });
 }
 
 const queryRoutes: FastifyPluginAsync = async (server) => {
@@ -44,7 +73,7 @@ const queryRoutes: FastifyPluginAsync = async (server) => {
 
   server.post<{
     Body: { cypher?: unknown; params?: unknown };
-  }>('/', async (request, reply) => {
+  }>('/', { preHandler: requireRawQueryAccess }, async (request, reply) => {
     const { cypher, params } = request.body ?? {};
 
     if (typeof cypher !== 'string') {

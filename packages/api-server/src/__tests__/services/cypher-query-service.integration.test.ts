@@ -134,6 +134,13 @@ describe.skipIf(!URI)('CypherQueryService — integration', () => {
       expect(Date.now() - started).toBeLessThan(3_000);
     });
 
+    it('refuses a single row that holds too many values', async () => {
+      await expect(service().execute('RETURN range(1, 300000) AS big')).rejects.toMatchObject({
+        name: 'ReadOnlyQueryError',
+        kind: 'too_large',
+      });
+    });
+
     it('does not call a result of exactly the limit cut short', async () => {
       const result = await service({ rowLimit: 5 }).execute('UNWIND range(1, 5) AS i RETURN i');
       expect(result.rows).toHaveLength(5);

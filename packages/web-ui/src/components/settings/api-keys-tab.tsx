@@ -22,7 +22,9 @@ import {
   type MintedToken,
 } from '@/lib/api';
 
-const AVAILABLE_SCOPES = ['mcp:invoke', 'graph:read', 'catalog:read'] as const;
+// graph:query lets a token run raw Cypher (graph_query, POST /api/query). The
+// server grants it only to an administrator's token.
+const AVAILABLE_SCOPES = ['mcp:invoke', 'graph:read', 'catalog:read', 'graph:query'] as const;
 type AvailableScope = (typeof AVAILABLE_SCOPES)[number];
 
 // Stage D2 of the auth-and-rbac milestone. Wires the existing Settings →

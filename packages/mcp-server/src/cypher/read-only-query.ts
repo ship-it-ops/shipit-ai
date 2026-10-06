@@ -10,7 +10,9 @@
 //  - The timeout travels with the transaction, so the database ends a query
 //    that runs too long, whatever the caller does.
 //  - Rows are read one at a time and reading stops at the limit. The query's
-//    own LIMIT cannot raise it, and nothing past it is held in memory.
+//    own LIMIT cannot raise it, and nothing past it is held in memory. A
+//    result is also bounded by the number of values in it, since one row can
+//    carry a list of any length.
 //  - An internal node, or a path through one, comes back as null.
 //  - A driver carries a few of these queries at a time, and refuses the rest.
 import neo4j, { type Driver, type Session } from 'neo4j-driver';
@@ -36,6 +38,8 @@ export interface ReadOnlyQueryResult {
 export type ReadOnlyQueryFailure =
   /** As many queries as one driver carries at a time are already running. */
   | 'busy'
+  /** The result holds more values than a result may. */
+  | 'too_large'
   /** The query ran past its timeout. */
   | 'timeout'
   /** The database refused the query because it writes. */
@@ -60,6 +64,12 @@ const GRACE_MS = 500;
 
 // The driver's own page size. A higher row limit is read in pages of this.
 const MAX_FETCH_SIZE = 1000;
+
+// The most values a result may hold, counting every row, list item and map
+// entry (a node or a path counts as one). The driver has to receive a whole
+// row before this sees it, so the bound is on what goes on from here: the
+// response, and whatever reads it.
+const MAX_VALUES = 100_000;
 
 // How many caller-written queries one driver carries at a time. The database
 // ends a query that is past its timeout between rows; work inside a single row
@@ -90,8 +100,14 @@ function isOrPassesThroughInternalNode(value: unknown): boolean {
   return false;
 }
 
+interface Tally {
+  withheld: number;
+  values: number;
+}
+
 /** `value` with every internal node, and every path through one, replaced by null. */
-function withoutInternalNodes(value: unknown, tally: { withheld: number }): unknown {
+function withoutInternalNodes(value: unknown, tally: Tally): unknown {
+  tally.values++;
   if (isOrPassesThroughInternalNode(value)) {
     tally.withheld++;
     return null;
@@ -116,7 +132,7 @@ async function readRows(
     const result = tx.run(cypher, params);
     const columns = (await result.keys()).map(String);
     const rows: Array<Record<string, unknown>> = [];
-    const tally = { withheld: 0 };
+    const tally: Tally = { withheld: 0, values: 0 };
     let truncated = false;
     for await (const record of result) {
       // One record past the limit says there was more. Leaving the loop tells
@@ -130,6 +146,12 @@ async function readRows(
           columns.map((column) => [column, withoutInternalNodes(record.get(column), tally)]),
         ),
       );
+      if (tally.values > MAX_VALUES) {
+        throw new ReadOnlyQueryError(
+          'too_large',
+          `The result holds more than ${MAX_VALUES.toLocaleString('en-US')} values. Return fewer rows, or smaller lists and maps.`,
+        );
+      }
     }
     return { columns, rows, truncated, withheld: tally.withheld };
   } finally {

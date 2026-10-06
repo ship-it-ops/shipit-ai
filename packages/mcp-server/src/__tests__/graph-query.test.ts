@@ -15,11 +15,24 @@ type Payload = {
   _meta?: { truncated: boolean; warnings?: string[] };
 };
 
-function graphQuery(neo4j = createMockNeo4jClient()) {
-  const handler = captureTool(registerGraphQuery as never, neo4j as never, CONFIG as never);
+function graphQuery(neo4j = createMockNeo4jClient(), config = CONFIG, now?: () => Date) {
+  const handler = captureTool(
+    registerGraphQuery as never,
+    neo4j as never,
+    config as never,
+    (now ? { now } : undefined) as never,
+  );
   const run = async (query: string, params?: Record<string, unknown>): Promise<Payload> =>
     toolPayload(await handler({ query, params, compact: false })) as Payload;
-  return { neo4j, run };
+  /** A call that arrived over HTTP with a token: the transport passes its scopes along. */
+  const runAs = async (owner: string, scopes: string[], query = 'RETURN 1 AS one') =>
+    toolPayload(
+      await handler(
+        { query, compact: false },
+        { authInfo: { token: '', clientId: owner, scopes } },
+      ),
+    ) as Payload;
+  return { neo4j, run, runAs };
 }
 
 describe('graph_query', () => {
@@ -59,6 +72,23 @@ describe('graph_query', () => {
       const payload = await graphQuery().run('MATCH (a)-[*1..3]->(b)-[*1..8]->(c) RETURN a, b, c');
       expect(payload.error?.code).toBe('HOP_LIMIT_EXCEEDED');
     });
+
+    it.each([
+      'MATCH (a)-[*]->(b) RETURN b',
+      'MATCH (a)-[:DEPENDS_ON*]->(b) RETURN b',
+      'MATCH (a)-[r:DEPENDS_ON * 2..]->(b) RETURN b',
+      'MATCH (a)-[*2.. {weight: 1}]->(b) RETURN b',
+      'MATCH path = shortestPath((a)-[*]-(b)) RETURN path',
+      'MATCH ((a)-[:DEPENDS_ON]->(b)){1,50} RETURN b',
+      'MATCH ((a)-[:DEPENDS_ON]->(b)){3,} RETURN b',
+      'MATCH ((a)-[:DEPENDS_ON]->(b)){,10} RETURN b',
+    ])('a pattern with no upper bound, or one past the limit: %s', async (query) => {
+      const { neo4j, run } = graphQuery();
+      const payload = await run(query);
+      expect(payload.error?.code).toBe('HOP_LIMIT_EXCEEDED');
+      expect(payload.error?.message).toContain('6');
+      expect(neo4j.runReadOnlyQuery).not.toHaveBeenCalled();
+    });
   });
 
   describe('what it runs', () => {
@@ -91,9 +121,19 @@ describe('graph_query', () => {
       expect(neo4j.runReadOnlyQuery).toHaveBeenCalledTimes(1);
     });
 
-    it('a variable-length pattern within the hop limit', async () => {
+    it.each([
+      'MATCH (n)-[*1..5]->(m) RETURN n, m',
+      'MATCH (n)-[*..6]->(m) RETURN n, m',
+      'MATCH (n)-[r:DEPENDS_ON*3]->(m) RETURN n, m',
+      'MATCH path = shortestPath((a)-[*..6]-(b)) RETURN path',
+      'MATCH ((a)-[:DEPENDS_ON]->(b)){1,6} RETURN b',
+      'MATCH ((a)-[:DEPENDS_ON]->(b)){2} RETURN b',
+      // Not patterns: a string, arithmetic, a list comprehension.
+      "MATCH (n) WHERE n.note = 'see [*] and [*2..]' RETURN n",
+      'RETURN (1 + 2) * 3 AS a, [x IN [1, 2] | x * 2] AS b, [1, 2] * 3 AS c',
+    ])('a bounded pattern within the hop limit, or no pattern at all: %s', async (query) => {
       const { neo4j, run } = graphQuery();
-      const payload = await run('MATCH (n)-[*1..5]->(m) RETURN n, m');
+      const payload = await run(query);
       expect(payload.error).toBeUndefined();
       expect(neo4j.runReadOnlyQuery).toHaveBeenCalledTimes(1);
     });
@@ -146,9 +186,69 @@ describe('graph_query', () => {
     });
   });
 
+  // Over HTTP every call carries a token (packages/mcp-server/src/index.ts
+  // puts its owner and scopes on the request). Over stdio, and in-process in
+  // the agent runner, there is none: that is the operator's own trust.
+  describe('who may call it over HTTP', () => {
+    it('refuses a token without the graph:query scope, before anything runs', async () => {
+      const { neo4j, runAs } = graphQuery();
+      const payload = await runAs('someone@example.com', ['mcp:invoke', 'graph:read']);
+      expect(payload.error?.code).toBe('RBAC_DENIED');
+      expect(payload.error?.message).toContain('graph:query');
+      expect(neo4j.runReadOnlyQuery).not.toHaveBeenCalled();
+    });
+
+    it('runs for a token with the scope', async () => {
+      const { neo4j, runAs } = graphQuery();
+      const payload = await runAs('someone@example.com', ['mcp:invoke', 'graph:query']);
+      expect(payload.error).toBeUndefined();
+      expect(neo4j.runReadOnlyQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs without a token, as over stdio', async () => {
+      const { neo4j, run } = graphQuery();
+      const payload = await run('RETURN 1 AS one');
+      expect(payload.error).toBeUndefined();
+      expect(neo4j.runReadOnlyQuery).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('how many calls a token owner gets per day', () => {
+    const twoPerDay = {
+      rateLimits: { ...CONFIG.rateLimits, graphQueryPerDay: 2 },
+    } as McpServerConfig;
+    const SCOPES = ['mcp:invoke', 'graph:query'];
+
+    it('refuses the call after the budget, and counts each owner by itself', async () => {
+      const { runAs } = graphQuery(createMockNeo4jClient(), twoPerDay);
+      expect((await runAs('a@example.com', SCOPES)).error).toBeUndefined();
+      expect((await runAs('a@example.com', SCOPES)).error).toBeUndefined();
+      const third = await runAs('a@example.com', SCOPES);
+      expect(third.error?.code).toBe('RATE_LIMIT_EXCEEDED');
+      expect(third.error?.message).toContain('2');
+      expect((await runAs('b@example.com', SCOPES)).error).toBeUndefined();
+    });
+
+    it('starts afresh with the next UTC day', async () => {
+      let now = new Date('2026-10-05T23:59:30Z');
+      const { runAs } = graphQuery(createMockNeo4jClient(), twoPerDay, () => now);
+      await runAs('a@example.com', SCOPES);
+      await runAs('a@example.com', SCOPES);
+      expect((await runAs('a@example.com', SCOPES)).error?.code).toBe('RATE_LIMIT_EXCEEDED');
+      now = new Date('2026-10-06T00:00:30Z');
+      expect((await runAs('a@example.com', SCOPES)).error).toBeUndefined();
+    });
+
+    it('does not count calls that carry no token', async () => {
+      const { run } = graphQuery(createMockNeo4jClient(), twoPerDay);
+      for (let i = 0; i < 5; i++) expect((await run('RETURN 1 AS one')).error).toBeUndefined();
+    });
+  });
+
   describe('how it reports a failure', () => {
     it.each([
       ['busy', 'SERVER_BUSY'],
+      ['too_large', 'ROW_LIMIT_EXCEEDED'],
       ['timeout', 'QUERY_TIMEOUT'],
       ['write_refused', 'INVALID_PARAMETER'],
       ['failed', 'INTERNAL_ERROR'],

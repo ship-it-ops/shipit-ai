@@ -33,7 +33,8 @@ export const NAV_GROUPS: ReadonlyArray<NavGroup> = [
     label: 'Explore',
     items: [
       { label: 'Graph Explorer', href: '/explore', glyph: 'graph' },
-      { label: 'Query Playground', href: '/explore/query', glyph: 'cmd' },
+      // Raw Cypher reads everything in the graph; POST /api/query is admin-only.
+      { label: 'Query Playground', href: '/explore/query', glyph: 'cmd', adminOnly: true },
     ],
   },
   {

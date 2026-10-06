@@ -126,7 +126,12 @@ export {
 export type { SourceReliabilityEntry } from './config/source-reliability.js';
 
 // Auth / request context
-export { SYSTEM_CONTEXT, hasCapability, buildCapabilitySet } from './auth/request-context.js';
+export {
+  SYSTEM_CONTEXT,
+  GRAPH_QUERY_CAPABILITY,
+  hasCapability,
+  buildCapabilitySet,
+} from './auth/request-context.js';
 export type {
   AuthPrincipal,
   AuthProvider,
@@ -144,7 +149,7 @@ export {
 export { verifyGitHubWebhookSignature } from './auth/github-webhook.js';
 
 // The read-only check for caller-written Cypher (Query Playground, graph_query)
-export { checkReadOnlyCypher, isInternalLabel } from './cypher/read-only-guard.js';
+export { checkReadOnlyCypher, cypherCodeText, isInternalLabel } from './cypher/read-only-guard.js';
 export type { ReadOnlyCypherVerdict, ReadOnlyCypherRefusal } from './cypher/read-only-guard.js';
 
 // Config
