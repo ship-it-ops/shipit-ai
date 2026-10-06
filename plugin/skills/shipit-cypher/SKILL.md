@@ -7,6 +7,8 @@ description: Use before writing or refining a Cypher query for the ShipIt-AI `gr
 
 `graph_query` is the escape hatch for queries the structured tools can't express. It's gated by a safety scanner and several runtime caps; calls that violate them are rejected before they reach Neo4j. **Read the shipit-graph skill first** — most of the time you don't need Cypher at all.
 
+Over HTTP the tool also needs a token with the `graph:query` scope, which only an administrator can mint. `RBAC_DENIED` means the token lacks it: tell the user, do not retry.
+
 ## Hard guardrails
 
 1. **Read-only.** The server refuses a query with a clause that writes, changes the schema, administers the database or imports data: `CREATE`, `MERGE`, `SET`, `REMOVE`, `DELETE`, `DETACH`, `FOREACH`, `LOAD CSV`, `DROP`, `SHOW`, `USE`, `CALL { } IN TRANSACTIONS` and their relatives. The words are matched as whole words, in any case, outside strings and comments. It returns `INVALID_PARAMETER` with a message naming the keyword. A label or property that happens to have one of these names must be quoted in backticks (``n.`set` ``).
@@ -19,11 +21,11 @@ description: Use before writing or refining a Cypher query for the ShipIt-AI `gr
 
    **Leave internal nodes alone.** Labels that start with an underscore are the application's own bookkeeping, not part of the catalog. A query that uses a name starting with an underscore is refused unless the name is a property (`n._last_synced`) or a map key; so is a label chosen at run time (`$(...)`). An internal node in a result comes back as `null`, with a note in `_meta.warnings`.
 
-2. **Hop limit.** Variable-length patterns like `()-[*..N]->()` are capped at **N ≤ 6** by default. Going higher returns `HOP_LIMIT_EXCEEDED`. If you need a longer path, switch to `dependency_chain` (which can do up to 10 hops as a typed traversal).
+2. **Hop limit.** Every variable-length pattern needs an upper bound of **at most 6** by default: `[*..6]`, `[*1..6]`, `[*3]`, `((a)-[]->(b)){1,6}`. A pattern with no upper bound (`[*]`, `[*2..]`, `{3,}`), or one above the limit, returns `HOP_LIMIT_EXCEEDED`; that includes `shortestPath((a)-[*]-(b))`, which needs `[*..6]`. If you need a longer path, switch to `dependency_chain` (which can do up to 10 hops as a typed traversal).
 
-3. **Row limit.** Default 1000 rows per response, whatever `LIMIT` the query carries. Anything beyond truncates with `_meta.truncated: true`. Filter harder or paginate with `SKIP` and `LIMIT` rather than asking for the whole graph.
+3. **Row limit.** Default 1000 rows per response, whatever `LIMIT` the query carries. Anything beyond truncates with `_meta.truncated: true`. A result may also hold at most 100,000 values (every list item and map entry counts); a larger one is refused with `ROW_LIMIT_EXCEEDED`. Filter harder or paginate with `SKIP` and `LIMIT` rather than asking for the whole graph, and do not `collect()` the graph into one row.
 
-4. **Query timeout.** 10 s default. If you hit `QUERY_TIMEOUT`, your query is doing a Cartesian or unindexed scan — usually means missing a label filter or a starting node. The server also runs only a few raw queries at a time: `SERVER_BUSY` means wait a moment and send the same query again, not rephrase it.
+4. **Query timeout.** 10 s default. If you hit `QUERY_TIMEOUT`, your query is doing a Cartesian or unindexed scan — usually means missing a label filter or a starting node. The server also runs only a few raw queries at a time: `SERVER_BUSY` means wait a moment and send the same query again, not rephrase it. Each token owner gets 100 `graph_query` calls per UTC day; `RATE_LIMIT_EXCEEDED` means the budget is spent.
 
 5. **Always parameterize.** Pass values via the `params` object, never via string concatenation. It keeps the query plan cacheable and the error messages legible, and a value in a parameter is never mistaken for a clause.
 

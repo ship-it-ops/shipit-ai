@@ -304,6 +304,12 @@ Return the current graph schema: node types with property definitions and resolu
 
 Execute a raw Cypher query against the knowledge graph. **Read-only queries only.**
 
+A raw query reads everything in the graph, the application's own records included, so over
+HTTP the token must carry the `graph:query` scope as well as `mcp:invoke`. Only an
+administrator holds that capability, so only an administrator can mint such a token (Settings →
+API Keys). A call without it is refused with `RBAC_DENIED`. Over stdio there is no token: that
+is the operator's own trust.
+
 | Parameter | Type    | Required | Default | Description                                     |
 | --------- | ------- | -------- | ------- | ----------------------------------------------- |
 | `query`   | string  | yes      | —       | Cypher query (must be read-only, parameterized) |
@@ -340,11 +346,16 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
   `_meta.warnings`.
 - Each server process runs at most four raw queries at a time. One more is refused with
   `SERVER_BUSY` until a place is free; wait and send it again.
-- Variable-length patterns limited to 6 hops (configurable via `MCP_HOP_LIMIT`)
+- Every variable-length pattern needs an upper bound of at most 6 hops (configurable via
+  `MCP_HOP_LIMIT`): `[*..6]`, `[*1..6]`, `[*3]`, `((a)-[]->(b)){1,6}`. A pattern with no upper
+  bound (`[*]`, `[*2..]`, `{3,}`) is refused.
 - Results capped at 1000 rows (configurable via `MCP_ROW_LIMIT`), whatever `LIMIT` the query
-  carries; `_meta.truncated` says when rows were cut
+  carries; `_meta.truncated` says when rows were cut. A result may also hold at most 100,000
+  values, counting every list item and map entry; a larger one is refused with
+  `ROW_LIMIT_EXCEEDED`.
 - Queries timeout after 10 seconds (configurable via `MCP_QUERY_TIMEOUT_MS`)
-- Rate limited to 100 calls per day (configurable via `MCP_GRAPH_QUERY_LIMIT`)
+- 100 calls per token owner per UTC day (configurable via `MCP_GRAPH_QUERY_LIMIT`), counted in
+  memory by each server process, so the count starts again when the process does
 
 **Example:**
 
@@ -376,10 +387,10 @@ Execute a raw Cypher query against the knowledge graph. **Read-only queries only
 | `DEPTH_EXCEEDED`       | Requested depth exceeds maximum                                                  |
 | `HOP_LIMIT_EXCEEDED`   | Cypher pattern exceeds hop limit                                                 |
 | `QUERY_TIMEOUT`        | Query exceeded timeout                                                           |
-| `ROW_LIMIT_EXCEEDED`   | Results exceeded row limit                                                       |
+| `ROW_LIMIT_EXCEEDED`   | The result has more rows, or more values, than a result may hold                 |
 | `RATE_LIMIT_EXCEEDED`  | Daily rate limit exceeded                                                        |
 | `SERVER_BUSY`          | Too many raw queries are running at once; retry shortly                          |
-| `RBAC_DENIED`          | Access denied                                                                    |
+| `RBAC_DENIED`          | The token lacks a scope the tool needs (`graph:query` for `graph_query`)         |
 | `TOOL_NOT_AVAILABLE`   | Tool is not available                                                            |
 | `INTERNAL_ERROR`       | Unexpected server error                                                          |
 

@@ -56,15 +56,35 @@ carry this by itself.
   path through one, and is counted in `withheld`.
 - A driver carries at most four of these queries at a time and refuses the next (`busy`). A
   place is held until the session has closed, not until the caller has been answered.
+- A result holds at most 100,000 values, counting every row, list item and map entry
+  (`too_large`): the row limit counts rows, and one row can carry a list of any length. The
+  driver has to receive a whole row before this sees it, so the bound is on what goes on from
+  there.
+
+**Who may run one.** Administrators, and bearer tokens an administrator minted with the
+`graph:query` scope (`GRAPH_QUERY_CAPABILITY` in `@shipit-ai/shared`): a raw query reads
+everything in the graph, the application's own records included. `POST /api/query` checks the
+role or the capability; the web UI hides the Query Playground from members. Over HTTP the MCP
+entry point hands each tool call its token's owner and scopes, and `graph_query` refuses a
+token without the scope (`RBAC_DENIED`) and counts the owner's calls against
+`graphQueryPerDay` (`RATE_LIMIT_EXCEEDED`), in the process's memory. Over stdio there is no
+token: that is the operator's own trust.
+
+**graph_query's hop limit** reads the query's code (`cypherCodeText`, the text with strings,
+comments and quoted names blanked) and requires every variable-length pattern and quantified
+path pattern to carry an upper bound of at most `hopLimit`. `[*]`, `[*2..]` and `{3,}` are
+refused, `shortestPath((a)-[*]-(b))` among them: it needs `[*..6]`.
 
 **Which layer is trusted for what:**
 
 | Concern                                   | Carried by                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------- |
+| Who may run one                           | The route (role or capability); the tool (the token's scope)        |
 | Writes                                    | The database (read-access transaction), check in front              |
 | Imports, and code installed on the server | The check (the two allow-lists)                                     |
 | Time                                      | The transaction's timeout between rows; the limit of four otherwise |
-| Number of rows                            | The executor                                                        |
+| Rows, and values in all                   | The executor                                                        |
+| Depth of a pattern                        | The tool's hop limit, on the query's code                           |
 | Internal nodes returned as nodes or paths | The executor, with the check refusing their labels                  |
 
 ## Alternatives Considered
@@ -94,6 +114,11 @@ carry this by itself.
 - The two surfaces report failures by kind (`busy`, `timeout`, `write_refused`, `failed`), not
   by matching the database's message. `busy` is `429 QUERY_BUSY` on the route and a new MCP
   error code, `SERVER_BUSY`, on the tool.
+- Members no longer see or reach the Query Playground; a member who needs raw Cypher needs an
+  administrator's token with the scope, or the role. Granting the capability by role is one
+  line in `capabilitiesForRole` (api-server `routes/auth.ts`).
+- A result of more than 100,000 values is refused (`400 RESULT_TOO_LARGE`, `ROW_LIMIT_EXCEEDED`).
+- The daily count lives in each process and starts again with it.
 - `graph_query` stays withheld from agents (`agents: false`). Offering it is the owner's call.
 
 ## Facts that cost time to establish
@@ -130,6 +155,7 @@ never at the dev graph: the suite wipes it).
 - A database edition or tier with per-role privileges: run these two surfaces as a database
   user that can only read the catalog, and keep this as the layer in front.
 - A decision to offer `graph_query` to agents.
+- A decision to let members run raw Cypher again (grant `graph:query` by role).
 - A change in where the application keeps its own records (the underscore-labelled nodes).
 
 ## Related

@@ -63,3 +63,10 @@ src/auth.ts`): the "shared store, lower latency" path — no api-server round-tr
 
 - [mcp-access-stage-2-real-login](../plans/mcp-access-stage-2-real-login.md) — the plan this completes (2a)
 - [auth-oauth-app-separate-from-connector](./auth-oauth-app-separate-from-connector.md) — same session; login auth posture that `authRequired` now follows
+
+## Amended 2026-10-05
+
+`mcp:invoke` opens the MCP server; `graph_query` additionally needs the `graph:query` scope,
+which only an administrator can mint, and the HTTP entry point hands every tool call its
+token's owner and scopes (`extra.authInfo`). See
+[raw-cypher-read-only-guard](raw-cypher-read-only-guard.md).
