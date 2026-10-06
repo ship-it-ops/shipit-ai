@@ -8,9 +8,13 @@ import { registerFindOwners } from './tools/find-owners.js';
 import { registerDependencyChain } from './tools/dependency-chain.js';
 import { registerGraphStats } from './tools/graph-stats.js';
 import { registerSearchEntities } from './tools/search-entities.js';
-import { registerGraphQuery } from './tools/graph-query.js';
+import { registerGraphQuery, type GraphQueryOptions } from './tools/graph-query.js';
 
-export function createMcpServer(neo4j: Neo4jClient, config: McpServerConfig): McpServer {
+export function createMcpServer(
+  neo4j: Neo4jClient,
+  config: McpServerConfig,
+  options: GraphQueryOptions = {},
+): McpServer {
   const server = new McpServer({
     name: 'shipit-ai',
     version: '0.1.0',
@@ -23,7 +27,7 @@ export function createMcpServer(neo4j: Neo4jClient, config: McpServerConfig): Mc
   registerDependencyChain(server, neo4j);
   registerGraphStats(server, neo4j);
   registerSearchEntities(server, neo4j);
-  registerGraphQuery(server, neo4j, config);
+  registerGraphQuery(server, neo4j, config, options);
 
   return server;
 }

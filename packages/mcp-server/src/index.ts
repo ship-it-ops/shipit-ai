@@ -10,6 +10,7 @@ import { loadConfig, type McpServerConfig } from './config.js';
 import { createNeo4jClient, type Neo4jClient } from './neo4j-client.js';
 import { createMcpServer } from './server.js';
 import { authorizeMcpRequest } from './auth.js';
+import { DailyBudget } from './daily-budget.js';
 import { isMainModule } from './is-main.js';
 
 export { createMcpServer } from './server.js';
@@ -63,17 +64,20 @@ function sendAuthError(
   res.end(JSON.stringify({ error: { code, message } }));
 }
 
-async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: number): Promise<void> {
-  // Stateless mode: one transport + one server reused across requests. The
-  // graph tools have no per-session state, so sharing avoids the cost of
-  // re-registering all 8 tools on every request.
-  const server = createMcpServer(neo4j, config);
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  await server.connect(transport);
+/**
+ * The request listener of the network surface. Exported for tests, which
+ * mount it on a server of their own.
+ */
+export function createHttpRequestListener(
+  neo4j: Neo4jClient,
+  config: McpServerConfig,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+  // graph_query's daily budget is the process's, whatever request it serves.
+  const budget = new DailyBudget(config.rateLimits.graphQueryPerDay);
 
-  const httpServer = createHttpServer(async (req: IncomingMessage, res: ServerResponse) => {
+  return async (req: IncomingMessage, res: ServerResponse) => {
     // Permissive CORS — the MCP server is read-only and the auth boundary
-    // (when it lands in Stage 2) will be the Authorization header, not origin.
+    // is the Authorization header, not origin.
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader(
@@ -119,7 +123,19 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
       scopes: decision.token.scopes,
     };
 
+    // Stateless mode: the SDK refuses to serve a second request through the
+    // same transport, and a server connects to one transport, so both are
+    // made for each request. Registering the tools is cheap; what has to
+    // outlive the request (the budget) is created above and passed in.
+    const server = createMcpServer(neo4j, config, { budget });
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => {
+      void transport.close().catch(() => {});
+      void server.close().catch(() => {});
+    });
+
     try {
+      await server.connect(transport);
       // Body parsing: for POSTs the transport expects pre-parsed JSON.
       // GET/DELETE pass through without a body.
       const body = req.method === 'POST' ? await readJsonBody(req) : undefined;
@@ -161,8 +177,11 @@ async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: numb
         );
       }
     }
-  });
+  };
+}
 
+async function startHttp(neo4j: Neo4jClient, config: McpServerConfig, port: number): Promise<void> {
+  const httpServer = createHttpServer(createHttpRequestListener(neo4j, config));
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
   // Log to stderr so it doesn't pollute any tooling that pipes stdout.
   console.error(`shipit-ai MCP server listening on http://localhost:${port}${MCP_PATH}`);

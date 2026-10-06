@@ -51,6 +51,12 @@ function failure(err: unknown): McpError {
 export interface GraphQueryOptions {
   /** The clock the daily budget reads; tests move it. */
   now?: () => Date;
+  /**
+   * The budget to count against. The HTTP entry point makes one server per
+   * request, so it keeps the one budget and passes it in; by default each
+   * server has its own.
+   */
+  budget?: DailyBudget;
 }
 
 /**
@@ -69,7 +75,7 @@ export function registerGraphQuery(
   config: McpServerConfig,
   options: GraphQueryOptions = {},
 ): void {
-  const budget = new DailyBudget(config.rateLimits.graphQueryPerDay, options.now);
+  const budget = options.budget ?? new DailyBudget(config.rateLimits.graphQueryPerDay, options.now);
 
   server.tool(
     'graph_query',
