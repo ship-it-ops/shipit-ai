@@ -1,6 +1,6 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-10-06
 updated: 2026-10-06
 author: claude-session-2026-10-06-docs-refresh
@@ -11,6 +11,9 @@ importance: standard
 ---
 
 # Documentation refresh: README, every `docs/*.md`, the plugin README, 19 new ADRs
+
+**Completed 2026-10-06:** pull request #133 merged into `main` as `da862c9` (CI green, automated
+review LGTM with no findings). Archived by the same session.
 
 Cut from `main` after #132 (`00a3d42`). Brings the user-facing docs up to what shipped since
 May: sign-in and tokens, setup mode, GSM secrets, the webhook receiver, the Kubernetes
