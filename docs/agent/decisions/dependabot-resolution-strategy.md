@@ -470,6 +470,38 @@ clean yesterday can fail to build today. Run `pnpm audit` immediately before dis
 --force` 15/15 · `test --force` 15/15 · `build --force` 9/9 · `lint --force` 0 errors (18
 pre-existing warnings) · `format:check` clean.
 
+## Update 2026-10-06 — ninth round (`security-round-9`), after the docs refresh merged
+
+GitHub flagged 4 alerts on `main` when #133 was pushed (1 critical / 2 high / 1 moderate);
+`pnpm audit` agreed exactly. Two have patches and two have none. Layer "parent range" only:
+`pnpm update -r proxy-addr source-map-js`; no override changes (still 3).
+
+### Applied
+
+- **proxy-addr 2.0.7 → 2.0.8** (via `@modelcontextprotocol/sdk → express`; the mcp-server
+  image) — GHSA-jqcg-44mw-7w3h, CRITICAL 9.1: IP spoofing through an IPv4-mapped IPv6 trust
+  subnet. Published 2026-10-05, the day before this round.
+- **source-map-js 1.2.1 → 1.2.2** (via `postcss`; web-ui build) — GHSA-68fv-2mgg-jv7q, HIGH
+  7.5: event-loop DoS through indexed source-map section offsets.
+
+### Left open — no patched version exists, both dev-only
+
+- **braces ≤ 3.0.3** (GHSA-vfj7-8cjw-p6xm, HIGH 7.5, stack exhaustion on deeply nested
+  patterns) via `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch`. A
+  web-ui devDependency; not in any image, so the infra Trivy gate (fixable HIGH/CRITICAL only)
+  does not see it. Nothing to bump to; re-run `pnpm audit` next round.
+- **sprintf-js ≤ 1.1.3** (GHSA-hp3w-g68c-fv3c, MODERATE 5.3, DoS through unbounded precision
+  specifiers) via `ioredis-mock → fengari`. An api-server devDependency used by tests only.
+
+Both Dependabot alerts (#166, #169) can be dismissed as "no patch available, development
+dependency" — the owner's call; left open here.
+
+### Verification
+
+`pnpm audit` → 4 → 2 (the two unpatchable dev-only ones) · `pnpm install --frozen-lockfile`
+up to date · `turbo typecheck --force` · `test --force` · `build --force` · `lint --force` ·
+`format:check` — results recorded in the pull request.
+
 ## Related
 
 - [github-connector-architecture-v1](github-connector-architecture-v1.md)
