@@ -21,11 +21,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@ai-sdk/google-vertex": "^5.0.101",
+    "@ai-sdk/google-vertex": "^5.0.109",
     "@shipit-ai/agents": "workspace:*",
     "@shipit-ai/knowledge": "workspace:*",
     "@shipit-ai/shared": "workspace:*",
-    "ai": "^7.0.126",
+    "ai": "^7.0.137",
     "ioredis": "^5.11.1"
   },
   "devDependencies": {
