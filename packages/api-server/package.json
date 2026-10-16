@@ -43,7 +43,7 @@
     "yaml": "^2.8.3"
   },
   "devDependencies": {
-    "@kubernetes/client-node": "^1.0.0",
+    "@kubernetes/client-node": "^2.0.0",
     "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^26.1.2",
     "ioredis-mock": "^8.13.1",
