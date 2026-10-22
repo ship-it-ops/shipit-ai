@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-10-01
+updated: 2026-10-21
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -501,6 +501,45 @@ dependency" — the owner's call; left open here.
 `pnpm audit` → 4 → 2 (the two unpatchable dev-only ones) · `pnpm install --frozen-lockfile`
 up to date · `turbo typecheck --force` · `test --force` · `build --force` · `lint --force` ·
 `format:check` — results recorded in the pull request.
+
+### Refresh 2026-10-21 — same branch, two weeks later
+
+The branch waited two weeks without a PR and the audit grew from 2 to 17 (0 critical / 6
+high / 10 moderate / 1 low) with no code change; Dependabot agreed (13 open alerts). Same
+layer as above, parent ranges only, plus the one exact pin that is ours. One commit per fix:
+`8b90dce`, `a4cd0df`, `4fa8de3`.
+
+- **@modelcontextprotocol/sdk 1.29.0 → 1.32.1** (mcp-server image) — five advisories
+  (GHSA-6qxp-vccf-f47h, GHSA-22jm-h49p-29qw, GHSA-46jr-4wx8-v453 high; GHSA-6prh-2h8m-c8cw,
+  GHSA-rvq5-wwqv-78pq moderate). The 1.30–1.32 upgrade notes are about the client transports
+  and the OAuth providers, neither used here; the server passes a pre-parsed body and builds a
+  transport per request, so the SDK's new body and batch limits sit behind our own. Dependabot
+  #138 proposed 1.32.0 and was green except Integration, which failed with the known
+  "Connection is closed" teardown race (it also failed on `main` at `da862c9`, a docs-only
+  push). #138 is redundant once this merges.
+- **hono 4.13.7 → 4.13.13** (via the SDK) — GHSA-5r4p-p66f-jhc7, `serveStatic` decoding the
+  path twice. 4.13.10 split the runtime adapters into packages; deprecations only.
+- **sharp 0.35.4 → 0.35.5** (next's optional dependency, web-ui image) — GHSA-wq5f-xc86-pv6w,
+  librsvg, fixed by the `@img/sharp-libvips` 1.3.4 packages. No install script.
+- **vite 8.3.1 → 8.3.3** — the root override pin moved (exact, see round 7); seven advisories,
+  all dev-server and launch-editor. 8.3.3 is the patched floor; 8.3.4/8.3.5 not taken.
+- **vitest 4.1.11 → 4.1.12** (root + 13 manifests) — GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp
+  in `@vitest/mocker`.
+
+Incidental, within range: rolldown 1.2.15, postcss 8.5.31, chai 6.3.0, @babel/runtime
+7.29.10, @types/estree 1.0.9. `@hono/node-server` stays 1.19.17 (the SDK now also accepts
+2.x; pnpm kept the locked 1.x). Still open: braces and sprintf-js, as above.
+
+**Lesson (round 8's, again):** a security branch that waits needs a fresh `pnpm audit` right
+before its PR, not only before `build-images`.
+
+### Verification (refresh)
+
+`pnpm install --frozen-lockfile` up to date · `turbo typecheck --force` 21/21 ·
+`test --force` 21/21 (2,319 passed) · `build --force` 13/13 · `lint --force` 0 errors (18
+pre-existing web-ui warnings) · `format:check` clean after restoring the build-flipped
+`next-env.d.ts` · `pnpm audit` 17 → 2. The integration suites were not run locally (the dev
+containers hold the dev graph); CI's job is their first run.
 
 ## Related
 

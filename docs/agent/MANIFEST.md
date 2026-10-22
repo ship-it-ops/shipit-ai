@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-06 | Total notes: 102
+Last updated: 2026-10-21 | Total notes: 103
 
 ## Investigations
 
@@ -32,6 +32,7 @@ Last updated: 2026-10-06 | Total notes: 102
 
 <!-- always-read at session start -->
 
+- [security-round-9](status/security-round-9.md) | status | active | standard | 2026-10-21 | security-round-9 verified+pushed, PR not opened; audit 17→2 (braces, sprintf-js unpatchable)
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
 
 ## Decisions
@@ -51,7 +52,7 @@ Last updated: 2026-10-06 | Total notes: 102
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
-- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-10-06 | pnpm.overrides + direct bumps; 9 rounds (round 9: proxy-addr critical, source-map-js; braces/sprintf-js unpatchable dev-only); audit right before build-images; eslint-10 blocked
+- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-10-21 | pnpm.overrides + direct bumps; 9 rounds (round 9 + 10-21 refresh: MCP SDK 1.32.1, sharp, vite 8.3.3, vitest 4.1.12; braces/sprintf-js unpatchable dev-only); audit right before the PR and build-images; eslint-10 blocked
 - [fastify-v5-migration](decisions/fastify-v5-migration.md) | decision | active | core | 2026-05-26 | bump fastify@^5.8.5 + 3 @fastify/\* plugins; closes 6 alerts
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 - [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
