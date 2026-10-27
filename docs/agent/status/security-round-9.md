@@ -2,7 +2,7 @@
 type: status
 status: active
 created: 2026-10-21
-updated: 2026-10-21
+updated: 2026-10-27
 author: claude-session-2026-10-21
 branch: security-round-9
 agent: none between sessions
@@ -10,26 +10,27 @@ tags: [security, dependabot, pnpm, audit]
 importance: standard
 ---
 
-# Security round 9 is on `security-round-9`, verified and pushed, waiting for its PR
+# Security round 9 is on `security-round-9`, verified and pushed, draft PR open
 
 ## Scope
 
-`pnpm-lock.yaml`, the vitest spec in the root and 13 workspace manifests, the root `vite`
-override, `packages/mcp-server/package.json`, and the ninth round plus its 2026-10-21 refresh
-in `decisions/dependabot-resolution-strategy.md`.
+`pnpm-lock.yaml`; direct bumps in web-ui (next, eslint-config-next), api-server (fastify),
+mcp-server (MCP SDK) and the four zod manifests; the vitest spec in the root and 13 workspace
+manifests; the root `vite` override; the ninth round plus its 10-21 and 10-27 refreshes in
+`decisions/dependabot-resolution-strategy.md`.
 
 ## Why
 
-Dependabot alerts on `main` after #133, then fifteen more advisories while the branch waited.
-The strategy note has the per-package reasoning.
+Dependabot alerts on `main` after #133, then two more waves of advisories while the branch
+waited. The strategy note has the per-package reasoning.
 
 ## State
 
-Five commits ahead of `main` (`315fd70` to `4fa8de3`). Full local verification green
-(typecheck, test, build, lint, format); `pnpm audit` 17 → 2, the two left (braces,
-sprintf-js) have no patched version and are dev-only. **No PR yet**: the owner opens PRs here,
-as a draft (the CI review posts publicly otherwise). Dependabot #138 (MCP SDK 1.32.0) is
-superseded by this branch and closes itself after merge.
+Fix commits `315fd70` to `48e47c5`, each verified on its own (typecheck, test, build); final
+tree lint and format clean, `pnpm audit` empty. A draft PR is open for the branch
+(`gh pr list --head security-round-9`); CI's Integration job is the first run of the
+integration suites. The owner marks it ready and merges. Dependabot #138, #140 and #129 are
+superseded and close themselves after merge.
 
 ## Done when
 

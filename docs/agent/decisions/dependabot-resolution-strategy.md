@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-10-21
+updated: 2026-10-27
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -540,6 +540,57 @@ before its PR, not only before `build-images`.
 pre-existing web-ui warnings) · `format:check` clean after restoring the build-flipped
 `next-env.d.ts` · `pnpm audit` 17 → 2. The integration suites were not run locally (the dev
 containers hold the dev graph); CI's job is their first run.
+
+### Refresh 2026-10-27 — six days later, right before the PR
+
+Re-running `pnpm audit` before opening the PR (the lesson above) found 18 new findings
+(2 critical / 4 high / 7 moderate / 5 low) and the two old ones gone: GitHub withdrew the
+braces (GHSA-vfj7-8cjw-p6xm) and sprintf-js (GHSA-hp3w-g68c-fv3c) advisories on 10-22 and
+10-23, so alerts #166 and #169 closed themselves. Dependabot had 16 open alerts (#167–#183).
+Same layer: parent ranges and direct bumps, no override changes (still 3). One commit per
+fix, each verified with `turbo typecheck test build` before the next was applied: `c97cf03`,
+`73ac4cf`, `c0c9b13`, `1d241ab`, `48e47c5`.
+
+- **next 16.3.8 → 16.4.1**, eslint-config-next in lockstep (web-ui image) —
+  GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr (critical: RCE through image optimization of
+  SVG input and through typed-array `use cache` returns), GHSA-p3m5-59mp-jv5r (high: Server
+  Actions DoS), all published 10-22. 16.4.1 is the patched floor; the 16.4.0 minor is
+  Turbopack and internal work with no breaking notes; 16.4.2 and 16.4.3 are LTS backports,
+  not taken. Re-resolving the subtree also moved typescript-eslint to 8.72.1, @babel/\* to
+  7.29.11, browserslist data, postcss 8.5.32 and unrs-resolver 1.12.2 (its postinstall is
+  pre-existing and on the build allowlist).
+- **zod 4.4.3 → 4.6.7** (4 manifests, every service) — GHSA-mrhx-c7xc-m3w5 (high: memory
+  exhaustion on oversized constrained collections; fixed in 4.6.6, and 4.6.7 is a version
+  bump with clean provenance after the project's history rewrite). The 4.5/4.6 behaviour
+  changes (numeric enum reverse mappings, emoji/base64/email patterns, error-map timing,
+  metadata) touch nothing this code uses; the one `z.toJSONSchema()` caller (agent-runner
+  graph tools) is under test. MCP SDK and ai SDK peer ranges accept 4.6.x.
+- **body-parser 2.3.0 → 2.4.0** (via sdk → express, mcp-server image) — GHSA-27r3-jxmh-p828
+  (high: DoS via trailing bytes after a compressed body). express 5.2.1 allows ^2.2.1.
+- **undici 7.30.0 → 7.30.1** (via @ai-sdk/provider-utils, agent-runner and knowledge-worker
+  images) — GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472
+  (moderate). The parent allows ^7.29.0; 8.x is outside it and not taken.
+- **fastify 5.12.5 → 5.12.7** (spec ^5.12.7, api-server) — GHSA-389g-gv7q-r4x8 (low: header
+  validation bypass; fixed in 5.12.6, 5.12.7 is the version bump). **fast-uri 4.2.1 → 4.2.3
+  and 3.1.8 → 3.1.9** (via fast-json-stringify and ajv) — four URI-parsing advisories in one
+  release. **ip-address 10.7.2 → 10.7.5** (via @kubernetes/client-node → socks) —
+  GHSA-rxp7-6hxx-x8q5 (moderate: quadratic zone matching).
+
+**Tooling note:** `pnpm update -r fastify fast-uri ip-address` re-resolved only fastify's
+subtree; when a direct dependency is in the list, the transitive names do not move. Run each
+transitive update as its own `pnpm update -r <name>` (as body-parser and undici were).
+
+**Lesson, third time:** the branch's own history is the argument. 4 findings on 10-06, 17 on
+10-21, 18 on 10-27, all from the database moving under an unchanged tree. Open the PR the
+same day the round is verified.
+
+### Verification (refresh 2)
+
+Per fix: `turbo typecheck test build` 39/39, 2,319 tests passed, on each of the five commits.
+Final tree: `pnpm install --frozen-lockfile` up to date · `turbo lint` 0 errors (18
+pre-existing web-ui warnings) · `format:check` clean · `pnpm audit` → No known
+vulnerabilities found (18 → 0). Integration suites not run locally (the dev containers hold
+the dev graph); CI's job is their first run. Draft PR opened the same day.
 
 ## Related
 
