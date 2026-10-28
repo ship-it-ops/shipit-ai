@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-10-01
+updated: 2026-10-27
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -469,6 +469,128 @@ clean yesterday can fail to build today. Run `pnpm audit` immediately before dis
 `pnpm audit` clean (16 → 0) · `pnpm install --frozen-lockfile` up to date · `turbo typecheck
 --force` 15/15 · `test --force` 15/15 · `build --force` 9/9 · `lint --force` 0 errors (18
 pre-existing warnings) · `format:check` clean.
+
+## Update 2026-10-06 — ninth round (`security-round-9`), after the docs refresh merged
+
+GitHub flagged 4 alerts on `main` when #133 was pushed (1 critical / 2 high / 1 moderate);
+`pnpm audit` agreed exactly. Two have patches and two have none. Layer "parent range" only:
+`pnpm update -r proxy-addr source-map-js`; no override changes (still 3).
+
+### Applied
+
+- **proxy-addr 2.0.7 → 2.0.8** (via `@modelcontextprotocol/sdk → express`; the mcp-server
+  image) — GHSA-jqcg-44mw-7w3h, CRITICAL 9.1: IP spoofing through an IPv4-mapped IPv6 trust
+  subnet. Published 2026-10-05, the day before this round.
+- **source-map-js 1.2.1 → 1.2.2** (via `postcss`; web-ui build) — GHSA-68fv-2mgg-jv7q, HIGH
+  7.5: event-loop DoS through indexed source-map section offsets.
+
+### Left open — no patched version exists, both dev-only
+
+- **braces ≤ 3.0.3** (GHSA-vfj7-8cjw-p6xm, HIGH 7.5, stack exhaustion on deeply nested
+  patterns) via `eslint-config-next → @next/eslint-plugin-next → fast-glob → micromatch`. A
+  web-ui devDependency; not in any image, so the infra Trivy gate (fixable HIGH/CRITICAL only)
+  does not see it. Nothing to bump to; re-run `pnpm audit` next round.
+- **sprintf-js ≤ 1.1.3** (GHSA-hp3w-g68c-fv3c, MODERATE 5.3, DoS through unbounded precision
+  specifiers) via `ioredis-mock → fengari`. An api-server devDependency used by tests only.
+
+Both Dependabot alerts (#166, #169) can be dismissed as "no patch available, development
+dependency" — the owner's call; left open here.
+
+### Verification
+
+`pnpm audit` → 4 → 2 (the two unpatchable dev-only ones) · `pnpm install --frozen-lockfile`
+up to date · `turbo typecheck --force` · `test --force` · `build --force` · `lint --force` ·
+`format:check` — results recorded in the pull request.
+
+### Refresh 2026-10-21 — same branch, two weeks later
+
+The branch waited two weeks without a PR and the audit grew from 2 to 17 (0 critical / 6
+high / 10 moderate / 1 low) with no code change; Dependabot agreed (13 open alerts). Same
+layer as above, parent ranges only, plus the one exact pin that is ours. One commit per fix:
+`8b90dce`, `a4cd0df`, `4fa8de3`.
+
+- **@modelcontextprotocol/sdk 1.29.0 → 1.32.1** (mcp-server image) — five advisories
+  (GHSA-6qxp-vccf-f47h, GHSA-22jm-h49p-29qw, GHSA-46jr-4wx8-v453 high; GHSA-6prh-2h8m-c8cw,
+  GHSA-rvq5-wwqv-78pq moderate). The 1.30–1.32 upgrade notes are about the client transports
+  and the OAuth providers, neither used here; the server passes a pre-parsed body and builds a
+  transport per request, so the SDK's new body and batch limits sit behind our own. Dependabot
+  #138 proposed 1.32.0 and was green except Integration, which failed with the known
+  "Connection is closed" teardown race (it also failed on `main` at `da862c9`, a docs-only
+  push). #138 is redundant once this merges.
+- **hono 4.13.7 → 4.13.13** (via the SDK) — GHSA-5r4p-p66f-jhc7, `serveStatic` decoding the
+  path twice. 4.13.10 split the runtime adapters into packages; deprecations only.
+- **sharp 0.35.4 → 0.35.5** (next's optional dependency, web-ui image) — GHSA-wq5f-xc86-pv6w,
+  librsvg, fixed by the `@img/sharp-libvips` 1.3.4 packages. No install script.
+- **vite 8.3.1 → 8.3.3** — the root override pin moved (exact, see round 7); seven advisories,
+  all dev-server and launch-editor. 8.3.3 is the patched floor; 8.3.4/8.3.5 not taken.
+- **vitest 4.1.11 → 4.1.12** (root + 13 manifests) — GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp
+  in `@vitest/mocker`.
+
+Incidental, within range: rolldown 1.2.15, postcss 8.5.31, chai 6.3.0, @babel/runtime
+7.29.10, @types/estree 1.0.9. `@hono/node-server` stays 1.19.17 (the SDK now also accepts
+2.x; pnpm kept the locked 1.x). Still open: braces and sprintf-js, as above.
+
+**Lesson (round 8's, again):** a security branch that waits needs a fresh `pnpm audit` right
+before its PR, not only before `build-images`.
+
+### Verification (refresh)
+
+`pnpm install --frozen-lockfile` up to date · `turbo typecheck --force` 21/21 ·
+`test --force` 21/21 (2,319 passed) · `build --force` 13/13 · `lint --force` 0 errors (18
+pre-existing web-ui warnings) · `format:check` clean after restoring the build-flipped
+`next-env.d.ts` · `pnpm audit` 17 → 2. The integration suites were not run locally (the dev
+containers hold the dev graph); CI's job is their first run.
+
+### Refresh 2026-10-27 — six days later, right before the PR
+
+Re-running `pnpm audit` before opening the PR (the lesson above) found 18 new findings
+(2 critical / 4 high / 7 moderate / 5 low) and the two old ones gone: GitHub withdrew the
+braces (GHSA-vfj7-8cjw-p6xm) and sprintf-js (GHSA-hp3w-g68c-fv3c) advisories on 10-22 and
+10-23, so alerts #166 and #169 closed themselves. Dependabot had 16 open alerts (#167–#183).
+Same layer: parent ranges and direct bumps, no override changes (still 3). One commit per
+fix, each verified with `turbo typecheck test build` before the next was applied: `c97cf03`,
+`73ac4cf`, `c0c9b13`, `1d241ab`, `48e47c5`.
+
+- **next 16.3.8 → 16.4.1**, eslint-config-next in lockstep (web-ui image) —
+  GHSA-2464-fhr4-w9xw and GHSA-673q-mjm6-r5xr (critical: RCE through image optimization of
+  SVG input and through typed-array `use cache` returns), GHSA-p3m5-59mp-jv5r (high: Server
+  Actions DoS), all published 10-22. 16.4.1 is the patched floor; the 16.4.0 minor is
+  Turbopack and internal work with no breaking notes; 16.4.2 and 16.4.3 are LTS backports,
+  not taken. Re-resolving the subtree also moved typescript-eslint to 8.72.1, @babel/\* to
+  7.29.11, browserslist data, postcss 8.5.32 and unrs-resolver 1.12.2 (its postinstall is
+  pre-existing and on the build allowlist).
+- **zod 4.4.3 → 4.6.7** (4 manifests, every service) — GHSA-mrhx-c7xc-m3w5 (high: memory
+  exhaustion on oversized constrained collections; fixed in 4.6.6, and 4.6.7 is a version
+  bump with clean provenance after the project's history rewrite). The 4.5/4.6 behaviour
+  changes (numeric enum reverse mappings, emoji/base64/email patterns, error-map timing,
+  metadata) touch nothing this code uses; the one `z.toJSONSchema()` caller (agent-runner
+  graph tools) is under test. MCP SDK and ai SDK peer ranges accept 4.6.x.
+- **body-parser 2.3.0 → 2.4.0** (via sdk → express, mcp-server image) — GHSA-27r3-jxmh-p828
+  (high: DoS via trailing bytes after a compressed body). express 5.2.1 allows ^2.2.1.
+- **undici 7.30.0 → 7.30.1** (via @ai-sdk/provider-utils, agent-runner and knowledge-worker
+  images) — GHSA-xjj6-f33q-929c (high), GHSA-4qv8-2p9j-2685 and GHSA-f72v-6w45-q472
+  (moderate). The parent allows ^7.29.0; 8.x is outside it and not taken.
+- **fastify 5.12.5 → 5.12.7** (spec ^5.12.7, api-server) — GHSA-389g-gv7q-r4x8 (low: header
+  validation bypass; fixed in 5.12.6, 5.12.7 is the version bump). **fast-uri 4.2.1 → 4.2.3
+  and 3.1.8 → 3.1.9** (via fast-json-stringify and ajv) — four URI-parsing advisories in one
+  release. **ip-address 10.7.2 → 10.7.5** (via @kubernetes/client-node → socks) —
+  GHSA-rxp7-6hxx-x8q5 (moderate: quadratic zone matching).
+
+**Tooling note:** `pnpm update -r fastify fast-uri ip-address` re-resolved only fastify's
+subtree; when a direct dependency is in the list, the transitive names do not move. Run each
+transitive update as its own `pnpm update -r <name>` (as body-parser and undici were).
+
+**Lesson, third time:** the branch's own history is the argument. 4 findings on 10-06, 17 on
+10-21, 18 on 10-27, all from the database moving under an unchanged tree. Open the PR the
+same day the round is verified.
+
+### Verification (refresh 2)
+
+Per fix: `turbo typecheck test build` 39/39, 2,319 tests passed, on each of the five commits.
+Final tree: `pnpm install --frozen-lockfile` up to date · `turbo lint` 0 errors (18
+pre-existing web-ui warnings) · `format:check` clean · `pnpm audit` → No known
+vulnerabilities found (18 → 0). Integration suites not run locally (the dev containers hold
+the dev graph); CI's job is their first run. Draft PR opened the same day.
 
 ## Related
 
