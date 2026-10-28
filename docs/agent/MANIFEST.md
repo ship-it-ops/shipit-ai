@@ -1,6 +1,6 @@
 # Agent Context
 
-Last updated: 2026-10-27 | Total notes: 103
+Last updated: 2026-10-28 | Total notes: 103
 
 ## Investigations
 
@@ -32,7 +32,7 @@ Last updated: 2026-10-27 | Total notes: 103
 
 <!-- always-read at session start -->
 
-- [security-round-9](status/security-round-9.md) | status | active | standard | 2026-10-27 | security-round-9 PR #141 open, CI green; three fix waves, audit 18→0; merge pending
+- [security-round-10](status/security-round-10.md) | status | active | standard | 2026-10-28 | security-round-10: qs 6.17.0 (moderate, caught by the pre-build audit on 22fe475); verified, pushed, PR pending
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
 
 ## Decisions
@@ -52,7 +52,7 @@ Last updated: 2026-10-27 | Total notes: 103
 - [github-app-manifest-flow](decisions/github-app-manifest-flow.md) | decision | active | core | 2026-05-21 | wizard creates App via GitHub manifest endpoint not manually
 - [claude-code-plugin-in-monorepo-with-skills](decisions/claude-code-plugin-in-monorepo-with-skills.md) | decision | active | core | 2026-05-21 | plugin lives in plugin/, ships three skills, not separate repo
 - [core-writer-runs-as-its-own-process](decisions/core-writer-runs-as-its-own-process.md) | decision | active | core | 2026-05-22 | core-writer is a separate worker process, owns Neo4j adapters
-- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-10-27 | pnpm.overrides + direct bumps; 9 rounds (round 9 + refreshes 10-21, 10-27: MCP SDK 1.32.1, next 16.4.1, zod 4.6.7, transitives; audit 18→0); audit right before the PR, same day; one pnpm update per transitive; eslint-10 blocked
+- [dependabot-resolution-strategy](decisions/dependabot-resolution-strategy.md) | decision | active | core | 2026-10-28 | pnpm.overrides + direct bumps; 10 rounds (round 9 merged #141: next 16.4.1, MCP SDK 1.32.1, zod 4.6.7; round 10: qs moderate caught by the pre-build audit, built 22fe475 first); audit same day as the PR and again on the exact SHA before the build; eslint-10 blocked
 - [fastify-v5-migration](decisions/fastify-v5-migration.md) | decision | active | core | 2026-05-26 | bump fastify@^5.8.5 + 3 @fastify/\* plugins; closes 6 alerts
 - [connector-run-storage-redis-not-yaml](decisions/connector-run-storage-redis-not-yaml.md) | decision | active | core | 2026-05-24 | run history lives in Redis LIST per connector, not in shipit.config.local.yaml
 - [github-installation-picker](decisions/github-installation-picker.md) | decision | active | core | 2026-05-24 | wizard Connect step picks org from listInstallations not paste-an-ID
