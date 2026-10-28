@@ -617,7 +617,9 @@ open alert on `main` after the merge (16 before it).
 The image gate is Trivy HIGH/CRITICAL; a moderate does not fail it, and round 9 carries two
 criticals in next that were waiting on this deploy. So `build-images` ran on 22fe475 as
 planned and round 10 follows as its own PR. The "not clean → round first" rule stays as
-written for HIGH/CRITICAL findings, which are the ones that would fail the build.
+written for HIGH/CRITICAL findings, which are the ones that would fail the build. 22fe475
+was built as `sha-22fe475` and deployed to the demo cluster the same morning (`/api/health`
+200); round 10 is #142.
 
 ### Verification
 

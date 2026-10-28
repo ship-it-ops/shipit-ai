@@ -32,7 +32,7 @@ Last updated: 2026-10-28 | Total notes: 103
 
 <!-- always-read at session start -->
 
-- [security-round-10](status/security-round-10.md) | status | active | standard | 2026-10-28 | security-round-10: qs 6.17.0 (moderate, caught by the pre-build audit on 22fe475); verified, pushed, PR pending
+- [security-round-10](status/security-round-10.md) | status | active | standard | 2026-10-28 | security-round-10: qs 6.17.0 (moderate, caught by the pre-build audit on 22fe475); PR #142 open; 22fe475 deployed as sha-22fe475
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
 
 ## Decisions
