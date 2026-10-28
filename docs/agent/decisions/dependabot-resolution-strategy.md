@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-10-27
+updated: 2026-10-28
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -591,6 +591,44 @@ Final tree: `pnpm install --frozen-lockfile` up to date · `turbo lint` 0 errors
 pre-existing web-ui warnings) · `format:check` clean · `pnpm audit` → No known
 vulnerabilities found (18 → 0). Integration suites not run locally (the dev containers hold
 the dev graph); CI's job is their first run. Draft PR opened the same day.
+
+## Update 2026-10-28 — tenth round (`security-round-10`), caught by the pre-build audit
+
+Round 9 merged as `22fe475` (#141) at 06:54. The audit on that exact commit, run before
+dispatching `build-images` (the 10-01 rule), was not clean: one moderate, qs 6.16.0
+(GHSA-6pq8-jhm2-2vcw, CVSS 5.3: `qs.stringify` with `arrayFormat: 'comma'` throws on an
+element whose own `toString` is not callable), published 10-27 at 19:10 — nine hours after
+the branch's last clean audit and twelve before the merge. Dependabot alert #184, the only
+open alert on `main` after the merge (16 before it).
+
+### Applied
+
+- **qs 6.16.0 → 6.17.0** (via @modelcontextprotocol/sdk → express, mcp-server image) —
+  `pnpm update -r qs`; express 5.2.1 allows ^6.14.0, no override. The fix is in 6.16.1
+  (10-14); 6.17.0 (10-27) adds a WHATWG `stringify` format and parse fixes (own `__proto__`
+  key kept as data, case-insensitive percent-encoded dots, lone surrogates), no install
+  scripts. The tree already carried 6.17.0 under body-parser since round 9, so the update
+  collapses the two copies into one and adds no new code to the image. Not a live path
+  either way: mcp-server does not mount the SDK's express router, and Express 5's default
+  query parser is `simple`, not qs.
+
+### Decision: build 22fe475 first, round 10 behind it
+
+The image gate is Trivy HIGH/CRITICAL; a moderate does not fail it, and round 9 carries two
+criticals in next that were waiting on this deploy. So `build-images` ran on 22fe475 as
+planned and round 10 follows as its own PR. The "not clean → round first" rule stays as
+written for HIGH/CRITICAL findings, which are the ones that would fail the build. 22fe475
+was built as `sha-22fe475` and deployed to the demo cluster the same morning (`/api/health`
+200); round 10 is #142.
+
+### Verification
+
+`pnpm install --frozen-lockfile` up to date · `turbo typecheck test build` 39/39 (12 re-run,
+27 cache hits; 2,319 tests passed) · `pnpm audit` → No known vulnerabilities found (1 → 0).
+
+**Lesson, fourth time, different shape:** the gap was twenty hours, not two weeks, and an
+advisory still landed inside it. Same-day PRs shorten the window; the audit on the exact SHA
+right before the build is what closes it. Keep both.
 
 ## Related
 

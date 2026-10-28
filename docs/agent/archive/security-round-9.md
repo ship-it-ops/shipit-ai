@@ -1,8 +1,8 @@
 ---
 type: status
-status: active
+status: completed
 created: 2026-10-21
-updated: 2026-10-27
+updated: 2026-10-28
 author: claude-session-2026-10-21
 branch: security-round-9
 agent: none between sessions
@@ -11,6 +11,10 @@ importance: standard
 ---
 
 # Security round 9 is on `security-round-9`, verified and pushed, PR #141 open
+
+**Completed 2026-10-28:** PR #141 squash-merged into `main` as `22fe475` (CI green on both
+runs, automated review LGTM with no findings; branch deleted on merge). Archived by the same
+session from `security-round-10`.
 
 ## Scope
 
