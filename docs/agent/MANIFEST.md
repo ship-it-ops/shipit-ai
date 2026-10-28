@@ -32,7 +32,7 @@ Last updated: 2026-10-27 | Total notes: 103
 
 <!-- always-read at session start -->
 
-- [security-round-9](status/security-round-9.md) | status | active | standard | 2026-10-27 | security-round-9 draft PR open; three fix waves, audit 18→0, CI integration first run
+- [security-round-9](status/security-round-9.md) | status | active | standard | 2026-10-27 | security-round-9 PR #141 open, CI green; three fix waves, audit 18→0; merge pending
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
 
 ## Decisions

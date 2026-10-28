@@ -10,7 +10,7 @@ tags: [security, dependabot, pnpm, audit]
 importance: standard
 ---
 
-# Security round 9 is on `security-round-9`, verified and pushed, draft PR open
+# Security round 9 is on `security-round-9`, verified and pushed, PR #141 open
 
 ## Scope
 
@@ -27,13 +27,14 @@ waited. The strategy note has the per-package reasoning.
 ## State
 
 Fix commits `315fd70` to `48e47c5`, each verified on its own (typecheck, test, build); final
-tree lint and format clean, `pnpm audit` empty. A draft PR is open for the branch
-(`gh pr list --head security-round-9`); CI's Integration job is the first run of the
-integration suites. The owner marks it ready and merges. Dependabot #138, #140 and #129 are
-superseded and close themselves after merge.
+tree lint and format clean, `pnpm audit` empty. PR #141 is open for the branch; the first
+CI run (opened as a draft) passed all 15 checks, including the Integration job's first run of
+the integration suites. Marked ready for review on 2026-10-27 so the review job runs on this
+push; squash-merge once it approves. Dependabot #138, #140 and #129 are superseded and close
+themselves after merge.
 
 ## Done when
 
-`gh pr list --head security-round-9 --state merged` lists a PR, or
-`git ls-remote --exit-code --heads origin security-round-9` exits non-zero (branch deleted
-after merge).
+PR #141 merged: `gh pr view 141 --json state -q .state` prints `MERGED` (the branch is
+deleted on merge, so `git ls-remote --exit-code --heads origin security-round-9` exiting
+non-zero is the same signal).
