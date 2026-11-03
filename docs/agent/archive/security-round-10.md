@@ -38,11 +38,11 @@ PR #142 merged: `gh pr view 142 --json state -q .state` prints `MERGED` (the bra
 deleted on merge, so `git ls-remote --exit-code --heads origin security-round-10` exiting
 non-zero is the same signal).
 
-## Reconciled 2026-11-01
+## Reconciled 2026-11-01, deployed 2026-11-02
 
-PR #142 merged 2026-10-28 14:31 UTC as `12b2635`; `build-images` ran on it at 14:32 (infra
-run 40706930664, tag `sha-12b2635`). **Not deployed:** the last `deploy.yml` run
-(40704903347, 14:20) shipped `sha-22fe475`, so the demo cluster still runs round 9. The
-post-merge audit on `12b2635` (2026-11-01) shows three new moderates, all transitive
-(`@hono/node-server` via MCP SDK; `glob` and `minimatch` via secret-manager → google-gax →
-rimraf), none HIGH/CRITICAL. Per the 10-28 refinement: deploy `sha-12b2635`, then round 11.
+PR #142 merged 2026-10-28 14:31 UTC as `12b2635`; `build-images` ran on it at 14:32 (infra run
+40706930664, tag `sha-12b2635`), but no deploy followed: the last `deploy.yml` run of that day
+(40704903347, 14:20) had shipped `sha-22fe475`. Deployed on 2026-11-03 05:24 UTC (infra deploy
+run 41583754595): `/api/health` 200, `/` → 307. The audit on `12b2635` (2026-11-01) showed three
+new moderates, all transitive, none HIGH/CRITICAL; they are round 11
+(`status/security-round-11.md`).

@@ -2,7 +2,7 @@
 type: decision
 status: active
 created: 2026-05-24
-updated: 2026-10-28
+updated: 2026-11-02
 author: claude-opus-4-7
 tags: [security, dependabot, pnpm, supply-chain]
 importance: core
@@ -629,6 +629,88 @@ was built as `sha-22fe475` and deployed to the demo cluster the same morning (`/
 **Lesson, fourth time, different shape:** the gap was twenty hours, not two weeks, and an
 advisory still landed inside it. Same-day PRs shorten the window; the audit on the exact SHA
 right before the build is what closes it. Keep both.
+
+## Update 2026-11-02 — eleventh round (`security-round-11`), four days after round 10
+
+Round 10 merged as `12b2635` (#142) on 10-28 and was built the same minute (`sha-12b2635`,
+infra build run 40706930664) but not deployed; the deploy went out at the start of this round
+(infra deploy run 41583754595, 2026-11-03 05:24 UTC, `/api/health` 200, `/` → 307). The audit
+on `12b2635` on 11-01 found three moderates, all transitive, all published after round 10's
+merge, and Dependabot had opened no alert for any of them (still none on 11-02): the advisory
+database `pnpm audit` reads runs days ahead of Dependabot's.
+
+| Package           | Was           | Now    | Advisory (class)                                                                                                                                                                                                                                     | Where                                                                             | How                                                            |
+| ----------------- | ------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| @hono/node-server | 1.19.17       | 2.1.6  | GHSA-rmxm-3fg6-px4f — moderate, `serveStatic` decodes the path twice and skips middleware on static prefixes (10-28); 2.1.6 also closes GHSA-jpvv-r467-5p4w (a backslash in the request path parsed as `/`, 11-02) and two `upgradeWebSocket` issues | mcp-server image (MCP SDK → `getRequestListener`)                                 | override `@hono/node-server: ^2.1.6`                           |
+| glob              | 10.5.0        | 14.0.3 | GHSA-3g3m-2fjr-6pw4 — moderate, an aborted async walk keeps reading directories (10-30)                                                                                                                                                              | api-server image (secret-manager → google-gax → rimraf)                           | scoped override `glob@10: ^14.0.2`                             |
+| minimatch         | 9.0.9, 10.2.6 | 11.0.4 | GHSA-g3hv-75wg-m249 — moderate, pattern amplification in `firstPhasePreProcess` at optimization level 2 (10-30)                                                                                                                                      | 9.0.9 under glob (api-server image); 10.2.6 under typescript-estree (web-ui lint) | 9 leaves with glob 14; scoped override `minimatch@10: ^11.0.1` |
+
+### Applied
+
+- **@hono/node-server 1.19.17 → 2.1.6.** The SDK (1.32.1) declares `^1.19.9 || ^2.0.5`, so
+  `pnpm update -r @hono/node-server` takes 2.1.6 on its own, but it also re-resolved rolldown
+  1.2.15 → 1.2.16 with fourteen native bindings (vite's subtree, nothing to do with the fix; see
+  the tooling note). An override plus `pnpm install --lockfile-only` moved only hono. The v2
+  release note says the public API is unchanged (the major is a throughput rewrite), and the SDK
+  uses one export, `getRequestListener`. GHSA-rmxm is not a live path: nothing here mounts
+  `serveStatic`. GHSA-jpvv (every request) is: mcp-server's HTTP transport runs through that
+  listener. Its access control is the bearer token in-app, not a path rule at the proxy, so the
+  bypass had nothing to bypass; the fix is the same bump. No install scripts; engines `>=20`.
+- **glob 10.5.0 → 14.0.3, scoped to `glob@10`.** The only requester is rimraf 5.0.10 (`^10.3.7`),
+  a declared dependency of google-gax 5 and gaxios 7 that neither package's code references:
+  rimraf never loads in the api-server image, so a cross-major override cannot change runtime
+  behaviour, only the install. rimraf calls `glob()` and `globSync()`, whose signatures are the
+  same in 14; the 14 changelog's breaking changes sit in `Pattern`/`Processor` internals, the
+  `walk()` return type and `ignore` anchoring, none of which rimraf touches. glob 14 drops its
+  CLI, so jackspeak, @isaacs/cliui, foreground-child, string-width and their kin leave the tree,
+  and it brings minimatch 11 in place of 9. Scoped rather than global so a future requester of
+  glob 11–13 (also in the advisory range) fails the audit visibly instead of being forced across
+  majors in silence.
+- **minimatch 10.2.6 → 11.0.4, scoped to `minimatch@10`.** Requester: @typescript-eslint/
+  typescript-estree 8.72.1 (`^10.2.2`), one `minimatch()` call for the project service's
+  `allowDefaultProject` globs. The 11.0 changelog removes `makeRe`, `AST`, `debug` and the
+  `matchOne`/`slashSplit` methods and tightens trailing-slash matching; that call is unaffected,
+  and `turbo lint --force` reports the same 18 warnings and 0 errors as before. Engines
+  `20 || >=22`.
+
+### Not fixed: minimatch 3.1.5 under eslint 9, the one moderate `pnpm audit` still reports
+
+eslint 9.39.5 and its plugins (@eslint/config-array, @eslint/eslintrc, eslint-plugin-import,
+eslint-plugin-react) require `minimatch ^3.1.x`; eslint-plugin-react calls the v3 default export
+as a function, which v5+ no longer is, so an override to 11 breaks lint. There is no patched 3.x.
+The advisory's code (`firstPhasePreProcess`, `optimizationLevel`) does not exist in 3.1.5 (its
+only `globParts` is a plain field), so the `<11.0.1` range is over-broad for v3; the package is
+dev-only, in no image, and the only patterns it sees are our own lint configuration. Accepted as
+a residual and deliberately not hidden with `auditConfig.ignoreGhsas`, so it stays visible. It
+clears when eslint 10 lands (its range is `^10.2.5`, which the `minimatch@10` override then lifts
+to 11) or if a 3.x backport appears. Until then "audit clean" means "the one known residual".
+
+### Tooling note
+
+`pnpm update -r <name>`, and `pnpm update <name> --filter <project>`, now re-resolve rolldown
+and its bindings on every run: vite 8.3.3's `rolldown` range has moved since 10-28. For a fix
+that must stay attributable, add the override, run `pnpm install --lockfile-only`, and diff the
+lockfile's version lines before installing. Keep `pnpm update` for the case where the drift is
+inside the updated package's own subtree.
+
+### Verification
+
+Per fix: `pnpm install --frozen-lockfile` up to date · `turbo typecheck test build` 39/39 ·
+`pnpm audit` 5 → 4 → 2 → 1. Final tree: `turbo lint --force` 0 errors (18 pre-existing web-ui
+warnings) · `format:check` clean · audit → the one residual above. Integration suites not run
+locally (the dev containers hold the dev graph); CI's job is their first run. Draft PR opened the
+same day.
+
+**Lesson, fifth time:** four days, three advisories, zero Dependabot alerts. The local audit on
+the exact SHA is the signal; Dependabot is the lagging confirmation.
+
+### Follow-up, advised and not applied
+
+Dependabot #122 (@google-cloud/secret-manager 6.1.3 → 7.1.1) would remove the rimraf → glob →
+minimatch chain from the api-server image outright: google-gax 6 no longer depends on rimraf, and
+the 7.0.0 changelog's only breaking change is Node ≥ 22, which every image and CI job already
+runs. It is a major on the boot-time GSM path with no live test short of a deploy, so it is the
+owner's call; taking it retires the `glob@10` override.
 
 ## Related
 
