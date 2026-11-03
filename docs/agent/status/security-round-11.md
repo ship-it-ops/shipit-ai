@@ -10,7 +10,7 @@ tags: [security, dependabot, pnpm, audit]
 importance: standard
 ---
 
-# Security round 11 is on `security-round-11`: hono node-server 2.1.6, glob 14, minimatch 11; draft PR pending
+# Security round 11 is on `security-round-11`: hono node-server 2.1.6, glob 14, minimatch 11; draft PR #150
 
 ## Scope
 
@@ -30,11 +30,11 @@ no fix and whose vulnerable code does not exist in 3.x.
 
 Three fix commits, each verified on its own (`turbo typecheck test build` 39/39; audit 5 → 1;
 lint unchanged at 18 warnings, 0 errors). Round 10's `sha-12b2635` was deployed at the start of
-this round (infra deploy run 41583754595). Draft PR not yet opened; the owner marks it ready and
-merges. After merge: audit on the merge SHA, then build-images and deploy, as for round 10.
+this round (infra deploy run 41583754595). Draft PR #150 opened 2026-11-02; the owner marks it ready
+(that starts the public review job) and merges. After merge: audit on the merge SHA, then build-images and deploy, as for round 10.
 
 ## Done when
 
-The branch is deleted on merge: `git ls-remote --exit-code --heads origin security-round-11`
-exits non-zero. (Replace with `gh pr view <n> --json state -q .state` printing `MERGED` once
-the PR number is known.)
+PR #150 merged: `gh pr view 150 --json state -q .state` prints `MERGED` (the branch is
+deleted on merge, so `git ls-remote --exit-code --heads origin security-round-11` exiting
+non-zero is the same signal).

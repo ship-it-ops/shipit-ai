@@ -32,7 +32,7 @@ Last updated: 2026-11-02 | Total notes: 103
 
 <!-- always-read at session start -->
 
-- [security-round-11](status/security-round-11.md) | status | active | standard | 2026-11-02 | security-round-11: hono node-server 2.1.6, glob 14, minimatch 11 (overrides); one dev-only residual (minimatch 3 under eslint 9); draft PR pending
+- [security-round-11](status/security-round-11.md) | status | active | standard | 2026-11-02 | security-round-11: hono node-server 2.1.6, glob 14, minimatch 11 (overrides); one dev-only residual (minimatch 3 under eslint 9); draft PR #150
 - [ai-agents-platform-handoff](status/ai-agents-platform-handoff.md) | status | active | core | 2026-10-04 | HANDOFF: agents backend merged in #119; next session executes the agents UI plan on a new branch from main
 
 ## Decisions
