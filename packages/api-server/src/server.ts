@@ -48,6 +48,7 @@ import knowledgeRoutes from './routes/knowledge.js';
 import connectorContainerRoutes from './routes/connector-containers.js';
 import agentsRoutes from './routes/agents.js';
 import runsRoutes, { type RunEnqueuer } from './routes/runs.js';
+import toolsRoutes from './routes/tools.js';
 import type { RunEventHub } from './services/ai/run-event-hub.js';
 import type { AgentStore, RunStore } from '@shipit-ai/agents';
 import type { AiStatusService } from './services/ai/ai-status-service.js';
@@ -216,14 +217,21 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   // Access-Control-Allow-Credentials response header, the browser drops
   // the response and useCurrentUser (and every other API call) silently
   // sees a network error.
+  //
+  // The plugin allows only GET, HEAD and POST unless told otherwise, and a
+  // browser hides response headers it was not told it may read. The web-UI
+  // saves with PUT and PATCH, deletes with DELETE, and reads ETag for
+  // If-Match; all of that is cross-origin in local dev (UI on :3000).
+  const corsOptions = {
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    exposedHeaders: ['ETag', 'Location'],
+  };
   if (authEnabled) {
     const allowedOrigins = opts.config?.accessControl.web.allowedOrigins ?? [];
-    await server.register(cors, {
-      origin: allowedOrigins,
-      credentials: true,
-    });
+    await server.register(cors, { ...corsOptions, origin: allowedOrigins });
   } else {
-    await server.register(cors, { origin: true, credentials: true });
+    await server.register(cors, { ...corsOptions, origin: true });
   }
 
   // Session + cookie plugins ride along when auth is enforced. The Redis
@@ -499,6 +507,8 @@ export async function createServer(opts: CreateServerOptions = {}): Promise<Fast
   await server.register(agentsRoutes, { prefix: '/api/agents' });
   // Runs: start one (POST /api/agents/:id/runs), list and read them, chat, cancel.
   await server.register(runsRoutes, { prefix: '/api', keepaliveMs: opts.runStreamKeepaliveMs });
+  // The tools an agent can be granted, for the editor's permission matrix.
+  await server.register(toolsRoutes, { prefix: '/api/tools' });
 
   // GitHub webhook receiver. Registered as its own encapsulated plugin so its
   // route-scoped raw-body parser (HMAC needs the exact bytes) doesn't leak
