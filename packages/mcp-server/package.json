@@ -33,7 +33,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@shipit-ai/shared": "workspace:*",
     "neo4j-driver": "^6.1.0",
     "zod": "^4.6.7"
